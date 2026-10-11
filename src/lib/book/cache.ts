@@ -1,6 +1,7 @@
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { localToday } from "../dates/isoDate.ts";
 import { loadBook, type Book } from "./load.ts";
 
 type Db = Parameters<typeof loadBook>[0];
@@ -29,7 +30,7 @@ const g = globalThis as unknown as { __pfBookCache?: Store };
 const state = (): Store => (g.__pfBookCache ??= { entry: null, reports: new Map(), watching: false });
 
 const REPORT_LIMIT = 50;
-const today = () => new Date().toLocaleDateString("en-CA");
+const today = () => localToday();
 
 function databaseFile(): string | null {
   const url = process.env.DATABASE_URL ?? "";

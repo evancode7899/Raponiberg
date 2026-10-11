@@ -18,6 +18,7 @@ type Change = { cents: number | null; blockers: BlockerRef[] };
 
 /** Every figure is null when it can't be proven; its blockers say why. */
 type Summary = {
+  hasStatements: boolean;
   netWorth: {
     asOf: string;
     blockers: BlockerRef[];
@@ -66,7 +67,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
       <div className="flex flex-wrap items-end justify-between gap-2 pt-1">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          {data && (
+          {data?.hasStatements && (
             <p className="text-[13px] text-muted">
               Balances proven through {date(data.netWorth.asOf)} · bank &amp; card activity through {date(data.cashFlow.through)}
             </p>
@@ -85,7 +86,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
       {error && <ErrorNote>{error}</ErrorNote>}
       {!data ? (
         api.ready && !error ? <Loading label="Reading the ledger…" /> : null
-      ) : data.netWorth.series.length === 0 ? (
+      ) : !data.hasStatements ? (
         <Card title="Welcome">
           <p className="text-sm text-muted">No statements on file yet.</p>
           <Link href="/statements" className={`${btn.primary} mt-3`}>

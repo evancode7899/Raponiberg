@@ -1,5 +1,6 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
+import { localToday } from "@/lib/dates/isoDate";
 import { cachedReport } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { hsaLedger, type HsaLedger } from "@/lib/hsa/load";
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
       cachedReport(prisma, "hsa-ledger", (book) => hsaLedger(book)).then((t) => JSON.parse(t) as HsaLedger),
       loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings),
     ]);
-    const report = buildHsaReport({ today: new Date().toLocaleDateString("en-CA"), file, ...ledger, marginalRate: retirement.marginalRate });
+    const report = buildHsaReport({ today: localToday(), file, ...ledger, marginalRate: retirement.marginalRate });
     return NextResponse.json(report);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not read the HSA log" }, { status: 500 });

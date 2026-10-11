@@ -12,8 +12,8 @@
  *     settings (car costs, make and model; the tax profile's typed-in figures). A database
  *     that exists but can't be read fails the check;
  *   - data/bonus-awards.json: employers, and every salary, bonus and comp figure;
- *   - data/page-inputs.json: the dollar figures saved in the calculators ($10,000 and up,
- *     except round multiples of $50,000, which defaults and examples use);
+ *   - data/page-inputs.json: the dollar figures typed into the calculators ($10,000 and up,
+ *     except round multiples of $50,000, which examples use, and the calculators' defaults);
  *   - data/tax-documents.json (the tax documents folder as read): employers, partnerships,
  *     the names on the forms, EINs, and each W-2's wages and each filed return's AGI and
  *     total tax;
@@ -28,7 +28,9 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { householdFilePath, readHouseholdFile } from "../src/lib/household/householdFile.ts";
 import { awardsFilePath, readAwards } from "../src/lib/bonuses/awardStore.ts";
+import { defaultHomeBudgetInputs } from "../src/lib/home-budget/homeBudgetModel.ts";
 import { hsaFilePath } from "../src/lib/hsa/store.ts";
+import { defaultInputs as defaultMortgageInputs } from "../src/lib/mortgage/inputs.ts";
 import { pageInputsFilePath } from "../src/lib/pageInputs.ts";
 import { normalizeProfile, TAX_PROFILE_KEY } from "../src/lib/tax/profile.ts";
 import { readTaxDocs } from "../src/lib/taxdocs/store.ts";
@@ -171,8 +173,11 @@ if (!existsSync(dbFile)) {
 if (existsSync(pageInputsFilePath())) {
   try {
     const saved = JSON.parse(readFileSync(pageInputsFilePath(), "utf8")) as { inputs?: Record<string, { value?: Record<string, unknown> }> };
-    for (const entry of Object.values(saved.inputs ?? {}))
-      for (const v of Object.values(entry.value ?? {})) if (typeof v === "number" && v >= 10_000 && v % 50_000 !== 0) figure(v);
+    // A calculator saves every field, typed or not: its defaults are the app's, not yours.
+    const defaults: Record<string, Record<string, unknown>> = { "pf-home-budget-inputs": defaultHomeBudgetInputs(), "pf-mortgage-v2": defaultMortgageInputs() };
+    for (const [key, entry] of Object.entries(saved.inputs ?? {}))
+      for (const [field, v] of Object.entries(entry.value ?? {}))
+        if (typeof v === "number" && v >= 10_000 && v % 50_000 !== 0 && v !== defaults[key]?.[field]) figure(v);
   } catch {
     /* unreadable calculator inputs: nothing to add */
   }

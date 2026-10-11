@@ -189,9 +189,19 @@ export function parseDelimited(text: string): Sheet {
 }
 
 /** Reads an uploaded file (or pasted text) and previews the expenses in it: the first sheet that has a Date and an Amount column. */
+/** The workbook's sheets; a truncated or damaged file says so instead of failing on a byte offset. */
+function readXlsxOrExplain(bytes: Buffer): Sheet[] {
+  try {
+    return readXlsx(bytes);
+  } catch (e) {
+    if (e instanceof RangeError) throw new Error("That file isn't a readable .xlsx (it may be damaged or cut short). Save it again from Excel, or export it as .csv.");
+    throw e;
+  }
+}
+
 export function previewImport(input: { fileName?: string; bytes?: Buffer; text?: string }, patientNames: string[] = []): ImportPreview {
-  const isXlsx = input.bytes && (/\.xlsx$/i.test(input.fileName ?? "") || input.bytes.readUInt32LE(0) === 0x04034b50);
-  const sheets: Sheet[] = isXlsx ? readXlsx(input.bytes!) : [parseDelimited(input.text ?? input.bytes?.toString("utf8").replace(/^﻿/, "") ?? "")];
+  const isXlsx = input.bytes && (/\.xlsx$/i.test(input.fileName ?? "") || (input.bytes.length >= 4 && input.bytes.readUInt32LE(0) === 0x04034b50));
+  const sheets: Sheet[] = isXlsx ? readXlsxOrExplain(input.bytes!) : [parseDelimited(input.text ?? input.bytes?.toString("utf8").replace(/^﻿/, "") ?? "")];
   let best: ImportPreview | null = null;
   for (const s of sheets) {
     const p = sheetToExpenses(s, patientNames);

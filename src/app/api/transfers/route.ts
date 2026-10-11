@@ -31,6 +31,10 @@ export async function POST(request: NextRequest) {
   if (ids.length < 2) return NextResponse.json({ error: "Need at least two transactions" }, { status: 400 });
 
   if (body?.action === "reject") {
+    // Recorded in the permanent decisions file, so only for rows that exist.
+    if ((await prisma.transaction.count({ where: { id: { in: ids } } })) !== ids.length) {
+      return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+    }
     await prisma.transferRejection.upsert({ where: { legKey: legKey(ids) }, create: { legKey: legKey(ids) }, update: {} });
     recordRejected(await legFingerprints(prisma, ids));
     const maintenance = await refreshDerived(prisma);
