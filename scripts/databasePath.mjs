@@ -33,7 +33,7 @@ export function loadDatabaseUrlFromEnvFile() {
 export function resolveDbFilePath() {
   const url =
     process.env.DATABASE_URL ?? loadDatabaseUrlFromEnvFile() ?? "file:../data/finance.db";
-  let p = url.replace(/^file:/i, "");
+  let p = url.replace(/^file:/i, "").split("?")[0];
   if (!path.isAbsolute(p)) {
     p = path.resolve(process.cwd(), "prisma", p);
   }

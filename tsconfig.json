@@ -32,6 +32,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "**/*.mts",
     ".next-app-staging/types/**/*.ts",
     "next-env.d.ts",
     ".next-app/types/**/*.ts",
