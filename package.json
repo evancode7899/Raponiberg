@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
     "dev:webpack": "next dev --webpack -H 127.0.0.1",
-    "build": "prisma generate && next build --webpack",
+    "build": "prisma generate && next build",
+    "build:webpack": "prisma generate && next build --webpack",
     "start": "next start -H 127.0.0.1",
     "lint": "eslint",
     "test": "vitest run",
