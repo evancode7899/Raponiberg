@@ -2,6 +2,7 @@
 
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
+import { useChanged } from "@/components/useChanged";
 import { ErrorNote, Loading, PageBody, Tabs, useTabParam } from "@/components/ui/kit";
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import type { FinancialProfileSettings } from "@/lib/profile/settings";
@@ -24,10 +25,12 @@ export function AnnualClient({ requiresApiSecret }: { requiresApiSecret: boolean
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
 
-  useEffect(() => {
-    if (!api.ready) return;
+  if (useChanged([api, version]) && api.ready) {
     setLoading(true);
     setError(null);
+  }
+  useEffect(() => {
+    if (!api.ready) return;
     api
       .call<AnnualProfileReport>("/api/profile")
       .then(setData)

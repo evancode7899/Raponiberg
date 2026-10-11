@@ -2,7 +2,7 @@
 
 import { btn, Callout, Card, Field, inputCls, Segmented } from "@/components/ui/kit";
 import { carName, newId, type Car, type RentParking } from "@/lib/car/settings";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { CarCtx } from "./CarClient";
 import { CentsInput, NumInput, usd2 } from "./parts";
 
@@ -12,7 +12,12 @@ export function SetupTab({ ctx }: { ctx: CarCtx }) {
   const { car: s, settings: g, report: r, saveCar, save, saving } = ctx;
   const pick = (x: Car): Draft => ({ vehicle: x.vehicle, purchase: x.purchase, plan: x.plan, rentParking: x.rentParking, sale: x.sale });
   const [d, setD] = useState<Draft>(() => pick(s));
-  useEffect(() => setD(pick(s)), [s]);
+  // A different (or freshly saved) car resets the draft (adjusted during render, not in an effect).
+  const [seen, setSeen] = useState(s);
+  if (s !== seen) {
+    setSeen(s);
+    setD(pick(s));
+  }
   const dirty = JSON.stringify(d) !== JSON.stringify(pick(s));
   const v = d.vehicle;
   const p = d.purchase;

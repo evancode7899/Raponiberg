@@ -3,7 +3,7 @@
 import type { ChartPalette } from "@/components/shell/chartPalette";
 import { EM_DASH } from "@/lib/formatMoney";
 import type { CostLine } from "@/lib/car/report";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 /**
  * Chart buckets: the cost lines folded into seven, each with a fixed palette slot, so a
@@ -79,11 +79,9 @@ export function etaText(eta: string | null, today: string): string {
 /** Dollars-and-cents input bound to cents (blank → null). Commits on blur or Enter. */
 export function CentsInput({ cents, onChange, className = "", ariaLabel, placeholder }: { cents: number | null; onChange: (c: number | null) => void; className?: string; ariaLabel?: string; placeholder?: string }) {
   const show = (c: number | null) => (c == null ? "" : (c / 100).toFixed(2));
-  const [text, setText] = useState(show(cents));
-  const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    if (!focused) setText(show(cents));
-  }, [cents, focused]);
+  // The text being typed while the field has focus; otherwise the field shows `cents`.
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft ?? show(cents);
   return (
     <div className={`flex min-w-0 items-center rounded-md border border-line-strong bg-surface px-2 focus-within:border-accent ${className}`}>
       <span className="select-none text-faint">$</span>
@@ -94,14 +92,14 @@ export function CentsInput({ cents, onChange, className = "", ariaLabel, placeho
         className="num w-full min-w-0 bg-transparent px-1 py-1.5 text-right text-sm text-fg outline-none placeholder:text-faint"
         value={text}
         onFocus={(e) => {
-          setFocused(true);
+          setDraft(show(cents));
           e.target.select();
         }}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
-          setFocused(false);
           const n = Number(text.replace(/[^\d.-]/g, ""));
           onChange(text.trim() === "" || !Number.isFinite(n) ? null : Math.round(n * 100));
+          setDraft(null);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();

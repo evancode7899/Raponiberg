@@ -4,7 +4,7 @@ import { btn, Drawer, Field, inputCls, selectCls } from "@/components/ui/kit";
 import { formatUsdCents } from "@/lib/formatMoney";
 import { EXPENSE_KINDS, type ExpenseKind } from "@/lib/hsa/qualify";
 import type { HsaReport } from "@/lib/hsa/report";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Send } from "./HsaClient";
 
 /** The expense being edited (id) or added (null). */
@@ -60,10 +60,13 @@ export function ExpenseDrawer({ draft, r, send, onClose }: { draft: DraftExpense
   const existing = draft?.id ? r.expenses.find((e) => e.id === draft.id) : null;
   const [f, setF] = useState<Form>(() => blank(r.today));
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
+  // Reset only when a different expense opens (adjusted during render, not in an effect;
+  // `undefined` so the first render fills the form too).
+  const [seen, setSeen] = useState<DraftExpense | null | undefined>(undefined);
+  if (draft !== seen) {
+    setSeen(draft);
     setErr(null);
-    if (!draft) return;
-    setF(
+    if (draft) setF(
       existing
         ? {
             date: existing.date,
@@ -80,8 +83,7 @@ export function ExpenseDrawer({ draft, r, send, onClose }: { draft: DraftExpense
           }
         : blank(r.today),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when a different expense opens
-  }, [draft]);
+  }
   const set = (patch: Partial<Form>) => setF((x) => ({ ...x, ...patch }));
 
   const save = async () => {

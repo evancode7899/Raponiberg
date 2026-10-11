@@ -585,16 +585,19 @@ if ($needBuild) {
     Show-Message "Could not clear the build staging folder. Close anything using it, or wait for OneDrive to finish syncing, and try again:`n$StagingDir"
     exit 1
   }
-  # Turbopack's build cache (cache\ in the build folder, about 90 MB) comes along from the
-  # last good build, which makes a rebuild after a small update several times faster.
-  # Everything else still starts empty. A build that fails with a carried cache is retried
-  # once from nothing, so a stale or damaged cache can't block an update.
-  $cacheFrom = Join-Path $AppBuildDir "cache"
+  # Turbopack's build cache (cache\turbopack, about 100 MB) and TypeScript's incremental
+  # state (cache\.tsbuildinfo) come along from the last good build, which makes a rebuild
+  # after a small update several times faster. Only those two: anything else in cache\
+  # (an old webpack cache, say) would just be copied on every build. Everything else still
+  # starts empty. A build that fails with a carried cache is retried once from nothing, so
+  # a stale or damaged cache can't block an update.
+  $cacheParts = @("turbopack", ".tsbuildinfo") | ForEach-Object { Join-Path (Join-Path $AppBuildDir "cache") $_ } | Where-Object { Test-Path $_ }
   $carried = $false
-  if (Test-Path $cacheFrom) {
+  if ($cacheParts) {
     try {
-      New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
-      Copy-Item -LiteralPath $cacheFrom -Destination (Join-Path $StagingDir "cache") -Recurse -Force -ErrorAction Stop
+      $cacheTo = Join-Path $StagingDir "cache"
+      New-Item -ItemType Directory -Force -Path $cacheTo | Out-Null
+      foreach ($part in $cacheParts) { Copy-Item -LiteralPath $part -Destination $cacheTo -Recurse -Force -ErrorAction Stop }
       $carried = $true
       Write-Log "Build: carried the build cache over from $AppBuildName"
     } catch {

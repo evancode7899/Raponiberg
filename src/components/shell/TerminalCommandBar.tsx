@@ -40,7 +40,12 @@ export function TerminalCommandBar({ onShutdown }: { onShutdown?: () => void }) 
     if (pick && line.trim()) go(pick);
   }, [line, matches, highlight, go]);
 
-  useEffect(() => setHighlight(0), [line]);
+  // New text puts the highlight back on the first match (adjusted during render, not in an effect).
+  const [seenLine, setSeenLine] = useState(line);
+  if (line !== seenLine) {
+    setSeenLine(line);
+    setHighlight(0);
+  }
 
   // Global shortcut: Ctrl/⌘+K anywhere, or "/" when not typing in a field.
   useEffect(() => {

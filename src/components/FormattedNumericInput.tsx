@@ -11,7 +11,6 @@ import {
 } from "@/lib/formatNumericInput";
 import {
   useCallback,
-  useEffect,
   useState,
   type InputHTMLAttributes,
 } from "react";
@@ -38,13 +37,8 @@ export function FormattedIntegerInput({
   ...rest
 }: BaseProps) {
   const [focused, setFocused] = useState(false);
+  // Only shown while focused (set on focus); otherwise the field shows `value` formatted.
   const [text, setText] = useState(() => formatIntegerDisplay(value));
-
-  useEffect(() => {
-    if (!focused) {
-      setText(formatIntegerDisplay(value));
-    }
-  }, [value, focused]);
 
   const commit = useCallback(
     (raw: string) => {
@@ -111,13 +105,8 @@ export function FormattedDecimalInput({
     step !== undefined ? fractionDigitsForStep(step) : maxFractionDigits;
 
   const [focused, setFocused] = useState(false);
+  // Only shown while focused (set on focus); otherwise the field shows `value` formatted.
   const [text, setText] = useState(() => formatDecimalDisplay(value, frac));
-
-  useEffect(() => {
-    if (!focused) {
-      setText(formatDecimalDisplay(value, frac));
-    }
-  }, [value, focused, frac]);
 
   const commit = useCallback(
     (raw: string) => {

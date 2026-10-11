@@ -36,7 +36,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
   }, [api]);
   useEffect(() => {
     if (!api.ready || tab !== "built") return;
-    if (granularity === "month" && monthly) return setReport(monthly);
+    if (granularity === "month" && monthly) return; // already here: `built` below uses it
     api
       .call<NetWorthReport>(`/api/dashboard/net-worth?granularity=${granularity}`)
       .then(setReport)
@@ -49,6 +49,8 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
       .then(setRolls)
       .catch((e: Error) => setError(e.message));
   }, [api, tab, rolls]);
+  // The monthly view is the report already loaded for the overview; other views are fetched.
+  const built = granularity === "month" && monthly ? monthly : report;
 
   return (
     <>
@@ -79,7 +81,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
         ) : tab === "overview" ? (
           <Overview r={monthly} />
         ) : tab === "built" ? (
-          <Built r={report?.granularity === granularity ? report : null} granularity={granularity} setGranularity={setGranularity} />
+          <Built r={built?.granularity === granularity ? built : null} granularity={granularity} setGranularity={setGranularity} />
         ) : tab === "returns" ? (
           <Returns r={monthly} />
         ) : rolls ? (
@@ -281,14 +283,16 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
     // Running totals carry every earlier period, so they start where the proven stretch
     // does, on top of the net worth already on hand then.
     const start = (run[0]?.household.openingCents ?? 0) / 100;
+    const rows: { label: string; start: number; principal: number; growth: number }[] = [];
     let principal = 0;
     let growth = 0;
-    return run.map((p) => {
+    for (const p of run) {
       const h = p.household;
       principal += h.principalCents + h.newlyTrackedCents + h.transferResidualCents + h.unexplainedCents;
       growth += h.growthNetOfFeesCents;
-      return { label: p.label, start, principal: principal / 100, growth: growth / 100 };
-    });
+      rows.push({ label: p.label, start, principal: principal / 100, growth: growth / 100 });
+    }
+    return rows;
   }, [run]);
 
   const control = (

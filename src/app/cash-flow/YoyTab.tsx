@@ -67,23 +67,29 @@ export function YoyTab({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/** Spending by category in both periods, biggest change first. */
+function compareCategories(now: SpendingMonth[], then: SpendingMonth[]) {
+  const n = new Map(mergeCategories(now, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
+  const t = new Map(mergeCategories(then, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
+  return [...new Set([...n.keys(), ...t.keys()])]
+    .map((category) => ({ category, now: n.get(category) ?? 0, then: t.get(category) ?? 0 }))
+    .filter((c) => c.now || c.then)
+    .sort((x, y) => Math.abs(y.now - y.then) - Math.abs(x.now - x.then));
+}
+
+/** Spending by merchant in both periods. */
+function compareMerchants(now: SpendingMonth[], then: SpendingMonth[]) {
+  const n = new Map(mergeMerchants(now).map((m) => [m.key, m]));
+  const t = new Map(mergeMerchants(then).map((m) => [m.key, m]));
+  return [...new Set([...n.keys(), ...t.keys()])].map((key) => ({ key, name: (n.get(key) ?? t.get(key))!.name, now: n.get(key)?.cents ?? 0, then: t.get(key)?.cents ?? 0 }));
+}
+
 function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: SpendingMonth[] }) {
   const { chart } = ctx;
-  const a = totals(now);
-  const b = totals(then);
-  const categories = useMemo(() => {
-    const n = new Map(mergeCategories(now, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
-    const t = new Map(mergeCategories(then, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
-    return [...new Set([...n.keys(), ...t.keys()])]
-      .map((category) => ({ category, now: n.get(category) ?? 0, then: t.get(category) ?? 0 }))
-      .filter((c) => c.now || c.then)
-      .sort((x, y) => Math.abs(y.now - y.then) - Math.abs(x.now - x.then));
-  }, [now, then]);
-  const merchants = useMemo(() => {
-    const n = new Map(mergeMerchants(now).map((m) => [m.key, m]));
-    const t = new Map(mergeMerchants(then).map((m) => [m.key, m]));
-    return [...new Set([...n.keys(), ...t.keys()])].map((key) => ({ key, name: (n.get(key) ?? t.get(key))!.name, now: n.get(key)?.cents ?? 0, then: t.get(key)?.cents ?? 0 }));
-  }, [now, then]);
+  const a = useMemo(() => totals(now), [now]);
+  const b = useMemo(() => totals(then), [then]);
+  const categories = useMemo(() => compareCategories(now, then), [now, then]);
+  const merchants = useMemo(() => compareMerchants(now, then), [now, then]);
   const maxChange = Math.max(1, ...categories.map((c) => Math.abs(c.now - c.then)));
   const up = merchants.filter((m) => m.now - m.then > 0).sort((x, y) => y.now - y.then - (x.now - x.then)).slice(0, 10);
   const down = merchants.filter((m) => m.now - m.then < 0).sort((x, y) => x.now - x.then - (y.now - y.then)).slice(0, 10);

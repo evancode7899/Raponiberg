@@ -51,7 +51,10 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
   const [drill, setDrill] = useState<Drill | null>(null);
   const [version, setVersion] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
+  // Every account from the first answer, so the filter keeps listing accounts after some are
+  // excluded. The ref serves the fetch; the state copy is what renders.
   const accountsRef = useRef<Report["accounts"]>(data?.accounts ?? []);
+  const [allAccounts, setAllAccounts] = useState<Report["accounts"]>(data?.accounts ?? []);
 
   useEffect(() => {
     if (!api.ready) return;
@@ -60,7 +63,10 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
     api
       .call<Report>(`/api/dashboard/cash-flow?${sp}`)
       .then((r) => {
-        if (!accountsRef.current.length) accountsRef.current = r.accounts;
+        if (!accountsRef.current.length) {
+          accountsRef.current = r.accounts;
+          setAllAccounts(r.accounts);
+        }
         setData(r);
         setError(null);
       })
@@ -146,7 +152,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
             </span>
           )}
           <div className="ml-auto">
-            {accountsRef.current.length > 1 && <AccountFilter accounts={accountsRef.current} excluded={excluded} setExcluded={setExcluded} />}
+            {allAccounts.length > 1 && <AccountFilter accounts={allAccounts} excluded={excluded} setExcluded={setExcluded} />}
           </div>
         </div>
         {data && <WithheldStrip after={data.withheldAfter} before={data.withheldBefore} through={data.window?.to ?? null} />}

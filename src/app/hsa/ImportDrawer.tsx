@@ -6,7 +6,7 @@ import { formatUsdCents } from "@/lib/formatMoney";
 import type { ImportPreview, ImportedExpense } from "@/lib/hsa/importSheet";
 import { EXPENSE_KINDS, type ExpenseKind } from "@/lib/hsa/qualify";
 import type { HsaReport } from "@/lib/hsa/report";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Send } from "./HsaClient";
 
 type Row = ImportedExpense & { inLog: boolean; repeatInSheet: boolean };
@@ -40,14 +40,17 @@ export function ImportDrawer({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Closing clears the drawer (adjusted during render, not in an effect).
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (!open) {
       setPreview(null);
       setRows([]);
       setPaste("");
       setErr(null);
     }
-  }, [open]);
+  }
 
   const show = (p: Preview) => {
     setPreview(p);

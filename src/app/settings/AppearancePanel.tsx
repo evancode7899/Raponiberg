@@ -21,6 +21,7 @@ export function AppearancePanel() {
   const [size, setSize] = useState<FontScale>("md");
   useEffect(() => {
     const t = document.documentElement.getAttribute("data-theme");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the theme attributes are set on <html> by a script before hydration
     if (isAppTheme(t)) setTheme(t);
     const f = document.documentElement.getAttribute("data-font-scale");
     if (isFontScale(f)) setSize(f);

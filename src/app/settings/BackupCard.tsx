@@ -21,13 +21,20 @@ export function BackupCard({ api }: { api: Api }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // When the status was read: "stale" is judged against that, since reading the clock during
+  // render would give a different answer on every render.
+  const [checkedAt, setCheckedAt] = useState(0);
+  const show = useCallback((s: BackupStatus) => {
+    setStatus(s);
+    setCheckedAt(Date.now());
+  }, []);
 
   const load = useCallback(() => {
     api
       .call<BackupStatus>("/api/system/backup")
-      .then(setStatus)
+      .then(show)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Could not load the backup status"));
-  }, [api]);
+  }, [api, show]);
   useEffect(load, [load]);
 
   const backUp = async () => {
@@ -36,7 +43,7 @@ export function BackupCard({ api }: { api: Api }) {
     setMessage(null);
     try {
       const r = await api.call<{ status: "created" | "unchanged"; snapshot: string; statementsCopied: number; backup: BackupStatus }>("/api/system/backup", { method: "POST" });
-      setStatus(r.backup);
+      show(r.backup);
       const pdfs = r.statementsCopied ? ` ${r.statementsCopied} statement PDF${r.statementsCopied === 1 ? "" : "s"} copied.` : "";
       setMessage(r.status === "created" ? `Backed up (${r.snapshot}).${pdfs}` : `Nothing changed since the last backup (${r.snapshot}).${pdfs}`);
     } catch (e) {
@@ -48,7 +55,7 @@ export function BackupCard({ api }: { api: Api }) {
   };
 
   const latest = status?.latest;
-  const stale = latest ? Date.now() - new Date(latest.createdAt).getTime() > 3 * 86_400_000 : false;
+  const stale = latest && checkedAt ? checkedAt - new Date(latest.createdAt).getTime() > 3 * 86_400_000 : false;
   const failed = status?.last && !status.last.ok ? status.last : null;
 
   return (

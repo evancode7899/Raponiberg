@@ -35,9 +35,10 @@ export function AffordTab({ ins, testPrice }: { ins: HomeBudgetInputs; testPrice
   const tiers = useMemo(() => tiersFor(ins.housingCostMaxOfGross).map((t) => ({ ...t, ...maxAt(ins, t.share) })), [ins]);
   const mine = tiers.find((t) => t.key === "limit")!;
   const { max, at } = mine;
+  const maxValue = max.impliedMaxHomeValue;
   const levers = useMemo(
-    () => LEVERS.map((l) => ({ label: l.label, delta: computeMaxApproval({ ...ins, ...l.apply(ins) }).impliedMaxHomeValue - max.impliedMaxHomeValue })),
-    [ins, max.impliedMaxHomeValue],
+    () => LEVERS.map((l) => ({ label: l.label, delta: computeMaxApproval({ ...ins, ...l.apply(ins) }).impliedMaxHomeValue - maxValue })),
+    [ins, maxValue],
   );
   const biggest = Math.max(1, ...levers.map((l) => Math.abs(l.delta)));
   const price = round1k(max.impliedMaxHomeValue);

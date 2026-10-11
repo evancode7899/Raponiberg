@@ -24,11 +24,12 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
   const payers = useMemo(() => mergeMerchants(slice.months, (m) => m.payers), [slice]);
   const catNames = INCOME_CATEGORIES.filter((c) => incomeCats.some((x) => x.category === c && x.cents > 0));
   const stack = slice.months.map((m) => Object.fromEntries([["label", m.label], ...catNames.map((c) => [c, (m.incomeByCategory.find((x) => x.category === c)?.cents ?? 0) / 100])]));
+  const cumulative: { label: string; saved: number }[] = [];
   let run = 0;
-  const cumulative = slice.months.map((m) => {
+  for (const m of slice.months) {
     run += m.netCents;
-    return { label: m.label, saved: run / 100 };
-  });
+    cumulative.push({ label: m.label, saved: run / 100 });
+  }
   const bonus = t.income - t.typicalIncome * t.n;
 
   return (

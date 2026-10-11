@@ -2,6 +2,7 @@
 
 import { Segmented, ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
+import { useChanged } from "@/components/useChanged";
 import { ErrorNote, Loading, PageBody, Tabs, useTabParam } from "@/components/ui/kit";
 import { BlockedNote } from "@/components/ledger/Blocked";
 import type { TaxReport, TaxReportBlocked } from "@/lib/tax/buildTaxReport";
@@ -35,15 +36,18 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
   // A link can open a given year (/taxes?tab=filed&year=2025).
   useEffect(() => {
     const y = Number(new URLSearchParams(window.location.search).get("year"));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the server render can't see the URL, so reading it during render would mismatch hydration
     if (y >= 2000 && y <= 2100) setYear(y);
   }, []);
 
+  if (useChanged([api, year, version]) && api.ready) {
+    setLoading(true);
+    setError(null);
+  }
   useEffect(() => {
     if (!api.ready) return;
     // A slower answer for a year no longer selected must not replace the current one.
     let current = true;
-    setLoading(true);
-    setError(null);
     api
       .call<TaxResponse>(`/api/tax?year=${year}`)
       .then((r) => {

@@ -3,7 +3,7 @@
 import { Badge, btn, Callout, Card, Drawer, EmptyState, Field, inputCls, MoneyInput, selectCls, table } from "@/components/ui/kit";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Send } from "./HsaClient";
 import { waitLabel } from "./ReceiptsTab";
 
@@ -147,14 +147,18 @@ export function ReimburseDrawer({ ids, r, send, onClose, onDone }: { ids: string
   const [w, setW] = useState("");
   const [note, setNote] = useState("");
   const options = r.withdrawals.filter((x) => !x.linkedIds.length).sort((a, b) => Number(b.amountCents === total) - Number(a.amountCents === total) || b.date.localeCompare(a.date));
-  useEffect(() => {
-    if (!ids) return;
-    const exact = r.withdrawals.find((x) => !x.linkedIds.length && x.amountCents === total);
-    setW(exact ? String(r.withdrawals.indexOf(exact)) : "");
-    setDate(exact?.date ?? r.today);
-    setNote("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when a new set opens
-  }, [ids]);
+  // Reset when a new set opens (adjusted during render, not in an effect; `undefined` so
+  // the first render fills the form too).
+  const [seenIds, setSeenIds] = useState<string[] | null | undefined>(undefined);
+  if (ids !== seenIds) {
+    setSeenIds(ids);
+    if (ids) {
+      const exact = r.withdrawals.find((x) => !x.linkedIds.length && x.amountCents === total);
+      setW(exact ? String(r.withdrawals.indexOf(exact)) : "");
+      setDate(exact?.date ?? r.today);
+      setNote("");
+    }
+  }
   const chosen = w === "" ? null : r.withdrawals[Number(w)];
   const growth = list.reduce((s, e) => s + e.growthCents, 0);
   const missing = list.filter((e) => !e.receipt).length;

@@ -138,11 +138,9 @@ export function MoneyInput({
   size?: "xs" | "sm";
   ariaLabel?: string;
 }) {
-  const [text, setText] = useState(fmtDollars(cents));
-  const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    if (!focused) setText(fmtDollars(cents));
-  }, [cents, focused]);
+  // The text being typed while the field has focus; otherwise the field shows `cents`.
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft ?? fmtDollars(cents);
   const commit = () => {
     const raw = text.replace(allowNegative ? /[^\d-]/g : /[^\d]/g, "");
     if (raw === "" || raw === "-") onChange(nullable ? null : 0);
@@ -166,13 +164,13 @@ export function MoneyInput({
         placeholder={placeholderCents == null ? (nullable ? "" : "0") : fmtDollars(placeholderCents)}
         value={text}
         onFocus={(e) => {
-          setFocused(true);
+          setDraft(fmtDollars(cents));
           e.target.select();
         }}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
-          setFocused(false);
           commit();
+          setDraft(null);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -196,28 +194,26 @@ export function PercentInput({
   size?: "xs" | "sm";
   ariaLabel?: string;
 }) {
-  const [text, setText] = useState(String(+(value * 100).toFixed(2)));
-  const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    if (!focused) setText(String(+(value * 100).toFixed(2)));
-  }, [value, focused]);
+  // The text being typed while the field has focus; otherwise the field shows `value`.
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = String(+(value * 100).toFixed(2));
   return (
     <div className={`flex min-w-0 items-center rounded-md border border-line-strong bg-surface px-2 focus-within:border-accent ${className}`}>
       <input
         inputMode="decimal"
         aria-label={ariaLabel}
         className={`num w-full min-w-0 bg-transparent text-right text-fg outline-none ${size === "xs" ? "py-1 text-xs" : "py-1.5 text-sm"}`}
-        value={text}
+        value={draft ?? shown}
         onFocus={(e) => {
-          setFocused(true);
+          setDraft(shown);
           e.target.select();
         }}
         onChange={(e) => {
-          setText(e.target.value);
+          setDraft(e.target.value);
           const n = Number(e.target.value);
           if (e.target.value.trim() !== "" && Number.isFinite(n)) onChange(n / 100);
         }}
-        onBlur={() => setFocused(false)}
+        onBlur={() => setDraft(null)}
       />
       <span className="select-none pl-1 text-faint">%</span>
     </div>
@@ -506,6 +502,9 @@ export function usePersistentState<T extends object>(key: string, initial: () =>
   useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
+      // Read after mount on purpose: the server render can't see localStorage, so reading it
+      // during render would make the first client render differ (a hydration mismatch).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (raw) setValue({ ...initial(), ...(JSON.parse(raw) as Partial<T>) });
     } catch {
       /* storage unavailable or corrupt: keep defaults */
