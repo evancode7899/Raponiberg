@@ -19,6 +19,14 @@ back to a statement.
 > with a qualified professional. You use it at your own risk, and the author isn't liable
 > for any outcome (see the [License and disclaimer](#license-and-disclaimer)).
 
+![The Raponiberg dashboard: net worth over time, what it's made of, and twelve months of income, spending and savings](docs/screenshots/dashboard.png)
+
+| Cash flow | Taxes | FIRE |
+|---|---|---|
+| ![Cash flow: income vs spending by month, with insights](docs/screenshots/cash-flow.png) | ![Taxes: projected federal and state tax, what you'll owe at filing](docs/screenshots/taxes.png) | ![FIRE: progress to financial independence and the year you get there](docs/screenshots/fire.png) |
+
+<sub>Screenshots are from demo mode: a made-up household, not anyone's real finances.</sub>
+
 ## What it can read today
 
 Raponiberg only imports statement layouts it has a parser for. If yours aren't listed,
