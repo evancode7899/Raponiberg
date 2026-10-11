@@ -11,6 +11,24 @@ permissions:
   contents: read
 
 jobs:
+  # API keys, tokens and private keys anywhere in the history. (Personal data is
+  # npm run privacy:check's job: it needs the owner's data to know what's personal, so it
+  # runs on their computer before every push instead.)
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read  # gitleaks lists a pull request's commits
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
   fresh-clone:
     runs-on: windows-latest
     timeout-minutes: 30

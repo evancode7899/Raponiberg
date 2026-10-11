@@ -4,7 +4,9 @@
  *   2. restores the newest snapshot from the OneDrive backup folder, if there's no
  *      database here yet (an existing database is left alone)
  *   3. brings the database up to the current schema (npm run db:refresh)
- *   4. puts the Raponiberg shortcut on the Desktop
+ *   4. turns on the repository's git hooks (.githooks/pre-push: the privacy check before
+ *      every push)
+ *   5. puts the Raponiberg shortcut on the Desktop
  *
  * Usage:
  *   npm run setup [-- --from <backup folder>] [--no-shortcuts]
@@ -28,6 +30,8 @@ try {
     console.log("Created .env from .env.example");
   }
   process.loadEnvFile(env);
+
+  if (existsSync(path.join(ROOT, ".git")) && run("git config core.hooksPath .githooks")) console.log("Turned on the privacy check before every git push (.githooks/pre-push).");
 
   let migrated = false;
   if (existsSync(databaseFilePath())) {

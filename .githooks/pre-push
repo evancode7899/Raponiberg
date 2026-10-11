@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs before every git push (npm run setup turns it on: git config core.hooksPath .githooks).
+# Stops the push when npm run privacy:check finds this computer's personal data (names,
+# account numbers, real amounts) in the files being published. A copy with no data/ yet
+# has nothing personal to look for, so it passes quickly.
+echo "Checking for personal data before pushing (npm run privacy:check)..."
+if ! npm run --silent privacy:check; then
+  echo ""
+  echo "Push stopped: make the flagged code generic, commit, and push again."
+  echo "(Only if you're certain a hit is a false alarm: git push --no-verify)"
+  exit 1
+fi

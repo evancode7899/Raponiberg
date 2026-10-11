@@ -1,5 +1,8 @@
 # Raponiberg
 
+[![CI](https://github.com/evancode7899/Raponiberg/actions/workflows/ci.yml/badge.svg)](https://github.com/evancode7899/Raponiberg/actions/workflows/ci.yml)
+[![License: Raponiberg (no commercial use)](https://img.shields.io/badge/license-Raponiberg%20%C2%B7%20no%20commercial%20use-blue)](LICENSE)
+
 A private personal-finance app that runs on your own computer. You download your bank,
 card, brokerage and pay statements as PDFs, and Raponiberg reads them into one ledger:
 net worth, cash flow and spending, taxes, retirement (FIRE), home buying, mortgage
@@ -97,10 +100,42 @@ launcher's log is `data/logs/launcher.log`.
   Dropbox or iCloud syncs. The app then copies `data/` there every 15 minutes while it
   runs (only when something changed) and when you close it with the power button. See
   [Backups](#backups).
-- **Updates come automatically on Windows.** Each start through the shortcut pulls the
-  latest code from the repository you cloned (fast-forward only; it never touches your
-  data). To stop that, run `setx RAPONIBERG_NO_UPDATE 1` and open the app again. To update
-  by hand, run `git pull`, `npm install` and `npm run db:refresh`.
+- **Updates arrive as releases.** On Windows, each start through the shortcut checks
+  GitHub for a newer **release** and moves to it, never touching your data. Work in
+  progress between releases doesn't reach you. A copy you've customized doesn't update
+  itself (see [Making it yours](#making-it-yours)). To turn updates off, run
+  `setx RAPONIBERG_NO_UPDATE 1` and open the app again. To update by hand:
+  `git fetch --tags`, then `git merge <newest vX.Y.Z>`, `npm install` and
+  `npm run db:refresh`.
+
+## Making it yours
+
+Raponiberg is meant to be customized. Your copy is yours: change any page, rule or
+calculation, add a parser for your bank, or remove what you don't use. This repository
+doesn't take contributions back (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
+- **Commit your changes with git** (`git add -A`, then `git commit -m "my change"`) so you
+  can always undo them.
+- **Once you commit your own changes, updates stop.** The desktop shortcut sees commits of
+  your own and stops updating itself, so nothing of yours is ever overwritten.
+  `data/logs/launcher.log` says so on each start.
+- **To bring in a later release anyway**, merge it into your copy and fix any conflicts
+  where you and the release changed the same lines:
+
+  ```bash
+  git fetch --tags
+  git merge v0.2.0
+  npm install
+  npm run db:refresh
+  ```
+
+- **Publishing your copy** (to GitHub, or as a fork) is fine, but keep your data out of
+  it. `data/` and `.env` are never included, and `npm run setup` turns on a check that
+  runs before every `git push`. It stops the push if your own names, account numbers or
+  amounts appear in the code. Use made-up values in tests, and screenshots from demo mode.
+  When in doubt, keep the repository private.
+- **The license still applies to your copy:** keep the name Raponiberg, and don't make
+  money from it. AI coding assistants pick up these rules from [AGENTS.md](AGENTS.md).
 
 ## Demo mode
 
@@ -152,11 +187,11 @@ npm run desktop:shortcut   # the "Raponiberg" shortcut on your Desktop
 npm run logon:register     # optional: also start it at Windows sign-in
 ```
 
-Double-click **Raponiberg**. When the server isn't running, it first pulls the latest
-code (`git pull --ff-only`, skipped when `RAPONIBERG_NO_UPDATE` is set), backs up if
-anything new arrived, and reinstalls, migrates or rebuilds whatever changed. Then it starts
-the server with no console window and opens your browser. Offline, or with a failed pull,
-it just starts the version already there. While it works, a small loading window shows
+Double-click **Raponiberg**. When the server isn't running, it first updates to the newest
+release (see [Your data](#your-data)), backs up if anything new arrived, and reinstalls,
+migrates or rebuilds whatever changed. Then it starts the server with no console window
+and opens your browser. Offline, or when GitHub doesn't answer, it just starts the version
+already there. While it works, a small loading window shows
 each step with a progress bar. Close the app with the **power button** in its top bar
 (it backs up first); opening it again picks up updates. Logs go to `data/logs/`
 (`launcher.log` has the summary).

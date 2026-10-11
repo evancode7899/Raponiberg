@@ -249,11 +249,58 @@ if (-not $npmCommand) {
 }
 
 # Updates arrive on a cold start: closing the app with its power button and opening it
-# again pulls the latest code from GitHub, and the steps below install, migrate and
-# rebuild whatever changed. Fast-forward only, so local work is never overwritten; offline,
-# a failed pull or a skipped update all just start the version already here.
-# Pulls only on main with no uncommitted edits to tracked files, so work in progress in this
-# folder is never moved; RAPONIBERG_NO_UPDATE=1 stays on the current version. Skips are logged.
+# again fetches from GitHub and fast-forwards to the version this copy follows, and the
+# steps below install, migrate and rebuild whatever changed. Which version is
+# UPDATE_CHANNEL (in .env, or the environment):
+#   release (the default) - the newest release tag (v1.2.3), so a copy only moves when the
+#                           owner publishes a release;
+#   main                  - every merged change (the owner's own copy).
+# Fast-forward only, so local work is never overwritten; offline, a failed fetch or a
+# skipped update all just start the version already here. Updates only on main with no
+# uncommitted edits to tracked files, and never in a customized copy (one with commits of
+# its own, which is its owner's to update now); RAPONIBERG_NO_UPDATE=1 stays on the
+# current version. Skips are logged.
+function Get-Setting([string]$Name, [string]$Default) {
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ($value) { return $value.Trim() }
+  $envFile = Join-Path $ProjectRoot ".env"
+  if (Test-Path $envFile) {
+    foreach ($line in Get-Content $envFile) {
+      if ($line -match ('^\s*' + $Name + '\s*=\s*["'']?([^"''#]*)["'']?\s*(#.*)?$')) { return $Matches[1].Trim() }
+    }
+  }
+  return $Default
+}
+
+# Runs one hidden git command in the project, its output in update.*.log; returns its exit
+# code, or -1 when it ran past the timeout (GitHub not answering).
+function Invoke-GitQuiet([string[]]$GitArgs, [int]$TimeoutMs = 60000) {
+  $p = Start-Process -FilePath $git.Source -ArgumentList $GitArgs -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput (Join-Path $LogDir "update.out.log") -RedirectStandardError (Join-Path $LogDir "update.err.log")
+  $null = $p.Handle  # keeps ExitCode readable after the process ends
+  if (-not $p.WaitForExit($TimeoutMs)) {
+    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    return -1
+  }
+  return $p.ExitCode
+}
+
+# Fetches, then works out the update: the fetch's exit code, how many commits only this
+# copy has (more than 0: customized, and its owner's to update now), and the version to
+# fast-forward to - origin/main, or the newest vX.Y.Z tag; $null when there's none.
+function Find-UpdateTarget([string]$Channel) {
+  $result = @{ Fetch = (Invoke-GitQuiet @("fetch", "--quiet", "--tags", "origin")); Own = 0; Target = $null }
+  if ($result.Fetch -ne 0) { return $result }
+  $result.Own = [int](& $git.Source -C $ProjectRoot rev-list --count HEAD --not --remotes=origin --tags 2>$null)
+  if ($Channel -eq "main") {
+    $result.Target = "origin/main"
+  } else {
+    $result.Target = & $git.Source -C $ProjectRoot tag --list "v*" --sort=-v:refname 2>$null |
+      Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1
+  }
+  return $result
+}
+
 function Test-ShouldUpdate {
   if ($env:RAPONIBERG_NO_UPDATE) { Write-Log "Update: skipped (RAPONIBERG_NO_UPDATE is set)"; return $false }
   $branch = (& $git.Source -C $ProjectRoot rev-parse --abbrev-ref HEAD 2>$null)
@@ -273,17 +320,25 @@ if ($JustUpdated) {
   Set-SplashDetail $script:Splash "Downloaded the latest version"
 } elseif ($git -and (Test-Path (Join-Path $ProjectRoot ".git")) -and (Test-ShouldUpdate)) {
   $env:GIT_TERMINAL_PROMPT = "0"
+  $channel = (Get-Setting "UPDATE_CHANNEL" "release").ToLowerInvariant()
   $before = (& $git.Source rev-parse HEAD 2>$null)
-  $pull = Start-Process -FilePath $git.Source -ArgumentList "pull", "--ff-only" -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru `
-    -RedirectStandardOutput (Join-Path $LogDir "update.out.log") -RedirectStandardError (Join-Path $LogDir "update.err.log")
-  $null = $pull.Handle  # keeps ExitCode readable after the process ends
-  if (-not $pull.WaitForExit(60000)) {
-    Stop-Process -Id $pull.Id -Force -ErrorAction SilentlyContinue
-    Write-Log "Update: git pull took over 60 seconds; starting the version already here"
+  $u = Find-UpdateTarget $channel
+  $fetch = $u.Fetch; $own = $u.Own; $target = $u.Target
+  if ($fetch -eq -1) {
+    Write-Log "Update: git fetch took over 60 seconds; starting the version already here"
     Set-SplashDetail $script:Splash "GitHub didn't answer in time; starting the version already here"
-  } elseif ($pull.ExitCode -ne 0) {
-    Write-Log "Update: git pull failed (exit $($pull.ExitCode)); starting the version already here (see update.err.log)"
+  } elseif ($fetch -ne 0) {
+    Write-Log "Update: git fetch failed (exit $fetch); starting the version already here (see update.err.log)"
     Set-SplashDetail $script:Splash "Couldn't reach GitHub; starting the version already here"
+  } elseif ($own -gt 0) {
+    Write-Log "Update: skipped (this copy has $own commit(s) of its own; customized copies update by hand: git merge <release tag>)"
+    Set-SplashDetail $script:Splash "This copy has your own changes, so it doesn't update itself"
+  } elseif (-not $target) {
+    Write-Log "Update: no release published yet (channel '$channel'); starting the version already here"
+    Set-SplashDetail $script:Splash "No release published yet; using the version already here"
+  } elseif ((Invoke-GitQuiet @("merge", "--ff-only", "--quiet", $target) 30000) -ne 0) {
+    Write-Log "Update: couldn't fast-forward to $target; starting the version already here (see update.err.log)"
+    Set-SplashDetail $script:Splash "Couldn't apply the update; starting the version already here"
   } else {
     $after = (& $git.Source rev-parse HEAD 2>$null)
     if ($after -ne $before) {
