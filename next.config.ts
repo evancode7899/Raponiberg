@@ -5,8 +5,9 @@ const nextConfig: NextConfig = {
   // into .next when the build succeeds, so a broken build never takes away the last
   // working version of the app.
   distDir: process.env.NEXT_BUILD_DIR || ".next",
-  // pdf-parse and pdf.js break when webpack bundles them ("Object.defineProperty called on
-  // non-object"); load them from node_modules at runtime instead.
+  // pdf-parse and pdf.js break when bundled ("Object.defineProperty called on non-object",
+  // first seen under webpack); load them from node_modules at runtime instead. Proven under
+  // Turbopack (the build default) by re-reading a real statement of every parser's kind.
   serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
   // Integrity moved into Statements (the Issues tab); old links and bookmarks land there.
   async redirects() {

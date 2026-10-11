@@ -264,6 +264,7 @@ To publish a copy with no history, see
 | Task | Command / URL |
 |------|----------------|
 | Development server | `npm run dev` |
+| Production build (Turbopack; webpack fallback: `npm run build:webpack`, `npm run dev:webpack`) | `npm run build` |
 | DB browser | `npm run db:studio` (or Settings › Data › Database browser) |
 | Local DB copy (checkpoint + integrity + copy into `data/backups/`) | `npm run db:backup` |
 | Migrate after pulling code | `npm run db:refresh` |
