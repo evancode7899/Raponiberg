@@ -13,6 +13,22 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{ source: "/integrity", destination: "/statements?tab=issues", permanent: false }];
   },
+  // No other site may show the app inside a frame (clickjacking: tricking a click on a
+  // hidden Raponiberg button), browsers don't guess file types, and links out of the app
+  // don't tell the next site which page they came from.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+    ];
+  },
   experimental: {
     optimizePackageImports: ["recharts"],
   },
