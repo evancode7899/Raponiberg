@@ -9,14 +9,18 @@ export function formatIntegerDisplay(n: number): string {
   return intFormatter.format(Math.trunc(n));
 }
 
-/** Strip grouping; keep optional leading minus; digits only for integer mode. */
+/**
+ * Strip grouping and symbols; keep an optional leading minus; round to a whole number. A
+ * decimal point is read as one ("1,234.56" is 1,235), never dropped (which would make it
+ * 123,456).
+ */
 export function parseIntegerInput(raw: string): number {
   const s = raw.replace(/,/g, "").trim();
   if (s === "" || s === "-") {
     return 0;
   }
-  const n = parseInt(s.replace(/[^\d-]/g, "").replace(/(?!^)-/g, ""), 10);
-  return Number.isFinite(n) ? n : 0;
+  const n = parseFloat(s.replace(/[^\d.-]/g, "").replace(/(?!^)-/g, ""));
+  return Number.isFinite(n) ? Math.round(n) + 0 : 0;
 }
 
 export function clampInt(n: number, min?: number, max?: number): number {

@@ -12,6 +12,13 @@ import {
  */
 const DEFAULT_DEBOUNCE_MS = 0;
 
+/**
+ * Size used before the container is first measured. Recharts' own default (-1 × -1)
+ * logs a "width(-1) and height(-1) of chart should be greater than 0" warning on every
+ * chart's first render; the real size replaces this one as soon as it is measured.
+ */
+const INITIAL_DIMENSION = { width: 1, height: 1 };
+
 export function RechartsResponsive({
   debounce = DEFAULT_DEBOUNCE_MS,
   children,
@@ -24,6 +31,7 @@ export function RechartsResponsive({
       width="100%"
       height="100%"
       debounce={debounce}
+      initialDimension={INITIAL_DIMENSION}
       {...rest}
     >
       {children}

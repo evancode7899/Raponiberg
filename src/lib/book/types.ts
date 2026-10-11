@@ -106,7 +106,8 @@ export type Inference = {
   scope?: Pick<FindingScope, "personId" | "employerKey" | "from" | "to">;
 };
 
-export type CheckResult = CheckDef & { passed: number; failed: number; missing: number; inferred: number; accepted: number };
+/** `failed` and `missing` count findings inside the data edge; `awaiting`, those past it (statements still on their way). */
+export type CheckResult = CheckDef & { passed: number; failed: number; missing: number; awaiting: number; inferred: number; accepted: number };
 
 /** An open finding an exception covers; `exceptionId` is the exception's own id (they differ after an account is reissued). */
 export type AcceptedFinding = Finding & { exceptionId: string; note: string; acceptedAt: string };

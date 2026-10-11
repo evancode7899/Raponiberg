@@ -1,10 +1,10 @@
 "use client";
 
-import { clearCachedResponses } from "@/components/ledger/useApi";
+import { apiSecretHeaders, clearCachedResponses } from "@/components/ledger/useApi";
 import { commandForPath, NAV_GROUPS, TERMINAL_COMMANDS, type TerminalCommand } from "@/components/shell/terminalCommands";
 import { isUnlocked, LockScreen, setUnlocked } from "@/components/shell/LockScreen";
 import { TerminalCommandBar } from "@/components/shell/TerminalCommandBar";
-import { applyTheme, isAppTheme, THEMES, type AppTheme } from "@/lib/preferences";
+import { applyTheme, isAppTheme, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -23,14 +23,7 @@ type Attention = { needsReview: number; integrityFailing: number; integrityMissi
 function useAttention(pathname: string): Attention | null {
   const [a, setA] = useState<Attention | null>(null);
   const load = useCallback(() => {
-    const headers = new Headers();
-    try {
-      const s = sessionStorage.getItem("pf-api-secret");
-      if (s) headers.set("x-api-secret", s);
-    } catch {
-      /* storage unavailable */
-    }
-    fetch("/api/ledger/attention", { headers })
+    fetch("/api/ledger/attention", { headers: apiSecretHeaders() })
       .then((r) => (r.ok ? r.json() : null))
       .then((j: Attention | null) => j && setA(j))
       .catch(() => {});
@@ -84,6 +77,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     setSeenPath(pathname);
     setMobileOpen(false);
   }
+  // Settings › General changes the theme too; keep the top bar's label in step.
+  useEffect(() => {
+    const onTheme = (e: Event) => setTheme((e as CustomEvent<AppTheme>).detail);
+    window.addEventListener(THEME_CHANGED_EVENT, onTheme);
+    return () => window.removeEventListener(THEME_CHANGED_EVENT, onTheme);
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMobileOpen(false);
     window.addEventListener("keydown", onKey);
@@ -101,16 +100,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
   };
 
-  const cycleTheme = () => {
-    const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]!;
-    setTheme(next);
-    applyTheme(next);
-  };
+  const cycleTheme = () => applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]!);
 
   const handleShutdown = useCallback(async () => {
     if (!window.confirm("Shut down Raponiberg? It backs up first. Open Raponiberg on the Desktop to start it again; it picks up any updates when it starts.")) return;
     try {
-      const res = await fetch("/api/system/shutdown", { method: "POST" });
+      const res = await fetch("/api/system/shutdown", { method: "POST", headers: apiSecretHeaders() });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         window.alert(body?.error ? `Shutdown failed: ${body.error}` : "Shutdown failed.");

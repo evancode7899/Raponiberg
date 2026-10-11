@@ -112,7 +112,9 @@ export function RangeSlider({
   const commit = (raw: string) => {
     setDraft(null);
     const n = parseTyped(raw, spec.unit);
-    if (n !== null) onChange(Math.max(0, spec.unit === "years" ? Math.round(n) : n));
+    // Money and rates may be typed past the track; a span of years stops at its end (the
+    // models step through every month of it, so a typo like 99999 would hang the page).
+    if (n !== null) onChange(Math.max(0, spec.unit === "years" ? Math.min(spec.max, Math.round(n)) : n));
   };
 
   return (

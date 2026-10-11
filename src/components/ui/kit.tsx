@@ -142,9 +142,9 @@ export function MoneyInput({
   const [draft, setDraft] = useState<string | null>(null);
   const text = draft ?? fmtDollars(cents);
   const commit = () => {
-    const raw = text.replace(allowNegative ? /[^\d-]/g : /[^\d]/g, "");
-    if (raw === "" || raw === "-") onChange(nullable ? null : 0);
-    else onChange(Number(raw) * 100);
+    // Whole dollars: "1,234.56" is $1,235 (a dropped decimal point would make it $123,456).
+    const n = parseFloat(text.replace(/[^\d.-]/g, "").replace(allowNegative ? /(?!^)-/g : /-/g, ""));
+    onChange(Number.isFinite(n) ? Math.round(n) * 100 + 0 : nullable ? null : 0);
   };
   const overridden = nullable && cents != null;
   return (
@@ -753,6 +753,7 @@ export async function downloadResponse(res: Response, fallbackName: string): Pro
   a.href = url;
   a.download = name;
   a.click();
-  URL.revokeObjectURL(url);
+  // Revoked once the browser has started the download (revoking at once can cancel it in some browsers).
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
   return name;
 }

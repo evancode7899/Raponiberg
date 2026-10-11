@@ -1,7 +1,7 @@
 import { exceptionMatches } from "../exceptions.ts";
 import { CHECKS, type AcceptedFinding, type CheckId, type CheckResult, type Finding, type Inference, type IntegrityReport, type StandingException } from "../types.ts";
 
-type Tally = { passed: number; failed: number; missing: number; inferred: number; accepted: number };
+type Tally = { passed: number; failed: number; missing: number; awaiting: number; inferred: number; accepted: number };
 
 /** The first day a finding is about: its own date, else the earliest window it blocks. */
 export const findingStart = (f: Finding) => f.date ?? [f.scope, ...(f.extraScopes ?? [])].map((s) => s.from).sort()[0]!;
@@ -25,7 +25,7 @@ export class Collector {
 
   private tally(id: CheckId) {
     let c = this.counts.get(id);
-    if (!c) this.counts.set(id, (c = { passed: 0, failed: 0, missing: 0, inferred: 0, accepted: 0 }));
+    if (!c) this.counts.set(id, (c = { passed: 0, failed: 0, missing: 0, awaiting: 0, inferred: 0, accepted: 0 }));
     return c;
   }
   pass(id: CheckId, n = 1) {
@@ -40,8 +40,11 @@ export class Collector {
       this.tally(f.check).accepted++;
       return;
     }
-    this.findings.push(this.edge && findingStart(f) > this.edge ? { ...f, atEdge: true } : f);
-    if (f.status === "FAIL") this.tally(f.check).failed++;
+    const atEdge = !!this.edge && findingStart(f) > this.edge;
+    this.findings.push(atEdge ? { ...f, atEdge: true } : f);
+    // Past the data edge it's a statement still on its way, not a check that fails.
+    if (atEdge) this.tally(f.check).awaiting++;
+    else if (f.status === "FAIL") this.tally(f.check).failed++;
     else this.tally(f.check).missing++;
   }
   infer(i: Inference) {
@@ -49,7 +52,7 @@ export class Collector {
     this.tally(i.check).inferred++;
   }
   report(): IntegrityReport {
-    const checks: CheckResult[] = CHECKS.map((d) => ({ ...d, ...(this.counts.get(d.id) ?? { passed: 0, failed: 0, missing: 0, inferred: 0, accepted: 0 }) }));
+    const checks: CheckResult[] = CHECKS.map((d) => ({ ...d, ...(this.counts.get(d.id) ?? { passed: 0, failed: 0, missing: 0, awaiting: 0, inferred: 0, accepted: 0 }) }));
     const order = (f: Finding) => (f.status === "FAIL" ? 0 : 1);
     return {
       checks,

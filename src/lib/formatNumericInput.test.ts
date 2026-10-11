@@ -24,6 +24,12 @@ describe("parseIntegerInput", () => {
   it("drops leading zeros in parse", () => {
     expect(parseIntegerInput("0004500")).toBe(4500);
   });
+
+  it("reads a decimal point instead of dropping it", () => {
+    expect(parseIntegerInput("1,234.56")).toBe(1235);
+    expect(parseIntegerInput("$1,234.4")).toBe(1234);
+    expect(parseIntegerInput("-12.5")).toBe(-12);
+  });
 });
 
 describe("clampInt", () => {

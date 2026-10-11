@@ -101,7 +101,9 @@ export function expandLumps(rows: LumpRow[], startYear: number, startMonth: numb
   const out: Lump[] = [];
   for (const r of rows) {
     if (!(r.amount > 0)) continue;
-    const last = r.repeat ? Math.max(r.year, r.untilYear) : r.year;
+    // Nothing past a century of payments matters (the horizon tops out well before), and a
+    // typo in "until" mustn't loop through millions of years.
+    const last = Math.min(r.repeat ? Math.max(r.year, r.untilYear) : r.year, startYear + 100);
     for (let y = r.year; y <= last; y++) {
       const month = calendarToLoanPaymentMonth(y, r.month, startYear, startMonth);
       if (month >= 1) out.push({ id: r.id, month, amount: r.amount });
