@@ -12,6 +12,8 @@ updates:
       security:
         applies-to: security-updates
         patterns: ["*"]
+  # Workflows pin each action to a commit SHA (a moved tag can't swap in other code);
+  # Dependabot updates the SHA and its "# vX.Y.Z" comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
