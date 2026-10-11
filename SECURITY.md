@@ -5,7 +5,8 @@
 Raponiberg is built to keep your financial data on your own computer:
 
 - It runs a server that only your computer can reach (`127.0.0.1`). Other devices on your
-  network can't open it.
+  network can't open it. Websites open in your browser can't use it either: it refuses
+  requests addressed to any other name (DNS rebinding) and API calls another site sends.
 - It never logs in to banks, and its code never sends your data anywhere. Its only
   network call is the desktop shortcut's update check against GitHub. (Next.js, the
   framework it's built on, sends anonymous build statistics that contain none of your
