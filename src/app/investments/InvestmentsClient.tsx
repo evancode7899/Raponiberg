@@ -189,7 +189,12 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
 
 function TargetCard({ data, save, saving }: { data: Data; save: (s: InvestmentSettings) => void; saving: boolean }) {
   const [draft, setDraft] = useState<Weights>(data.settings.target ?? {});
-  useEffect(() => setDraft(data.settings.target ?? {}), [data.settings.target]);
+  // A newly saved target resets the draft (adjusted during render, not in an effect).
+  const [seen, setSeen] = useState(data.settings.target);
+  if (data.settings.target !== seen) {
+    setSeen(data.settings.target);
+    setDraft(data.settings.target ?? {});
+  }
   const sum = Object.values(draft).reduce((s, v) => s + (v ?? 0), 0);
   const drift = data.report.drift;
   return (

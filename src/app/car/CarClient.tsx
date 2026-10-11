@@ -52,6 +52,7 @@ export type CarCtx = {
 function useCarParam(cars: Car[] | undefined): [string | null, (id: string) => void] {
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the server render can't see the URL, so reading it during render would mismatch hydration
     setPicked(new URLSearchParams(window.location.search).get("car"));
   }, []);
   const set = (id: string) => {

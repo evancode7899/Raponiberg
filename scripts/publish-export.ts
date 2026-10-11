@@ -69,7 +69,9 @@ const state: RepoState = {
 const why = refusal(state);
 if (why) fail(why);
 
-const npm = (args: string[]) => spawnSync("npm", args, { cwd: ROOT, stdio: "inherit", shell: true }).status === 0;
+// One command string: Node deprecates separate args with shell: true (DEP0190). The only
+// argument with spaces in it, the target folder, is quoted where it's added.
+const npm = (args: string[]) => spawnSync(["npm", ...args].join(" "), { cwd: ROOT, stdio: "inherit", shell: true }).status === 0;
 console.log("Checking this repository for personal data…");
 if (!npm(["run", "privacy:check"])) fail("Make the code generic where it's flagged above, commit, and export again.");
 

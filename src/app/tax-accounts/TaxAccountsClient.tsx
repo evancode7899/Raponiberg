@@ -267,7 +267,12 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
 
 function Inputs({ data, save }: { data: Data; save: (s: RetirementSettings) => void }) {
   const [draft, setDraft] = useState(data.settings);
-  useEffect(() => setDraft(data.settings), [data.settings]);
+  // Newly saved settings reset the draft (adjusted during render, not in an effect).
+  const [seen, setSeen] = useState(data.settings);
+  if (data.settings !== seen) {
+    setSeen(data.settings);
+    setDraft(data.settings);
+  }
   const person = (id: string) => draft.people[id] ?? EMPTY_PERSON;
   const set = (id: string, patch: Partial<typeof EMPTY_PERSON>) => setDraft({ ...draft, people: { ...draft.people, [id]: { ...person(id), ...patch } } });
   return (

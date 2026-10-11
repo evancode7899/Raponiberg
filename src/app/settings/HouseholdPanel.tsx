@@ -10,9 +10,13 @@ import { useEffect, useMemo, useState } from "react";
 /** Keeps the raw text while typing; commits only a complete, plausible year (or clears when emptied). */
 function BirthYearInput({ value, onCommit }: { value: number | undefined; onCommit: (n: number | undefined) => void }) {
   const [text, setText] = useState(value === undefined ? "" : String(value));
-  useEffect(() => {
+  // When the saved year changes from outside, show it, unless the text already says it.
+  // Adjusted during render (React's pattern for state that follows a prop), not in an effect.
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
     setText((cur) => (Number(cur) === value || (cur.trim() === "" && value === undefined) ? cur : value === undefined ? "" : String(value)));
-  }, [value]);
+  }
   return (
     <input
       inputMode="numeric"

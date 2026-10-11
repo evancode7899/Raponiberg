@@ -16,7 +16,7 @@ import {
 } from "@/lib/tax/profile";
 import { inputCls, PercentInput, selectCls } from "@/components/ui/kit";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { TaxResponse } from "./TaxClient";
 import { formatDate, MoneyField, NullableMoneyField, usd } from "./taxUi";
 
@@ -45,7 +45,13 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
   const [draft, setDraft] = useState<TaxProfile>(() => withYear(r.profile, r.year, r.inputs));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ tone: "good" | "warn"; text: string } | null>(null);
-  useEffect(() => setDraft(withYear(r.profile, r.year, r.inputs)), [r.profile, r.year, r.inputs]);
+  // A new profile, year or inputs from the server resets the draft (adjusted during render,
+  // not in an effect).
+  const [seen, setSeen] = useState([r.profile, r.year, r.inputs] as const);
+  if (seen[0] !== r.profile || seen[1] !== r.year || seen[2] !== r.inputs) {
+    setSeen([r.profile, r.year, r.inputs]);
+    setDraft(withYear(r.profile, r.year, r.inputs));
+  }
   const y = draft.years[String(r.year)]!;
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(withYear(r.profile, r.year, r.inputs)), [draft, r]);
 

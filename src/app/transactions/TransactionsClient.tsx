@@ -3,6 +3,7 @@
 import { TransactionTable, type TxnRow } from "@/components/ledger/TransactionTable";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { useApi } from "@/components/ledger/useApi";
+import { useChanged } from "@/components/useChanged";
 import { btn, Card, EmptyState, ErrorNote, Field, inputCls, Loading, PageBody, selectCls } from "@/components/ui/kit";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { addDays, startOfMonth } from "@/lib/dates/isoDate";
@@ -62,6 +63,7 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
 
   useEffect(() => {
     const init = readUrl();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the server render can't see the URL, so reading it during render would mismatch hydration
     setF(init);
     setQDraft(init.q);
   }, []);
@@ -98,9 +100,9 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
     window.history.replaceState(null, "", url);
   }, [query]);
 
+  if (useChanged([api, query, limit, version]) && api.ready && query) setLoading(true);
   useEffect(() => {
     if (!api.ready || !query) return;
-    setLoading(true);
     const sp = new URLSearchParams(query);
     sp.set("limit", String(limit));
     api

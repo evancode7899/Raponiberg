@@ -77,6 +77,7 @@ const INITIAL: ChartPalette = {
 export function useChartPalette(): ChartPalette {
   const [p, setP] = useState<ChartPalette>(INITIAL);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial read of the theme's CSS colors from the DOM; the MutationObserver below keeps them in sync
     setP(fromDom());
     const obs = new MutationObserver(() => setP(fromDom()));
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

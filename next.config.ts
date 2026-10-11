@@ -16,6 +16,16 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["recharts"],
   },
+  turbopack: {
+    // The data stores read files under data/ (DATA_DIR) at run time, a path the build can't
+    // see; Turbopack warns that this traces the whole project, which only matters for a
+    // size-limited cloud deployment. Raponiberg runs locally from its own folder.
+    ignoreIssue: [{ path: "**", title: /Dynamic filesystem access causes tracing of the whole project/ }],
+  },
+  // Next.js 16.2+ otherwise writes a managed block into AGENTS.md whenever `next dev`
+  // detects an AI coding agent. AGENTS.md carries the license rules and stays the owner's
+  // alone, and an edited tracked file would also block the launcher's updates.
+  agentRules: false,
 };
 
 export default nextConfig;

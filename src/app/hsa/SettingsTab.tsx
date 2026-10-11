@@ -4,7 +4,7 @@ import { btn, Card, Field, inputCls } from "@/components/ui/kit";
 import { formatPercentRatio } from "@/lib/formatMoney";
 import type { HsaReport } from "@/lib/hsa/report";
 import type { HsaSettings } from "@/lib/hsa/store";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Send } from "./HsaClient";
 
 const pct = (v: number | null) => (v == null ? "" : String(+(v * 100).toFixed(2)));
@@ -15,12 +15,15 @@ export function SettingsTab({ r, send }: { r: HsaReport; send: Send }) {
   const [growth, setGrowth] = useState(pct(r.settings.growthRate));
   const [marginal, setMarginal] = useState(pct(r.settings.marginalRate));
   const [plan, setPlan] = useState(r.settings.planYear ? String(r.settings.planYear) : "");
-  useEffect(() => {
+  // New settings from the server reset the form (adjusted during render, not in an effect).
+  const [seen, setSeen] = useState(r.settings);
+  if (r.settings !== seen) {
+    setSeen(r.settings);
     setOpened(r.settings.openedOn ?? "");
     setGrowth(pct(r.settings.growthRate));
     setMarginal(pct(r.settings.marginalRate));
     setPlan(r.settings.planYear ? String(r.settings.planYear) : "");
-  }, [r.settings]);
+  }
 
   const save = () => {
     const settings: HsaSettings = { openedOn: opened || null, growthRate: ratio(growth), marginalRate: ratio(marginal), planYear: plan ? Number(plan) : null };

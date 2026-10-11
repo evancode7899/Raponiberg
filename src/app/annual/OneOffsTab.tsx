@@ -7,7 +7,7 @@ import { TAX_YEARS } from "@/lib/tax/params";
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import type { FinancialProfileSettings } from "@/lib/profile/settings";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { pct, usd } from "./profileUi";
 
 /**
@@ -29,10 +29,13 @@ export function OneOffsTab({
   const [cats, setCats] = useState(r.settings.nonRecurringCategories);
   const [status, setStatus] = useState<{ tone: "pos" | "neg" | "muted"; text: string } | null>(null);
   const queue = useRef(Promise.resolve());
-  useEffect(() => {
+  // New settings from the server reset the lists (adjusted during render, not in an effect).
+  const [seen, setSeen] = useState(r.settings);
+  if (r.settings !== seen) {
+    setSeen(r.settings);
     setOneOffs(r.settings.oneOffs);
     setCats(r.settings.nonRecurringCategories);
-  }, [r.settings]);
+  }
 
   /** Saves in order, so quick clicks can't land out of sequence. */
   const persist = (patch: Partial<FinancialProfileSettings>) => {

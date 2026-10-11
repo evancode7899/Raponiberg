@@ -39,6 +39,7 @@ export function useApi(requiresApiSecret: boolean) {
   const [secret, setSecretState] = useState("");
   useEffect(() => {
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: sessionStorage doesn't exist in the server render (hydration-safe)
       setSecretState(sessionStorage.getItem(STORAGE_KEY) ?? "");
     } catch {
       /* storage unavailable */

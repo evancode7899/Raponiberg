@@ -58,6 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unlocked = isUnlocked();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the unlock flag lives in sessionStorage, which the server render can't see
     if (unlocked) setLocked(false);
     // The demo instance has no lock screen; the real app shows it unless this tab is unlocked.
     fetch("/api/app-password")
@@ -77,7 +78,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     const t = document.documentElement.getAttribute("data-theme");
     if (isAppTheme(t)) setTheme(t);
   }, []);
-  useEffect(() => setMobileOpen(false), [pathname]);
+  // Moving to another page closes the mobile menu (adjusted during render, not in an effect).
+  const [seenPath, setSeenPath] = useState(pathname);
+  if (pathname !== seenPath) {
+    setSeenPath(pathname);
+    setMobileOpen(false);
+  }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMobileOpen(false);
     window.addEventListener("keydown", onKey);
