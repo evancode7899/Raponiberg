@@ -88,31 +88,36 @@ the app ever won't load, `npm run app:stop` stops the server.
 
 Which version a copy follows is `UPDATE_CHANNEL` in `.env`:
 
-- `release` (the default, for everyone else): the newest release tag. Merged work reaches
-  other people only when you publish a release.
-- `main` (the maintainer's copy): every merged change. **On a new computer, add
-  `UPDATE_CHANNEL="main"` to `.env` after `npm run setup`**, because `.env` isn't part of the
-  backup.
+- `release` (the default, for everyone else): the newest release tag.
+- `main` (the maintainer's copy): every merged change, a few minutes before its release.
+  **On a new computer, add `UPDATE_CHANNEL="main"` to `.env` after `npm run setup`**,
+  because `.env` isn't part of the backup.
 
 A copy with commits of its own (customized) never updates itself.
 
-## 4a. Releasing an update
+## 4a. Releases
 
-When `main` holds changes worth giving everyone, and CI is green on it:
+**Every merge to `main` is released automatically.** When CI passes on `main`, the Release
+workflow (`.github/workflows/release.yml`) tags that exact commit with the next patch
+version (v0.2.0 → v0.2.1), and publishes a GitHub release whose notes list the merged pull
+requests. Everyone on the `release` channel moves to it the next time they open the app.
 
-1. Bump `"version"` in `package.json` (for example `0.1.0` to `0.2.0`), then run
-   `npm install` so `package-lock.json` matches. Merge that through a pull request.
-2. Publish the release from the updated `main`:
+- Only a commit that passed CI is released, and only the newest one: several quick merges
+  become one release.
+- **A bigger version jump** (a new feature set, a breaking change) is a hand-made release of
+  the merged commit. The workflow then skips that commit:
 
-   ```powershell
-   gh release create v0.2.0 --target main --generate-notes
-   ```
+  ```powershell
+  gh release create v0.3.0 --target <full commit id> --generate-notes
+  ```
 
-   Tags must look like `vMAJOR.MINOR.PATCH`. The launcher ignores anything else, including
-   pre-releases like `v0.3.0-rc1`.
-
-Everyone on the `release` channel moves to it the next time they open the app. A release
-can't be quietly taken back: if one is broken, fix it on `main` and release a new version.
+  `--target` needs the full 40-character commit id, from `git rev-parse main`.
+- The release version is the git tag. `package.json`'s `"version"` isn't bumped, because a
+  `package.json` change makes every launcher reinstall its dependencies.
+- Tags must look like `vMAJOR.MINOR.PATCH`. The launcher ignores anything else, including
+  pre-releases like `v0.3.0-rc1`.
+- A release can't be quietly taken back: if one is broken, fix it on `main`, and the fix
+  ships as the next release.
 
 ## 5. Database notes
 
