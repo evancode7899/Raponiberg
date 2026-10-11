@@ -40,7 +40,8 @@ npm run setup
 2. restores the newest snapshot from `2. Web App Backup` (the database, every decision file in
    `data/`, and the stored statement PDFs) and sets `BACKUP_DIR` / `STATEMENTS_DIR` in `.env`;
 3. brings the database up to the current schema (`npm run db:refresh`);
-4. creates the **Raponiberg** shortcut on the Desktop.
+4. turns on the privacy check before every `git push` (`.githooks/pre-push`);
+5. creates the **Raponiberg** shortcut on the Desktop.
 
 Then double-click **Raponiberg**. Optional: `npm run logon:register` starts it at Windows sign-in.
 
@@ -79,10 +80,39 @@ before risky schema work; `npm run db:migrate:safe` does it automatically).
 ## 4. Updating
 
 Close the app with the **power button** in its top bar, then open **Raponiberg** again. Every
-start (when the server isn't already running) runs `git pull --ff-only`, backs up if new code
-arrived, then reinstalls dependencies, migrates and rebuilds only what changed. Offline, or a pull
-that can't fast-forward, just starts the version already there; `data\logs\launcher.log` and
-`update.err.log` say why. If the app ever won't load, `npm run app:stop` stops the server.
+start (when the server isn't already running) fetches from GitHub and fast-forwards to the
+version this copy follows. It backs up if new code arrived, then reinstalls dependencies,
+migrates and rebuilds only what changed. Offline, or an update that can't fast-forward, just
+starts the version already there; `data\logs\launcher.log` and `update.err.log` say why. If
+the app ever won't load, `npm run app:stop` stops the server.
+
+Which version a copy follows is `UPDATE_CHANNEL` in `.env`:
+
+- `release` (the default, for everyone else): the newest release tag. Merged work reaches
+  other people only when you publish a release.
+- `main` (the maintainer's copy): every merged change. **On a new computer, add
+  `UPDATE_CHANNEL="main"` to `.env` after `npm run setup`**, because `.env` isn't part of the
+  backup.
+
+A copy with commits of its own (customized) never updates itself.
+
+## 4a. Releasing an update
+
+When `main` holds changes worth giving everyone, and CI is green on it:
+
+1. Bump `"version"` in `package.json` (for example `0.1.0` to `0.2.0`), then run
+   `npm install` so `package-lock.json` matches. Merge that through a pull request.
+2. Publish the release from the updated `main`:
+
+   ```powershell
+   gh release create v0.2.0 --target main --generate-notes
+   ```
+
+   Tags must look like `vMAJOR.MINOR.PATCH`. The launcher ignores anything else, including
+   pre-releases like `v0.3.0-rc1`.
+
+Everyone on the `release` channel moves to it the next time they open the app. A release
+can't be quietly taken back: if one is broken, fix it on `main` and release a new version.
 
 ## 5. Database notes
 

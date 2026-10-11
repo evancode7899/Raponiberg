@@ -1,0 +1,17 @@
+# Line endings: the repository stores LF; working copies get LF too, whatever the
+# computer's core.autocrlf says, so diffs stay clean and there are no CRLF warnings.
+* text=auto eol=lf
+
+# Windows-only scripts keep Windows line endings (cmd and cscript expect them).
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
+
+# Git hooks run under sh, which breaks on CRLF.
+.githooks/* text eol=lf
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.pdf binary
