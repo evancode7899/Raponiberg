@@ -1,12 +1,12 @@
 {
   "name": "raponiberg",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
-    "dev": "next dev --turbo -H 127.0.0.1",
-    "dev:webpack": "next dev -H 127.0.0.1",
-    "build": "prisma generate && next build",
+    "dev": "next dev -H 127.0.0.1",
+    "dev:webpack": "next dev --webpack -H 127.0.0.1",
+    "build": "prisma generate && next build --webpack",
     "start": "next start -H 127.0.0.1",
     "lint": "eslint",
     "test": "vitest run",
@@ -38,20 +38,19 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
-    "next": "^15.5.26",
+    "next": "^16.4.0",
     "pdf-parse": "^2.4.5",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "recharts": "^3.8.1"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "eslint": "^9",
-    "eslint-config-next": "^15.5.26",
+    "eslint-config-next": "^16.4.0",
     "prisma": "^6.19.0",
     "tailwindcss": "^4",
     "typescript": "^5",
@@ -61,7 +60,6 @@
     "node": ">=22.18.0"
   },
   "overrides": {
-    "postcss": "^8.5.29",
     "deepmerge-ts": "^8.0.2"
   }
 }
