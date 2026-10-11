@@ -1,0 +1,50 @@
+# One of these shows for a few seconds halfway through each build (scripts\launcher-splash.ps1).
+# One line each, shown exactly as written, in the same style as the real progress notes.
+# Lines starting with # are ignored.
+Combobulating
+Microwaving
+Unentangling bosons
+Ovulating
+Pontificating
+Dewatering the flux capacitor
+Herding cats
+Reticulating splines
+Compounding interest
+Amortizing your patience over 30 years
+Reconciling the ledger with the universe
+Counting every penny twice
+Rebalancing the portfolio of bits
+Bribing the compiler
+Consulting the oracle
+Feeding the hamsters
+Polishing the pixels
+Teaching the semicolons some manners
+Asking the database nicely
+Defragmenting the vibes
+Calibrating the money printer
+Warming up the abacus
+Filing taxes on the electrons
+Proofing the sourdough
+Brewing coffee for the CPU
+Aligning the chakras of the CSS
+Reversing the polarity
+Dividing by zero, carefully
+Summoning the spreadsheet spirits
+Shaking the piggy bank
+Ironing the wrinkles out of spacetime
+Converting caffeine into code
+Tickling the transistors
+Untangling the Christmas lights
+Clipping coupons
+Diversifying the electrons
+Adjusting for inflation
+Discombobulating, then recombobulating
+Reading the terms and conditions
+Consulting the rubber duck
+Rehydrating the dehydrated water
+Herding the decimal points
+Defrosting the cold storage
+Locating the any key
+Negotiating with the hamsters' union
+Carrying the one
+Auditing the auditors

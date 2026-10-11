@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "cardholderNames": "(PAT|SAM) (Q )?(EXAMPLE|SAMPLE)",
+  "partner": {
+    "cardPattern": "\\bSAM\\b|SAMPLE",
+    "accountPattern": "TD BANK.*X+9999\\b",
+    "transferPattern": "ZELLE PAYMENT (FROM|TO) SAM\\b|SAMPLE"
+  },
+  "funds": [
+    {
+      "institution": "Example Partners",
+      "statementName": "Example Credit Fund II Feeder LP",
+      "accountName": "Example Credit Fund II Feeder LP (private credit)",
+      "wirePattern": "EXAMPLE CREDIT FUND"
+    }
+  ],
+  "merchantKeywords": {
+    "dining-places": "CORNER TRATTORIA|THE BLUE DOOR",
+    "housing": "MAPLE STREET PROPERTIES"
+  },
+  "mergeDate": "2024-06-01",
+  "taxYearWarnings": {
+    "2025": "Part of 2025 was lived in another state, which isn't modeled."
+  },
+  "privacyTerms": ["Pat", "Example", "Acme Corp", "Springfield"]
+}

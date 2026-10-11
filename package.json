@@ -1,0 +1,63 @@
+{
+  "name": "personal-finance-app",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "dev": "next dev --turbo -H 127.0.0.1",
+    "dev:webpack": "next dev -H 127.0.0.1",
+    "build": "prisma generate && next build",
+    "start": "next start -H 127.0.0.1",
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preinstall": "node scripts/check-node.mjs",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:refresh": "node scripts/rebaseline-database.mjs && prisma migrate deploy && prisma generate",
+    "db:backup": "node scripts/backup-database.mjs",
+    "backup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/backup.ts",
+    "restore": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/restore-backup.ts",
+    "privacy:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/privacy-check.ts",
+    "publish:export": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/publish-export.ts",
+    "setup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/setup.ts",
+    "demo": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/demo.ts",
+    "db:seed": "node scripts/seed-categories.mjs",
+    "statements:import": "node scripts/importStatements.ts",
+    "statements:check": "node scripts/ingestDryRun.ts",
+    "tax:documents": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/tax-documents.ts",
+    "db:migrate:safe": "npm run db:backup && prisma migrate dev",
+    "env:init": "node scripts/copy-env-if-missing.mjs",
+    "desktop:shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
+    "logon:register": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-logon-task.ps1",
+    "app:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-server.ps1",
+    "app:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-local-server.ps1"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "next": "^15.5.26",
+    "pdf-parse": "^2.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^3.8.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "^15.5.26",
+    "prisma": "^6.19.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

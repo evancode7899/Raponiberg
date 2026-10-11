@@ -1,0 +1,326 @@
+"use client";
+
+import { Badge, btn, Callout, Card, EmptyState, inputCls, Segmented, selectCls, table } from "@/components/ui/kit";
+import { formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { KIND_LABEL } from "@/lib/hsa/qualify";
+import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import type { Send } from "./HsaClient";
+
+type Status = "open" | "done" | "all";
+
+const FLAG_BADGE: Record<string, { tone: "warn" | "neg" | "neutral"; label: string; title: string }> = {
+  DUPLICATE: { tone: "warn", label: "duplicate?", title: "Another expense has the same date and amount. If it's the same bill logged twice, delete one." },
+  BEFORE_OPEN: { tone: "neg", label: "before HSA", title: "Paid before the HSA was opened (Settings): the IRS doesn't allow reimbursing it." },
+  PAID_ROW_MISSING: { tone: "neutral", label: "row gone", title: "The statement row this was tied to is no longer in the ledger (re-imported or deleted)." },
+};
+
+export function waitLabel(days: number): string {
+  if (days < 45) return `${days} day${days === 1 ? "" : "s"}`;
+  if (days < 365 * 2) return `${Math.round(days / 30.4)} months`;
+  return `${(days / 365.25).toFixed(1)} years`;
+}
+
+export function ReceiptsTab({
+  r,
+  send,
+  selected,
+  setSelected,
+  onAdd,
+  onEdit,
+  onImport,
+  onExport,
+  onReimburse,
+  goFound,
+}: {
+  r: HsaReport;
+  send: Send;
+  selected: Set<string>;
+  setSelected: Dispatch<SetStateAction<Set<string>>>;
+  onAdd: () => void;
+  onEdit: (id: string) => void;
+  onImport: () => void;
+  onExport: (openOnly: boolean) => void;
+  onReimburse: (ids: string[]) => void;
+  goFound: () => void;
+}) {
+  const [status, setStatus] = useState<Status>("open");
+  const [year, setYear] = useState("");
+  const [patient, setPatient] = useState("");
+  const [q, setQ] = useState("");
+
+  const years = useMemo(() => [...new Set(r.expenses.map((e) => e.date.slice(0, 4)))].sort().reverse(), [r.expenses]);
+  const shown = r.expenses.filter(
+    (e) =>
+      (status === "all" || (status === "open") === !e.reimbursement) &&
+      (!year || e.date.startsWith(year)) &&
+      (!patient || (e.patient || "Unassigned") === patient) &&
+      (!q || `${e.provider} ${e.notes} ${e.patient} ${KIND_LABEL[e.kind]}`.toLowerCase().includes(q.toLowerCase())),
+  );
+  const picked = r.expenses.filter((e) => selected.has(e.id));
+  const pickedCents = picked.reduce((s, e) => s + e.amountCents, 0);
+  const shownCents = shown.reduce((s, e) => s + e.amountCents, 0);
+  const allShownPicked = shown.length > 0 && shown.every((e) => selected.has(e.id));
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const dups = r.expenses.filter((e) => e.flags.includes("DUPLICATE"));
+  const early = r.expenses.filter((e) => e.flags.includes("BEFORE_OPEN"));
+  const likely = r.suggestions.filter((s) => s.tier === "LIKELY");
+
+  return (
+    <>
+      {dups.length > 0 && (
+        <Callout tone="warn" title={`${dups.length} expenses share a date and amount with another`}>
+          {[...new Set(dups.map((e) => `${e.date} ${formatUsdCents(e.amountCents)}`))].join(" · ")}. If one is the same bill logged twice (a copied row), delete it so it isn&apos;t reimbursed twice.
+        </Callout>
+      )}
+      {early.length > 0 && (
+        <Callout tone="bad" title={`${early.length} expense${early.length === 1 ? " was" : "s were"} paid before the HSA was opened`}>
+          Only expenses incurred after an HSA is established can be reimbursed from it. They&apos;re kept in the log but left out of the totals.
+        </Callout>
+      )}
+      {r.suggestions.length > 0 && (
+        <Callout
+          tone="info"
+          title={`${r.suggestions.length} medical charge${r.suggestions.length === 1 ? "" : "s"} in your statements ${r.suggestions.length === 1 ? "isn't" : "aren't"} in the log`}
+          action={
+            <button type="button" className={btn.secondary} onClick={goFound}>
+              Review
+            </button>
+          }
+        >
+          {[
+            likely.length > 0 && `${likely.length} look${likely.length === 1 ? "s" : ""} like qualified care (${usd0(likely.reduce((s, x) => s + x.amountCents, 0))})`,
+            r.suggestions.length > likely.length && `${r.suggestions.length - likely.length} ${r.suggestions.length - likely.length === 1 ? "is a" : "are"} drug-store purchase${r.suggestions.length - likely.length === 1 ? "" : "s"} to check against the receipt`,
+          ]
+            .filter(Boolean)
+            .join("; ")}
+          .
+        </Callout>
+      )}
+
+      <Card
+        title="Expense log"
+        subtitle="Every qualified medical bill you paid out of pocket. There's no deadline to reimburse one — keep the receipt and the HSA can pay you back tax-free years from now."
+        actions={
+          <>
+            <button type="button" className={btn.primary} onClick={onAdd}>
+              + Add expense
+            </button>
+            <button type="button" className={btn.secondary} onClick={onImport}>
+              Import spreadsheet
+            </button>
+            <button type="button" className={btn.ghost} onClick={() => onExport(status === "open")} title={status === "open" ? "Unreimbursed expenses as CSV" : "Every expense as CSV"}>
+              Export CSV
+            </button>
+          </>
+        }
+      >
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Segmented
+            ariaLabel="Status"
+            size="xs"
+            options={[
+              { value: "open", label: `Unreimbursed (${r.totals.unreimbursedCount + early.filter((e) => !e.reimbursement).length})` },
+              { value: "done", label: `Reimbursed (${r.totals.reimbursedCount})` },
+              { value: "all", label: "All" },
+            ]}
+            value={status}
+            onChange={setStatus}
+          />
+          <select className={selectCls} value={year} onChange={(e) => setYear(e.target.value)} aria-label="Year">
+            <option value="">All years</option>
+            {years.map((y) => (
+              <option key={y}>{y}</option>
+            ))}
+          </select>
+          {r.byPatient.length > 1 && (
+            <select className={selectCls} value={patient} onChange={(e) => setPatient(e.target.value)} aria-label="Patient">
+              <option value="">Everyone</option>
+              {r.byPatient.map((p) => (
+                <option key={p.key}>{p.key}</option>
+              ))}
+            </select>
+          )}
+          <input className={`${inputCls} w-48 py-1 text-xs`} placeholder="Search provider or notes" value={q} onChange={(e) => setQ(e.target.value)} />
+          <span className="ml-auto text-xs text-muted">
+            {shown.length} shown · <span className="num text-fg">{formatUsdCents(shownCents)}</span>
+          </span>
+        </div>
+
+        {picked.length > 0 && (
+          <div className="sticky top-12 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-md border border-accent/40 bg-accent-soft px-3 py-2 text-xs">
+            <span className="font-medium text-fg">
+              {picked.length} selected · <span className="num">{formatUsdCents(pickedCents)}</span>
+            </span>
+            <span className="flex-1" />
+            {picked.some((e) => !e.reimbursement) && (
+              <button type="button" className={btn.primary} onClick={() => onReimburse(picked.filter((e) => !e.reimbursement).map((e) => e.id))}>
+                Mark reimbursed…
+              </button>
+            )}
+            {picked.some((e) => e.reimbursement) && (
+              <button type="button" className={btn.secondary} onClick={() => send({ op: "unreimburse", ids: picked.map((e) => e.id) })}>
+                Mark not reimbursed
+              </button>
+            )}
+            <button type="button" className={btn.secondary} onClick={() => send({ op: "receipt", ids: picked.map((e) => e.id), receipt: true })}>
+              Receipt saved
+            </button>
+            <button
+              type="button"
+              className={btn.danger}
+              onClick={() => {
+                if (window.confirm(`Delete ${picked.length} expense${picked.length === 1 ? "" : "s"} from the log? (The journal beside the file keeps a copy.)`)) {
+                  void send({ op: "delete", ids: picked.map((e) => e.id) }).then(() => setSelected(new Set()));
+                }
+              }}
+            >
+              Delete
+            </button>
+            <button type="button" className={btn.ghost} onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </div>
+        )}
+
+        {r.expenses.length === 0 ? (
+          <EmptyState
+            title="No expenses logged yet"
+            action={
+              <div className="flex gap-2">
+                <button type="button" className={btn.primary} onClick={onImport}>
+                  Import your spreadsheet
+                </button>
+                {r.suggestions.length > 0 && (
+                  <button type="button" className={btn.secondary} onClick={goFound}>
+                    Pull from statements ({r.suggestions.length})
+                  </button>
+                )}
+              </div>
+            }
+          >
+            Bring in the tracker you keep in Excel (.xlsx or .csv, or paste the cells), add expenses by hand, or pull medical charges straight from your imported card and bank statements.
+          </EmptyState>
+        ) : shown.length === 0 ? (
+          <p className="py-6 text-center text-xs text-muted">Nothing matches these filters.</p>
+        ) : (
+          <div className={table.wrap}>
+            <table className={table.table}>
+              <thead className={table.head}>
+                <tr>
+                  <th className={`${table.th} w-6`}>
+                    <input
+                      type="checkbox"
+                      aria-label="Select all shown"
+                      checked={allShownPicked}
+                      onChange={() =>
+                        setSelected((s) => {
+                          const n = new Set(s);
+                          for (const e of shown) {
+                            if (allShownPicked) n.delete(e.id);
+                            else n.add(e.id);
+                          }
+                          return n;
+                        })
+                      }
+                    />
+                  </th>
+                  <th className={table.th}>Date</th>
+                  <th className={table.th}>Provider</th>
+                  <th className={table.th}>Patient</th>
+                  <th className={table.th}>Paid with</th>
+                  <th className={table.th} title="Receipt or EOB saved">
+                    Receipt
+                  </th>
+                  <th className={table.thR}>Amount</th>
+                  <th className={table.th}>Status</th>
+                  <th className={table.th} />
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((e) => (
+                  <Row key={e.id} e={e} picked={selected.has(e.id)} toggle={() => toggle(e.id)} send={send} onEdit={() => onEdit(e.id)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}
+
+function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: boolean; toggle: () => void; send: Send; onEdit: () => void }) {
+  return (
+    <tr className={`${table.trHover} ${picked ? "bg-accent-soft/50" : ""} ${e.flags.includes("BEFORE_OPEN") ? "opacity-60" : ""}`}>
+      <td className={table.td}>
+        <input type="checkbox" aria-label={`Select ${e.provider}`} checked={picked} onChange={toggle} />
+      </td>
+      <td className={`${table.td} num whitespace-nowrap`}>{e.date}</td>
+      <td className={`${table.td} min-w-[14rem]`}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-fg">{e.provider}</span>
+          {e.flags.map((f) =>
+            FLAG_BADGE[f] ? (
+              <Badge key={f} tone={FLAG_BADGE[f]!.tone} title={FLAG_BADGE[f]!.title}>
+                {FLAG_BADGE[f]!.label}
+              </Badge>
+            ) : null,
+          )}
+        </div>
+        <div className="text-[11px] text-muted">
+          {KIND_LABEL[e.kind]}
+          {e.notes && ` · ${e.notes}`}
+        </div>
+      </td>
+      <td className={`${table.td} whitespace-nowrap text-fg-2`}>{e.patient || <span className="text-faint">—</span>}</td>
+      <td className={`${table.td} max-w-[13rem] truncate whitespace-nowrap text-xs`}>
+        {e.paid ? (
+          <span title={`${e.paid.payee} · ${e.paid.date}${e.paidAuto ? " · matched by amount and date" : ""}`}>
+            <span className="text-fg-2">{e.paid.account || e.paid.fp.institution}</span> <span className="text-muted">{e.paid.date.slice(5)}</span>
+            {e.paidAuto && <span className="ml-1 text-faint">auto</span>}
+          </span>
+        ) : (
+          <span className="text-faint" title="No card or bank row of this amount within 10 days (paid in cash, by an untracked card, or the statement isn't imported).">
+            —
+          </span>
+        )}
+      </td>
+      <td className={table.td}>
+        <button
+          type="button"
+          onClick={() => send({ op: "receipt", ids: [e.id], receipt: !e.receipt })}
+          className={`whitespace-nowrap rounded px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-focus ${e.receipt ? "text-pos" : "text-warn hover:text-fg"}`}
+          title={e.receipt ? `Receipt saved${e.receiptRef ? `: ${e.receiptRef}` : ""} (click to unmark)` : "No receipt saved yet (click when you have it)"}
+        >
+          {e.receipt ? "✓ saved" : "needed"}
+        </button>
+      </td>
+      <td className={table.tdR}>{formatUsdCents(e.amountCents)}</td>
+      <td className={`${table.td} whitespace-nowrap text-xs`}>
+        {e.reimbursement ? (
+          <span title={e.reimbursement.note || undefined}>
+            <Badge tone="pos">reimbursed</Badge> <span className="text-muted">{e.reimbursement.date ?? "date unknown"}</span>
+          </span>
+        ) : (
+          <span className="text-muted" title="Days since paid, and the estimated tax-free growth on the money left in the HSA meanwhile">
+            waiting {waitLabel(e.daysWaiting)}
+            {e.growthCents > 0 && <span className="ml-1 text-pos">+{usd0(e.growthCents)}</span>}
+          </span>
+        )}
+      </td>
+      <td className={table.td}>
+        <button type="button" className={btn.ghost} onClick={onEdit}>
+          Edit
+        </button>
+      </td>
+    </tr>
+  );
+}

@@ -1,0 +1,37 @@
+/**
+ * Runs once when the server starts: builds the Book in the background, and again shortly
+ * after each change to the data, along with the main pages' reports, so pages find them
+ * ready (see lib/book/cache.ts). Also starts the OneDrive backups (lib/backup).
+ *
+ * The Node-only work lives behind `process.env.NEXT_RUNTIME === "nodejs"` written inline:
+ * webpack also compiles this file for the edge runtime, and only that exact condition
+ * lets it drop the import of node:fs-using modules from the edge bundle.
+ */
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    if (process.env.NEXT_PHASE === "phase-production-build") return;
+    const [{ prisma }, { keepBookWarm }, { startAutoBackup }] = await Promise.all([import("@/lib/db"), import("@/lib/book/cache"), import("@/lib/backup/auto")]);
+    // The desktop app (next start) backs up to OneDrive; dev servers only when asked; the demo never.
+    const backs = process.env.NODE_ENV === "production" || process.env.BACKUP_AUTO === "1";
+    if (process.env.BACKUP_AUTO !== "0" && process.env.APP_PROFILE !== "demo" && backs) startAutoBackup(prisma);
+    keepBookWarm(prisma, {
+      reports: [
+        "/api/ledger/attention",
+        "/api/dashboard/home-summary",
+        "/api/dashboard/net-worth?granularity=month",
+        "/api/dashboard/cash-flow",
+        "/api/integrity",
+        "/api/profile",
+        "/api/forecast",
+        "/api/tax",
+        "/api/investments",
+        "/api/tax-accounts",
+        "/api/goals",
+        "/api/car",
+        "/api/bonuses",
+        "/api/home-budget/funds",
+        "/api/dashboard/net-worth/accounts",
+      ],
+    });
+  }
+}

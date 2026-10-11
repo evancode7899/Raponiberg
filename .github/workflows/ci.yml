@@ -1,0 +1,36 @@
+# Proves a fresh clone sets up, passes its tests and builds, the way a newcomer would run
+# it: no .env, no data, no backups. Windows, because the desktop launcher is Windows-only.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-clone:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Set up (empty database, no shortcut)
+        run: npm run setup -- --no-shortcuts
+      - name: Lint
+        run: npm run lint
+      - name: Type-check
+        run: npx tsc --noEmit
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Demo data builds
+        run: npm run demo -- --build-only

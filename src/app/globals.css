@@ -1,0 +1,321 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Every component styles itself with the semantic utilities below
+ * (bg-surface, text-muted, border-line, text-pos …), so a theme is nothing more than
+ * a set of values for these variables. Three themes: light, dark and terminal
+ * (the default — black field, amber accent, monospace).
+ */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-pos: var(--pos);
+  --color-pos-soft: var(--pos-soft);
+  --color-neg: var(--neg);
+  --color-neg-soft: var(--neg-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-focus: var(--focus);
+  --font-ui: var(--ui-font);
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+}
+
+html {
+  --app-font-scale: 1.0625;
+  font-size: calc(16px * var(--app-font-scale));
+}
+html[data-font-scale="sm"] {
+  --app-font-scale: 0.9296875;
+}
+html[data-font-scale="md"] {
+  --app-font-scale: 1.0625;
+}
+html[data-font-scale="lg"] {
+  --app-font-scale: 1.1953125;
+}
+
+/* --- Light --- */
+html,
+html[data-theme="light"] {
+  color-scheme: light;
+  --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --canvas: #f4f4f2;
+  --surface: #ffffff;
+  --surface-2: #f7f7f5;
+  --surface-3: #ececea;
+  --line: #e4e4e0;
+  --line-strong: #c9c9c3;
+  --fg: #111110;
+  --fg-2: #3a3a37;
+  --muted: #6b6a66;
+  --faint: #9a9993;
+  --accent: #c2410c;
+  --accent-fg: #ffffff;
+  --accent-soft: #fdeee6;
+  --pos: #11734b;
+  --pos-soft: #e5f4ec;
+  --neg: #c22a2a;
+  --neg-soft: #fcebea;
+  --warn: #9a5b00;
+  --warn-soft: #fdf3dc;
+  --info: #1d5fb8;
+  --info-soft: #e7f0fc;
+  --focus: #2a78d6;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 1px rgb(0 0 0 / 0.02);
+
+  /* Charts (reference palette, light steps) */
+  --chart-grid: #e4e4e0;
+  --chart-axis: #6b6a66;
+  --chart-axis-line: #c9c9c3;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-fg: #111110;
+  --chart-tooltip-border: #c9c9c3;
+  --chart-legend: #3a3a37;
+  --chart-series-0: #2a78d6;
+  --chart-series-1: #eb6834;
+  --chart-series-2: #1baf7a;
+  --chart-series-3: #eda100;
+  --chart-series-4: #e87ba4;
+  --chart-series-5: #008300;
+  --chart-series-6: #4a3aa7;
+  --chart-series-7: #e34948;
+  --chart-neutral: #b5b4ae;
+  --chart-line-balance: #111110;
+  --slider-track: #d4d4cf;
+  --slider-thumb: #111110;
+  --slider-thumb-border: #ffffff;
+}
+
+/* --- Dark --- */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --canvas: #121211;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --surface-3: #2c2c2a;
+  --line: #2f2f2c;
+  --line-strong: #45453f;
+  --fg: #f4f4f1;
+  --fg-2: #d6d5ce;
+  --muted: #a3a29a;
+  --faint: #75746d;
+  --accent: #f08a4b;
+  --accent-fg: #1a1a19;
+  --accent-soft: #3a2518;
+  --pos: #4cc38a;
+  --pos-soft: #16301f;
+  --neg: #f17575;
+  --neg-soft: #3a1b1b;
+  --warn: #e3b341;
+  --warn-soft: #362a10;
+  --info: #6ea8f0;
+  --info-soft: #172a45;
+  --focus: #6ea8f0;
+  --shadow: none;
+
+  --chart-grid: #2f2f2c;
+  --chart-axis: #a3a29a;
+  --chart-axis-line: #45453f;
+  --chart-tooltip-bg: #222220;
+  --chart-tooltip-fg: #f4f4f1;
+  --chart-tooltip-border: #45453f;
+  --chart-legend: #d6d5ce;
+  --chart-series-0: #3987e5;
+  --chart-series-1: #d95926;
+  --chart-series-2: #199e70;
+  --chart-series-3: #c98500;
+  --chart-series-4: #d55181;
+  --chart-series-5: #008300;
+  --chart-series-6: #9085e9;
+  --chart-series-7: #e66767;
+  --chart-neutral: #5c5b55;
+  --chart-line-balance: #f4f4f1;
+  --slider-track: #45453f;
+  --slider-thumb: #f4f4f1;
+  --slider-thumb-border: #1a1a19;
+}
+
+/* --- Terminal (default) --- */
+html[data-theme="bloomberg"] {
+  color-scheme: dark;
+  --ui-font: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+  --canvas: #05070a;
+  --surface: #0d1117;
+  --surface-2: #131922;
+  --surface-3: #1c232d;
+  --line: #222a35;
+  --line-strong: #35404e;
+  --fg: #e6edf3;
+  --fg-2: #c9d1d9;
+  --muted: #8b949e;
+  --faint: #5d6672;
+  --accent: #ffa028;
+  --accent-fg: #0d1117;
+  --accent-soft: #2e1f08;
+  --pos: #3fb950;
+  --pos-soft: #0f2a16;
+  --neg: #ff7b72;
+  --neg-soft: #33130f;
+  --warn: #e3b341;
+  --warn-soft: #2e2408;
+  --info: #58a6ff;
+  --info-soft: #0c2340;
+  --focus: #ffa028;
+  --shadow: none;
+
+  --chart-grid: #1c232d;
+  --chart-axis: #8b949e;
+  --chart-axis-line: #35404e;
+  --chart-tooltip-bg: #05070a;
+  --chart-tooltip-fg: #e6edf3;
+  --chart-tooltip-border: #ffa028;
+  --chart-legend: #c9d1d9;
+  --chart-series-0: #3987e5;
+  --chart-series-1: #d95926;
+  --chart-series-2: #199e70;
+  --chart-series-3: #c98500;
+  --chart-series-4: #d55181;
+  --chart-series-5: #008300;
+  --chart-series-6: #9085e9;
+  --chart-series-7: #e66767;
+  --chart-neutral: #4a5361;
+  --chart-line-balance: #ffffff;
+  --slider-track: #35404e;
+  --slider-thumb: #ffa028;
+  --slider-thumb-border: #0d1117;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: var(--ui-font);
+}
+
+/* Numbers line up in every table and stat. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Form controls inherit the theme. */
+input,
+select,
+textarea {
+  color: var(--fg);
+}
+select option,
+select optgroup {
+  background: var(--surface);
+  color: var(--fg);
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+input[type="date"] {
+  color-scheme: inherit;
+}
+
+/* Range sliders: visible track + thumb in all themes */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--slider-track);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--slider-thumb);
+  border: 2px solid var(--slider-thumb-border);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--slider-track);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--slider-thumb);
+  border: 2px solid var(--slider-thumb-border);
+}
+
+/* A range drawn over its own track (zoned sliders): hide the native track. */
+input[type="range"].range-over::-webkit-slider-runnable-track {
+  background: transparent;
+}
+input[type="range"].range-over::-moz-range-track {
+  background: transparent;
+}
+
+/* Thin, quiet scrollbars inside the app. */
+.app-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* Recharts: tooltips pick up the UI font; no focus outline box on click. */
+.recharts-default-tooltip {
+  font-family: var(--ui-font);
+  font-size: 12px !important;
+}
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-wrapper *:focus {
+  outline: none;
+}
+
+/* Drawer slide-in */
+@keyframes pf-drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.pf-drawer {
+  animation: pf-drawer-in 160ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-drawer {
+    animation: none;
+  }
+}

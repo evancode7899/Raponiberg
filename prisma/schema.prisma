@@ -1,0 +1,425 @@
+// SQLite database file lives at ../data/finance.db (path relative to this folder).
+// Copy the whole project folder (including data/) to move to another computer.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+  CASH
+  INVESTMENT
+  OTHER
+}
+
+enum CategoryKind {
+  INCOME
+  EXPENSE
+}
+
+enum StatementType {
+  BANK
+  CREDIT_CARD
+  INVESTMENT
+  PAYROLL
+}
+
+enum StatementStatus {
+  /// Parsed and (if balance-bearing) reconciled; excluded from dashboards until COMMITTED.
+  PENDING_REVIEW
+  /// Confirmed by the owner; counted in cash-flow and net-worth aggregates.
+  COMMITTED
+  /// Parsed transactions did not sum to the statement's printed ending balance; needs a look.
+  DISCREPANT
+}
+
+/// How a transaction counts in ledger aggregates (see src/lib/classifier/taxonomy.ts).
+/// INCOME/EXPENSE feed cash flow; TRANSFER (between tracked accounts) counts nowhere at
+/// household level; EXTERNAL_TRANSFER and CONTRIBUTION_* are principal entering or leaving
+/// the tracked books without being income or spending.
+enum TransactionLane {
+  INCOME
+  EXPENSE
+  TRANSFER
+  EXTERNAL_TRANSFER
+  CONTRIBUTION_EMPLOYEE
+  CONTRIBUTION_EMPLOYER
+  CONTRIBUTION_PERSONAL
+}
+
+enum MerchantRuleSource {
+  USER
+  LLM_PROMOTED
+}
+
+model Account {
+  id           String        @id @default(cuid())
+  name         String
+  type         AccountType   @default(CHECKING)
+  institution  String?
+  notes        String?
+  displayOrder Int           @default(0)
+  archivedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  /// Finer account flavor (BROKERAGE, ROTH_IRA, 401K, 529...; see ingest/types.ts).
+  subtype      String?
+
+  transactions Transaction[]
+  statementImports StatementImport[]
+  aliases      AccountAlias[]
+}
+
+/// Every identifier an institution has used for an account. A reissued card (new
+/// "Account Ending") or a renumbered plan becomes a second alias of the same account, so
+/// its history stays continuous.
+model AccountAlias {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  institution String
+  identifier  String
+  /// FIRST_SEEN | CONTINUATION (detected reissue: contiguous period, balances chain) | ADOPTED | USER
+  source      String   @default("FIRST_SEEN")
+  createdAt   DateTime @default(now())
+
+  @@unique([institution, identifier])
+  @@index([accountId])
+}
+
+/// One source file (PDF or hand-parsed JSON). A Fidelity report holding five accounts is
+/// one document with five StatementImports; a pay-stub PDF is one document with several
+/// PayStubs; a year-end recap or confirmation letter is a document with no ledger rows.
+model SourceDocument {
+  id               String    @id @default(cuid())
+  /// SHA-256 of the file bytes: the same file can never be imported twice.
+  fileHash         String    @unique
+  /// Hash of the parsed content: the same statement re-downloaded (different bytes,
+  /// same data) is caught too.
+  contentFingerprint String  @unique
+  filePath         String
+  originalFileName String?
+  institution      String
+  /// STATEMENT | PERIOD_SUMMARY | PAYSTUB | SUPPORTING
+  kind             String
+  title            String
+  /// Deterministic parser id + version, or "manual" for hand-parsed JSON.
+  parserId         String
+  parserVersion    Int
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  warningsJson     Json?
+  /// Version of the fact extraction (pay stub lines, brokerage tax figures) stored for
+  /// this document; older ones are re-extracted from the stored file.
+  factsVersion     Int       @default(0)
+  createdAt        DateTime  @default(now())
+
+  statementImports StatementImport[]
+  payStubs         PayStub[]
+  brokerageFacts   BrokerageTaxFacts[]
+  holdings         HoldingSnapshot[]
+
+  @@index([institution, periodEnd])
+}
+
+/// One account's slice of a document: balances for its period, market change and fees
+/// for valuation accounts, and the rows. Dashboards only count COMMITTED, non-summary
+/// imports; summary imports (year-end reports) only fill gaps between real statements.
+model StatementImport {
+  id            String           @id @default(cuid())
+  accountId     String
+  account       Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  documentId    String
+  document      SourceDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  statementType StatementType
+  /// Year-end style recap overlapping real statements; never counted directly.
+  isSummary     Boolean          @default(false)
+  periodStart   DateTime
+  periodEnd     DateTime
+  openingBalanceCents Int
+  closingBalanceCents Int
+  /// Market change excluding fees (valuation accounts); 0 for bank/card.
+  growthCents   Int              @default(0)
+  /// Fees deducted inside a valuation account (≤ 0).
+  feesCents     Int              @default(0)
+  /// closing − (opening + Σrows + growth + fees); 0 when the statement ties out.
+  reconciliationDeltaCents Int   @default(0)
+  /// Statement subtotal cross-checks the parser ran, with results.
+  checksJson    Json?
+  status        StatementStatus  @default(PENDING_REVIEW)
+  createdAt     DateTime         @default(now())
+
+  transactions  Transaction[]
+
+  @@unique([accountId, periodStart, periodEnd, isSummary])
+  @@index([accountId, periodStart])
+  @@index([documentId])
+}
+
+/// A pay stub exactly as read (src/lib/ingest/payroll): every line item plus the totals
+/// it prints, so it can prove itself. Explains a payroll deposit; never adds money of
+/// its own. Deduped across files, since payroll PDFs repeat stubs.
+model PayStub {
+  id                   String    @id @default(cuid())
+  documentId           String
+  document             SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// TRINET | VENSURE | ADP
+  source               String
+  /// As printed; matched to a household member by the tax profile's name rules.
+  employee             String
+  employer             String
+  /// employerKey(employer): one employer printed different ways groups together.
+  employerKey          String
+  payDate              DateTime
+  periodStart          DateTime?
+  periodEnd            DateTime?
+  federalFilingStatus  String?
+  /// Printed totals (null where the provider doesn't print one). Gross is cash pay.
+  grossCurrentCents    Int?
+  grossYtdCents        Int?
+  withheldCurrentCents Int?
+  withheldYtdCents     Int?
+  netPayCents          Int
+  netYtdCents          Int?
+  /// [{ last4, amount }]: where the net pay was deposited.
+  depositsJson         Json
+  warningsJson         Json?
+  /// The bank deposit this stub explains, once found.
+  depositTransactionId String?   @unique
+  depositTransaction   Transaction? @relation(fields: [depositTransactionId], references: [id], onDelete: SetNull)
+  createdAt            DateTime  @default(now())
+
+  lines                PayStubLine[]
+
+  @@unique([employerKey, payDate, netPayCents])
+}
+
+model PayStubLine {
+  id           String  @id @default(cuid())
+  payStubId    String
+  payStub      PayStub @relation(fields: [payStubId], references: [id], onDelete: Cascade)
+  position     Int
+  name         String
+  /// StubLineKind (REGULAR, BONUS, FEDERAL_TAX, RETIREMENT_PRETAX, EMPLOYER_RETIREMENT...)
+  kind         String
+  currentCents Int?
+  ytdCents     Int?
+
+  @@index([payStubId])
+}
+
+/// Tax figures a brokerage statement prints for one account (src/lib/tax/facts/
+/// investments.ts): year-to-date income and realized gains, the period's dividend detail,
+/// IRA distributions and contributions. Stored at import; nothing re-reads the PDF.
+model BrokerageTaxFacts {
+  id                    String   @id @default(cuid())
+  documentId            String
+  document              SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  accountNumber         String
+  periodStart           DateTime
+  periodEnd             DateTime
+  isYearEnd             Boolean
+  /// TAXABLE | ROTH_IRA | TRADITIONAL_IRA | ROLLOVER_IRA | 529 | HSA | OTHER
+  kind                  String
+  ownerLine             String
+  isChet                Boolean  @default(false)
+  endingValueCents      Int?
+  contributionsYtdCents Int?
+  /// Year-to-date income summary, or null when the statement prints none.
+  incomeJson            Json?
+  /// Year-to-date realized gains, or null when the statement prints none.
+  realizedJson          Json?
+  incomeRowsJson        Json
+  distributionsJson     Json
+
+  @@index([accountNumber, periodEnd])
+  @@index([documentId])
+}
+
+/// Positions an investment statement lists at its period end (security, quantity,
+/// price, value, cost basis), re-read from the stored document like the tax figures.
+/// Feeds holdings, allocation, fees and unrealized gains; balances still come from the
+/// statement itself, and a snapshot whose positions don't add up to it isn't used.
+model HoldingSnapshot {
+  id                String         @id @default(cuid())
+  documentId        String
+  document          SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  accountNumber     String
+  asOf              DateTime
+  /// [{ symbol, name, kind, quantity, price, valueCents, costBasisCents, expenseRatio }]
+  positionsJson     Json
+  /// Σ positions.
+  totalCents        Int
+  /// The statement's own total for its holdings, when it prints one.
+  printedTotalCents Int?
+
+  @@index([accountNumber, asOf])
+  @@index([documentId])
+}
+
+/// Two or more legs of one movement of money between tracked accounts. A transaction
+/// can belong to at most one match (TransferLeg.transactionId is unique), so a leg can
+/// never be paired twice.
+model TransferMatch {
+  id              String   @id @default(cuid())
+  /// AUTO (matcher, recomputed every run) | CONFIRMED (owner; never recomputed)
+  status          String
+  /// EXACT_PAIR | ORDERED_PAIR | AGGREGATE | MANUAL
+  method          String
+  /// Σin + Σout; nonzero only for owner-confirmed lossy transfers (rollover fees).
+  differenceCents Int      @default(0)
+  note            String?
+  createdAt       DateTime @default(now())
+
+  legs            TransferLeg[]
+}
+
+model TransferLeg {
+  id            String        @id @default(cuid())
+  matchId       String
+  match         TransferMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  transactionId String        @unique
+  transaction   Transaction   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([matchId])
+}
+
+/// Pairings the owner rejected; the matcher never proposes them again.
+model TransferRejection {
+  id        String   @id @default(cuid())
+  /// Sorted transaction ids joined with "|".
+  legKey    String   @unique
+  createdAt DateTime @default(now())
+}
+
+/// Small key/value store for household settings (e.g. householdMergeDate).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  groupName    String?
+  kind         CategoryKind  @default(EXPENSE)
+  displayOrder Int           @default(0)
+  archivedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  transactions Transaction[]
+  budgetLines  BudgetLine[]
+  merchantRules MerchantCategoryRule[]
+}
+
+/// Owner-taught merchant → category (and optionally lane) rule. Recategorizing a row
+/// creates/updates one of these, so every past and future row from that merchant follows.
+model MerchantCategoryRule {
+  id            String              @id @default(cuid())
+  /// merchantKey() of the description (see src/lib/classifier/merchants.ts).
+  matchPattern  String              @unique
+  categoryId    String
+  category      Category            @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  /// When set, also forces the lane (e.g. teach that a payee is an own-account transfer).
+  lane          TransactionLane?
+  source        MerchantRuleSource  @default(USER)
+  timesApplied  Int                 @default(0)
+  lastAppliedAt DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+}
+
+/// Ledger entry. amountCents is signed in account currency: inflows positive, outflows negative.
+model Transaction {
+  id              String    @id @default(cuid())
+  date            DateTime
+  amountCents     Int
+  payee           String?
+  memo            String?
+  accountId       String
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Optional: link two rows for account-to-account transfers (same value).
+  transferGroupId String?
+
+  /// How this row counts in cash-flow and household-growth aggregates. Null until classified.
+  lane            TransactionLane?
+  /// Set for statement-ingested rows; null for manual rows. Deleting the import deletes its rows.
+  statementImportId String?
+  statementImport StatementImport? @relation(fields: [statementImportId], references: [id], onDelete: Cascade)
+
+  /// EXACT, or PERIOD (statement only gave a period total; spread across its period).
+  datePrecision   String    @default("EXACT")
+  /// Statement section the row came from ("Payments", "Exchanges Out", ...).
+  section         String?
+  /// Secondary statement text (Amex industry line, ...).
+  detail          String?
+  cardMember      String?
+  /// merchantKey() of payee — what owner-taught rules key on.
+  merchantKey     String?
+  /// OWN_ACCOUNT | UNTRACKED_OWN | PARTNER | EMPLOYER | PERSON | GOVERNMENT | UNTRACKED_CARD | MERCHANT | UNKNOWN
+  counterpartyKind String?
+  counterpartyInstitution String?
+  counterpartyAccountHint String?
+  /// Comma-separated account subtypes the other leg may be in (OWN_ACCOUNT only).
+  counterpartySubtypes String?
+  /// Which classifier rule decided, or USER / MATCH.
+  classifiedBy    String?
+  /// high | medium | low
+  confidence      String?
+  needsReview     Boolean   @default(false)
+  /// The owner set lane/category by hand on this row: reclassification leaves it alone.
+  userLocked      Boolean   @default(false)
+
+  transferLeg     TransferLeg?
+  payStub         PayStub?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([accountId, date])
+  @@index([date])
+  @@index([categoryId])
+  @@index([statementImportId])
+  @@index([lane, date])
+  @@index([needsReview])
+}
+
+/// Planned amount per calendar month and category (e.g. Excel budget columns).
+model BudgetLine {
+  id          String   @id @default(cuid())
+  year        Int
+  month       Int
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  amountCents Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([year, month, categoryId])
+  @@index([year, month])
+}
+
+/// Append-only audit trail: statement imports, exports, DB mutations, settings changes (no secrets in payloadJson). Not cleared by partial DB wipe.
+model AuditEvent {
+  id              String   @id @default(cuid())
+  occurredAt      DateTime @default(now())
+  action          String
+  actor           String   @default("system")
+  payloadJson     Json?
+  correlationId   String?
+
+  @@index([occurredAt])
+  @@index([action])
+}
