@@ -7,6 +7,7 @@ import type { HsaReport, Suggestion } from "@/lib/hsa/report";
 import { useState } from "react";
 import { PatientInput } from "./ExpenseDrawer";
 import type { Send } from "./HsaClient";
+import { sortRows, SortTh, useSort } from "./sort";
 
 const key = (s: Suggestion) => s.rowId ?? `${s.date}|${s.amountCents}|${s.payee}`;
 
@@ -25,9 +26,14 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
   const [take, setTake] = useState<Set<string>>(new Set());
   const [patient, setPatient] = useState("");
   const [kinds, setKinds] = useState<Record<string, ExpenseKind>>({});
-  const [tier, setTier] = useState<"ALL" | "LIKELY" | "CHECK">("ALL");
+  // Drug-store maybes far outnumber the likely ones: start on the likely ones when there are any.
+  const [tier, setTier] = useState<"ALL" | "LIKELY" | "CHECK">(() => (r.suggestions.some((s) => s.tier === "LIKELY") ? "LIKELY" : "ALL"));
 
-  const shown = r.suggestions.filter((s) => tier === "ALL" || s.tier === tier);
+  const { sort, toggle: toggleSort } = useSort();
+  const shown = sortRows(
+    r.suggestions.filter((s) => tier === "ALL" || s.tier === tier),
+    sort,
+  );
   const chosen = r.suggestions.filter((s) => take.has(key(s)));
 
   const add = async (list: Suggestion[]) => {
@@ -108,11 +114,11 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
                         onChange={(e) => setTake(e.target.checked ? new Set(shown.map(key)) : new Set())}
                       />
                     </th>
-                    <th className={table.th}>Date</th>
+                    <SortTh k="date" label="Date" sort={sort} toggle={toggleSort} />
                     <th className={table.th}>Charge</th>
                     <th className={table.th}>Why</th>
                     <th className={table.th}>Kind</th>
-                    <th className={table.thR}>Amount</th>
+                    <SortTh k="amount" label="Amount" sort={sort} toggle={toggleSort} right />
                     <th className={table.th} />
                   </tr>
                 </thead>

@@ -26,20 +26,21 @@ export function planWithdrawal(list: ExpenseView[], target: number): ExpenseView
   return out;
 }
 
-export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimburse: (ids: string[]) => void; send: Send }) {
+export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimburse: (ids: string[], withdrawal: number | null) => void; send: Send }) {
   const [target, setTarget] = useState<number | null>(null);
   const [receiptsOnly, setReceiptsOnly] = useState(true);
   const pool = useMemo(() => reimbursable(r).filter((e) => !receiptsOnly || e.receipt), [r, receiptsOnly]);
   const plan = target ? planWithdrawal(pool, target) : [];
   const planCents = plan.reduce((s, e) => s + e.amountCents, 0);
   const byId = new Map(r.expenses.map((e) => [e.id, e]));
-  const open = r.withdrawals.filter((w) => !w.linkedIds.length);
+  const distributions = r.withdrawals.filter((w) => w.kind === "DISTRIBUTION");
+  const direct = r.withdrawals.filter((w) => w.kind === "DIRECT");
 
   return (
     <>
       <Card
         title="Plan a withdrawal"
-        subtitle="Need cash? Say how much and this picks the oldest receipts that add up to it without going over. Withdraw that amount from the HSA to your bank, then mark them reimbursed (tying them to the withdrawal once its statement is imported)."
+        subtitle="Need cash? Say how much and this picks the oldest receipts that add up to it without going over. Have the HSA send that amount to your bank, then mark them reimbursed (tying them to the distribution once its statement is imported)."
       >
         <div className="flex flex-wrap items-end gap-4">
           <Field label="Amount to take out">
@@ -73,7 +74,7 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
                     </li>
                   ))}
                 </ul>
-                <button type="button" className={btn.primary} onClick={() => onReimburse(plan.map((e) => e.id))}>
+                <button type="button" className={btn.primary} onClick={() => onReimburse(plan.map((e) => e.id), null)}>
                   Mark these reimbursed…
                 </button>
               </>
@@ -83,11 +84,13 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
       </Card>
 
       <Card
-        title="HSA withdrawals"
-        subtitle="Money out of the HSA in your imported statements. Tie each reimbursement to the receipts it paid for: if the IRS ever asks about a distribution, that's your answer. Card swipes straight from the HSA show up here too and need no receipt from this log."
+        title="Distributions to you"
+        subtitle="Money the HSA sent to your bank: these are what reimburse receipts. Tie each one to the receipts it paid back; if the IRS ever asks about a distribution, that's your answer."
       >
-        {r.withdrawals.length === 0 ? (
-          <EmptyState title="No HSA withdrawals in the statements">{r.hsa.accounts.length ? "None yet — which is the point of letting it grow." : "Import your HSA statements to see withdrawals here."}</EmptyState>
+        {distributions.length === 0 ? (
+          <EmptyState title="No distributions in the statements">
+            {r.hsa.accounts.length ? "Nothing has been paid back to you yet, which is the point of letting it grow." : "Import your HSA statements to see distributions here."}
+          </EmptyState>
         ) : (
           <div className={table.wrap}>
             <table className={table.table}>
@@ -100,7 +103,7 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
                 </tr>
               </thead>
               <tbody>
-                {r.withdrawals.map((w) => (
+                {distributions.map((w) => (
                   <tr key={`${w.rowId}`} className={table.tr}>
                     <td className={`${table.td} num whitespace-nowrap`}>{w.date}</td>
                     <td className={table.td}>
@@ -109,18 +112,19 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
                     <td className={table.tdR}>{formatUsdCents(w.amountCents)}</td>
                     <td className={`${table.td} text-xs`}>
                       {w.linkedIds.length ? (
-                        <span>
+                        <span className="flex flex-wrap items-center gap-2">
                           <Badge tone="pos">tied</Badge> {w.linkedIds.map((id) => byId.get(id)?.provider ?? "?").join(", ")}
+                          <button type="button" className={btn.link} onClick={() => send({ op: "unreimburse", ids: w.linkedIds })}>
+                            Untie
+                          </button>
                         </span>
                       ) : w.exactMatch ? (
                         <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-muted">Adds up exactly: {w.exactMatch.map((id) => byId.get(id)?.provider ?? "?").join(" + ")}</span>
-                          <button
-                            type="button"
-                            className={btn.secondary}
-                            onClick={() => send({ op: "reimburse", ids: w.exactMatch!, date: w.date, withdrawal: w.fp, note: "" })}
-                          >
-                            Mark reimbursed by this
+                          <span className="text-muted">
+                            {w.exactMatch.length} receipt{w.exactMatch.length === 1 ? "" : "s"} add up to it exactly
+                          </span>
+                          <button type="button" className={btn.secondary} onClick={() => onReimburse(w.exactMatch!, r.withdrawals.indexOf(w))}>
+                            Review…
                           </button>
                         </span>
                       ) : (
@@ -133,27 +137,90 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
             </table>
           </div>
         )}
-        {open.length > 0 && r.totals.unreimbursedCount > 0 && <p className="mt-2 text-[11px] text-muted">To tie a withdrawal that doesn&apos;t add up exactly, select the expenses on Receipts and choose it under Mark reimbursed.</p>}
+        {distributions.some((w) => !w.linkedIds.length) && r.totals.unreimbursedCount > 0 && (
+          <p className="mt-2 text-[11px] text-muted">
+            An exact match only means the amounts add up, so check they&apos;re the receipts you meant. To tie other receipts, select them on Receipts and pick the distribution under Mark
+            reimbursed.
+          </p>
+        )}
       </Card>
+
+      {direct.length > 0 && (
+        <Card
+          title="Paid straight from the HSA"
+          subtitle={`The HSA's card or bill pay paid these providers directly (${usd0(direct.reduce((s, w) => s + w.amountCents, 0))} in all). The HSA already covered them, so nothing comes back to you and they never reimburse a receipt in the log.`}
+        >
+          <div className={table.wrap}>
+            <table className={table.table}>
+              <thead className={table.head}>
+                <tr>
+                  <th className={table.th}>Date</th>
+                  <th className={table.th}>Paid to</th>
+                  <th className={table.thR}>Amount</th>
+                  <th className={table.th} />
+                </tr>
+              </thead>
+              <tbody>
+                {direct.map((w) => (
+                  <tr key={`${w.rowId}`} className={table.tr}>
+                    <td className={`${table.td} num whitespace-nowrap`}>{w.date}</td>
+                    <td className={table.td}>{w.payee}</td>
+                    <td className={table.tdR}>{formatUsdCents(w.amountCents)}</td>
+                    <td className={`${table.td} text-xs`}>
+                      {w.linkedIds.length > 0 && (
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Badge tone="neg" title="Receipts in the log were marked reimbursed by this payment, which isn't a reimbursement.">
+                            wrongly tied to {w.linkedIds.length}
+                          </Badge>
+                          <button type="button" className={btn.secondary} onClick={() => send({ op: "unreimburse", ids: w.linkedIds })}>
+                            Untie
+                          </button>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </>
   );
 }
 
 /** Marks a set of expenses reimbursed: the date, and optionally the HSA withdrawal that paid them. */
-export function ReimburseDrawer({ ids, r, send, onClose, onDone }: { ids: string[] | null; r: HsaReport; send: Send; onClose: () => void; onDone: (n: number, cents: number) => void }) {
+export function ReimburseDrawer({
+  ids,
+  withdrawal,
+  r,
+  send,
+  onClose,
+  onDone,
+}: {
+  ids: string[] | null;
+  /** Index in r.withdrawals to start with (a distribution picked on the Reimburse tab). */
+  withdrawal: number | null;
+  r: HsaReport;
+  send: Send;
+  onClose: () => void;
+  onDone: (n: number, cents: number) => void;
+}) {
   const list = (ids ?? []).map((id) => r.expenses.find((e) => e.id === id)).filter((e): e is ExpenseView => !!e);
   const total = list.reduce((s, e) => s + e.amountCents, 0);
   const [date, setDate] = useState(r.today);
   const [w, setW] = useState("");
   const [note, setNote] = useState("");
-  const options = r.withdrawals.filter((x) => !x.linkedIds.length).sort((a, b) => Number(b.amountCents === total) - Number(a.amountCents === total) || b.date.localeCompare(a.date));
+  // Only distributions reimburse; an HSA card payment to a provider never does.
+  const options = r.withdrawals.filter((x) => x.kind === "DISTRIBUTION" && !x.linkedIds.length).sort((a, b) => Number(b.amountCents === total) - Number(a.amountCents === total) || b.date.localeCompare(a.date));
   // Reset when a new set opens (adjusted during render, not in an effect; `undefined` so
   // the first render fills the form too).
   const [seenIds, setSeenIds] = useState<string[] | null | undefined>(undefined);
   if (ids !== seenIds) {
     setSeenIds(ids);
     if (ids) {
-      const exact = r.withdrawals.find((x) => !x.linkedIds.length && x.amountCents === total);
+      const picked = withdrawal != null ? r.withdrawals[withdrawal] : undefined;
+      const exact = picked ?? r.withdrawals.find((x) => x.kind === "DISTRIBUTION" && !x.linkedIds.length && x.amountCents === total);
       setW(exact ? String(r.withdrawals.indexOf(exact)) : "");
       setDate(exact?.date ?? r.today);
       setNote("");
@@ -185,7 +252,7 @@ export function ReimburseDrawer({ ids, r, send, onClose, onDone }: { ids: string
           <Field label="Reimbursed on">
             <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label="HSA withdrawal" hint={options.length ? undefined : "No untied withdrawals in the imported HSA statements."}>
+          <Field label="HSA distribution" hint={options.length ? undefined : "No untied distributions to your bank in the imported HSA statements."}>
             <select
               className={selectCls}
               value={w}

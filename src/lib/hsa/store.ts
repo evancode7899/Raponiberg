@@ -23,6 +23,8 @@ export type Reimbursement = {
   /** The HSA withdrawal that paid it, when tied to one. */
   withdrawal: RowFingerprint | null;
   note: string;
+  /** When it was marked reimbursed in the app (absent on older entries). */
+  markedAt?: string;
 };
 
 export type HsaExpense = {
@@ -40,11 +42,13 @@ export type HsaExpense = {
   receipt: boolean;
   /** Where the receipt lives (a path, a folder, a note). */
   receiptRef: string;
-  /** How it entered the log. */
+  /** How it entered the log (IMPORT: an old spreadsheet import, no longer offered). */
   source: "MANUAL" | "IMPORT" | "LEDGER";
   /** The card or bank row that paid it, when tied to one by hand or added from the ledger. */
   paidWith: RowFingerprint | null;
   reimbursement: Reimbursement | null;
+  /** The owner looked at a flagged expense (its charge doesn't look medical) and kept it. */
+  kept?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -152,7 +156,8 @@ export type ExpenseInput = Pick<HsaExpense, "date" | "amountCents" | "provider" 
 function normalizeReimbursement(raw: unknown): Reimbursement | null {
   if (raw == null || raw === false) return null;
   const r = asObject(raw);
-  return { date: isoOrNull(r.date), withdrawal: normalizeFingerprint(r.withdrawal), note: asString(r.note, 300) };
+  const markedAt = asString(r.markedAt, 40);
+  return { date: isoOrNull(r.date), withdrawal: normalizeFingerprint(r.withdrawal), note: asString(r.note, 300), ...(markedAt ? { markedAt } : {}) };
 }
 
 export function normalizeExpenseInput(raw: unknown): ExpenseInput {
@@ -182,10 +187,12 @@ export function normalizeExpenseInput(raw: unknown): ExpenseInput {
 export type HsaOp =
   | { op: "add"; expenses: unknown[] }
   | { op: "update"; id: string; expense: unknown }
-  | { op: "delete"; ids: string[] }
+  /** `dismiss`: also never suggest their statement rows again ("not an HSA expense"). */
+  | { op: "delete"; ids: string[]; dismiss?: boolean }
   | { op: "reimburse"; ids: string[]; date: string | null; withdrawal?: unknown; note?: string }
   | { op: "unreimburse"; ids: string[] }
   | { op: "receipt"; ids: string[]; receipt: boolean }
+  | { op: "keep"; ids: string[] }
   | { op: "link"; id: string; row: unknown }
   | { op: "dismiss"; rows: unknown[] }
   | { op: "undismiss"; rows: unknown[] }
@@ -233,7 +240,9 @@ export function applyHsaOp(input: HsaOp, file = hsaFilePath()): { changed: numbe
       const gone = byIds(input.ids);
       data.expenses = data.expenses.filter((e) => !gone.includes(e));
       changed = gone.length;
-      if (changed) write(file, data, { op: "delete", expenses: gone });
+      const dismissed = input.dismiss === true ? gone.flatMap((e) => (e.paidWith && !data.dismissed.some((d) => sameFp(d, e.paidWith!)) ? [e.paidWith] : [])) : [];
+      data.dismissed.push(...dismissed);
+      if (changed) write(file, data, { op: "delete", expenses: gone, dismissed });
       break;
     }
     case "reimburse": {
@@ -242,7 +251,7 @@ export function applyHsaOp(input: HsaOp, file = hsaFilePath()): { changed: numbe
       const withdrawal = normalizeFingerprint(input.withdrawal);
       const note = asString(input.note, 300);
       for (const e of byIds(input.ids)) {
-        e.reimbursement = { date, withdrawal, note };
+        e.reimbursement = { date, withdrawal, note, markedAt: now };
         e.updatedAt = now;
         changed++;
       }
@@ -267,6 +276,16 @@ export function applyHsaOp(input: HsaOp, file = hsaFilePath()): { changed: numbe
         changed++;
       }
       if (changed) write(file, data, { op: "receipt", ids: input.ids, receipt: input.receipt === true });
+      break;
+    }
+    case "keep": {
+      for (const e of byIds(input.ids)) {
+        if (e.kept) continue;
+        e.kept = true;
+        e.updatedAt = now;
+        changed++;
+      }
+      if (changed) write(file, data, { op: "keep", ids: input.ids });
       break;
     }
     case "link": {

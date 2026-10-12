@@ -16,6 +16,7 @@ export function hsaLedger(book: Book): HsaLedger {
       lane: r.lane,
       accountId: r.accountId,
       payee: r.payee,
+      detail: r.detail ?? null,
       merchantKey: r.merchantKey,
       category: r.category,
       classifiedBy: r.classifiedBy,
