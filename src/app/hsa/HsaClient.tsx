@@ -10,7 +10,6 @@ import { useCallback, useEffect, useState } from "react";
 import { ExpenseDrawer, type DraftExpense } from "./ExpenseDrawer";
 import { FoundTab } from "./FoundTab";
 import { GrowthTab } from "./GrowthTab";
-import { ImportDrawer } from "./ImportDrawer";
 import { ReceiptsTab } from "./ReceiptsTab";
 import { ReimburseDrawer, ReimburseTab } from "./ReimburseTab";
 import { SettingsTab } from "./SettingsTab";
@@ -27,8 +26,7 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<DraftExpense | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [reimbursing, setReimbursing] = useState<string[] | null>(null);
+  const [reimbursing, setReimbursing] = useState<{ ids: string[]; withdrawal: number | null } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = useCallback(() => {
@@ -133,31 +131,20 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
                 setSelected={setSelected}
                 onAdd={() => setEditing({ id: null })}
                 onEdit={(id) => setEditing({ id })}
-                onImport={() => setImporting(true)}
                 onExport={exportCsv}
-                onReimburse={(ids) => setReimbursing(ids)}
+                onReimburse={(ids) => setReimbursing({ ids, withdrawal: null })}
                 goFound={() => setTab("found")}
               />
             )}
             {tab === "found" && <FoundTab r={r} send={send} onDone={(n) => setNotice(`Added ${n} expense${n === 1 ? "" : "s"} to the log.`)} />}
-            {tab === "reimburse" && <ReimburseTab r={r} onReimburse={(ids) => setReimbursing(ids)} send={send} />}
+            {tab === "reimburse" && <ReimburseTab r={r} onReimburse={(ids, withdrawal) => setReimbursing({ ids, withdrawal })} send={send} />}
             {tab === "growth" && <GrowthTab r={r} />}
             {tab === "settings" && <SettingsTab r={r} send={send} />}
 
             <ExpenseDrawer draft={editing} r={r} send={send} onClose={() => setEditing(null)} />
-            <ImportDrawer
-              open={importing}
-              api={api}
-              r={r}
-              send={send}
-              onClose={() => setImporting(false)}
-              onDone={(n, reimbursed) => {
-                setImporting(false);
-                setNotice(`Imported ${n} expense${n === 1 ? "" : "s"}${reimbursed ? ` (${reimbursed} already reimbursed)` : ""}. Matching ones are tied to their card charges automatically.`);
-              }}
-            />
             <ReimburseDrawer
-              ids={reimbursing}
+              ids={reimbursing?.ids ?? null}
+              withdrawal={reimbursing?.withdrawal ?? null}
               r={r}
               send={send}
               onClose={() => setReimbursing(null)}

@@ -1,6 +1,6 @@
 import { daysBetween } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
-import { qualifyPayee, type ExpenseKind, type Tier } from "./qualify.ts";
+import { ownerFiled, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
 import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store.ts";
 
 /**
@@ -13,8 +13,14 @@ import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store
  *  - Spending rows that look like qualified care (qualify.ts) and aren't in the log yet
  *    are suggested, unless the owner dismissed the row or the merchant, or a refund of
  *    the same amount from the same merchant followed.
- *  - Withdrawals from the HSA are listed for tying reimbursements to, with the unreimbursed
- *    expenses whose amounts add up to each one exactly.
+ *  - Money out of the HSA is one of two things. A card swipe or bill paid straight to a
+ *    provider is the HSA paying for care directly: nothing to reimburse, never tied to the
+ *    log. A distribution to the owner (a transfer to the bank) is a reimbursement, and is
+ *    offered for tying to the receipts it paid back, with a set of unreimbursed expenses
+ *    that adds up to it exactly as a starting point the owner confirms.
+ *  - Logged expenses whose paying row no longer looks medical (it was added from a
+ *    statement before the rules were tightened, or the row was refiled) are flagged, and
+ *    so are reimbursements tied to an HSA card payment instead of a distribution.
  *  - Growth: what waiting earns. An unreimbursed dollar stays invested in the HSA, growing
  *    tax-free, while still being withdrawable tax-free at any time against its receipt.
  */
@@ -27,6 +33,7 @@ export type LedgerRowIn = {
   lane: string;
   accountId: string;
   payee: string;
+  detail?: string | null;
   merchantKey: string | null;
   category: string;
   classifiedBy: string | null;
@@ -55,7 +62,7 @@ export type LedgerRef = {
   account: string;
 };
 
-export type ExpenseFlag = "DUPLICATE" | "BEFORE_OPEN" | "NO_RECEIPT" | "PAID_ROW_MISSING";
+export type ExpenseFlag = "DUPLICATE" | "BEFORE_OPEN" | "NO_RECEIPT" | "PAID_ROW_MISSING" | "NOT_MEDICAL" | "BAD_TIE";
 
 export type ExpenseView = HsaExpense & {
   paid: LedgerRef | null;
@@ -69,14 +76,24 @@ export type ExpenseView = HsaExpense & {
   growthCents: number;
   /** When nothing is tied to it: unclaimed charges of the same amount within 45 days, to tie by hand. */
   candidates: LedgerRef[];
+  /** Why the paying row doesn't look medical (NOT_MEDICAL), or why the reimbursement's tie is wrong (BAD_TIE). */
+  doubt: string | null;
 };
 
 export type Suggestion = LedgerRef & { merchant: string; tier: Tier; kind: ExpenseKind; reason: string; patient: string };
 
+/**
+ * Money out of the HSA. DIRECT: the HSA paid a provider (its debit card, a bill pay):
+ * the care is paid for, nothing comes back to you, so it never reimburses a logged
+ * expense. DISTRIBUTION: money to you (a transfer to your bank): what reimburses receipts.
+ */
+export type WithdrawalKind = "DIRECT" | "DISTRIBUTION";
+
 export type Withdrawal = LedgerRef & {
-  /** Expenses already marked reimbursed by this withdrawal. */
+  kind: WithdrawalKind;
+  /** Expenses marked reimbursed by this withdrawal. */
   linkedIds: string[];
-  /** Unreimbursed expenses whose amounts add up to this withdrawal exactly (none when it's linked). */
+  /** DISTRIBUTION only: unreimbursed expenses whose amounts add up to it exactly (none when it's linked), for the owner to confirm. */
   exactMatch: string[] | null;
 };
 
@@ -140,6 +157,17 @@ const DAYS_PER_YEAR = 365.25;
 
 const growthOn = (cents: number, rate: number, days: number) => (days <= 0 ? 0 : Math.round(cents * (Math.pow(1 + rate, days / DAYS_PER_YEAR) - 1)));
 
+/** Out of the HSA to the owner rather than to a provider: a transfer, or a payee that says distribution. */
+const DISTRIBUTION_PAYEE = /DISTRIBUTION|DISBURSE|REIMBURSE|WITHDRAWAL|TRANSFER|\bXFER\b|\bACH\b|\bEFT\b|TO CHECKING|TO SAVINGS/i;
+/** The HSA's debit card or bill pay paying a provider. */
+const DIRECT_PAYEE = /^CARD\b|\bDEBIT CARD\b|\bPOS\b|PURCHASE|BILL ?PAY/i;
+
+export function withdrawalKind(r: Pick<LedgerRowIn, "lane" | "payee">): WithdrawalKind {
+  if (DIRECT_PAYEE.test(r.payee)) return "DIRECT";
+  if (r.lane !== "EXPENSE" || DISTRIBUTION_PAYEE.test(r.payee)) return "DISTRIBUTION";
+  return "DIRECT";
+}
+
 /** Every subset of `items` (≤ 4 of them) whose amounts sum to exactly `target`, first found; bounded work. */
 export function exactSubset(items: { id: string; amountCents: number }[], target: number, maxSize = 4): string[] | null {
   const xs = items.filter((x) => x.amountCents <= target).sort((a, b) => b.amountCents - a.amountCents);
@@ -173,6 +201,9 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     const row = input.rows.find((r) => r.date === fp.date && r.amountCents === fp.amountCents && sameFp(fpOf(r), fp));
     return row ? refOf(row) : { rowId: null, fp, date: fp.date, amountCents: Math.abs(fp.amountCents), payee: fp.payee, account: fp.institution };
   };
+
+  const rowById = new Map(input.rows.map((r) => [r.id, r]));
+  const qualify = (r: LedgerRowIn): Qualification | null => qualifyPayee(r.payee, r.detail, { category: r.category, byOwner: ownerFiled(r.classifiedBy) });
 
   // Spending that could have paid a medical bill: outflows from anything but the HSA.
   const spending = input.rows.filter((r) => r.amountCents < 0 && r.lane === "EXPENSE" && !isHsa(r.accountId));
@@ -209,6 +240,9 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     auto.set(e.id, refOf(best));
   }
 
+  // Money out of the HSA, each judged direct payment or distribution.
+  const hsaOut = input.rows.filter((r) => r.amountCents < 0 && isHsa(r.accountId)).map((r) => ({ ...refOf(r), kind: withdrawalKind(r) }));
+
   const dupKey = (e: HsaExpense) => `${e.date}|${e.amountCents}`;
   const dupCount = new Map<string, number>();
   for (const e of file.expenses) dupCount.set(dupKey(e), (dupCount.get(dupKey(e)) ?? 0) + 1);
@@ -220,6 +254,18 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     if (settings.openedOn && e.date < settings.openedOn) flags.push("BEFORE_OPEN");
     if (!e.receipt) flags.push("NO_RECEIPT");
     if (e.paidWith && paid && !paid.rowId) flags.push("PAID_ROW_MISSING");
+    let doubt: string | null = null;
+    // Added from a statement row that doesn't pass today's rules: probably not medical at all.
+    const paidRow = e.source === "LEDGER" && paid?.rowId ? rowById.get(paid.rowId) : undefined;
+    if (paidRow && !e.kept && !qualify(paidRow)) {
+      flags.push("NOT_MEDICAL");
+      doubt = `The charge it came from (${paidRow.payee}, filed under ${paidRow.category}) doesn't look like medical care.`;
+    }
+    const tiedTo = e.reimbursement?.withdrawal ? hsaOut.find((w) => sameFp(w.fp, e.reimbursement!.withdrawal!)) : undefined;
+    if (tiedTo?.kind === "DIRECT") {
+      flags.push("BAD_TIE");
+      doubt = (doubt ? `${doubt} ` : "") + `Marked reimbursed by an HSA card payment (${tiedTo.payee}, ${tiedTo.date}). That's the HSA paying a provider directly, not paying you back, so this expense hasn't been reimbursed.`;
+    }
     const end = e.reimbursement ? (e.reimbursement.date ?? e.date) : today;
     const daysWaiting = Math.max(0, daysBetween(e.date, end));
     return {
@@ -233,6 +279,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       candidates: paid
         ? []
         : spending.filter((r) => !claimed.has(r.id) && -r.amountCents === e.amountCents && Math.abs(daysBetween(e.date, r.date)) <= CANDIDATE_DAYS).map(refOf),
+      doubt,
     };
   });
 
@@ -252,8 +299,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     if (settings.openedOn && r.date < settings.openedOn) continue;
     const merchant = r.merchantKey || r.payee;
     if (ignored.has(merchant.toUpperCase())) continue;
-    const ownerHealth = r.category === "Health & insurance" && (r.classifiedBy === "user-merchant-rule" || r.classifiedBy === "USER");
-    const q = qualifyPayee(r.payee, null, ownerHealth);
+    const q = qualify(r);
     if (!q) continue;
     const refunded = refunds.some(
       (x) => x.accountId === r.accountId && x.amountCents === -r.amountCents && (x.merchantKey ?? x.payee) === merchant && daysBetween(r.date, x.date) >= 0 && daysBetween(r.date, x.date) <= REFUND_DAYS,
@@ -265,14 +311,12 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   suggestions.sort((a, b) => (a.tier === b.tier ? b.date.localeCompare(a.date) : a.tier === "LIKELY" ? -1 : 1));
 
   // ------------------------------------------------------------ HSA withdrawals
-  const unreimbursed = expenses.filter((e) => !e.reimbursement && !e.flags.includes("BEFORE_OPEN"));
-  const withdrawals: Withdrawal[] = input.rows
-    .filter((r) => r.amountCents < 0 && isHsa(r.accountId))
-    .map((r) => {
-      const ref = refOf(r);
-      const linkedIds = expenses.filter((e) => e.reimbursement?.withdrawal && sameFp(e.reimbursement.withdrawal, ref.fp)).map((e) => e.id);
-      const exactMatch = linkedIds.length ? null : exactSubset(unreimbursed.filter((e) => e.date <= r.date), ref.amountCents);
-      return { ...ref, linkedIds, exactMatch };
+  const unreimbursed = expenses.filter((e) => (!e.reimbursement || e.flags.includes("BAD_TIE")) && !e.flags.includes("BEFORE_OPEN") && !e.flags.includes("NOT_MEDICAL"));
+  const withdrawals: Withdrawal[] = hsaOut
+    .map((w) => {
+      const linkedIds = expenses.filter((e) => e.reimbursement?.withdrawal && sameFp(e.reimbursement.withdrawal, w.fp)).map((e) => e.id);
+      const exactMatch = w.kind === "DISTRIBUTION" && !linkedIds.length ? exactSubset(unreimbursed.filter((e) => e.date <= w.date), w.amountCents) : null;
+      return { ...w, linkedIds, exactMatch };
     })
     .sort((a, b) => b.date.localeCompare(a.date));
 
@@ -280,7 +324,8 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const sum = (xs: { amountCents: number }[]) => xs.reduce((s, x) => s + x.amountCents, 0);
   const open = expenses.filter((e) => !e.reimbursement);
   const done = expenses.filter((e) => e.reimbursement);
-  const eligibleOpen = open.filter((e) => !e.flags.includes("BEFORE_OPEN"));
+  // Paid before the HSA opened, or doubtfully medical: kept in the log, left out of what's reimbursable.
+  const eligibleOpen = open.filter((e) => !e.flags.includes("BEFORE_OPEN") && !e.flags.includes("NOT_MEDICAL"));
   const missing = open.filter((e) => !e.receipt);
   const openCents = sum(eligibleOpen);
   const totals: HsaReport["totals"] = {

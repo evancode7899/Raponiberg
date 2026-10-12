@@ -6,13 +6,18 @@ import { KIND_LABEL } from "@/lib/hsa/qualify";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { Send } from "./HsaClient";
+import { sortRows, SortTh, useSort } from "./sort";
 
-type Status = "open" | "done" | "all";
+type Status = "open" | "done" | "review" | "all";
+
+const needsReview = (e: ExpenseView) => e.flags.includes("NOT_MEDICAL") || e.flags.includes("BAD_TIE");
 
 const FLAG_BADGE: Record<string, { tone: "warn" | "neg" | "neutral"; label: string; title: string }> = {
   DUPLICATE: { tone: "warn", label: "duplicate?", title: "Another expense has the same date and amount. If it's the same bill logged twice, delete one." },
   BEFORE_OPEN: { tone: "neg", label: "before HSA", title: "Paid before the HSA was opened (Settings): the IRS doesn't allow reimbursing it." },
   PAID_ROW_MISSING: { tone: "neutral", label: "row gone", title: "The statement row this was tied to is no longer in the ledger (re-imported or deleted)." },
+  NOT_MEDICAL: { tone: "neg", label: "not medical?", title: "Added from a statement charge that doesn't look like medical care. Left out of the totals until you keep or remove it." },
+  BAD_TIE: { tone: "neg", label: "wrong tie", title: "Marked reimbursed by an HSA card payment to a provider, which isn't a reimbursement." },
 };
 
 export function waitLabel(days: number): string {
@@ -28,7 +33,6 @@ export function ReceiptsTab({
   setSelected,
   onAdd,
   onEdit,
-  onImport,
   onExport,
   onReimburse,
   goFound,
@@ -39,7 +43,6 @@ export function ReceiptsTab({
   setSelected: Dispatch<SetStateAction<Set<string>>>;
   onAdd: () => void;
   onEdit: (id: string) => void;
-  onImport: () => void;
   onExport: (openOnly: boolean) => void;
   onReimburse: (ids: string[]) => void;
   goFound: () => void;
@@ -48,14 +51,18 @@ export function ReceiptsTab({
   const [year, setYear] = useState("");
   const [patient, setPatient] = useState("");
   const [q, setQ] = useState("");
+  const { sort, toggle: toggleSort } = useSort();
 
   const years = useMemo(() => [...new Set(r.expenses.map((e) => e.date.slice(0, 4)))].sort().reverse(), [r.expenses]);
-  const shown = r.expenses.filter(
+  const shown = sortRows(
+    r.expenses.filter(
     (e) =>
-      (status === "all" || (status === "open") === !e.reimbursement) &&
+      (status === "all" || (status === "review" ? needsReview(e) : (status === "open") === !e.reimbursement)) &&
       (!year || e.date.startsWith(year)) &&
       (!patient || (e.patient || "Unassigned") === patient) &&
       (!q || `${e.provider} ${e.notes} ${e.patient} ${KIND_LABEL[e.kind]}`.toLowerCase().includes(q.toLowerCase())),
+    ),
+    sort,
   );
   const picked = r.expenses.filter((e) => selected.has(e.id));
   const pickedCents = picked.reduce((s, e) => s + e.amountCents, 0);
@@ -72,9 +79,53 @@ export function ReceiptsTab({
   const dups = r.expenses.filter((e) => e.flags.includes("DUPLICATE"));
   const early = r.expenses.filter((e) => e.flags.includes("BEFORE_OPEN"));
   const likely = r.suggestions.filter((s) => s.tier === "LIKELY");
+  const notMedical = r.expenses.filter((e) => e.flags.includes("NOT_MEDICAL"));
+  const badTies = r.expenses.filter((e) => e.flags.includes("BAD_TIE"));
+  const review = r.expenses.filter(needsReview);
 
   return (
     <>
+      {badTies.length > 0 && (
+        <Callout
+          tone="bad"
+          title={`${badTies.length} expense${badTies.length === 1 ? " is" : "s are"} marked reimbursed by an HSA card payment`}
+          action={
+            <button type="button" className={btn.primary} onClick={() => send({ op: "unreimburse", ids: badTies.map((e) => e.id) })}>
+              Mark {badTies.length === 1 ? "it" : `all ${badTies.length}`} not reimbursed
+            </button>
+          }
+        >
+          When the HSA&apos;s own card pays a provider, the HSA paid that bill: no money came back to you, so it can&apos;t reimburse a different expense you paid out of pocket. These were
+          tied because their amounts added up ({usd0(badTies.reduce((s, e) => s + e.amountCents, 0))} in all). Only a distribution to your bank reimburses a receipt.
+        </Callout>
+      )}
+      {notMedical.length > 0 && (
+        <Callout
+          tone="warn"
+          title={`${notMedical.length} logged expense${notMedical.length === 1 ? " doesn't" : "s don't"} look like medical care`}
+          action={
+            <span className="flex flex-wrap gap-2">
+              <button type="button" className={btn.secondary} onClick={() => setStatus("review")}>
+                Show them
+              </button>
+              <button
+                type="button"
+                className={btn.danger}
+                onClick={() => {
+                  if (window.confirm(`Remove ${notMedical.length} expense${notMedical.length === 1 ? "" : "s"} from the log and stop suggesting those charges? (The journal beside the file keeps a copy.)`)) {
+                    void send({ op: "delete", ids: notMedical.map((e) => e.id), dismiss: true });
+                  }
+                }}
+              >
+                Remove all {notMedical.length}
+              </button>
+            </span>
+          }
+        >
+          They were added from statement charges filed under groceries, dining, shopping and the like, or whose names only looked medical (a state abbreviation read as &ldquo;MD&rdquo;).
+          They&apos;re left out of the totals until you keep one (Keep, on its row) or remove it.
+        </Callout>
+      )}
       {dups.length > 0 && (
         <Callout tone="warn" title={`${dups.length} expenses share a date and amount with another`}>
           {[...new Set(dups.map((e) => `${e.date} ${formatUsdCents(e.amountCents)}`))].join(" · ")}. If one is the same bill logged twice (a copied row), delete it so it isn&apos;t reimbursed twice.
@@ -113,9 +164,6 @@ export function ReceiptsTab({
             <button type="button" className={btn.primary} onClick={onAdd}>
               + Add expense
             </button>
-            <button type="button" className={btn.secondary} onClick={onImport}>
-              Import spreadsheet
-            </button>
             <button type="button" className={btn.ghost} onClick={() => onExport(status === "open")} title={status === "open" ? "Unreimbursed expenses as CSV" : "Every expense as CSV"}>
               Export CSV
             </button>
@@ -129,6 +177,7 @@ export function ReceiptsTab({
             options={[
               { value: "open", label: `Unreimbursed (${r.totals.unreimbursedCount + early.filter((e) => !e.reimbursement).length})` },
               { value: "done", label: `Reimbursed (${r.totals.reimbursedCount})` },
+              ...(review.length ? [{ value: "review" as const, label: `Needs review (${review.length})` }] : []),
               { value: "all", label: "All" },
             ]}
             value={status}
@@ -195,8 +244,8 @@ export function ReceiptsTab({
             title="No expenses logged yet"
             action={
               <div className="flex gap-2">
-                <button type="button" className={btn.primary} onClick={onImport}>
-                  Import your spreadsheet
+                <button type="button" className={btn.primary} onClick={onAdd}>
+                  + Add expense
                 </button>
                 {r.suggestions.length > 0 && (
                   <button type="button" className={btn.secondary} onClick={goFound}>
@@ -206,7 +255,7 @@ export function ReceiptsTab({
               </div>
             }
           >
-            Bring in the tracker you keep in Excel (.xlsx or .csv, or paste the cells), add expenses by hand, or pull medical charges straight from your imported card and bank statements.
+            Add expenses by hand, or pull medical charges straight from your imported card and bank statements.
           </EmptyState>
         ) : shown.length === 0 ? (
           <p className="py-6 text-center text-xs text-muted">Nothing matches these filters.</p>
@@ -232,14 +281,14 @@ export function ReceiptsTab({
                       }
                     />
                   </th>
-                  <th className={table.th}>Date</th>
+                  <SortTh k="date" label="Date" sort={sort} toggle={toggleSort} />
                   <th className={table.th}>Provider</th>
                   <th className={table.th}>Patient</th>
                   <th className={table.th}>Paid with</th>
                   <th className={table.th} title="Receipt or EOB saved">
                     Receipt
                   </th>
-                  <th className={table.thR}>Amount</th>
+                  <SortTh k="amount" label="Amount" sort={sort} toggle={toggleSort} right />
                   <th className={table.th}>Status</th>
                   <th className={table.th} />
                 </tr>
@@ -255,6 +304,15 @@ export function ReceiptsTab({
       </Card>
     </>
   );
+}
+
+/** How an expense came to be marked reimbursed, in a few words. */
+function reimbursedHow(e: ExpenseView): string {
+  const r = e.reimbursement!;
+  const when = r.markedAt ? ` on ${r.markedAt.slice(0, 10)}` : "";
+  if (e.withdrawal) return `tied to ${e.withdrawal.payee}, ${e.withdrawal.date} (${formatUsdCents(e.withdrawal.amountCents)})${when}`;
+  if (e.source === "IMPORT" && !r.markedAt) return "from the imported spreadsheet";
+  return `marked by hand${when}`;
 }
 
 function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: boolean; toggle: () => void; send: Send; onEdit: () => void }) {
@@ -279,6 +337,7 @@ function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: bool
           {KIND_LABEL[e.kind]}
           {e.notes && ` · ${e.notes}`}
         </div>
+        {e.doubt && <div className="text-[11px] text-warn">{e.doubt}</div>}
       </td>
       <td className={`${table.td} whitespace-nowrap text-fg-2`}>{e.patient || <span className="text-faint">—</span>}</td>
       <td className={`${table.td} max-w-[13rem] truncate whitespace-nowrap text-xs`}>
@@ -306,8 +365,16 @@ function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: bool
       <td className={table.tdR}>{formatUsdCents(e.amountCents)}</td>
       <td className={`${table.td} whitespace-nowrap text-xs`}>
         {e.reimbursement ? (
-          <span title={e.reimbursement.note || undefined}>
-            <Badge tone="pos">reimbursed</Badge> <span className="text-muted">{e.reimbursement.date ?? "date unknown"}</span>
+          <span className="flex flex-col gap-0.5">
+            <span title={e.reimbursement.note || undefined}>
+              <Badge tone={e.flags.includes("BAD_TIE") ? "neg" : "pos"}>reimbursed</Badge> <span className="text-muted">{e.reimbursement.date ?? "date unknown"}</span>
+            </span>
+            <span className="text-[11px] text-faint">
+              {reimbursedHow(e)} ·{" "}
+              <button type="button" className="underline hover:text-fg" onClick={() => send({ op: "unreimburse", ids: [e.id] })}>
+                undo
+              </button>
+            </span>
           </span>
         ) : (
           <span className="text-muted" title="Days since paid, and the estimated tax-free growth on the money left in the HSA meanwhile">
@@ -317,9 +384,26 @@ function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: bool
         )}
       </td>
       <td className={table.td}>
-        <button type="button" className={btn.ghost} onClick={onEdit}>
-          Edit
-        </button>
+        <span className="flex whitespace-nowrap">
+          <button type="button" className={btn.ghost} onClick={onEdit}>
+            Edit
+          </button>
+          {e.flags.includes("NOT_MEDICAL") && (
+            <button type="button" className={btn.ghost} title="It is a medical expense: keep it and stop flagging it" onClick={() => send({ op: "keep", ids: [e.id] })}>
+              Keep
+            </button>
+          )}
+          {e.source === "LEDGER" && (
+            <button
+              type="button"
+              className={btn.ghost}
+              title="Not an HSA expense: remove it from the log and don't suggest its charge again"
+              onClick={() => send({ op: "delete", ids: [e.id], dismiss: true })}
+            >
+              Not HSA
+            </button>
+          )}
+        </span>
       </td>
     </tr>
   );

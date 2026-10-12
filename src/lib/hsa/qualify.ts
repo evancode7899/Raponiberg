@@ -35,32 +35,54 @@ export type Qualification = { tier: Tier; kind: ExpenseKind; reason: string };
 
 /** Medical-adjacent spending an HSA can't reimburse; checked first so it always wins. */
 const NOT_QUALIFIED =
-  /\bGYM\b|FITNESS|EQUINOX|YOGA|PILATES|SOULCYCLE|PELOTON|CLASSPASS|ORANGETHEORY|\bYMCA\b|SUPPLEMENT|VITAMIN SHOPPE|GNC\b|\bSPA\b|MASSAGE ENVY|SALON|BARBER|\bNAILS?\b|COSMETIC|BOTOX|MEDSPA|MED SPA|AESTHETIC|LASER HAIR|INSURANCE|PREMIUM|AETNA|CIGNA|UNITED ?HEALTH|UHC\b|BLUE ?CROSS|BCBS|ANTHEM|HUMANA|OSCAR HEALTH|OXFORD HEALTH|EMBLEM|HARVARD PILGRIM|KAISER PERM|METLIFE|GEICO|STATE FARM|ALLSTATE|LEMONADE|PROGRESSIVE|VETERIN|ANIMAL HOSPITAL|PET HOSPITAL|\bVCA\b|BANFIELD|HOSPITALITY|HEALTHEQUITY|HSA BANK|FURTHER HSA|OPTUM BANK|ZOCDOC|ONE MEDICAL MEMBERSHIP/;
+  /\bGYM\b|FITNESS|EQUINOX|YOGA|PILATES|SOULCYCLE|PELOTON|CLASSPASS|ORANGETHEORY|\bYMCA\b|SUPPLEMENT|VITAMIN SHOPPE|GNC\b|\bSPA\b|MASSAGE ENVY|SALON|BARBER|\bNAILS?\b|COSMETIC|BOTOX|MEDSPA|MED SPA|AESTHETIC|LASER HAIR|INSURANCE|PREMIUM|AETNA|CIGNA|UNITED ?HEALTH|UHC\b|BLUE ?CROSS|BCBS|ANTHEM|HUMANA|OSCAR HEALTH|OXFORD HEALTH|EMBLEM|HARVARD PILGRIM|KAISER PERM|METLIFE|GEICO|STATE FARM|ALLSTATE|LEMONADE|PROGRESSIVE|VETERIN|ANIMAL HOSPITAL|PET HOSPITAL|\bVCA\b|BANFIELD|HOSPITALITY|HEALTHEQUITY|HSA BANK|FURTHER HSA|OPTUM BANK|ZOCDOC|ONE MEDICAL MEMBERSHIP|AMUSEMENT|ICE CREAM|HARDWARE|GO ?FU?NDME|\bIKEA\b/;
 
 const RULES: [RegExp, ExpenseKind, Tier, string][] = [
   [/FERTILIT|\bIVF\b|REPRODUCTIVE|\bRMA\b|SHADY GROVE|KINDBODY|CCRM|MIDWIFE|\bOB ?GYN|OBSTETRIC|LACTATION/, "FERTILITY", "LIKELY", "fertility or obstetric care"],
   [/HOSPITAL(?!ITY)|EMERGENCY|\bER\b|URGENT ?CARE|CITYMD|SURGERY|SURGICAL|SURGEON|ANESTHES|AMBULANCE|\bEMS\b|RADIOLOG|IMAGING|\bMRI\b|PATHOLOG|MEDICAL CENTER|MED CTR|HEALTH SYSTEM|HLTH SYS|PRESBYTERIAN|NORTHWELL|YALE NEW HAVEN|HACKENSACK|MAYO CLINIC|CLEVELAND CLINIC/, "HOSPITAL", "LIKELY", "hospital, ER, imaging or surgery"],
   [/DENTAL|DENTIST|\bDDS\b|\bDMD\b|ORTHODONT|PERIODONT|ENDODONT|ORAL SURG|SMILE DIRECT|INVISALIGN/, "DENTAL", "LIKELY", "dental care"],
-  [/OPHTHALM|OPTOMET|OPTICIAN|EYE ?CARE|EYE (DOCTOR|ASSOC|CENTER|INSTITUTE|PHYSICIAN|SURG)|\bEYE\b.*\b(EXAM|MD|DR)\b|LENSCRAFTERS|WARBY PARKER|1-?800 ?CONTACTS|CONTACTS ?DIRECT|COSTCO OPTICAL|VISIONWORKS|PEARLE VISION|AMERICA'?S BEST|LASIK|ZENNI/, "VISION", "LIKELY", "eye care, glasses or contacts"],
-  [/PHYSICAL THERAP|\bPHYSIO|\bPT\b|CHIROPRACT|ACUPUNCT|OCCUPATIONAL THERAP|SPEECH THERAP|ORTHOPED|SPORTS MED|PODIATR/, "THERAPY", "LIKELY", "therapy, chiropractic or orthopedics"],
+  [/OPHTHALM|OPTOMET|OPTICIAN|EYE ?CARE?|EYE (DOCTOR|ASSOC|CENTER|INSTITUTE|PHYSICIAN|SURG)|\bEYE\b.*\b(EXAM|MD|DR)\b|LENSCRAFTERS|WARBY PARKER|1-?800 ?CONTACTS|CONTACTS ?DIRECT|COSTCO OPTICAL|VISIONWORKS|PEARLE VISION|AMERICA'?S BEST|LASIK|ZENNI/, "VISION", "LIKELY", "eye care, glasses or contacts"],
+  // "PT" alone is too common (Pt. Pleasant, a store number): only a processor prefix ("PT *CLINIC").
+  [/PHYSICAL THERAP|\bPHYSIO|(?:^|\s)PT ?\*|CHIROPRACT|ACUPUNCT|OCCUPATIONAL THERAP|SPEECH THERAP|ORTHOPED|SPORTS MED|PODIATR/, "THERAPY", "LIKELY", "therapy, chiropractic or orthopedics"],
   [/PSYCHIATR|PSYCHOLOG|COUNSEL|THERAPIST|BEHAVIORAL HEALTH|MENTAL HEALTH|TALKSPACE|BETTERHELP|HEADWAY|ALMA ?HEALTH|SONDERMIND|\bLCSW\b|\bLMFT\b/, "MENTAL_HEALTH", "LIKELY", "mental health care"],
-  [/LABCORP|QUEST DIAG|\bLAB(S|ORATOR)|DIAGNOSTIC/, "MEDICAL", "LIKELY", "lab work"],
-  [/HEARING|AUDIOLOG|CPAP|DME\b|DURABLE MEDICAL|MEDICAL SUPPL|\bBRACE\b|CRUTCH|GLUCOSE|DEXCOM|OMNIPOD|BLOOD PRESSURE/, "EQUIPMENT", "LIKELY", "medical equipment or supplies"],
+  [/LABCORP|QUEST DIAG|MEDICAL LAB|CLINICAL LAB|PATHOLOGY LAB|DIAGNOSTIC/, "MEDICAL", "LIKELY", "lab work"],
+  [/HEARING|AUDIOLOG|CPAP|\bDME\b|DURABLE MEDICAL|MEDICAL SUPPL|\bBRACE\b|CRUTCH|GLUCOSE|DEXCOM|OMNIPOD|BLOOD PRESSURE/, "EQUIPMENT", "LIKELY", "medical equipment or supplies"],
   [/PRESCRIPTION|\bRX\b|PHARMACY ?RX|EXPRESS SCRIPTS|CAREMARK|OPTUM ?RX|ALTO PHARM|CAPSULE|PILLPACK|AMAZON PHARM|COST PLUS DRUG|GOODRX|HONEYBEE|BLINK HEALTH/, "PHARMACY", "LIKELY", "prescriptions"],
-  [/PHYSICIAN|DOCTOR|^DR\.? [A-Z]|\bDR\. ?[A-Z]|\bM\.?D\.?\b|\bMD ?PC\b|MEDICAL|CLINIC|PEDIATRIC|DERMATOLOG|ALLERG|CARDIOLOG|GASTRO|NEUROLOG|ONCOLOG|UROLOG|ENDOCRIN|RHEUMATOL|PULMON|NEPHROL|\bENT\b|EAR NOSE|OTOLARYNG|INTERNAL MED|FAMILY MED|PRIMARY CARE|HEALTHCARE|HEALTH CARE|PATIENT ?PAY|PATIENT ?PMT|INSTAMED|PAYMENTUS ?MED|MYCHART|ONE MEDICAL|FORWARD HEALTH|TELADOC|AMWELL|MDLIVE|NURSE|PRACTITIONER|\bNP\b|\bPA-?C\b|PHYS(ICIANS)? GRP|MED GRP|MEDICAL GROUP|ASSOC(IATES)? PC|HEALTH ?PARTNERS/, "MEDICAL", "LIKELY", "doctor or clinic"],
+  // "MD" alone is also Maryland and "DR" a shop's name ("Dr. Mike's Ice Cream"): a practice suffix only.
+  [/PHYSICIAN|DOCTOR|\bM\.?D\.? ?(?:PC|PL|PA|PLLC|LLC|P\.C\.)(?:\b|$)|MEDICAL|CLINIC|PEDIATRIC|DERMATOLOG|ALLERG|CARDIOLOG|GASTROENTER|NEUROLOG|ONCOLOG|UROLOG|ENDOCRIN|RHEUMATOL|PULMON|NEPHROL|\bENT\b|EAR,? NOSE|OTOLARYNG|INTERNAL MED|FAMILY MED|PRIMARY CARE|HEALTHCARE|HEALTH CARE|PATIENT ?PAY|PATIENT ?PMT|INSTAMED|PAYMENTUS ?MED|MYCHART|ONE MEDICAL|FORWARD HEALTH|TELADOC|AMWELL|MDLIVE|NURSE|PRACTITIONER|\bNP\b|\bPA-?C\b|PHYS(ICIANS)? GRP|MED GRP|MEDICAL GROUP|ASSOC(IATES)? PC|HEALTH ?PARTNERS/, "MEDICAL", "LIKELY", "doctor or clinic"],
   [/\bCVS\b|CVS\/|CVS PHARM|WALGREEN|DUANE READE|RITE ?AID|PHARMAC|FARMACIA|DRUG ?STORE|DRUGSTORE|APOTHECARY|CHEMIST|SHOPPERS DRUG/, "PHARMACY", "CHECK", "drug store: keep the receipt for the medical items"],
 ];
 
+/** Categories that say nothing either way about a charge being medical. */
+const NEUTRAL_CATEGORIES = new Set(["Health & insurance", "Other", "Uncategorized", ""]);
+
+/** How the ledger filed the row: its category, and whether the owner chose it (a merchant rule or a row answer). */
+export type FiledAs = { category: string; byOwner: boolean };
+
+export const ownerFiled = (classifiedBy: string | null) => classifiedBy === "USER" || classifiedBy === "user-merchant-rule";
+
 /**
- * Judge a payee (and any industry line) as an HSA-qualified expense. `ownerHealth`: the
- * owner filed this merchant under Health & insurance by hand, which is worth a look even
- * when the name says nothing (a doctor's practice billing under their own name).
+ * Judge a payee (and any industry line) as an HSA-qualified expense.
+ *
+ * `filed`: the ledger's category for the row. A charge filed somewhere plainly not medical
+ * (Groceries, Dining, Shopping…) needs more than a name to be suggested: if the owner
+ * filed it there it's never medical; if the classifier did, a matching name is only worth
+ * a check (parking at a hospital), never "likely". A row the owner filed under Health &
+ * insurance is worth a look even when the name says nothing (a doctor's practice billing
+ * under their own name).
  */
-export function qualifyPayee(payee: string, detail?: string | null, ownerHealth = false): Qualification | null {
+export function qualifyPayee(payee: string, detail?: string | null, filed?: FiledAs | null): Qualification | null {
   const text = `${payee} ${detail ?? ""}`.toUpperCase();
   if (NOT_QUALIFIED.test(text)) return null;
-  for (const [re, kind, tier, reason] of RULES) if (re.test(text)) return { tier, kind, reason };
-  return ownerHealth ? { tier: "CHECK", kind: "MEDICAL", reason: "you filed this merchant under Health & insurance" } : null;
+  const elsewhere = filed != null && !NEUTRAL_CATEGORIES.has(filed.category);
+  if (elsewhere && filed.byOwner) return null;
+  for (const [re, kind, tier, reason] of RULES) {
+    if (!re.test(text)) continue;
+    if (!elsewhere) return { tier, kind, reason };
+    // Already only a maybe (a drug store) and filed as something else: not worth asking about.
+    return tier === "LIKELY" ? { tier: "CHECK", kind, reason: `${reason}, but filed under ${filed.category}` } : null;
+  }
+  return filed?.byOwner && filed.category === "Health & insurance" ? { tier: "CHECK", kind: "MEDICAL", reason: "you filed this merchant under Health & insurance" } : null;
 }
 
 /** Best guess at the kind of expense from a free-text note ("PT session and knee x-rays"). */

@@ -169,17 +169,21 @@ about $10M net worth and $2M a year of income. A **DEMO** tag sits next to the l
 **HSA receipts** (Planning › HSA, or type `HSA`) is the log of medical bills paid out of
 pocket and left for the HSA to reimburse later, so the account stays invested:
 
-- **Import** the spreadsheet you keep today (.xlsx or .csv, or paste the cells): columns are
-  found by their headers (Date and Amount required; Reimbursed?, Provider/Notes, Patient,
-  Receipt used when there). Rows already in the log are skipped; same-day, same-amount
-  repeats are flagged.
+- **Receipts**: add expenses by hand or from statements; sort by date or amount. Each
+  reimbursed one says how it was marked (tied to which distribution, or by hand) and can be
+  undone on its row. Expenses added from charges that don't look medical (filed under
+  groceries, dining, shopping…) are flagged and left out of the totals until you keep or
+  remove them.
 - **Found in statements** lists card and bank charges that look like qualified care
   (doctors, dental, vision, labs, hospitals; drug stores as "check the receipt") and aren't
-  logged yet. Add them, or set aside a charge or a whole merchant for good.
-- **Reimburse**: select expenses and mark them reimbursed (date, note, and the HSA withdrawal
-  that paid them once its statement is imported); the planner picks the oldest receipts that
-  add up to a withdrawal you want to make, and withdrawals that add up exactly to some
-  receipts are offered to tie in one click.
+  logged yet. The name has to say medical care and the charge can't be filed somewhere
+  plainly not medical. Add them, or set aside a charge or a whole merchant for good.
+- **Reimburse**: select expenses and mark them reimbursed (date, note, and the HSA
+  distribution that paid them once its statement is imported); the planner picks the oldest
+  receipts that add up to a distribution you want to take. Money out of the HSA is either a
+  distribution to your bank (what reimburses receipts) or the HSA's card paying a provider
+  directly (nothing to reimburse, never tied to the log). A distribution that some receipts
+  add up to exactly is offered for review, never tied without you confirming.
 - **Growth & strategy**: what waiting has earned, the backlog's value in the year you plan
   to draw it down vs. a taxable account, and the three ways to pay a medical bill.
 
