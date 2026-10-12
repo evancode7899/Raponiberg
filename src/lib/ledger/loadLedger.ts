@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Lane } from "../classifier/taxonomy.ts";
 import { daysBetween, localToday } from "../dates/isoDate.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
+import { bookBill, type BillRowBooking, type BillStatement } from "./billBooking.ts";
 import { getMergeDate } from "./householdSettings.ts";
 import { buildTimeline, type AccountTimeline, type SegmentInput } from "./timeline.ts";
 import { billAccountIds, transferDifferenceAdjustments } from "./transferFees.ts";
@@ -76,6 +77,8 @@ export type Ledger = {
   completeThrough: string | null;
   /** YYYY-MM-DD — first day any account has a statement for. */
   firstDay: string | null;
+  /** How each row of a landlord's bill is booked (billBooking.ts); the Book's rows follow it. */
+  billRows?: ReadonlyMap<string, BillRowBooking>;
 };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -115,23 +118,57 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
     lossy.map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => l.transaction) })),
     bills,
   );
+  // The bank payments that paid each bill row, so the bill books them on the bank's days.
+  const paidBy = new Map<string, { date: string; amountCents: number }[]>();
+  if (bills.size) {
+    const pairs = await db.transferMatch.findMany({
+      where: { legs: { some: { transaction: { accountId: { in: [...bills] } } } } },
+      select: { legs: { select: { transaction: { select: { id: true, accountId: true, date: true, amountCents: true } } } } },
+    });
+    for (const m of pairs) {
+      const legs = m.legs.map((l) => l.transaction);
+      const bill = legs.filter((l) => bills.has(l.accountId));
+      if (bill.length !== 1) continue;
+      paidBy.set(
+        bill[0]!.id,
+        legs.filter((l) => l !== bill[0]).map((l) => ({ date: iso(l.date), amountCents: l.amountCents })),
+      );
+    }
+  }
 
   const byAccount = new Map<string, { statements: SegmentInput[]; summaries: SegmentInput[] }>();
+  const billStatements = new Map<string, BillStatement[]>();
   for (const s of imports) {
+    if (bills.has(s.accountId) && !s.isSummary) {
+      const list = billStatements.get(s.accountId) ?? [];
+      list.push({
+        periodStart: iso(s.periodStart),
+        periodEnd: iso(s.periodEnd),
+        openingCents: s.openingBalanceCents,
+        closingCents: s.closingBalanceCents,
+        rows: s.transactions.map((t) => ({
+          id: t.id,
+          date: iso(t.date),
+          precision: t.datePrecision === "PERIOD" ? "PERIOD" : "EXACT",
+          amountCents: t.amountCents,
+          lane: (t.lane ?? "EXPENSE") as Lane,
+        })),
+      });
+      billStatements.set(s.accountId, list);
+      continue;
+    }
     // A lossy transfer's shortfall leaves the transfer flow and becomes a fee (or
     // growth, if positive) on the sending account; the segment still ties out.
-    // A landlord's unitemized change to its bill is spending on the bill instead.
     let growthCents = s.growthCents;
     let feesCents = s.feesCents;
-    const flows = s.transactions.flatMap((t) => {
+    const flows = s.transactions.map((t) => {
       const d = transferFees.get(t.id) ?? 0;
       const date = iso(t.date);
       const precision = (t.datePrecision === "PERIOD" ? "PERIOD" : "EXACT") as "PERIOD" | "EXACT";
       const flow = { date, precision, amountCents: t.amountCents - d, lane: (t.lane ?? "EXPENSE") as Lane };
-      if (d !== 0 && bills.has(s.accountId)) return [flow, { date, precision, amountCents: d, lane: "EXPENSE" as Lane }];
       if (d < 0) feesCents += d;
       else growthCents += d;
-      return [flow];
+      return flow;
     });
     const seg: SegmentInput = {
       accountId: s.accountId,
@@ -146,6 +183,16 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
     const bucket = byAccount.get(s.accountId) ?? { statements: [], summaries: [] };
     (s.isSummary ? bucket.summaries : bucket.statements).push(seg);
     byAccount.set(s.accountId, bucket);
+  }
+  // A landlord's bill books every row on its own day (billBooking.ts); a landlord's
+  // unitemized change to its bill is spending on the bill.
+  const billRows = new Map<string, BillRowBooking>();
+  for (const [accountId, list] of billStatements) {
+    const booked = bookBill(accountId, list, paidBy, transferFees);
+    for (const [id, b] of booked.rows) billRows.set(id, b);
+    const bucket = byAccount.get(accountId) ?? { statements: [], summaries: [] };
+    bucket.statements = booked.segments;
+    byAccount.set(accountId, bucket);
   }
 
   const out: LedgerAccount[] = [];
@@ -166,7 +213,7 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
       closed: false,
     });
   }
-  const ledger: Ledger = { accounts: out, mergeDate, completeThrough: null, firstDay: null };
+  const ledger: Ledger = { accounts: out, mergeDate, completeThrough: null, firstDay: null, billRows };
   refreshLedgerStatus(ledger, today);
   return ledger;
 }

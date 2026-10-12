@@ -184,8 +184,8 @@ const cache = new WeakMap<BookRow[], Map<string, string>>();
 /**
  * The day spending figures count a row on: the first of the month a rent payment covers;
  * a landlord's bill charge on the day it prints (the 1st of the month it covers, although
- * the bill is issued, and the ledger books it, the month before); otherwise the day the
- * ledger books it (booking.ts).
+ * the bill is issued the month before), which is also the day the ledger books it
+ * (ledger/billBooking.ts); otherwise the day the ledger books it (booking.ts).
  */
 export function countsOn(
   rows: BookRow[],

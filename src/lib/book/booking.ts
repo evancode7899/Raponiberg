@@ -14,6 +14,8 @@ export type Booked = {
   precision: "EXACT" | "PERIOD";
   /** The statement period the row came from. */
   statement: { start: string; end: string };
+  /** The day the Book booked it on, when known (a landlord's bill books rows on their own days: ledger/billBooking.ts). */
+  bookedOn?: string;
 };
 
 /** The day an exact row is booked on: its date, clamped into its statement's period. */
@@ -22,7 +24,7 @@ export const bookedOn = (r: Pick<Booked, "date" | "statement">) => minIso(r.stat
 /** The share of a row the ledger books inside [from, to] (inclusive): 0 or 1 for an exact row, a fraction of a period total. */
 export function bookedShare(r: Booked, from: string, to: string): number {
   if (r.precision === "EXACT") {
-    const d = bookedOn(r);
+    const d = r.bookedOn ?? bookedOn(r);
     return d >= from && d <= to ? 1 : 0;
   }
   const lo = maxIso(from, r.statement.start);

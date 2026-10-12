@@ -51,15 +51,24 @@ export type BookRow = {
   id: string;
   /** The date the statement prints. */
   date: string;
-  /** EXACT, or PERIOD: the statement gave only a period total (spread across `statement`). */
+  /**
+   * How the ledger books it: EXACT on `bookedOn`, or PERIOD: the statement gave only a
+   * period total (spread across `statement`).
+   */
   precision: "EXACT" | "PERIOD";
   /** The period of the statement the row came from. */
   statement: { start: string; end: string };
   /**
    * The day the ledger books the row on: `date` clamped into `statement` (see
-   * booking.ts). Figures that bucket rows by period use it, so they agree with net worth.
+   * booking.ts); a landlord's bill row on its own day, its payments on the bank's
+   * (ledger/billBooking.ts). Figures that bucket rows by period use it, so they agree
+   * with net worth.
    */
   bookedOn: string;
+  /** A landlord's bill charge dated after the last bill on file: not in the ledger (or any figure) until a bill covers its day. */
+  pending?: true;
+  /** A further piece of a bill payment made by more than one bank payment, booked on its own day; the row it's part of. */
+  partOf?: string;
   amountCents: number;
   lane: Lane;
   accountId: string;
@@ -256,10 +265,10 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     const u = employee.toUpperCase();
     return persons.find((p) => p.match.some((m) => u.includes(m)))?.id ?? null;
   };
-  const bookRows: BookRow[] = rows.map((r) => {
+  const bookRows: BookRow[] = rows.flatMap((r) => {
     const date = iso(r.date);
     const statement = { start: iso(r.periodStart), end: iso(r.periodEnd) };
-    return {
+    const row: BookRow = {
       id: r.id,
       date,
       precision: r.datePrecision === "PERIOD" ? ("PERIOD" as const) : ("EXACT" as const),
@@ -279,6 +288,16 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       classifiedBy: r.classifiedBy,
       transferMatchId: r.matchId ?? null,
     };
+    // A landlord's bill row books where the ledger does (billBooking.ts).
+    const bill = ledger.billRows?.get(r.id);
+    if (!bill) return [row];
+    if (bill.pending) return [{ ...row, precision: "EXACT", bookedOn: date, pending: true }];
+    const [first, ...more] = bill.parts;
+    const rest = more.reduce((s, p) => s + p.amountCents, 0);
+    return [
+      { ...row, precision: "EXACT", bookedOn: first!.date, amountCents: r.amountCents - rest },
+      ...more.map((p, i): BookRow => ({ ...row, id: `${r.id}:part${i + 2}`, partOf: r.id, precision: "EXACT", bookedOn: p.date, amountCents: p.amountCents })),
+    ];
   });
   const bookMatches: BookTransferMatch[] = matches.map((m) => ({
     id: m.id,
@@ -297,8 +316,10 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   for (const [id, cents] of corrections) {
     const leg = bookRows.find((r) => r.id === id);
     if (!leg || !bills.has(leg.accountId)) continue;
+    const booked = ledger.billRows?.get(id);
     bookRows.push({
       ...leg,
+      ...(booked && !booked.pending && booked.correction ? { precision: "EXACT" as const, bookedOn: booked.correction.date } : {}),
       id: `${id}:correction`,
       amountCents: cents,
       lane: "EXPENSE",
@@ -313,7 +334,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       transferMatchId: null,
     });
   }
-  if (corrections.size) bookRows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (corrections.size || bookRows.some((r) => r.partOf)) bookRows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   // Months a card issuer sent no statement for because nothing happened: $0, covered.
   const idle = applyIdleWindows(ledger, bookRows, bookMatches, today, new Map(accounts.map((a) => [a.id, a.aliases.map((x) => x.identifier)])));
