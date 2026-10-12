@@ -39,6 +39,8 @@ export type AccountSubtype =
   | "401K"
   | "529"
   | "HSA"
+  /** A landlord's bill account (Yardi): its charges are spending and paying it is a transfer, like a card. */
+  | "BILL"
   | "OTHER";
 
 /**
@@ -108,6 +110,14 @@ export type ParsedAccountSection = {
    * closing value; growth is re-derived from the balances.
    */
   startsAfterPrior?: boolean;
+  /**
+   * A bill that lists what's owed but not what was paid (Yardi's rent bill prints only
+   * open charges). At commit, against the account's previous bill: the period starts the
+   * day after it, the opening is its closing, charges it already listed are dropped, and
+   * one PERIOD row ("Payments and credits") explains the rest of the change. An account's
+   * first bill covers only its own last day, owing nothing before it.
+   */
+  paymentsFromPrior?: boolean;
   /**
    * Statement-printed subtotals the parser could cross-check its rows against. Each is
    * shown on review and any mismatch blocks auto-commit.

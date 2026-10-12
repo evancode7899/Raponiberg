@@ -89,7 +89,9 @@ export function rentPayments(
   merchantRules: MerchantRule[] = MERCHANT_RULES,
 ): RentPayment[] {
   const cards = new Set(accounts.filter((a) => (a.subtype ?? a.type) === "CREDIT_CARD").map((a) => a.id));
-  const housing = rows.filter((r) => r.lane === "EXPENSE" && r.category === HOUSING && r.precision === "EXACT");
+  // A landlord's bill already dates each charge to the month it covers (countsOn).
+  const bills = new Set(accounts.filter((a) => a.subtype === "BILL").map((a) => a.id));
+  const housing = rows.filter((r) => r.lane === "EXPENSE" && r.category === HOUSING && r.precision === "EXACT" && !bills.has(r.accountId));
   // A charge and its exact credit on one account within a week cancel: not a payment.
   const cancelled = new Set<string>();
   for (const c of housing) {
@@ -180,8 +182,10 @@ function rebalance(full: RentPayment[]): void {
 const cache = new WeakMap<BookRow[], Map<string, string>>();
 
 /**
- * The day spending figures count a row on: the first of the month a rent payment covers,
- * otherwise the day the ledger books it (booking.ts).
+ * The day spending figures count a row on: the first of the month a rent payment covers;
+ * a landlord's bill charge on the day it prints (the 1st of the month it covers, although
+ * the bill is issued, and the ledger books it, the month before); otherwise the day the
+ * ledger books it (booking.ts).
  */
 export function countsOn(
   rows: BookRow[],
@@ -194,5 +198,6 @@ export function countsOn(
     cache.set(rows, covers);
   }
   const m = covers;
-  return (r) => m.get(r.id) ?? r.bookedOn;
+  const bills = new Set(accounts.filter((a) => a.subtype === "BILL").map((a) => a.id));
+  return (r) => m.get(r.id) ?? (bills.has(r.accountId) && r.precision === "EXACT" ? r.date : r.bookedOn);
 }

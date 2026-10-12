@@ -86,7 +86,7 @@ export function TransfersQueue({ api, onCount }: { api: Api; onCount: (n: number
       {error && <ErrorNote>{error}</ErrorNote>}
       <Card
         title={`Almost-matching transfers (${data.suggestions.length})`}
-        subtitle="Same money, amounts a little apart — usually a fee or a residual taken in transit. Confirm to pair them; the difference shows as a transfer cost instead of disappearing."
+        subtitle="Same money, amounts a little apart — usually a fee or a residual taken in transit. Confirm to pair them; the difference shows as a transfer cost instead of disappearing. On a rent bill it counts as housing: the landlord changed the bill without listing the change."
       >
         {data.suggestions.length === 0 ? (
           <p className="text-sm text-muted">None — nothing to confirm.</p>

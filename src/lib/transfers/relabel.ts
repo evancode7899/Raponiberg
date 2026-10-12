@@ -10,6 +10,10 @@ export const RELABEL = {
   UNTRACKED_CARD: "untracked-card:",
   /** A payment on the partner's card that no tracked bank account sent: the partner's own money. */
   PARTNER_PAID: "partner-paid:",
+  /** A bank rent payment that paid a landlord's bill on file: a transfer to the bill, whose charges are the spending. */
+  PAID_BILL: "paid-bill:",
+  /** A payment line on a landlord's first bill no bank payment made: credit from money already counted as housing. */
+  BILL_CREDIT: "bill-credit:",
 } as const;
 
 export const isRelabel = (by: string | null | undefined) => !!by && Object.values(RELABEL).some((p) => by.startsWith(p));

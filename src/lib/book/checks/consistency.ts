@@ -1,5 +1,5 @@
 import { addDays, dayNumber, fromDayNumber, periodsBetween, startOfMonth } from "../../dates/isoDate.ts";
-import { transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
+import { billAccountIds, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
 import { bookedShare } from "../booking.ts";
 import { money } from "../coverage.ts";
 import { accountRef, stubRef } from "../findingKeys.ts";
@@ -24,7 +24,8 @@ export function checkConsistency(book: Book, c: Collector) {
   const fees = transferDifferenceAdjustments(
     book.matches
       .filter((m) => m.status === "CONFIRMED")
-      .map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents })) })),
+      .map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents, accountId: l.accountId })) })),
+    billAccountIds(book.accounts),
   );
 
   for (const a of book.ledger.accounts) {

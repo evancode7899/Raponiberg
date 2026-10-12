@@ -1,10 +1,10 @@
-import { endOfMonth, ymd } from "../../dates/isoDate.ts";
-import type { ParsedDocument } from "../types.ts";
+import { addDays, ymd } from "../../dates/isoDate.ts";
+import type { ParsedDocument, ParsedTransaction } from "../types.ts";
 import { collapseSpaces, lines, parseMoney, parseSlashDate } from "../text.ts";
 
 export const RENT_BILL_PARSER_ID = "yardi-rent-bill";
 /** Bump when a change would read already-imported documents differently (re-import them with --reparse-outdated). */
-export const VERSION = 1;
+export const VERSION = 2;
 
 /**
  * Yardi's monthly rent invoice: a due date, an amount due and the month's charges under
@@ -24,11 +24,17 @@ export function detectRentBill(text: string): boolean {
 const ITEM = /^(\d{1,2}\/\d{1,2}\/\d{4}) (.+?) (\(?[\d,]+\.\d{2}\)?)$/;
 
 /**
- * A landlord's rent bill from Yardi's RentCafe portal. It is an invoice, not a money
- * movement: the rent itself is paid from a bank or card account whose statement records
- * it, so the bill is kept as a supporting document and never adds to the ledger. It is
- * dated to the month the rent covers (the "RES RENT (MM/YYYY)" line, else the due date),
- * which is usually the month after the one it was issued in.
+ * A landlord's rent bill from Yardi's RentCafe portal, read as a statement of the
+ * household's account with the landlord — the same as a card: each charge on it (rent,
+ * fees, utilities, parking) is spending, and the bank payments that pay it are transfers
+ * to it. What it prints is the charges still open as of "payments processed through"
+ * (next month's charges are already posted, dated the 1st they cover), so:
+ *
+ * - the period ends on that date, and the balance then is the amount due;
+ * - the charges are the rows, on the dates printed (rent counts in the month it covers);
+ * - payments aren't listed once they've been applied, so the bill alone can't say what
+ *   was paid: at commit the previous bill supplies the opening and one "Payments and
+ *   credits" row explains the difference (see `paymentsFromPrior`).
  */
 export function parseRentBill(text: string): ParsedDocument {
   const ls = lines(text);
@@ -39,38 +45,66 @@ export function parseRentBill(text: string): ParsedDocument {
   const totalLine = ls.find((l) => /^TOTAL: /.test(l));
   const total = totalLine ? parseMoney(totalLine.slice("TOTAL: ".length)) : null;
   if (total == null) throw new Error("Rent bill: total not found");
+  const accountNumber = /^ACCT NO\. (\S+)/m.exec(text)?.[1] ?? "unknown";
 
   // The property manager is printed right after the first "AMOUNT DUE" line.
   const amountIdx = ls.findIndex((l) => /^AMOUNT DUE \$/.test(l));
   const manager = amountIdx >= 0 ? ls[amountIdx + 1] : undefined;
   const institution = manager && !/^Dear /i.test(manager) ? collapseSpaces(manager) : "Landlord";
 
+  const through = /Reflects payments processed through (\d{2})-(\d{2})-(\d{4})/.exec(text);
+  const periodEnd = through ? ymd(Number(through[3]), Number(through[1]), Number(through[2])) : addDays(due, -1);
+  if (!through) warnings.push("No \"payments processed through\" date; the bill is dated the day before it's due");
+
   const start = ls.findIndex((l) => /^Date Item Desc/i.test(l));
   const end = ls.findIndex((l, i) => i > start && /^TOTAL: /.test(l));
-  let itemized = 0;
+  const transactions: ParsedTransaction[] = [];
   for (const l of start >= 0 && end > start ? ls.slice(start + 1, end) : []) {
     const m = ITEM.exec(l);
-    if (!m) {
+    const date = m ? parseSlashDate(m[1]!) : null;
+    if (!m || !date) {
       warnings.push(`Unread bill line "${l}"`);
       continue;
     }
-    itemized += parseMoney(m[3]!)!;
+    // Printed as owed: a charge is positive, a payment or credit in parentheses.
+    const printed = parseMoney(m[3]!)!;
+    transactions.push({
+      date,
+      datePrecision: "EXACT",
+      description: collapseSpaces(m[2]!),
+      amountCents: -printed,
+      section: printed < 0 ? "Payments and credits" : "Charges",
+    });
   }
-  if (itemized !== total) warnings.push(`Bill items add up to ${itemized}¢, not the printed total of ${total}¢`);
-
-  const covered = /RES RENT \((\d{2})\/(\d{4})\)/.exec(text);
-  const periodStart = covered ? ymd(Number(covered[2]), Number(covered[1]), 1) : `${due.slice(0, 7)}-01`;
-  if (!covered) warnings.push("No rent line names the month covered; dated to the due date's month");
+  const itemized = -transactions.reduce((s, t) => s + t.amountCents, 0);
 
   return {
     parserId: RENT_BILL_PARSER_ID,
     parserVersion: VERSION,
     institution,
-    kind: "SUPPORTING",
+    kind: "STATEMENT",
     title: "Rent bill",
-    periodStart,
-    periodEnd: endOfMonth(periodStart),
-    sections: [],
+    periodStart: periodEnd,
+    periodEnd,
+    sections: [
+      {
+        institution,
+        accountNumber,
+        accountName: "Rent",
+        kind: "OTHER",
+        subtype: "BILL",
+        // Until commit puts it after the previous bill: owing nothing before this one.
+        periodStart: transactions.reduce((m, t) => (t.date < m ? t.date : m), periodEnd),
+        periodEnd,
+        openingBalanceCents: -total + itemized,
+        closingBalanceCents: -total,
+        growthCents: 0,
+        feesCents: 0,
+        transactions,
+        paymentsFromPrior: true,
+        checks: [{ label: "Bill items add up to the amount due", expectedCents: total, actualCents: itemized }],
+      },
+    ],
     warnings,
   };
 }

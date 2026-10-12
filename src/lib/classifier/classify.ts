@@ -118,6 +118,11 @@ function structural(i: ClassifyInput, ctx: ClassifyContext, h: HouseholdPatterns
   const isCard = i.accountSubtype === "CREDIT_CARD";
   const isBank = i.accountSubtype === "CHECKING" || i.accountSubtype === "SAVINGS";
 
+  // Paying a landlord's bill, like paying a card: the bank's rent payments pair with it.
+  if (i.accountSubtype === "BILL" && i.amountCents > 0 && /^PAYMENTS?\b/.test(d)) {
+    return own("TRANSFER", "Own-account transfers", { kind: "OWN_ACCOUNT", subtypes: ["CHECKING", "SAVINGS"] }, "bill-payment");
+  }
+
   if (!isCard && !isBank && i.institution === "Vanguard" && !/^Employ(ee|er) contributions$/.test(section)) {
     const v = vanguardFlow(i, d, section);
     if (v) return v;
@@ -225,7 +230,7 @@ function vanguardFlow(i: ClassifyInput, d: string, section: string): Partial | n
 function userRule(i: ClassifyInput, key: string, ctx: ClassifyContext): Partial | null {
   const rule = ctx.userRules.find((r) => r.merchantKey === key);
   if (!rule) return null;
-  const lane: Lane = rule.lane ?? (i.amountCents < 0 || i.accountSubtype === "CREDIT_CARD" ? "EXPENSE" : "INCOME");
+  const lane: Lane = rule.lane ?? (i.amountCents < 0 || i.accountSubtype === "CREDIT_CARD" || i.accountSubtype === "BILL" ? "EXPENSE" : "INCOME");
   return {
     lane,
     category: rule.category,
@@ -392,6 +397,8 @@ function systemRule(i: ClassifyInput, ctx: ClassifyContext, h: HouseholdPatterns
   const d = i.description.toUpperCase();
   const isCard = i.accountSubtype === "CREDIT_CARD";
   const isBank = i.accountSubtype === "CHECKING" || i.accountSubtype === "SAVINGS";
+  // A landlord's bill: every charge (or credit) on it is housing, except the parking.
+  if (i.accountSubtype === "BILL") return expense(/PARKING/.test(d) ? "Transportation" : "Housing", "bill-charge", "high");
   if (!isCard && !isBank) return null;
   for (const r of SYSTEM_RULES) {
     if (isCard && !r.cards) continue;

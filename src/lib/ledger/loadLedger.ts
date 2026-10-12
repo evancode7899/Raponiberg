@@ -4,7 +4,7 @@ import { daysBetween, localToday } from "../dates/isoDate.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { getMergeDate } from "./householdSettings.ts";
 import { buildTimeline, type AccountTimeline, type SegmentInput } from "./timeline.ts";
-import { transferDifferenceAdjustments } from "./transferFees.ts";
+import { billAccountIds, transferDifferenceAdjustments } from "./transferFees.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -34,6 +34,8 @@ export function groupFor(subtype: string | null, type: string): AccountGroup {
     case "CASH":
       return "Cash";
     case "CREDIT_CARD":
+    // A landlord's bill is owed like a card and paid off like one.
+    case "BILL":
       return "Credit cards";
     case "BROKERAGE":
     case "INVESTMENT":
@@ -106,28 +108,30 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
 
   const lossy = await db.transferMatch.findMany({
     where: { status: "CONFIRMED", differenceCents: { not: 0 } },
-    select: { differenceCents: true, legs: { select: { transaction: { select: { id: true, amountCents: true } } } } },
+    select: { differenceCents: true, legs: { select: { transaction: { select: { id: true, amountCents: true, accountId: true } } } } },
   });
+  const bills = billAccountIds(accounts);
   const transferFees = transferDifferenceAdjustments(
     lossy.map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => l.transaction) })),
+    bills,
   );
 
   const byAccount = new Map<string, { statements: SegmentInput[]; summaries: SegmentInput[] }>();
   for (const s of imports) {
     // A lossy transfer's shortfall leaves the transfer flow and becomes a fee (or
     // growth, if positive) on the sending account; the segment still ties out.
+    // A landlord's unitemized change to its bill is spending on the bill instead.
     let growthCents = s.growthCents;
     let feesCents = s.feesCents;
-    const flows = s.transactions.map((t) => {
+    const flows = s.transactions.flatMap((t) => {
       const d = transferFees.get(t.id) ?? 0;
+      const date = iso(t.date);
+      const precision = (t.datePrecision === "PERIOD" ? "PERIOD" : "EXACT") as "PERIOD" | "EXACT";
+      const flow = { date, precision, amountCents: t.amountCents - d, lane: (t.lane ?? "EXPENSE") as Lane };
+      if (d !== 0 && bills.has(s.accountId)) return [flow, { date, precision, amountCents: d, lane: "EXPENSE" as Lane }];
       if (d < 0) feesCents += d;
       else growthCents += d;
-      return {
-        date: iso(t.date),
-        precision: (t.datePrecision === "PERIOD" ? "PERIOD" : "EXACT") as "PERIOD" | "EXACT",
-        amountCents: t.amountCents - d,
-        lane: (t.lane ?? "EXPENSE") as Lane,
-      };
+      return [flow];
     });
     const seg: SegmentInput = {
       accountId: s.accountId,
