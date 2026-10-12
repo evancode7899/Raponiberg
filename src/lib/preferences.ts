@@ -26,6 +26,9 @@ export function fontScaleToCss(v: FontScale): string {
   return FONT_SCALE_CSS[v];
 }
 
+/** Dispatched on window when the theme changes, so every theme control shows the current one. */
+export const THEME_CHANGED_EVENT = "pf:theme-changed";
+
 export function applyTheme(theme: AppTheme): void {
   if (typeof document === "undefined") return;
   document.documentElement.setAttribute("data-theme", theme);
@@ -34,6 +37,7 @@ export function applyTheme(theme: AppTheme): void {
   } catch {
     /* ignore */
   }
+  window.dispatchEvent(new CustomEvent<AppTheme>(THEME_CHANGED_EVENT, { detail: theme }));
 }
 
 export function applyFontScale(scale: FontScale): void {

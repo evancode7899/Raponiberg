@@ -6,7 +6,8 @@ export function resolveSqliteDatabaseFilePath(): string | null {
   if (!url?.toLowerCase().startsWith("file:")) {
     return null;
   }
-  let p = url.replace(/^file:/i, "");
+  // Connection options after "?" (connection_limit=1…) aren't part of the path.
+  let p = url.replace(/^file:/i, "").split("?")[0]!;
   if (!path.isAbsolute(p)) {
     p = path.resolve(process.cwd(), "prisma", p);
   }
@@ -15,8 +16,7 @@ export function resolveSqliteDatabaseFilePath(): string | null {
 
 /** Prisma `file:` URL for an absolute filesystem path (Windows-safe). */
 export function sqliteFileUrlForPath(absPath: string): string {
-  const slash = absPath.replace(/\\/g, "/");
-  return /^[A-Za-z]:/.test(slash) ? `file:${slash}` : `file:${slash}`;
+  return `file:${absPath.replace(/\\/g, "/")}`;
 }
 
 const SQLITE_MAGIC = Buffer.from("SQLite format 3\0");

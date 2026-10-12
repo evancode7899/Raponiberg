@@ -15,6 +15,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = (await request.json().catch(() => null)) as { name?: string; archived?: boolean } | null;
   const name = body?.name?.trim();
   if (!name && body?.archived === undefined) return NextResponse.json({ error: "Nothing to change" }, { status: 400 });
+  if (!(await prisma.account.findUnique({ where: { id }, select: { id: true } }))) return NextResponse.json({ error: "Account not found" }, { status: 404 });
   const account = await prisma.account.update({
     where: { id },
     data: {

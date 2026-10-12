@@ -46,6 +46,15 @@ export function maxIso(a: string, b: string): string {
   return a >= b ? a : b;
 }
 
+/**
+ * Today on this computer's calendar. The Book, its cache and every "as of today" figure
+ * use it, so they agree on the date (an ISO timestamp's date is UTC's, a day ahead on a US
+ * evening).
+ */
+export function localToday(now = new Date()): string {
+  return ymd(now.getFullYear(), now.getMonth() + 1, now.getDate());
+}
+
 export function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }

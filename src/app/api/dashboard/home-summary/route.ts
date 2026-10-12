@@ -87,6 +87,8 @@ async function summary(book: Book) {
   // Findings past the data edge are statements still on their way, counted apart.
   const findings = book.integrity.findings.filter((f) => !f.atEdge);
   return {
+    /** No committed statement yet: the page welcomes instead of showing empty figures. */
+    hasStatements: book.ledger.accounts.length > 0,
     netWorth: {
       asOf,
       blockers: nwBlockers,

@@ -1,6 +1,7 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { csvRow } from "@/lib/csv";
+import { localToday } from "@/lib/dates/isoDate";
 import { KIND_LABEL } from "@/lib/hsa/qualify";
 import { readHsaFile } from "@/lib/hsa/store";
 import { NextRequest, NextResponse } from "next/server";
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
     ),
   ];
   await logAuditEvent({ action: "hsa_expenses_exported", actor: AUDIT_ACTOR_APP, payload: { rows: expenses.length, openOnly } });
-  const name = `hsa-receipts-${openOnly ? "unreimbursed-" : ""}${new Date().toLocaleDateString("en-CA")}.csv`;
+  const name = `hsa-receipts-${openOnly ? "unreimbursed-" : ""}${localToday()}.csv`;
   return new NextResponse("﻿" + lines.join("\r\n") + "\r\n", {
     headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${name}"` },
   });

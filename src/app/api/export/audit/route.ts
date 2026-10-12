@@ -5,7 +5,8 @@ import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * CSV of audit events (optional date filter). Same auth as other exports.
+ * CSV of every audit event (optional from/to filter: an ISO date or timestamp). Same auth
+ * as other exports.
  */
 export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
@@ -17,7 +18,8 @@ export async function GET(request: NextRequest) {
   const to = sp.get("to")?.trim();
 
   const fromD = from ? new Date(from) : undefined;
-  const toD = to ? new Date(to) : undefined;
+  // A bare date includes that whole day (new Date("YYYY-MM-DD") is its first instant, UTC).
+  const toD = to ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(to) ? `${to}T23:59:59.999Z` : to) : undefined;
   if (from && (fromD == null || Number.isNaN(fromD.getTime()))) {
     return NextResponse.json({ error: "Invalid from date" }, { status: 400 });
   }
@@ -35,10 +37,10 @@ export async function GET(request: NextRequest) {
         }
       : {};
 
+  // Every event: Settings › Audit log offers this download as the full log.
   const rows = await prisma.auditEvent.findMany({
     where,
     orderBy: { occurredAt: "desc" },
-    take: 10_000,
   });
 
   const headers = [

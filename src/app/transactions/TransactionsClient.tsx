@@ -6,7 +6,7 @@ import { useApi } from "@/components/ledger/useApi";
 import { useChanged } from "@/components/useChanged";
 import { btn, Card, EmptyState, ErrorNote, Field, inputCls, Loading, PageBody, selectCls } from "@/components/ui/kit";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
-import { addDays, startOfMonth } from "@/lib/dates/isoDate";
+import { addDays, localToday, startOfMonth } from "@/lib/dates/isoDate";
 import { usd0 } from "@/lib/formatMoney";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -23,7 +23,7 @@ const LANE_FILTERS: { value: string; label: string }[] = [
   { value: "CONTRIBUTION_EMPLOYEE,CONTRIBUTION_EMPLOYER,CONTRIBUTION_PERSONAL", label: "Retirement contributions" },
 ];
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localToday();
 const PRESETS: { id: string; label: string; range: () => [string, string] }[] = [
   { id: "30d", label: "30 days", range: () => [addDays(today(), -30), ""] },
   { id: "month", label: "This month", range: () => [startOfMonth(today()), ""] },

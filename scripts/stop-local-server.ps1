@@ -9,7 +9,7 @@ $Port = 3000
 
 function Show-Message([string]$Text) {
   Add-Type -AssemblyName System.Windows.Forms | Out-Null
-  [System.Windows.Forms.MessageBox]::Show($Text, "Personal Finance Web App", "OK", "Information") | Out-Null
+  [System.Windows.Forms.MessageBox]::Show($Text, "Raponiberg", "OK", "Information") | Out-Null
 }
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path

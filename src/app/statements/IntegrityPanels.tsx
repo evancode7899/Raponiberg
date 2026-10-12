@@ -89,6 +89,9 @@ export function ChecksPanel({ r, onRetire }: { r: BookReport; onRetire: OnRetire
                 <th className={table.thR}>Inferred</th>
                 <th className={table.thR}>Failing</th>
                 <th className={table.thR}>Missing</th>
+                <th className={table.thR} title="Past the data edge: statements still on their way">
+                  Awaiting
+                </th>
                 <th className={table.thR}>Accepted</th>
               </tr>
             </thead>
@@ -103,6 +106,7 @@ export function ChecksPanel({ r, onRetire }: { r: BookReport; onRetire: OnRetire
                   <td className={table.tdR}>{c.inferred || "—"}</td>
                   <td className={`${table.tdR} ${c.failed ? "font-semibold text-neg" : ""}`}>{c.failed || "—"}</td>
                   <td className={`${table.tdR} ${c.missing ? "font-semibold text-warn" : ""}`}>{c.missing || "—"}</td>
+                  <td className={table.tdR}>{c.awaiting || "—"}</td>
                   <td className={table.tdR}>{c.accepted || "—"}</td>
                 </tr>
               ))}

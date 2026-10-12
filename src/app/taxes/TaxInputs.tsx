@@ -42,15 +42,18 @@ const EXTRA_FIELDS: [keyof PersonExtras, string, string?][] = [
 
 /** Everything the statements can't tell: household, last year's return, extras, deductions. */
 export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) => Promise<void> }) {
-  const [draft, setDraft] = useState<TaxProfile>(() => withYear(r.profile, r.year, r.inputs));
+  const [kept, setDraft] = useState<TaxProfile>(() => withYear(r.profile, r.year, r.inputs));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ tone: "good" | "warn"; text: string } | null>(null);
   // A new profile, year or inputs from the server resets the draft (adjusted during render,
-  // not in an effect).
+  // not in an effect). The rest of this render already uses the reset draft: the old one
+  // may have no inputs for the new year.
   const [seen, setSeen] = useState([r.profile, r.year, r.inputs] as const);
+  let draft = kept;
   if (seen[0] !== r.profile || seen[1] !== r.year || seen[2] !== r.inputs) {
+    draft = withYear(r.profile, r.year, r.inputs);
     setSeen([r.profile, r.year, r.inputs]);
-    setDraft(withYear(r.profile, r.year, r.inputs));
+    setDraft(draft);
   }
   const y = draft.years[String(r.year)]!;
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(withYear(r.profile, r.year, r.inputs)), [draft, r]);

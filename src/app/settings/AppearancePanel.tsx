@@ -1,7 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ui/kit";
-import { applyFontScale, applyTheme, isAppTheme, isFontScale, type AppTheme, type FontScale } from "@/lib/preferences";
+import { applyFontScale, applyTheme, isAppTheme, isFontScale, THEME_CHANGED_EVENT, type AppTheme, type FontScale } from "@/lib/preferences";
 import { useEffect, useState } from "react";
 
 const THEMES: { id: AppTheme; label: string; note: string; swatch: [string, string, string] }[] = [
@@ -25,6 +25,10 @@ export function AppearancePanel() {
     if (isAppTheme(t)) setTheme(t);
     const f = document.documentElement.getAttribute("data-font-scale");
     if (isFontScale(f)) setSize(f);
+    // The top bar's theme button changes it too.
+    const onTheme = (e: Event) => setTheme((e as CustomEvent<AppTheme>).detail);
+    window.addEventListener(THEME_CHANGED_EVENT, onTheme);
+    return () => window.removeEventListener(THEME_CHANGED_EVENT, onTheme);
   }, []);
 
   return (
@@ -39,10 +43,7 @@ export function AppearancePanel() {
                 type="button"
                 role="radio"
                 aria-checked={on}
-                onClick={() => {
-                  setTheme(t.id);
-                  applyTheme(t.id);
-                }}
+                onClick={() => applyTheme(t.id)}
                 className={`flex flex-col gap-2 rounded-lg border p-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-focus ${
                   on ? "border-accent bg-accent-soft" : "border-line-strong hover:bg-surface-2"
                 }`}

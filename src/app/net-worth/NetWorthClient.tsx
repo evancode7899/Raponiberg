@@ -69,7 +69,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
         {error && <ErrorNote>{error}</ErrorNote>}
         {!monthly ? (
           api.ready && !error && <Loading label="Valuing every account on the same month-ends…" />
-        ) : monthly.periods.length === 0 ? (
+        ) : monthly.periods.length === 0 || monthly.accounts.length === 0 ? (
           <EmptyState
             title="No committed statements yet"
             action={

@@ -4,6 +4,7 @@ import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi, type Api } from "@/components/ledger/useApi";
 import { useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
 import { btn, Drawer, EmptyState, ErrorNote, Loading, PageBody, Segmented, selectCls, Tabs, usePersistentState, useTabParam } from "@/components/ui/kit";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BudgetTab } from "./BudgetTab";
 import { CategoryDrill, MerchantDrill } from "./Drills";
@@ -160,6 +161,17 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
 
         {!data ? (
           api.ready && !error && <Loading label="Reading the Book…" />
+        ) : data.accounts.length === 0 ? (
+          <EmptyState
+            title="No bank or card statements yet"
+            action={
+              <Link href="/statements" className={btn.primary}>
+                Import statements
+              </Link>
+            }
+          >
+            Cash flow is read from bank and credit card statements: income and spending month by month, with transfers between your own accounts left out.
+          </EmptyState>
         ) : !ctx ? (
           <EmptyState title="No proven months yet">
             Every month still has a missing statement or an unpaired transfer. Statements → Issues lists what to fetch; months appear here as soon as they&apos;re proven.

@@ -13,7 +13,7 @@ import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts
 import { bookedOn } from "./booking.ts";
 import { readExceptions } from "./exceptionStore.ts";
 import { applyIdleWindows, type IdleReport } from "./idleCards.ts";
-import { addDays, startOfMonth } from "../dates/isoDate.ts";
+import { addDays, localToday, startOfMonth } from "../dates/isoDate.ts";
 import { findingStart } from "./checks/collector.ts";
 import { runChecks } from "./checks/index.ts";
 import type { IntegrityReport } from "./types.ts";
@@ -187,7 +187,7 @@ type RawRow = {
  * figures: modules take a Book, never the database.
  */
 export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: string; decisionsFile?: string } = {}): Promise<Book> {
-  const today = opts.today ?? new Date().toLocaleDateString("en-CA");
+  const today = opts.today ?? localToday();
   // Read first: a damaged exceptions file stops the Book rather than silently dropping them.
   const exceptions = readExceptions(opts.exceptionsFile);
   // A damaged decisions file is reported as a finding (transfer.decisions), which withholds every figure it could touch.
@@ -288,7 +288,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   // Months a card issuer sent no statement for because nothing happened: $0, covered.
   const idle = applyIdleWindows(ledger, bookRows, bookMatches, today, new Map(accounts.map((a) => [a.id, a.aliases.map((x) => x.identifier)])));
 
-  const lastDayOf =(pick: (a: Ledger["accounts"][number]) => boolean) =>
+  const lastDayOf = (pick: (a: Ledger["accounts"][number]) => boolean) =>
     ledger.accounts.filter((a) => !a.closed && pick(a)).map((a) => a.timeline.lastDay!).sort()[0] ?? today;
   const book: Book = {
     today,

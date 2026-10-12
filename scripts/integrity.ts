@@ -17,7 +17,7 @@ console.log(`Book loaded in ${Date.now() - started}ms · ${book.rows.length} row
 console.log(`Proven through: net worth ${book.horizon.netWorth} (the data edge) · cash flow ${book.horizon.cashFlow}\n`);
 for (const c of book.integrity.checks) {
   const n = (v: number) => String(v).padStart(4);
-  console.log(`${c.id.padEnd(28)} pass ${n(c.passed)}  fail ${n(c.failed)}  missing ${n(c.missing)}  inferred ${n(c.inferred)}  accepted ${n(c.accepted)}`);
+  console.log(`${c.id.padEnd(28)} pass ${n(c.passed)}  fail ${n(c.failed)}  missing ${n(c.missing)}  awaiting ${n(c.awaiting)}  inferred ${n(c.inferred)}  accepted ${n(c.accepted)}`);
 }
 const findings = book.integrity.findings.filter((f) => !only || f.check.startsWith(only));
 for (const f of findings) console.log(`\n[${f.status}${f.atEdge ? " · past the data edge" : ""}] ${f.title}\n   ${f.detail}\n   → ${f.fix}`);

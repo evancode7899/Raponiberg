@@ -43,8 +43,13 @@ try {
   }
   if (!migrated && !run("npm run db:refresh")) throw new Error("npm run db:refresh failed.");
 
-  if (process.platform === "win32" && !process.argv.includes("--no-shortcuts") && !run("npm run desktop:shortcut")) console.warn("Could not create the Desktop shortcut; run npm run desktop:shortcut later.");
-  console.log('\nDone. Double-click "Raponiberg" on the Desktop to start the app.');
+  const shortcut = process.platform === "win32" && !process.argv.includes("--no-shortcuts");
+  if (shortcut && !run("npm run desktop:shortcut")) console.warn("Could not create the Desktop shortcut; run npm run desktop:shortcut later.");
+  console.log(
+    shortcut
+      ? '\nDone. Double-click "Raponiberg" on the Desktop to start the app.'
+      : "\nDone. Start the app with npm run build and npm start (or npm run dev), then open http://127.0.0.1:3000.",
+  );
 } catch (e) {
   console.error(`Setup failed: ${e instanceof Error ? e.message : e}`);
   process.exitCode = 1;

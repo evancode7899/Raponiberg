@@ -5,21 +5,17 @@ import { cachedReport, getBook, jsonBody } from "@/lib/book/cache";
 import type { Book } from "@/lib/book/load";
 import { buildBonuses, type BonusesReport } from "@/lib/book/reports/bonuses";
 import { prisma } from "@/lib/db";
-import { DISPLAY_TIME_ZONE } from "@/lib/displayTime";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const today = () => new Date().toLocaleDateString("en-CA", { timeZone: DISPLAY_TIME_ZONE });
-
-function build(book: Book, day: string): BonusesReport {
-  return buildBonuses(book, readAwards(), day, readReviews().reviews);
+function build(book: Book): BonusesReport {
+  return buildBonuses(book, readAwards(), book.today, readReviews().reviews);
 }
 
 /** `{ report }` as JSON text. The award letters and reviews are files in data/, which the Book cache watches. */
 function report(): Promise<string> {
-  const day = today();
-  return cachedReport(prisma, `bonuses|${day}`, (book) => ({ report: build(book, day) }));
+  return cachedReport(prisma, "bonuses", (book) => ({ report: build(book) }));
 }
 
 /** Every bonus award letter checked against the bonus lines on the pay stubs. */
@@ -51,7 +47,7 @@ export async function POST(request: NextRequest) {
     if (body.action === "review") {
       const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) : "";
       if (!note) return NextResponse.json({ error: "A note saying why the warning is fine is required" }, { status: 400 });
-      const w = build(await getBook(prisma), today()).warnings.find((x) => x.id === id);
+      const w = build(await getBook(prisma)).warnings.find((x) => x.id === id);
       if (!w) return NextResponse.json({ error: "That warning isn't open any more — reload the page" }, { status: 404 });
       try {
         addReview({ id: w.id, gapCents: w.gapCents, warning: w.text, note, reviewedAt: new Date().toISOString() });

@@ -175,12 +175,7 @@ export function HouseholdPanel({ api }: { api: Api }) {
                   <input className={inputCls} value={d.name} onChange={(e) => editTax((t) => void (t.dependents[i]!.name = e.target.value))} />
                 </Field>
                 <Field label="Birth year">
-                  <input
-                    inputMode="numeric"
-                    className={`${inputCls} num`}
-                    value={String(d.birthYear)}
-                    onChange={(e) => editTax((t) => void (t.dependents[i]!.birthYear = Number(e.target.value.replace(/\D/g, "")) || t.dependents[i]!.birthYear))}
-                  />
+                  <BirthYearInput value={d.birthYear} onCommit={(n) => n !== undefined && editTax((t) => void (t.dependents[i]!.birthYear = n))} />
                 </Field>
                 <button type="button" className={btn.ghost} onClick={() => editTax((t) => void t.dependents.splice(i, 1))}>
                   Remove

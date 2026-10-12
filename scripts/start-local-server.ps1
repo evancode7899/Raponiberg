@@ -46,10 +46,10 @@ function Show-Progress([string]$Text) {
     $script:Tray = New-Object System.Windows.Forms.NotifyIcon
     $icon = Join-Path $PSScriptRoot "assets\app-icon.ico"
     $script:Tray.Icon = if (Test-Path $icon) { New-Object System.Drawing.Icon $icon } else { [System.Drawing.SystemIcons]::Information }
-    $script:Tray.Text = "Personal Finance"
+    $script:Tray.Text = "Raponiberg"
     $script:Tray.Visible = $true
   }
-  $script:Tray.BalloonTipTitle = "Personal Finance"
+  $script:Tray.BalloonTipTitle = "Raponiberg"
   $script:Tray.BalloonTipText = $Text
   $script:Tray.ShowBalloonTip(10000)
 }
@@ -66,7 +66,7 @@ function Show-Message([string]$Text, [string]$Icon = "Error") {
   Hide-Progress
   Stop-Splash $script:Splash
   $script:Splash = $null
-  [System.Windows.Forms.MessageBox]::Show($Text, "Personal Finance Web App", "OK", $Icon) | Out-Null
+  [System.Windows.Forms.MessageBox]::Show($Text, "Raponiberg", "OK", $Icon) | Out-Null
 }
 
 # A quick TCP check first: with nothing listening, Windows takes about 2 seconds to refuse a

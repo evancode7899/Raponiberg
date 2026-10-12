@@ -3,7 +3,6 @@ import { readAwards } from "../bonuses/awardStore.ts";
 import { getBook } from "../book/cache.ts";
 import type { Book } from "../book/load.ts";
 import { buildBonuses } from "../book/reports/bonuses.ts";
-import { DISPLAY_TIME_ZONE } from "../displayTime.ts";
 import { buildAnnualProfile, type AnnualProfileReport } from "../profile/buildAnnualProfile.ts";
 import { loadProfileSettings } from "../profile/settings.ts";
 import { loadTaxProfile } from "../tax/profile.ts";
@@ -20,8 +19,6 @@ export type ForecastData = {
   lettersError: string | null;
 };
 
-const today = () => new Date().toLocaleDateString("en-CA", { timeZone: DISPLAY_TIME_ZONE });
-
 /** Everything the forecast is built from, from the Book (the cached one unless given), the owner's settings and the bonus letters. */
 export async function loadForecastData(db: Db, book?: Book): Promise<ForecastData> {
   const [b, settings, taxProfile] = await Promise.all([book ?? getBook(db), loadProfileSettings(db), loadTaxProfile(db)]);
@@ -30,7 +27,7 @@ export async function loadForecastData(db: Db, book?: Book): Promise<ForecastDat
   let lettersError: string | null = null;
   try {
     const awards = readAwards();
-    facts = bonusFacts(buildBonuses(b, awards, today()), awards.letters);
+    facts = bonusFacts(buildBonuses(b, awards, b.today), awards.letters);
   } catch (e) {
     lettersError = (e as Error).message;
   }

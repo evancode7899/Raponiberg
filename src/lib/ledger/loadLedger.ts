@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Lane } from "../classifier/taxonomy.ts";
-import { daysBetween } from "../dates/isoDate.ts";
+import { daysBetween, localToday } from "../dates/isoDate.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { getMergeDate } from "./householdSettings.ts";
 import { buildTimeline, type AccountTimeline, type SegmentInput } from "./timeline.ts";
@@ -102,7 +102,7 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
     }),
     getMergeDate(db),
   ]);
-  const today = opts.today ?? iso(new Date());
+  const today = opts.today ?? localToday();
 
   const lossy = await db.transferMatch.findMany({
     where: { status: "CONFIRMED", differenceCents: { not: 0 } },
