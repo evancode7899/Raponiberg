@@ -17,20 +17,22 @@
  */
 import { prisma } from "../src/lib/db.ts";
 import { commitDocument } from "../src/lib/ingest/commitDocument.ts";
-import { commitOrder } from "../src/lib/ingest/importFiles.ts";
+import { commitOrder, statementsFolder } from "../src/lib/ingest/importFiles.ts";
 import { householdPatterns } from "../src/lib/household/householdFile.ts";
 import { parseStatementText } from "../src/lib/ingest/parsers/index.ts";
 import type { ParsedDocument } from "../src/lib/ingest/types.ts";
 import { refreshDerived } from "../src/lib/ledger/maintenance.ts";
 import { extractPdfText } from "../src/lib/statements/extractPdfText.ts";
 import { hashFile } from "../src/lib/statements/hashFile.ts";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
 const review = args.includes("--review");
 const reparse = args.includes("--reparse-outdated");
-const folder = args.find((a) => !a.startsWith("--")) ?? path.resolve(process.cwd(), "..", "3. Statements");
+// The same folder the app scans: STATEMENTS_DIR from .env, else "3. Statements" beside the app.
+if (existsSync(".env")) process.loadEnvFile(".env");
+const folder = args.find((a) => !a.startsWith("--")) ?? statementsFolder();
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
