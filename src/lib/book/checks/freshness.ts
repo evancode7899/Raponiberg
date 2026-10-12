@@ -44,7 +44,7 @@ export function checkFreshness(book: Book, c: Collector) {
       status: "FAIL",
       title: `${docs.length} document(s) were read by an older ${parserId} parser`,
       detail: `They were read by version ${Math.min(...docs.map((d) => d.parserVersion))} of the parser; the app now has version ${current}, which reads them differently: ${titles(docs)}.`,
-      fix: "Re-read them: run `npm run statements:import -- --reparse-outdated` (each document's rows are re-imported from its stored file; your decisions and exceptions are kept).",
+      fix: "Click Scan statements folder (Statements → Import) or restart the app: they're read again from the statements folder, keeping your decisions and exceptions. A file no longer in the folder has to be put back first.",
       scope: { ...span(docs), affects: affects(parserId) },
     });
   }

@@ -7,7 +7,7 @@ import { extractPdfText } from "../statements/extractPdfText.ts";
 import { hashFile } from "../statements/hashFile.ts";
 import { commitDocument, type CommitResult } from "./commitDocument.ts";
 import { householdPatterns } from "../household/householdFile.ts";
-import { parseStatementText } from "./parsers/index.ts";
+import { PARSER_VERSIONS, parseStatementText } from "./parsers/index.ts";
 import type { ParsedDocument } from "./types.ts";
 
 export type FileOutcome =
@@ -78,6 +78,7 @@ export async function importStatementFiles(
   parsed.sort((a, b) => commitOrder(a.doc, b.doc));
 
   for (const { file, text, doc } of parsed) {
+    await dropOutdatedReading(db, file.bytes, doc);
     const result = await commitDocument(db, {
       doc,
       fileBytes: file.bytes,
@@ -120,13 +121,35 @@ async function walkPdfs(dir: string): Promise<string[]> {
 }
 
 /**
- * PDFs in the statements folder (recursively) whose exact bytes aren't imported yet.
- * Files are named by their path relative to the folder, e.g. "1. Chase/2026-08.pdf".
+ * A file imported before its parser learned to read it differently (its version was
+ * bumped) is read again rather than skipped as a duplicate: the stored document and its
+ * rows go, with the transfer pairings that touch them, and the file is committed afresh.
+ * The owner's decisions live in data/*.json and are applied again on the refresh.
+ * Returns whether an older reading was dropped.
+ */
+export async function dropOutdatedReading(db: PrismaClient, bytes: Buffer, doc: ParsedDocument): Promise<boolean> {
+  const stored = await db.sourceDocument.findUnique({ where: { fileHash: hashFile(bytes) } });
+  if (!stored || stored.parserId !== doc.parserId || stored.parserVersion >= doc.parserVersion) return false;
+  const legs = await db.transferLeg.findMany({
+    where: { transaction: { statementImport: { documentId: stored.id } } },
+    select: { matchId: true },
+  });
+  await db.transferMatch.deleteMany({ where: { id: { in: legs.map((l) => l.matchId) } } });
+  await db.sourceDocument.delete({ where: { id: stored.id } });
+  return true;
+}
+
+/**
+ * PDFs in the statements folder (recursively) to import: those whose exact bytes aren't
+ * imported yet, and those imported by an older version of their parser (read again, see
+ * dropOutdatedReading). Files are named by their path relative to the folder, e.g.
+ * "1. Chase/2026-08.pdf".
  */
 export async function findNewFolderFiles(
   db: PrismaClient,
   folder = statementsFolder(),
-): Promise<{ folder: string; total: number; files: ImportFile[] }> {
+  opts: { outdatedOnly?: boolean } = {},
+): Promise<{ folder: string; total: number; files: ImportFile[]; outdated: number }> {
   const paths = await walkPdfs(folder);
   const all = await Promise.all(
     paths.map(async (p) => {
@@ -136,9 +159,32 @@ export async function findNewFolderFiles(
   );
   const known = await db.sourceDocument.findMany({
     where: { fileHash: { in: all.map((f) => f.hash) } },
-    select: { fileHash: true },
+    select: { fileHash: true, parserId: true, parserVersion: true },
   });
-  const seen = new Set(known.map((k) => k.fileHash));
-  const files = all.filter((f) => !seen.has(f.hash)).sort((a, b) => a.fileName.localeCompare(b.fileName));
-  return { folder, total: all.length, files: files.map(({ fileName, bytes }) => ({ fileName, bytes })) };
+  const stored = new Map(known.map((k) => [k.fileHash, k]));
+  const isOutdated = (hash: string) => {
+    const k = stored.get(hash);
+    return !!k && k.parserVersion < (PARSER_VERSIONS[k.parserId] ?? k.parserVersion);
+  };
+  const files = all
+    .filter((f) => (opts.outdatedOnly ? false : !stored.has(f.hash)) || isOutdated(f.hash))
+    .sort((a, b) => a.fileName.localeCompare(b.fileName));
+  return {
+    folder,
+    total: all.length,
+    files: files.map(({ fileName, bytes }) => ({ fileName, bytes })),
+    outdated: files.filter((f) => isOutdated(f.hash)).length,
+  };
+}
+
+/**
+ * Re-reads the statements whose parser has changed since they were imported, from the
+ * statements folder, so a parser update reaches the ledger without anyone running a
+ * command. Run when the server starts; the folder scan does the same on every click.
+ */
+export async function rereadOutdatedStatements(db: PrismaClient): Promise<number> {
+  const scan = await findNewFolderFiles(db, statementsFolder(), { outdatedOnly: true });
+  if (scan.files.length === 0) return 0;
+  const { outcomes } = await importStatementFiles(db, scan.files);
+  return outcomes.filter((o) => o.ok).length;
 }

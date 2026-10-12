@@ -2,7 +2,7 @@ import type { ParsedDocument, ParsedTransaction } from "../types.ts";
 import { collapseSpaces, lines, moneyTokens, parseMoney, parseMonthNameDate, parseSlashDate } from "../text.ts";
 
 export const AMEX_SAVINGS_PARSER_ID = "amex-high-yield-savings";
-/** Bump when a change would read already-imported documents differently (re-import them with --reparse-outdated). */
+/** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
 export const VERSION = 1;
 
 export function detectAmexSavings(text: string): boolean {

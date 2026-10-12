@@ -3,7 +3,7 @@ import type { ParsedDocument, ParsedTransaction } from "../types.ts";
 import { collapseSpaces, lines, parseMoney, parseSlashDate } from "../text.ts";
 
 export const SLAVIC_PARSER_ID = "slavic-401k";
-/** Bump when a change would read already-imported documents differently (re-import them with --reparse-outdated). */
+/** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
 export const VERSION = 1;
 
 export function detectSlavic(text: string): boolean {

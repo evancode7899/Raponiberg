@@ -3,7 +3,7 @@ import type { ParsedDocument, ParsedTransaction } from "../types.ts";
 import { lines, parseMoney, parseSlashDate, trailingAmounts } from "../text.ts";
 
 export const HEALTHEQUITY_PARSER_ID = "healthequity-hsa";
-/** Bump when a change would read already-imported documents differently (re-import them with --reparse-outdated). */
+/** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
 export const VERSION = 1;
 
 export function detectHealthEquity(text: string): boolean {

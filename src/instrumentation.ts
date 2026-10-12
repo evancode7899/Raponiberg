@@ -14,6 +14,12 @@ export async function register() {
     // The desktop app (next start) backs up to OneDrive; dev servers only when asked; the demo never.
     const backs = process.env.NODE_ENV === "production" || process.env.BACKUP_AUTO === "1";
     if (process.env.BACKUP_AUTO !== "0" && process.env.APP_PROFILE !== "demo" && backs) startAutoBackup(prisma);
+    // Statements an updated parser reads differently are read again, so a parser change
+    // reaches the figures on the next launch (the Book rebuilds once they're in).
+    void import("@/lib/ingest/importFiles")
+      .then(({ rereadOutdatedStatements }) => rereadOutdatedStatements(prisma))
+      .then((n) => n > 0 && console.log(`Re-read ${n} statement(s) with updated parsers`))
+      .catch((e) => console.error("Re-reading outdated statements failed:", e instanceof Error ? e.message : e));
     keepBookWarm(prisma, {
       reports: [
         "/api/ledger/attention",

@@ -225,7 +225,7 @@ describe("everything was read by the current code", () => {
     });
     const f = findings(b, "ledger.freshness");
     expect(f.map((x) => x.id)).toEqual([`ledger.freshness:parser:chase-checking:v${PARSER_VERSIONS["chase-checking"]}`, `ledger.freshness:parser:adp-paystub:v${PARSER_VERSIONS["adp-paystub"]}`]);
-    expect(f[0]!.fix).toMatch(/--reparse-outdated/);
+    expect(f[0]!.fix).toMatch(/Scan statements folder/);
     expect(f[0]!.scope).toMatchObject({ from: "2025-02-01", to: "2025-02-28", affects: ["CASH_FLOW", "NET_WORTH"] });
     expect(f[1]!.scope.affects).toEqual(["PAY", "TAX"]);
   });
