@@ -8,7 +8,7 @@
 
 import { apiSecretHeaders } from "@/components/ledger/useApi";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useId, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 // ---------------------------------------------------------------------------- buttons
 
@@ -230,6 +230,7 @@ export function Card({
   className = "",
   bodyClassName = "",
   id,
+  tone = "default",
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
@@ -238,9 +239,17 @@ export function Card({
   className?: string;
   bodyClassName?: string;
   id?: string;
+  /** "overview" sets a summary card slightly apart from the detail cards around it. */
+  tone?: "default" | "overview";
 }) {
+  const overview = tone === "overview";
   return (
-    <section id={id} className={`min-w-0 rounded-lg border border-line bg-surface shadow-[var(--shadow)] ${className}`}>
+    <section
+      id={id}
+      // --card-bg lets sticky table cells inside match the card's background.
+      style={overview ? ({ "--card-bg": "var(--surface-2)" } as CSSProperties) : undefined}
+      className={`min-w-0 rounded-lg border shadow-[var(--shadow)] ${overview ? "border-line-strong bg-surface-2" : "border-line bg-surface"} ${className}`}
+    >
       {(title || actions) && (
         <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-3.5">
           <div className="min-w-0 flex-1">
@@ -682,7 +691,7 @@ export function StatementTable({
       <table className="w-full border-collapse text-[13px]" style={{ minWidth }}>
         <thead>
           <tr className="border-b border-line-strong text-[11px] uppercase tracking-wide text-muted">
-            <th className="sticky left-0 z-10 bg-surface py-1.5 pr-3 text-left font-medium" />
+            <th className="sticky left-0 z-10 bg-[var(--card-bg,var(--surface))] py-1.5 pr-3 text-left font-medium" />
             {columns.map((c, i) => (
               <th key={i} className={`whitespace-nowrap px-2 py-1.5 text-right font-semibold text-fg-2 ${colCls(i)}`}>
                 {c}
@@ -694,7 +703,7 @@ export function StatementTable({
           {rows.map((r, i) =>
             r.kind === "heading" ? (
               <tr key={i}>
-                <td colSpan={columns.length + 1} className="sticky left-0 bg-surface pb-1 pt-5 text-left">
+                <td colSpan={columns.length + 1} className="sticky left-0 bg-[var(--card-bg,var(--surface))] pb-1 pt-5 text-left">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-accent">{r.label}</span>
                   {r.sub && <span className="ml-2 text-[11px] font-normal text-muted">{r.sub}</span>}
                 </td>
@@ -707,7 +716,7 @@ export function StatementTable({
                 }`}
               >
                 <td
-                  className={`sticky left-0 z-10 whitespace-nowrap bg-surface py-1 pr-3 text-left ${r.indent ? "pl-4" : ""} ${r.muted ? "text-[12px]" : ""}`}
+                  className={`sticky left-0 z-10 whitespace-nowrap bg-[var(--card-bg,var(--surface))] py-1 pr-3 text-left ${r.indent ? "pl-4" : ""} ${r.muted ? "text-[12px]" : ""}`}
                   title={r.help}
                 >
                   {r.label}

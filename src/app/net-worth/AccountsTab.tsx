@@ -24,6 +24,7 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
   return (
     <div className="flex flex-col gap-4">
       <Card
+        tone="overview"
         title="Every investment account, year by year"
         subtitle={
           <div className="flex flex-col gap-1">
