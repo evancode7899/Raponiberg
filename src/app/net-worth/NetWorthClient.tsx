@@ -310,6 +310,11 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
   const cols = ["Opening", "Income", "Spending", "Other money in/out", "401(k) via payroll", "Net principal", "Growth (net of fees)", "In transit", "Closing", "Return"];
   const last = cumulative.at(-1);
   const since = run[0]?.label;
+  // Evenly spaced labels counted back from the latest period, so the axis never skips one unevenly.
+  const xTicks = (() => {
+    const step = Math.max(1, Math.ceil(cumulative.length / 8));
+    return cumulative.filter((_, i) => (cumulative.length - 1 - i) % step === 0).map((row) => row.label);
+  })();
   const seriesName = (n: unknown) => (n === "start" ? `On hand at start of ${since}` : n === "principal" ? "Saved since" : "Growth since");
 
   return (
@@ -337,9 +342,16 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
           <RechartsResponsive>
             <ComposedChart data={cumulative} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
-              <XAxis dataKey="label" {...ui.xAxis} minTickGap={24} />
+              <XAxis dataKey="label" {...ui.xAxis} interval={0} ticks={xTicks} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-              <Tooltip {...ui.tooltip} formatter={(v, n) => [formatUsd(Math.round(Number(v))), seriesName(n)]} />
+              {/* Stacked areas hand the tooltip a [low, high] pair, so read the plain value off the row. */}
+              <Tooltip
+                {...ui.tooltip}
+                formatter={(v, n, item) => {
+                  const own = (item?.payload as Record<string, number> | undefined)?.[String(n)];
+                  return [formatUsd(Math.round(Number(own ?? v))), seriesName(n)];
+                }}
+              />
               <Area type="monotone" dataKey="start" stackId="c" stroke={chart.neutral} fill={chart.neutral} fillOpacity={0.3} isAnimationActive={false} />
               <Area type="monotone" dataKey="principal" stackId="c" stroke={chart.principal} fill={chart.principal} fillOpacity={0.45} isAnimationActive={false} />
               <Area type="monotone" dataKey="growth" stackId="c" stroke={chart.growth} fill={chart.growth} fillOpacity={0.45} isAnimationActive={false} />
