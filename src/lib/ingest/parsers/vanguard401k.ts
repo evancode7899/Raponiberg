@@ -3,7 +3,7 @@ import type { ParsedAccountSection, ParsedDocument, ParsedTransaction } from "..
 import { collapseSpaces, lines, parseMoney, parseSlashDate } from "../text.ts";
 
 export const VANGUARD_401K_PARSER_ID = "vanguard-401k";
-/** Bump when a change would read already-imported documents differently (re-import them with --reparse-outdated). */
+/** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
 export const VERSION = 1;
 
 export function detectVanguard401k(text: string): boolean {

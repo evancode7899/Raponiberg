@@ -6,30 +6,29 @@
  * Usage:
  *   node scripts/importStatements.ts [folder] [--review] [--reparse-outdated]
  *
- *   folder              defaults to ../3. Statements next to the app folder
+ *   folder              defaults to the folder the app scans (STATEMENTS_DIR in .env,
+ *                       else ../3. Statements next to the app folder)
  *   --review            hold even reconciled statements for manual commit (default:
  *                       statements that tie out to the cent are committed; anything
  *                       else waits for review)
- *   --reparse-outdated  re-import files whose stored document came from an older
- *                       version of the same parser (after a parser improvement).
- *                       Merchant rules you taught are kept; one-off edits to rows of
- *                       a re-imported document are not.
+ *   --reparse-outdated  no longer needed (accepted for old instructions): files whose
+ *                       stored document came from an older version of the same parser
+ *                       are always read again, as the app does on its folder scan and
+ *                       at startup (importFiles.ts dropOutdatedReading).
  */
 import { prisma } from "../src/lib/db.ts";
 import { commitDocument } from "../src/lib/ingest/commitDocument.ts";
-import { commitOrder, statementsFolder } from "../src/lib/ingest/importFiles.ts";
+import { commitOrder, dropOutdatedReading, statementsFolder } from "../src/lib/ingest/importFiles.ts";
 import { householdPatterns } from "../src/lib/household/householdFile.ts";
 import { parseStatementText } from "../src/lib/ingest/parsers/index.ts";
 import type { ParsedDocument } from "../src/lib/ingest/types.ts";
 import { refreshDerived } from "../src/lib/ledger/maintenance.ts";
 import { extractPdfText } from "../src/lib/statements/extractPdfText.ts";
-import { hashFile } from "../src/lib/statements/hashFile.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
 const review = args.includes("--review");
-const reparse = args.includes("--reparse-outdated");
 // The same folder the app scans: STATEMENTS_DIR from .env, else "3. Statements" beside the app.
 if (existsSync(".env")) process.loadEnvFile(".env");
 const folder = args.find((a) => !a.startsWith("--")) ?? statementsFolder();
@@ -59,18 +58,9 @@ parsed.sort((a, b) => commitOrder(a.doc, b.doc));
 const tally = { imported: 0, duplicate: 0, refused: 0, discrepant: 0, accountsCreated: 0, continuations: 0, reparsed: 0 };
 for (const p of parsed) {
   const rel = path.relative(folder, p.file);
-  if (reparse) {
-    const stored = await prisma.sourceDocument.findUnique({ where: { fileHash: hashFile(p.bytes) } });
-    if (stored && stored.parserId === p.doc.parserId && stored.parserVersion < p.doc.parserVersion) {
-      const legs = await prisma.transferLeg.findMany({
-        where: { transaction: { statementImport: { documentId: stored.id } } },
-        select: { matchId: true },
-      });
-      await prisma.transferMatch.deleteMany({ where: { id: { in: legs.map((l) => l.matchId) } } });
-      await prisma.sourceDocument.delete({ where: { id: stored.id } });
-      tally.reparsed++;
-      console.log(`REPARSE  ${rel} (parser v${stored.parserVersion} → v${p.doc.parserVersion})`);
-    }
+  if (await dropOutdatedReading(prisma, p.bytes, p.doc)) {
+    tally.reparsed++;
+    console.log(`REPARSE  ${rel} (parser v${p.doc.parserVersion})`);
   }
   const r = await commitDocument(prisma, {
     doc: p.doc,

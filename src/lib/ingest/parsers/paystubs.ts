@@ -17,7 +17,7 @@ export const TRINET_PARSER_ID = "trinet-paystub";
 export const VENSURE_PARSER_ID = "vensure-paystub";
 export const ADP_PARSER_ID = "adp-paystub";
 /** v3: one extractor per provider with every line item and printed total. */
-/** Bump when a change would read already-imported documents differently (re-import them with --reparse-outdated). */
+/** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
 export const VERSION = 3;
 
 export function parseTrinet(text: string): ParsedDocument {

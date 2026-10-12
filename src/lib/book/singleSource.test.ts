@@ -13,6 +13,7 @@ const ALLOWED: Record<string, string> = {
   "src/lib/book/load.ts": "the Book's loader",
   "src/lib/ledger/loadLedger.ts": "statement timelines (loaded by the Book)",
   "src/lib/ingest/commitDocument.ts": "writes imported statements",
+  "src/lib/ingest/importFiles.ts": "replaces a statement read by an older parser",
   "src/lib/ingest/documentFacts.ts": "writes pay stub and brokerage facts",
   "src/lib/ledger/maintenance.ts": "links pay stubs to deposits",
   "src/lib/classifier/persist.ts": "writes classifications",

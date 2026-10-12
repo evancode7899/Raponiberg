@@ -2,7 +2,7 @@ import type { ParsedDocument, ParsedTransaction } from "../types.ts";
 import { collapseSpaces, lines, parseMoney, resolveMonthDay } from "../text.ts";
 
 export const CHASE_CARD_PARSER_ID = "chase-card";
-/** Bump when a change would read already-imported documents differently (re-import them with --reparse-outdated). */
+/** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
 export const VERSION = 1;
 
 export function detectChaseCard(text: string): boolean {

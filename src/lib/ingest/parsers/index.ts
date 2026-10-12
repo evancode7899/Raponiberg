@@ -19,7 +19,7 @@ import { detectVanguardBrokerage, parseVanguardBrokerage, VERSION as VANGUARD_BR
 
 type Parser = {
   id: string;
-  /** The parser's current version: documents stored by an older one are re-read with --reparse-outdated. */
+  /** The parser's current version: documents stored by an older one are read again on the next folder scan or launch. */
   version: number;
   detect: (text: string) => boolean;
   /** `household` (lib/household) for the parsers that file a document under the household's own funds. */
