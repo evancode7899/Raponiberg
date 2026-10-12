@@ -6,7 +6,7 @@ import type { Api } from "./useApi";
 
 export { buttonDanger, buttonPrimary, buttonSecondary, Card, Segmented, Stat } from "@/components/ui/kit";
 
-/** What each data-quality level means, in plain words (tooltips and legends). */
+/** What each data-quality level means, in plain words (badge tooltips). */
 export const QUALITY_TEXT: Record<Quality, { label: string; help: string }> = {
   EXACT: { label: "Exact", help: "Straight from statements, to the cent." },
   ESTIMATED: {
@@ -47,21 +47,6 @@ export function QualityBadge({ quality, asOf }: { quality: Quality; asOf?: strin
         {asOf && quality === "STALE" ? ` · ${asOf.slice(5)}` : ""}
       </Badge>
     </span>
-  );
-}
-
-export function QualityLegend() {
-  return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
-      {(Object.keys(QUALITY_TEXT) as Quality[])
-        .filter((q) => q !== "EXACT" && q !== "UNKNOWN")
-        .map((q) => (
-          <span key={q} className="flex items-center gap-1" title={QUALITY_TEXT[q].help}>
-            <Badge tone={QUALITY_TONE[q]}>{QUALITY_TEXT[q].label}</Badge>
-            <span className="max-w-[18rem] truncate">{QUALITY_TEXT[q].help.split(";")[0]!.split(".")[0]}</span>
-          </span>
-        ))}
-    </div>
   );
 }
 

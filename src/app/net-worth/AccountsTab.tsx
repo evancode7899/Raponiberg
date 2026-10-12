@@ -1,7 +1,7 @@
 "use client";
 
 import { BlockedValue } from "@/components/ledger/Blocked";
-import { QualityBadge, QualityLegend } from "@/components/ledger/LedgerBits";
+import { QualityBadge } from "@/components/ledger/LedgerBits";
 import { Card, StatementTable, type TableRow } from "@/components/ui/kit";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 as usd } from "@/lib/formatMoney";
@@ -26,14 +26,11 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
       <Card
         title="Every investment account, year by year"
         subtitle={
-          <div className="flex flex-col gap-1">
-            <span>
-              Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are Modified Dietz (money
-              moved in or out doesn&apos;t count as performance); a year with under $1,000 invested shows no return. Dividends and interest are split out where the
-              statement reports them (Fidelity); elsewhere they&apos;re inside market change.
-            </span>
-            <QualityLegend />
-          </div>
+          <>
+            Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are Modified Dietz (money
+            moved in or out doesn&apos;t count as performance); a year with under $1,000 invested shows no return. Dividends and interest are split out where the
+            statement reports them (Fidelity); elsewhere they&apos;re inside market change.
+          </>
         }
       >
         <Summary accounts={r.accounts} years={r.years} currentYear={r.currentYear} />
