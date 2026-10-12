@@ -90,7 +90,7 @@ export function parseRentBill(text: string): ParsedDocument {
       {
         institution,
         accountNumber,
-        accountName: "Rent",
+        accountName: "Rent bill",
         kind: "OTHER",
         subtype: "BILL",
         // Until commit puts it after the previous bill: owing nothing before this one.
