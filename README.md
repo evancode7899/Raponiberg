@@ -277,13 +277,9 @@ Statement imports, settings changes, backups and exports append rows to the audi
 
 ## License and disclaimer
 
-Free to use, copy, modify and share, with two conditions:
-
-- **The name stays Raponiberg.** You can't rename or rebrand it, though you can add words
-  alongside the name ("Raponiberg - Pat's edition").
-- **No making money from it.** No selling it, charging for access or hosting, paid tiers,
-  ads, sponsorships, or using it for paid client work. Running your own household's
-  finances with it is fine.
+Free to use, copy, modify and share, but **no making money from it**: no selling it,
+charging for access or hosting, paid tiers, ads, sponsorships, or using it for paid client
+work. Running your own household's finances with it is fine.
 
 **Disclaimer.** Raponiberg is not financial, investment, tax, accounting or legal advice,
 and its author is not your adviser. Its figures, forecasts and tax estimates can be
