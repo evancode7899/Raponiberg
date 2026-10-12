@@ -18,6 +18,7 @@ const ALLOWED: Record<string, string> = {
   "src/lib/classifier/persist.ts": "writes classifications",
   "src/lib/transfers/runMatching.ts": "writes transfer pairings",
   "src/lib/transfers/applyDecisions.ts": "re-applies the owner's saved transfer pairings",
+  "src/lib/transfers/billPayments.ts": "finds the rent payments that pay a landlord's bill (for runMatching)",
   "src/lib/review/rowDecisions.ts": "re-applies the owner's saved row-by-row review answers",
   "src/app/api/transactions/route.ts": "row viewer: lists rows and totals what it lists",
   "src/app/api/transactions/[id]/route.ts": "row editor",

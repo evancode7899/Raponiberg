@@ -119,3 +119,12 @@ describe("countsOn", () => {
     expect(on(coffee)).toBe("2026-02-02");
   });
 });
+
+describe("a landlord's bill", () => {
+  it("counts each charge on the day it prints, though the bill books it the month before", () => {
+    const bill = { id: "bill", type: "OTHER", subtype: "BILL" };
+    const charge = row("2027-05-01", -300000, "RES RENT (05/2027)", { accountId: "bill", statement: { start: "2027-03-26", end: "2027-04-25" }, bookedOn: "2027-04-25" });
+    expect(rentPayments([charge], [bill])).toEqual([]);
+    expect(countsOn([charge], [bill])(charge)).toBe("2027-05-01");
+  });
+});

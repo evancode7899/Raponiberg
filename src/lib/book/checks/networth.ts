@@ -1,6 +1,6 @@
 import { addDays } from "../../dates/isoDate.ts";
 import { buildNetWorthReport } from "../../ledger/netWorthReport.ts";
-import { transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
+import { billAccountIds, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
 import { bookedShare } from "../booking.ts";
 import { money } from "../coverage.ts";
 import type { Book } from "../load.ts";
@@ -25,7 +25,8 @@ export function checkNetWorth(book: Book, c: Collector) {
   const fees = transferDifferenceAdjustments(
     book.matches
       .filter((m) => m.status === "CONFIRMED")
-      .map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents })) })),
+      .map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents, accountId: l.accountId })) })),
+    billAccountIds(book.accounts),
   );
   const outside = new Set(c.inferences.filter((i) => i.check === "transfer.unmatched" && i.partial).flatMap((i) => i.rowIds ?? []));
   const share = (rowId: string, date: string, from: string, to: string) => {

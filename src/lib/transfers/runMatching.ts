@@ -5,6 +5,7 @@ import { addDays } from "../dates/isoDate.ts";
 import { getMergeDate } from "../ledger/householdSettings.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { applyTransferDecisions } from "./applyDecisions.ts";
+import { loadBillPaymentInputs, planBillPayments } from "./billPayments.ts";
 import { readDecisions } from "./decisionStore.ts";
 import { matchTransfers, type Leg, type MatchResult } from "./matchTransfers.ts";
 import { isRelabel, readStash, RELABEL, type RelabelStash } from "./relabel.ts";
@@ -45,6 +46,8 @@ export async function loadLegs(db: Db): Promise<{ legs: Leg[]; confirmedLegIds: 
   const legs: Leg[] = [];
   for (const r of rows) {
     if (confirmedLegIds.has(r.id)) continue;
+    // Bill payments pair by the bill's cycle instead (billPayments.ts).
+    if (r.account.subtype === "BILL" || r.classifiedBy?.startsWith(RELABEL.PAID_BILL)) continue;
     const unknown = !r.userLocked && UNKNOWN_SOURCE_RULES.includes(r.classifiedBy ?? "");
     legs.push({
       id: r.id,
@@ -69,7 +72,49 @@ export async function loadLegs(db: Db): Promise<{ legs: Leg[]; confirmedLegIds: 
 export async function computeMatches(db: Db): Promise<{ result: MatchResult; legs: Leg[] }> {
   const { legs } = await loadLegs(db);
   const rejections = await db.transferRejection.findMany({ select: { legKey: true } });
-  return { result: matchTransfers(legs, rejections.map((r) => r.legKey)), legs };
+  const result = matchTransfers(legs, rejections.map((r) => r.legKey));
+  // Bills nothing in their cycle adds up to: offered with the cycle's rent payments.
+  const { bills, bank } = await loadBillPaymentInputs(db, householdPatterns().merchantRules);
+  result.suggestions.push(...planBillPayments(bills, bank, new Set(rejections.map((r) => r.legKey))).suggestions);
+  return { result, legs };
+}
+
+/**
+ * Landlords' bills: the bank rent payments that paid each one pair with it and become
+ * transfers (billPayments.ts), and so do the bank legs of pairings the owner confirmed.
+ */
+async function matchBillPayments(db: Db, categoryIds: Map<string, string>): Promise<number> {
+  const rejections = new Set((await db.transferRejection.findMany({ select: { legKey: true } })).map((r) => r.legKey));
+  const { bills, bank } = await loadBillPaymentInputs(db, householdPatterns().merchantRules);
+  const plan = planBillPayments(bills, bank, rejections);
+  const bankIds = new Set(bank.map((r) => r.id));
+  const toRelabel: string[] = [];
+  for (const m of plan.matches) {
+    await db.transferMatch.create({
+      data: { status: "AUTO", method: m.method, legs: { create: m.legIds.map((transactionId) => ({ transactionId })) } },
+    });
+    toRelabel.push(...m.legIds.filter((id) => bankIds.has(id)));
+  }
+  const confirmed = await db.transferLeg.findMany({
+    where: { match: { status: "CONFIRMED", legs: { some: { transaction: { account: { subtype: "BILL" } } } } }, transaction: { lane: { not: "TRANSFER" } } },
+    select: { transactionId: true },
+  });
+  toRelabel.push(...confirmed.map((l) => l.transactionId));
+  for (const id of toRelabel) {
+    await relabel(db, id, RELABEL.PAID_BILL, {
+      lane: "TRANSFER",
+      categoryId: categoryIds.get("Own-account transfers") ?? null,
+      counterpartyKind: "OWN_ACCOUNT",
+    });
+  }
+  for (const id of plan.carriedIn) {
+    await relabel(db, id, RELABEL.BILL_CREDIT, {
+      lane: "EXPENSE",
+      categoryId: categoryIds.get("Housing & utilities") ?? null,
+      counterpartyKind: "MERCHANT",
+    });
+  }
+  return plan.matches.length;
 }
 
 async function relabel(
@@ -109,7 +154,7 @@ async function relabel(
  */
 export async function runTransferMatching(
   db: Db,
-): Promise<{ matched: number; ambiguous: number; promoted: number; untrackedCardPayments: number }> {
+): Promise<{ matched: number; ambiguous: number; promoted: number; untrackedCardPayments: number; billPayments: number }> {
   // Before changing anything: a damaged decisions file stops the run here, with the
   // ledger as it was, rather than half-way through with every pairing undone.
   readDecisions();
@@ -156,6 +201,8 @@ export async function runTransferMatching(
       promoted++;
     }
   }
+
+  const billPayments = await matchBillPayments(db, categoryIds);
 
   // Card payments nobody received.
   const confirmed = await db.transferLeg.findMany({ select: { transactionId: true } });
@@ -247,5 +294,5 @@ export async function runTransferMatching(
     }
   }
 
-  return { matched: result.matches.length, ambiguous: result.ambiguous.length, promoted, untrackedCardPayments };
+  return { matched: result.matches.length, ambiguous: result.ambiguous.length, promoted, untrackedCardPayments, billPayments };
 }

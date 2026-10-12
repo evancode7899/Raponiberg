@@ -10,6 +10,7 @@ import { loadTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.
 import { readTaxDocs } from "../taxdocs/store.ts";
 import type { TaxDocsFile } from "../taxdocs/types.ts";
 import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts";
+import { billAccountIds, transferDifferenceAdjustments } from "../ledger/transferFees.ts";
 import { bookedOn } from "./booking.ts";
 import { readExceptions } from "./exceptionStore.ts";
 import { applyIdleWindows, type IdleReport } from "./idleCards.ts";
@@ -285,6 +286,35 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     differenceCents: m.differenceCents,
     legs: m.legs.map((l) => ({ transactionId: l.transaction.id, accountId: l.transaction.accountId, date: iso(l.transaction.date), amountCents: l.transaction.amountCents })),
   }));
+  // A bill's payments that differ from what the bank paid (confirmed by the owner): the
+  // landlord changed the bill without itemizing it. The ledger books the difference as
+  // spending on the bill (transferFees.ts), so it's a row of its own here too.
+  const bills = billAccountIds(accounts);
+  const corrections = transferDifferenceAdjustments(
+    bookMatches.filter((m) => m.status === "CONFIRMED").map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents, accountId: l.accountId })) })),
+    bills,
+  );
+  for (const [id, cents] of corrections) {
+    const leg = bookRows.find((r) => r.id === id);
+    if (!leg || !bills.has(leg.accountId)) continue;
+    bookRows.push({
+      ...leg,
+      id: `${id}:correction`,
+      amountCents: cents,
+      lane: "EXPENSE",
+      payee: "Bill changed without an itemized line",
+      merchantKey: null,
+      category: "Housing & utilities",
+      categoryGroup: "Essentials",
+      counterpartyKind: "MERCHANT",
+      counterpartyInstitution: null,
+      counterpartyAccountHint: null,
+      classifiedBy: "bill-correction",
+      transferMatchId: null,
+    });
+  }
+  if (corrections.size) bookRows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
   // Months a card issuer sent no statement for because nothing happened: $0, covered.
   const idle = applyIdleWindows(ledger, bookRows, bookMatches, today, new Map(accounts.map((a) => [a.id, a.aliases.map((x) => x.identifier)])));
 

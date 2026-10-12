@@ -1,4 +1,4 @@
-import type { PrismaClient, StatementType } from "@prisma/client";
+import type { Prisma, PrismaClient, StatementType } from "@prisma/client";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { classificationData, ensureCategories, loadClassifyContext } from "../classifier/persist.ts";
@@ -9,6 +9,7 @@ import { refreshDerived, type MaintenanceReport } from "../ledger/maintenance.ts
 import { resolveAccount, type AccountResolution } from "../ledger/resolveAccount.ts";
 import { hashFile } from "../statements/hashFile.ts";
 import { parseIsoDate } from "../statements/parseIsoDate.ts";
+import { BILL_CYCLE_DAYS, continueBill } from "./billContinuation.ts";
 import { storeDocumentFacts } from "./documentFacts.ts";
 import { contentFingerprint } from "./fingerprint.ts";
 import type { ParsedAccountSection, ParsedDocument } from "./types.ts";
@@ -149,6 +150,9 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
                 growthCents: rawSection.closingBalanceCents - inside.closingBalanceCents - flows - rawSection.feesCents,
               };
             }
+          }
+          if (rawSection.paymentsFromPrior && !isSummarySection) {
+            section = await afterPriorBill(tx, resolution.accountId, rawSection);
           }
           const start = parseIsoDate(section.periodStart);
           const end = parseIsoDate(section.periodEnd);
@@ -338,4 +342,26 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
 
   if (!input.skipRefresh) result.maintenance = await refreshDerived(db);
   return result;
+}
+
+/**
+ * A bill that prints only what's still owed, carried on from the account's previous bill
+ * (billContinuation.ts). Without a previous bill within a cycle it stands alone as parsed:
+ * the account's first bill, or the first after a gap (which shows as missing statements).
+ */
+async function afterPriorBill(tx: Prisma.TransactionClient, accountId: string, s: ParsedAccountSection): Promise<ParsedAccountSection> {
+  const prior = await tx.statementImport.findFirst({
+    where: { accountId, isSummary: false, periodEnd: { lt: parseIsoDate(s.periodEnd), gte: parseIsoDate(addDays(s.periodEnd, -BILL_CYCLE_DAYS)) } },
+    orderBy: { periodEnd: "desc" },
+  });
+  if (!prior) return s;
+  const earlier = await tx.transaction.findMany({
+    where: { accountId, datePrecision: "EXACT", statementImport: { isSummary: false, periodEnd: { lte: prior.periodEnd } } },
+    select: { date: true, amountCents: true, payee: true },
+  });
+  return continueBill(
+    s,
+    { periodEnd: prior.periodEnd.toISOString().slice(0, 10), closingBalanceCents: prior.closingBalanceCents },
+    earlier.map((r) => ({ date: r.date.toISOString().slice(0, 10), amountCents: r.amountCents, description: r.payee ?? "" })),
+  );
 }

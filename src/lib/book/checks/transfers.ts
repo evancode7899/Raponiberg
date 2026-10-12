@@ -27,12 +27,14 @@ export function checkTransfers(book: Book, c: Collector) {
       continue;
     }
     const candidates = otherLegCandidates(book, r);
-    const from = addDays(r.date, -3);
-    const to = addDays(r.date, 3);
+    // What a bill says was paid over its cycle could have been paid any day of it.
+    const from = r.precision === "PERIOD" ? r.statement.start : addDays(r.date, -3);
+    const to = r.precision === "PERIOD" ? r.statement.end : addDays(r.date, 3);
     const notCovered = candidates.filter((a) => uncovered(book, a.id, from, to).length > 0);
     const direction = r.amountCents < 0 ? "to" : "from";
     const scope = { accountId: r.accountId, from, to, affects: ["CASH_FLOW" as const, "NET_WORTH" as const] };
-    const isCard = book.accounts.find((a) => a.id === r.accountId)?.group === "Credit cards";
+    const isBill = book.accounts.find((a) => a.id === r.accountId)?.subtype === "BILL";
+    const isCard = !isBill && book.accounts.find((a) => a.id === r.accountId)?.group === "Credit cards";
     if (notCovered.length === 0 && isCard && r.amountCents > 0 && !r.counterpartyInstitution && untracked.length > 0) {
       // A card payment no tracked bank account made: paid from an account not on file.
       const unavailable = new Map((book.taxProfile.unavailableAccounts ?? []).map((a) => [a.last4, a.note]));
@@ -74,6 +76,26 @@ export function checkTransfers(book: Book, c: Collector) {
         scope,
         date: r.date,
         needs: { accountIds: notCovered.map((a) => a.id), from: r.date, to: r.date },
+      });
+    } else if (isBill) {
+      c.add({
+        id: `transfer.unmatched:${refs.get(r.id)}`,
+        accounts: accountRef(book, r.accountId).accounts,
+        check: "transfer.unmatched",
+        status: "FAIL",
+        ...(r.precision === "PERIOD"
+          ? {
+              title: `${nameOf(r.accountId)}: ${money(r.amountCents)} paid ${from} – ${to} doesn't match the bank's rent payments`,
+              detail: `The bill says ${money(r.amountCents)} was paid or credited over its cycle, but no set of rent payments from your bank accounts in those days adds up to it. Usually the landlord changed the bill without printing the change (dropped a charge billed twice, waived a fee), or the rent was paid from an account that isn't on file.`,
+              fix: "On Review → Transfers, confirm the suggested pairing if the landlord changed the bill (the difference counts as housing), or add the statement of the account that paid it.",
+            }
+          : {
+              title: `${nameOf(r.accountId)}: the ${r.date} payment of ${money(r.amountCents)} isn't on a bank statement`,
+              detail: `The bill prints "${r.payee}", but no bank rent payment of that amount is within a few days of it. A credit from money paid before the bills on file (a move-in payment, already counted as housing) looks like this.`,
+              fix: "If it came out of money already counted, reclassify it as Housing on Review; otherwise add the statement of the account that paid it.",
+            }),
+        scope,
+        date: r.date,
       });
     } else {
       c.add({
