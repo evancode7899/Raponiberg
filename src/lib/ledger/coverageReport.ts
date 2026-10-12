@@ -1,5 +1,5 @@
 import { addDays, daysBetween, endOfMonth, periodsBetween, startOfMonth } from "../dates/isoDate.ts";
-import type { Ledger } from "./loadLedger.ts";
+import { GROUP_ORDER, type Ledger } from "./loadLedger.ts";
 import { chainBreaks, coverageGaps, type CoverageGap } from "./timeline.ts";
 
 /** IDLE: no statement because the issuer sends none for a month without activity (proven; counts as covered). */
@@ -123,7 +123,9 @@ export function buildCoverageReport(
 ): CoverageReport {
   const first = ledger.firstDay ?? today;
   const months = periodsBetween(startOfMonth(first), endOfMonth(today), "month").map((m) => m.start);
-  const accounts = ledger.accounts.map<AccountCoverage>((a) => {
+  // Grouped like the rest of the app (cash, investments, ..., cards and bills), by name within a group.
+  const ordered = [...ledger.accounts].sort((x, y) => GROUP_ORDER.indexOf(x.group) - GROUP_ORDER.indexOf(y.group) || x.name.localeCompare(y.name));
+  const accounts = ordered.map<AccountCoverage>((a) => {
     const t = a.timeline;
     // Typical statement length, ignoring a short first statement (account opened mid-cycle).
     const real = t.segments.filter((s) => !s.derived && !s.idle);

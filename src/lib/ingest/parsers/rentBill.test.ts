@@ -111,3 +111,10 @@ describe("a bill carried on from the previous one", () => {
     ]);
   });
 });
+
+describe("a line the bill prints twice", () => {
+  it("tells the copies apart, so a decision can name the one that was reversed", () => {
+    const o = parse(bill(["4/1/2027 RES RENT (04/2027) 3,000.00", "4/1/2027 PARKING (04/2027) 120.00", "4/1/2027 PARKING (04/2027) 120.00"].join("\n"), "3,240.00"));
+    expect(o.doc.sections[0]!.transactions.map((t) => t.description)).toEqual(["RES RENT (04/2027)", "PARKING (04/2027)", "PARKING (04/2027) #2"]);
+  });
+});
