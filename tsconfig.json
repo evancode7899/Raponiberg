@@ -45,6 +45,7 @@
   ],
   "exclude": [
     "node_modules",
-    "scripts/_*.tmp.*"
+    "scripts/_*.tmp.*",
+    ".next-app"
   ]
 }
