@@ -9,5 +9,4 @@
       this description. Fixtures are made up (see [AGENTS.md](../AGENTS.md)).
 - [ ] `npm test` passes; CI is green.
 - [ ] Screenshots, if any, come from demo mode.
-- [ ] The app is still named Raponiberg, and nothing here makes money from it
-      ([LICENSE](../LICENSE)).
+- [ ] Nothing here makes money from the app ([LICENSE](../LICENSE)).
