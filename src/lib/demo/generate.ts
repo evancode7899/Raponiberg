@@ -584,8 +584,10 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
   const goals: GoalSettings = {
     version: 1,
     goals: [
-      { id: "emergency", name: "Emergency fund", kind: "EMERGENCY_FUND", targetCents: null, months: 6, targetDate: null, groups: ["Cash"], accountIds: [] },
-      { id: "lake-house", name: "Lake house down payment", kind: "AMOUNT", targetCents: 120_000_000, months: null, targetDate: "2028-06-30", groups: ["Cash"], accountIds: [] },
+      { id: "emergency", name: "Emergency fund", kind: "EMERGENCY_FUND", targetCents: null, months: 6, targetDate: null, groups: ["Cash"], accountIds: [], funding: "SET_ASIDE", shares: {} },
+      { id: "lake-house", name: "Lake house down payment", kind: "AMOUNT", targetCents: 120_000_000, months: null, targetDate: "2028-06-30", groups: ["Cash"], accountIds: [], funding: "SET_ASIDE", shares: {} },
+      // A milestone: counts every balance without claiming the money the two above set aside.
+      { id: "milestone", name: "$15M net worth", kind: "AMOUNT", targetCents: 1_500_000_000, months: null, targetDate: null, groups: ["Cash", "Taxable investments", "Retirement", "Health savings"], accountIds: [], funding: "TRACK", shares: {} },
     ],
   };
   // A receipts log as if brought in from a spreadsheet: most still waiting, one paid back.

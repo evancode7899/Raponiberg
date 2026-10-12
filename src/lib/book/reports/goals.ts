@@ -9,8 +9,10 @@ import { buildCashFlowReport } from "./cashFlow.ts";
 
 /**
  * Progress on each savings goal from the Book: the funding accounts' balances at the
- * proven-through date, earmarked in the goals' priority order (an account's money goes
- * to the first goal that draws on it until that goal is full, then the next), the pace
+ * proven-through date, claimed in the goals' priority order (an account's money goes to
+ * the first set-aside goal that draws on it, up to that goal's share of the account,
+ * until the goal is full, then the next; a tracking goal counts whole balances and claims
+ * nothing — see goals/settings.ts), the pace
  * those accounts grew at over the last year, and what's needed to finish on time.
  *
  * When each goal is reached comes from the shared forecast (lib/forecast): the money it
@@ -31,11 +33,13 @@ export type GoalProgress = {
   goal: Goal;
   /** Target in cents (an emergency fund's is months × typical monthly spending). */
   targetCents: number | null;
-  /** Money earmarked for this goal. */
+  /** Money counted toward this goal: claimed (SET_ASIDE) or the whole balances (TRACK). */
   currentCents: number;
   /** Balance of every funding account (before earmarking). */
   fundingCents: number;
-  accounts: { id: string; name: string; cents: number; earmarkedCents: number }[];
+  accounts: GoalAccount[];
+  /** SET_ASIDE: earlier goals that claimed money from this goal's accounts first. */
+  claimedFirstBy: string[];
   /** Change in the funding accounts' balances per month over the pace window (deposits and growth). */
   pace: { monthlyCents: number; from: string; to: string; blockers: BlockerRef[] } | null;
   /** Per month from now to reach the target by its date. */
@@ -49,8 +53,26 @@ export type GoalProgress = {
   blockers: BlockerRef[];
 };
 
+/** One funding account as a goal sees it: its balance, what earlier goals claimed, and what this goal counts. */
+export type GoalAccount = {
+  id: string;
+  name: string;
+  cents: number;
+  /** The goal's share cap on this account (0–1), or null for all of it. */
+  share: number | null;
+  /** Claimed by earlier goals before this one (SET_ASIDE only; 0 for TRACK). */
+  claimedBeforeCents: number;
+  /** Counted toward this goal. */
+  earmarkedCents: number;
+};
+
+/** Where each account's money goes: the goals that claimed it, in order, and what's left unclaimed. */
+export type FundingRow = { id: string; name: string; group: AccountGroup; cents: number; claims: { goalId: string; name: string; cents: number }[]; freeCents: number; trackedBy: string[] };
+
 export type GoalsReport = {
   asOf: string;
+  /** Every account at least one goal draws on, with who claimed what. */
+  funding: FundingRow[];
   /** Typical monthly spending for emergency funds: average of the last 12 proven months. */
   monthlySpending: { cents: number; months: number; from: string | null; to: string | null } | null;
   goals: GoalProgress[];
@@ -63,7 +85,6 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
   const asOf = book.horizon.netWorth;
   const open = book.ledger.accounts.filter((a) => !a.closed && a.group !== "Credit cards" && a.timeline.firstDay! <= asOf);
   const balance = new Map(open.map((a) => [a.id, valueAt(a.timeline, asOf).cents]));
-  const pool = new Map(balance);
 
   const cf = buildCashFlowReport(book, { granularity: "month" });
   const proven = cf.periods.filter((p) => !p.blockers.length && !p.through).slice(-12);
@@ -73,19 +94,14 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
 
   const fundersOf = (g: Goal) => open.filter((a) => g.groups.includes(a.group) || g.accountIds.includes(a.id));
   const reach = forecast ? forecastFiller(forecast) : null;
+  const claimer = goalClaimer(balance);
   const goals = settings.goals.map((goal): GoalProgress => {
     const funders = fundersOf(goal);
     const ids = funders.map((a) => a.id);
     const targetCents = goal.kind === "EMERGENCY_FUND" ? (monthlySpending ? Math.round(monthlySpending.cents * (goal.months ?? 6)) : null) : goal.targetCents;
 
-    // Earmark: take from each funding account's remaining pool until the target is met.
-    let need = targetCents ?? Infinity;
-    const accounts = funders.map((a) => {
-      const take = Math.max(0, Math.min(pool.get(a.id) ?? 0, need));
-      pool.set(a.id, (pool.get(a.id) ?? 0) - take);
-      need -= take;
-      return { id: a.id, name: a.name, cents: balance.get(a.id) ?? 0, earmarkedCents: take };
-    });
+    const track = goal.funding === "TRACK";
+    const { accounts, claimedFirstBy } = claimer.claim(goal, funders, targetCents);
     const currentCents = accounts.reduce((s, a) => s + a.earmarkedCents, 0);
     const fundingCents = accounts.reduce((s, a) => s + a.cents, 0);
 
@@ -109,7 +125,7 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
     let projectedDate: string | null;
     if (remaining === 0) projectedDate = asOf;
     else if (reach && remaining != null && funders.length) {
-      const key = reach(remaining, funders.some((a) => LIQUID_GROUPS.includes(a.group)), funders.some((a) => !LIQUID_GROUPS.includes(a.group)));
+      const key = reach(remaining, funders.some((a) => LIQUID_GROUPS.includes(a.group)), funders.some((a) => !LIQUID_GROUPS.includes(a.group)), track);
       projectedDate = key ? endOfMonthIso(key) : null;
     } else projectedDate = remaining != null && pace && pace.monthlyCents > 0 ? addDays(asOf, Math.ceil((remaining / pace.monthlyCents) * MONTH_DAYS)) : null;
     const status: GoalProgress["status"] =
@@ -139,6 +155,7 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
       currentCents,
       fundingCents,
       accounts,
+      claimedFirstBy,
       pace,
       neededMonthlyCents,
       projectedDate,
@@ -149,12 +166,59 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
     };
   });
 
+  const used = open.filter((a) => settings.goals.some((g) => fundersOf(g).includes(a)));
+  const funding = claimer.rows(used);
+
   return {
     asOf,
+    funding,
     monthlySpending,
     goals,
     accounts: open.map((a) => ({ id: a.id, name: a.name, group: a.group, cents: balance.get(a.id) ?? 0 })),
     groups: GROUP_ORDER.filter((g) => g !== "Credit cards" && open.some((a) => a.group === g)),
+  };
+}
+
+/**
+ * Goals claiming account money in priority order (call `claim` once per goal, in order).
+ * A SET_ASIDE goal takes from each funding account's unclaimed money, up to its share of
+ * the balance, until its target is met; a TRACK goal counts the balances and claims
+ * nothing. `rows` then says, per account, who claimed what and what's left.
+ */
+export function goalClaimer(balance: Map<string, number>) {
+  const pool = new Map(balance);
+  const claims = new Map<string, FundingRow["claims"]>();
+  const tracked = new Map<string, string[]>();
+  return {
+    claim(goal: Goal, funders: { id: string; name: string }[], targetCents: number | null): { accounts: GoalAccount[]; claimedFirstBy: string[] } {
+      const track = goal.funding === "TRACK";
+      let need = targetCents ?? Infinity;
+      const claimedFirst = new Set<string>();
+      const accounts = funders.map((a): GoalAccount => {
+        const cents = balance.get(a.id) ?? 0;
+        const left = pool.get(a.id) ?? 0;
+        const share = track ? null : (goal.shares[a.id] ?? null);
+        const cap = share == null ? Infinity : Math.round(Math.max(0, cents) * share);
+        const take = Math.max(0, Math.min(track ? cents : left, cap, need));
+        need -= take;
+        if (track) {
+          tracked.set(a.id, [...(tracked.get(a.id) ?? []), goal.name]);
+          return { id: a.id, name: a.name, cents, share, claimedBeforeCents: 0, earmarkedCents: take };
+        }
+        pool.set(a.id, left - take);
+        for (const c of claims.get(a.id) ?? []) claimedFirst.add(c.name);
+        if (take > 0) claims.set(a.id, [...(claims.get(a.id) ?? []), { goalId: goal.id, name: goal.name, cents: take }]);
+        return { id: a.id, name: a.name, cents, share, claimedBeforeCents: Math.max(0, cents - left), earmarkedCents: take };
+      });
+      return { accounts, claimedFirstBy: [...claimedFirst] };
+    },
+    rows(accounts: { id: string; name: string; group: AccountGroup }[]): FundingRow[] {
+      return accounts.map((a) => {
+        const cents = balance.get(a.id) ?? 0;
+        const c = claims.get(a.id) ?? [];
+        return { id: a.id, name: a.name, group: a.group, cents, claims: c, freeCents: Math.max(0, cents - c.reduce((s, x) => s + x.cents, 0)), trackedBy: tracked.get(a.id) ?? [] };
+      });
+    },
   };
 }
 
@@ -169,11 +233,14 @@ const endOfMonthIso = (key: string) => {
  * goal, in order, with what's still needed and which kinds of account fund it; it returns
  * the month (YYYY-MM) the goal is reached, or null. A goal on one kind of account waits
  * behind earlier goals on the same kind; a goal on both kinds waits behind all of them.
+ * A tracking goal (a milestone) waits behind nobody and holds nobody up: it's reached when
+ * the new money alone covers what it still needs.
  */
-export function forecastFiller(f: GoalForecast): (remaining: number, liquid: boolean, illiquid: boolean) => string | null {
+export function forecastFiller(f: GoalForecast): (remaining: number, liquid: boolean, illiquid: boolean, track?: boolean) => string | null {
   const filled = { liquid: 0, illiquid: 0 };
   const added = (m: GoalForecast["months"][number], s: "liquid" | "illiquid") => m[s] - f.start[s];
-  return (remaining, liquid, illiquid) => {
+  return (remaining, liquid, illiquid, track = false) => {
+    if (track) return f.months.find((m) => (liquid ? added(m, "liquid") : 0) + (illiquid ? added(m, "illiquid") : 0) >= remaining)?.key ?? null;
     if (liquid && illiquid) {
       const need = filled.liquid + filled.illiquid + remaining;
       filled.liquid += remaining;
