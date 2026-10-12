@@ -109,8 +109,8 @@ launcher's log is `data/logs/launcher.log`.
   runs (only when something changed) and when you close it with the power button. See
   [Backups](#backups).
 - **Updates arrive as releases.** On Windows, each start through the shortcut checks
-  GitHub for a newer **release** and moves to it, never touching your data. Each change
-  is released once it has passed its checks. A copy you've customized doesn't update
+  GitHub for a newer **release** and moves to it, never touching your data. Work in
+  progress between releases doesn't reach you. A copy you've customized doesn't update
   itself (see [Making it yours](#making-it-yours)). To turn updates off, run
   `setx RAPONIBERG_NO_UPDATE 1` and open the app again. To update by hand:
   `git fetch --tags`, then `git merge <newest vX.Y.Z>`, `npm install` and
