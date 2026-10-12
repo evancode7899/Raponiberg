@@ -139,6 +139,8 @@ export function GoalsClient({ requiresApiSecret }: { requiresApiSecret: boolean 
 
 function GoalCard({ g, r, color, first, last, onEdit, onMove }: { g: GoalProgress; r: GoalsReport; color: string; first: boolean; last: boolean; onEdit: () => void; onMove: (by: number) => void }) {
   const track = g.goal.funding === "TRACK";
+  /** Not getting there in time, or getting nothing at all: worth changing something. */
+  const short = g.currentCents === 0 || g.status === "BEHIND" || g.status === "NO_PACE";
   const s = STATUS[g.status];
   const share = g.targetCents ? Math.min(1, g.currentCents / g.targetCents) : 0;
   const blocked = g.blockers.length > 0;
@@ -226,9 +228,11 @@ function GoalCard({ g, r, color, first, last, onEdit, onMove }: { g: GoalProgres
           {g.sharedWith.length > 0 && ` · shares accounts with ${g.sharedWith.join(", ")}`}
         </summary>
         {!track && g.claimedFirstBy.length > 0 && g.status !== "REACHED" && (
-          <p className="mt-1 text-warn">
-            {g.claimedFirstBy.join(" and ")} {g.claimedFirstBy.length === 1 ? "is" : "are"} listed higher and claimed money from these accounts first. Move this goal up, give
-            {g.claimedFirstBy.length === 1 ? " that goal" : " those goals"} a share of the account instead of all of it, or make {g.claimedFirstBy.length === 1 ? "it" : "them"} a milestone.
+          <p className={`mt-1 ${short ? "text-warn" : "text-muted"}`}>
+            {g.claimedFirstBy.join(" and ")} {g.claimedFirstBy.length === 1 ? "is" : "are"} listed higher and claimed {usd0(g.accounts.reduce((s, a) => s + a.claimedBeforeCents, 0))} of
+            these accounts first.
+            {short &&
+              ` To give this goal more, move it up, give ${g.claimedFirstBy.length === 1 ? "that goal" : "those goals"} a share of the account instead of all of it, or make ${g.claimedFirstBy.length === 1 ? "it" : "them"} a milestone.`}
           </p>
         )}
         <table className="mt-1 w-full">
@@ -449,7 +453,7 @@ function FundingMap({ r }: { r: GoalsReport }) {
                   {c.name} {usd0(c.cents)}
                 </span>
               ))}
-              <span>unclaimed {usd0(row.freeCents)}</span>
+              {row.freeCents > 0 ? <span>unclaimed {usd0(row.freeCents)}</span> : row.claims.length > 0 && <span>fully claimed</span>}
               {row.trackedBy.length > 0 && <span>· counted by {row.trackedBy.join(", ")}</span>}
             </div>
           </div>
