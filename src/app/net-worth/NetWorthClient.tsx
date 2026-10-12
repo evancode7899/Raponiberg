@@ -18,6 +18,12 @@ import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, 
 const TABS = ["overview", "built", "returns", "accounts"] as const;
 type Granularity = "month" | "quarter" | "year";
 
+/** `YYYY-MM-DD` -> `m/d/yy` (anything else is returned as-is). */
+function mdyy(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+  return m ? `${Number(m[2])}/${Number(m[3])}/${m[1]!.slice(2)}` : ymd;
+}
+
 export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
   const [tab, setTab] = useTabParam(TABS, "overview");
@@ -215,7 +221,7 @@ function Overview({ r }: { r: NetWorthReport }) {
               <tr>
                 <th className={table.th}>Account</th>
                 <th className={table.th}>On file</th>
-                <th className={table.thR}>Balance</th>
+                <th className={table.thR}>Balance as of {mdyy(r.current.asOf)}</th>
                 <th className={table.thR}>Share</th>
               </tr>
             </thead>
