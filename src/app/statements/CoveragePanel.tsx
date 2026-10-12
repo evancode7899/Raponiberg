@@ -115,14 +115,6 @@ export function CoveragePanel({ r, onGo }: { r: BookReport; onGo: (tab: "issues"
             </tbody>
           </table>
         </div>
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
-          {(["FULL", "IDLE", "DERIVED", "PARTIAL", "MISSING"] as MonthCell[]).map((c) => (
-            <span key={c} className="flex items-center gap-1.5">
-              <span className={`inline-block h-2.5 w-2.5 rounded-[2px] ${CELL[c].cls}`} />
-              {CELL[c].label}
-            </span>
-          ))}
-        </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-2.5 text-xs">
           <span className={open ? "font-medium text-fg" : "text-muted"}>
             {open

@@ -2,7 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
-import { QualityBadge, QualityLegend, ApiSecretField } from "@/components/ledger/LedgerBits";
+import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, groupRank, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
@@ -214,7 +214,7 @@ function Overview({ r }: { r: NetWorthReport }) {
         </div>
       </Card>
 
-      <Card title="Accounts" subtitle={<QualityLegend />}>
+      <Card title="Accounts">
         <div className={table.wrap}>
           <table className={`${table.table} min-w-[40rem]`}>
             <thead className={table.head}>
@@ -371,9 +371,6 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
           <>
             Each row ties exactly. Money moved between your own accounts nets to zero; what&apos;s left under “in transit” is money mid-move across a
             period boundary or a confirmed transfer cost. Periods that can&apos;t be proven say why. Click a row for each account.
-            <div className="mt-1">
-              <QualityLegend />
-            </div>
           </>
         }
       >
