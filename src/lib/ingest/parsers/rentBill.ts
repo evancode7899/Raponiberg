@@ -4,7 +4,7 @@ import { collapseSpaces, lines, parseMoney, parseSlashDate } from "../text.ts";
 
 export const RENT_BILL_PARSER_ID = "yardi-rent-bill";
 /** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
-export const VERSION = 2;
+export const VERSION = 3;
 
 /**
  * Yardi's monthly rent invoice: a due date, an amount due and the month's charges under
@@ -59,6 +59,9 @@ export function parseRentBill(text: string): ParsedDocument {
   const start = ls.findIndex((l) => /^Date Item Desc/i.test(l));
   const end = ls.findIndex((l, i) => i > start && /^TOTAL: /.test(l));
   const transactions: ParsedTransaction[] = [];
+  // A line printed twice (a charge billed twice by mistake) is told apart as "#2", so a
+  // decision about one copy (it was reversed) can name it and survive re-imports.
+  const seen = new Map<string, number>();
   for (const l of start >= 0 && end > start ? ls.slice(start + 1, end) : []) {
     const m = ITEM.exec(l);
     const date = m ? parseSlashDate(m[1]!) : null;
@@ -68,10 +71,14 @@ export function parseRentBill(text: string): ParsedDocument {
     }
     // Printed as owed: a charge is positive, a payment or credit in parentheses.
     const printed = parseMoney(m[3]!)!;
+    const description = collapseSpaces(m[2]!);
+    const copy = `${date}|${description}|${printed}`;
+    const n = (seen.get(copy) ?? 0) + 1;
+    seen.set(copy, n);
     transactions.push({
       date,
       datePrecision: "EXACT",
-      description: collapseSpaces(m[2]!),
+      description: n > 1 ? `${description} #${n}` : description,
       amountCents: -printed,
       section: printed < 0 ? "Payments and credits" : "Charges",
     });
