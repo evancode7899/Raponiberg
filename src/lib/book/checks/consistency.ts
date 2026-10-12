@@ -68,7 +68,8 @@ export function checkConsistency(book: Book, c: Collector) {
     const fromTimeline = new Map<string, number>();
     const put = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
     for (const r of book.rows) {
-      if (r.accountId !== a.id) continue;
+      // A bill charge dated past the last bill isn't in the ledger yet (ledger/billBooking.ts).
+      if (r.accountId !== a.id || r.pending) continue;
       const amount = r.amountCents - (fees.get(r.id) ?? 0);
       if (r.precision === "EXACT") put(fromRows, `${startOfMonth(r.bookedOn)}|${r.lane}`, amount);
       else

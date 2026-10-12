@@ -3,7 +3,7 @@ import { buildNetWorthReport } from "../../ledger/netWorthReport.ts";
 import { billAccountIds, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
 import { bookedShare } from "../booking.ts";
 import { money } from "../coverage.ts";
-import type { Book } from "../load.ts";
+import type { Book, BookRow } from "../load.ts";
 import type { Collector } from "./collector.ts";
 
 /**
@@ -29,9 +29,17 @@ export function checkNetWorth(book: Book, c: Collector) {
     billAccountIds(book.accounts),
   );
   const outside = new Set(c.inferences.filter((i) => i.check === "transfer.unmatched" && i.partial).flatMap((i) => i.rowIds ?? []));
+  // A bill payment made by several bank payments books each piece on its own day.
+  const pieces = new Map<string, BookRow[]>();
+  for (const r of book.rows) if (r.partOf) pieces.set(r.partOf, [...(pieces.get(r.partOf) ?? []), r]);
   const share = (rowId: string, date: string, from: string, to: string) => {
     const r = book.rowById.get(rowId);
-    return r ? bookedShare(r, from, to) : date >= from && date <= to ? 1 : 0;
+    if (!r) return date >= from && date <= to ? 1 : 0;
+    const more = pieces.get(rowId);
+    if (!more) return bookedShare(r, from, to);
+    const main = r.amountCents - (fees.get(rowId) ?? 0);
+    const total = main + more.reduce((s, p) => s + p.amountCents, 0);
+    return (main * bookedShare(r, from, to) + more.reduce((s, p) => s + p.amountCents * bookedShare(p, from, to), 0)) / total;
   };
   for (const p of nw.periods) {
     const opening = addDays(p.start, -1);

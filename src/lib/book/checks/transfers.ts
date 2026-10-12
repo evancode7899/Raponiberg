@@ -1,4 +1,5 @@
 import { addDays } from "../../dates/isoDate.ts";
+import { BILL_PAYMENTS } from "../../ingest/billContinuation.ts";
 import { accountsByLast4, money, uncovered } from "../coverage.ts";
 import { accountRef, rowRefs } from "../findingKeys.ts";
 import type { Book, BookAccount, BookRow } from "../load.ts";
@@ -27,13 +28,14 @@ export function checkTransfers(book: Book, c: Collector) {
       continue;
     }
     const candidates = otherLegCandidates(book, r);
+    const isBill = book.accounts.find((a) => a.id === r.accountId)?.subtype === "BILL";
     // What a bill says was paid over its cycle could have been paid any day of it.
-    const from = r.precision === "PERIOD" ? r.statement.start : addDays(r.date, -3);
-    const to = r.precision === "PERIOD" ? r.statement.end : addDays(r.date, 3);
+    const overCycle = r.precision === "PERIOD" || (isBill && r.payee === BILL_PAYMENTS);
+    const from = overCycle ? r.statement.start : addDays(r.date, -3);
+    const to = overCycle ? r.statement.end : addDays(r.date, 3);
     const notCovered = candidates.filter((a) => uncovered(book, a.id, from, to).length > 0);
     const direction = r.amountCents < 0 ? "to" : "from";
     const scope = { accountId: r.accountId, from, to, affects: ["CASH_FLOW" as const, "NET_WORTH" as const] };
-    const isBill = book.accounts.find((a) => a.id === r.accountId)?.subtype === "BILL";
     const isCard = !isBill && book.accounts.find((a) => a.id === r.accountId)?.group === "Credit cards";
     if (notCovered.length === 0 && isCard && r.amountCents > 0 && !r.counterpartyInstitution && untracked.length > 0) {
       // A card payment no tracked bank account made: paid from an account not on file.
@@ -83,7 +85,7 @@ export function checkTransfers(book: Book, c: Collector) {
         accounts: accountRef(book, r.accountId).accounts,
         check: "transfer.unmatched",
         status: "FAIL",
-        ...(r.precision === "PERIOD"
+        ...(overCycle
           ? {
               title: `${nameOf(r.accountId)}: ${money(r.amountCents)} paid ${from} – ${to} doesn't match the bank's rent payments`,
               detail: `The bill says ${money(r.amountCents)} was paid or credited over its cycle, but no set of rent payments from your bank accounts in those days adds up to it. Usually the landlord changed the bill without printing the change (dropped a charge billed twice, waived a fee), or the rent was paid from an account that isn't on file.`,

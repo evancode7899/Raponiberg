@@ -31,7 +31,8 @@ const ITEM = /^(\d{1,2}\/\d{1,2}\/\d{4}) (.+?) (\(?[\d,]+\.\d{2}\)?)$/;
  * (next month's charges are already posted, dated the 1st they cover), so:
  *
  * - the period ends on that date, and the balance then is the amount due;
- * - the charges are the rows, on the dates printed (rent counts in the month it covers);
+ * - the charges are the rows, on the dates printed (rent counts in the month it covers,
+ *   and the ledger books it there too: see ledger/billBooking.ts);
  * - payments aren't listed once they've been applied, so the bill alone can't say what
  *   was paid: at commit the previous bill supplies the opening and one "Payments and
  *   credits" row explains the difference (see `paymentsFromPrior`).
