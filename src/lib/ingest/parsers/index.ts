@@ -11,6 +11,7 @@ import { detectEmpower, parseEmpower, VERSION as EMPOWER } from "./empower.ts";
 import { detectFidelity, parseFidelity, VERSION as FIDELITY } from "./fidelity.ts";
 import { detectHealthEquity, parseHealthEquity, VERSION as HEALTHEQUITY } from "./healthequity.ts";
 import { detectAdp, detectTrinet, detectVensure, parseAdp, parseTrinet, parseVensure, VERSION as PAYSTUBS } from "./paystubs.ts";
+import { detectRentBill, parseRentBill, VERSION as RENT_BILL } from "./rentBill.ts";
 import { detectSlavic, parseSlavic, VERSION as SLAVIC } from "./slavic.ts";
 import { detectSupporting, parseSupporting, VERSION as SUPPORTING } from "./supporting.ts";
 import { detectVanguard401k, parseVanguard401k, VERSION as VANGUARD_401K } from "./vanguard401k.ts";
@@ -33,6 +34,7 @@ type Parser = {
  */
 export const PARSERS: Parser[] = [
   { id: "supporting-document", version: SUPPORTING, detect: detectSupporting, parse: parseSupporting },
+  { id: "yardi-rent-bill", version: RENT_BILL, detect: detectRentBill, parse: parseRentBill },
   { id: "chase-checking", version: CHASE, detect: detectChase, parse: parseChase },
   { id: "chase-card", version: CHASE_CARD, detect: detectChaseCard, parse: parseChaseCard },
   { id: "amex-high-yield-savings", version: AMEX_SAVINGS, detect: detectAmexSavings, parse: parseAmexSavings },
