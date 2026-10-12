@@ -89,7 +89,7 @@ the app ever won't load, `npm run app:stop` stops the server.
 Which version a copy follows is `UPDATE_CHANNEL` in `.env`:
 
 - `release` (the default, for everyone else): the newest release tag.
-- `main` (the maintainer's copy): every merged change, a few minutes before its release.
+- `main` (the maintainer's copy): every merged change, without waiting for a release.
   **On a new computer, add `UPDATE_CHANNEL="main"` to `.env` after `npm run setup`**,
   because `.env` isn't part of the backup.
 
@@ -97,27 +97,33 @@ A copy with commits of its own (customized) never updates itself.
 
 ## 4a. Releases
 
-**Every merge to `main` is released automatically.** When CI passes on `main`, the Release
-workflow (`.github/workflows/release.yml`) tags that exact commit with the next patch
-version (v0.2.0 → v0.2.1), and publishes a GitHub release whose notes list the merged pull
-requests. Everyone on the `release` channel moves to it the next time they open the app.
+**Releases are made by hand.** Merging to `main` doesn't release anything; everyone on the
+`release` channel stays where they are until you publish one. When `main` holds changes
+worth giving everyone and CI is green on it, run the Release workflow
+(`.github/workflows/release.yml`) from GitHub's **Actions → Release → Run workflow**, or:
 
-- Only a commit that passed CI is released, and only the newest one: several quick merges
-  become one release.
-- **A bigger version jump** (a new feature set, a breaking change) is a hand-made release of
-  the merged commit. The workflow then skips that commit:
+```powershell
+gh workflow run release.yml
+```
+
+It tags the tip of `main` with the next patch version (v0.2.0 → v0.2.1) and publishes a
+GitHub release whose notes list the pull requests merged since the last one. Everyone on the
+`release` channel moves to it the next time they open the app.
+
+- **A bigger version jump** (a new feature set, a breaking change): give the version.
 
   ```powershell
-  gh release create v0.3.0 --target <full commit id> --generate-notes
+  gh workflow run release.yml -f version=v0.3.0
   ```
 
-  `--target` needs the full 40-character commit id, from `git rev-parse main`.
+- It refuses to release a commit whose CI didn't pass, one that's already released, or a
+  version that isn't newer than the last.
 - The release version is the git tag. `package.json`'s `"version"` isn't bumped, because a
   `package.json` change makes every launcher reinstall its dependencies.
 - Tags must look like `vMAJOR.MINOR.PATCH`. The launcher ignores anything else, including
   pre-releases like `v0.3.0-rc1`.
-- A release can't be quietly taken back: if one is broken, fix it on `main`, and the fix
-  ships as the next release.
+- A release can't be quietly taken back: if one is broken, fix it on `main` and release a
+  new version.
 
 ## 5. Database notes
 

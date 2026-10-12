@@ -1,24 +1,27 @@
-# Every merge to main is a release. When CI passes on a push to main, this tags that
-# exact commit with the next patch version (v0.2.0 -> v0.2.1) and publishes a GitHub
-# release whose notes list the merged pull requests. Copies on the release channel
-# (UPDATE_CHANNEL=release, the default) move to it on their next start.
+# Releases are made by hand: merging to main never releases anything. Run this workflow
+# (Actions → Release → Run workflow, or `gh workflow run release.yml`) to tag the tip of
+# main with the next patch version (v0.2.0 -> v0.2.1), or with the version you give it,
+# and publish a GitHub release whose notes list the pull requests merged since the last
+# one. Copies on the release channel (UPDATE_CHANNEL=release, the default) move to it on
+# their next start.
 #
-# - Only a commit that passed CI is released, and only while it's still the tip of
-#   main: if more merges landed meanwhile, the newer CI run releases those instead.
-# - A commit that already has a vX.Y.Z tag is skipped, so a release made by hand for a
-#   bigger version jump (gh release create v0.3.0 --target <sha>) isn't doubled.
+# - Only a commit whose CI passed is released.
+# - A commit that already has a vX.Y.Z tag isn't released twice.
 # - package.json's version isn't bumped: the tag is the version, and a package.json
 #   change would make every launcher reinstall dependencies on update.
 name: Release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, like v0.3.0. Leave blank for the next patch version."
+        required: false
+        default: ""
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release
@@ -26,28 +29,41 @@ concurrency:
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: main
           fetch-depth: 0
-      - name: Tag and publish the next version
+      - name: Tag and publish the version
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUESTED: ${{ inputs.version }}
         run: |
           set -euo pipefail
           git fetch --tags --force origin
+          SHA=$(git rev-parse origin/main)
           if git tag --points-at "$SHA" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Already released: $(git tag --points-at "$SHA" | tr '\n' ' ')"; exit 0
+            echo "::error::main ($SHA) is already released as $(git tag --points-at "$SHA" | tr '\n' ' ')"; exit 1
           fi
-          if [ "$(git rev-parse origin/main)" != "$SHA" ]; then
-            echo "main has moved past $SHA; the newer CI run releases it."; exit 0
+          ci=$(gh run list --workflow CI --commit "$SHA" --event push --limit 1 --json conclusion --jq '.[0].conclusion // ""')
+          if [ "$ci" != "success" ]; then
+            echo "::error::CI hasn't passed on main ($SHA): ${ci:-no finished run}"; exit 1
           fi
           last=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
-          if [ -z "$last" ]; then next=v0.1.0; else
+          if [ -n "$REQUESTED" ]; then
+            next="$REQUESTED"
+            if ! [[ "$next" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Version must look like vMAJOR.MINOR.PATCH, got $next"; exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
+              echo "::error::$next already exists"; exit 1
+            fi
+            if [ -n "$last" ] && [ "$(printf '%s\n%s\n' "$last" "$next" | sort -V | tail -1)" != "$next" ]; then
+              echo "::error::$next isn't newer than $last"; exit 1
+            fi
+          elif [ -z "$last" ]; then next=v0.1.0; else
             IFS=. read -r major minor patch <<< "${last#v}"
             next="v${major}.${minor}.$((patch + 1))"
           fi
