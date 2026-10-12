@@ -91,7 +91,7 @@ export function Timeline({ t }: { t: BlockerTimeline }) {
     const isSel = sel?.lane === lane && sel.period.start === p.start && sel.period.end === p.end;
     const dim = focus && !c.blockers.includes(focus);
     const title = `${laneLabel(lane)} · ${p.label}: ${
-      c.state === "proven" ? "proven" : c.state === "pending" ? `past the data edge, awaiting statements${c.awaiting.length ? ` (${c.awaiting.map((a) => a.account).join(", ")})` : ""}` : `withheld by ${c.blockers.length} finding${c.blockers.length === 1 ? "" : "s"}`
+      c.state === "proven" ? "proven" : c.state === "pending" ? `past the data edge, awaiting statements${c.awaiting.length ? ` (${c.awaiting.map((a) => a.account).join(", ")})` : ""}` : `withheld by ${c.blockers.length} finding${c.blockers.length === 1 ? "" : "s"} (${k === "neg" ? "data contradicts itself" : "data missing"})`
     }`;
     return (
       <td className="p-0.5">
@@ -116,14 +116,6 @@ export function Timeline({ t }: { t: BlockerTimeline }) {
       title="Proven figures"
       subtitle="Month by month: which cash flow, net worth and tax figures are proven, and which findings withhold the rest. Quarters and years roll up the same way the pages do — a year's taxes also need the bank statements through the April filing deadline. Click a cell for what's gating it; click a finding below to light up every period it gates."
     >
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted">
-        <Legend cls={CELL.pos} label="Proven" />
-        <Legend cls={CELL.neg} label="Withheld — data contradicts itself" />
-        <Legend cls={CELL.warn} label="Withheld — data missing" />
-        <Legend cls={CELL.pending} label="Past the data edge — awaiting statements" />
-        <span>Numbers are how many findings withhold the figure.</span>
-      </div>
-
       <div className="mb-3 grid gap-2 text-xs sm:grid-cols-3">
         {LANES.map((l) => (
           <div key={l.id} className="rounded-md bg-surface-2 px-2.5 py-2">
@@ -205,15 +197,6 @@ export function Timeline({ t }: { t: BlockerTimeline }) {
         </ul>
       )}
     </Card>
-  );
-}
-
-function Legend({ cls, label }: { cls: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`inline-block h-3 w-4 rounded-sm ${cls}`} />
-      {label}
-    </span>
   );
 }
 
