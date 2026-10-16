@@ -22,7 +22,7 @@ import { dataDir as defaultDataDir, isDemo } from "../dataDir.ts";
  * often costs nothing while nothing changes. Older snapshots thin out (see pruneSnapshots).
  */
 
-export const BACKUP_FOLDER_NAME = "2. Web App Backup";
+export const BACKUP_FOLDER_NAME = "Backup";
 export const BACKUP_FORMAT = 1;
 
 export type BackupFile = { name: string; bytes: number; sha256: string };
@@ -54,10 +54,9 @@ export type BackupDb = {
 type Env = Record<string, string | undefined>;
 
 /**
- * The backup folder: BACKUP_DIR, else "2. Web App Backup" in the folder that holds the
- * statements folder (the OneDrive "Personal Finance" folder), else in OneDrive's
- * Desktop\Personal Finance. Null when none of those exist, so nothing is written to a
- * folder that would not leave the machine. Always null for the demo instance: its made-up
+ * The backup folder: BACKUP_DIR, else "Backup" in the folder that holds the
+ * statements folder, else in OneDrive\Raponiberg. Null when none of those exist, so
+ * nothing is written to a folder that would not leave the machine. Always null for the demo instance: its made-up
  * data must never land among the real snapshots.
  */
 export function backupRoot(env: Env = process.env): { root: string; source: "BACKUP_DIR" | "statements" | "onedrive" } | null {
@@ -71,7 +70,7 @@ export function backupRoot(env: Env = process.env): { root: string; source: "BAC
   }
   const onedrive = env.OneDrive?.trim() || env.OneDriveConsumer?.trim();
   if (onedrive) {
-    const parent = path.join(onedrive, "Desktop", "Personal Finance");
+    const parent = path.join(onedrive, "Raponiberg");
     if (existsSync(parent)) return { root: path.join(parent, BACKUP_FOLDER_NAME), source: "onedrive" };
   }
   return null;
@@ -293,7 +292,7 @@ export type BackupOptions = { reason?: string; root?: string; dataDir?: string; 
 export async function createBackup(db: BackupDb, opts: BackupOptions = {}): Promise<BackupResult> {
   if (!opts.root && isDemo()) throw new Error("The demo doesn't back up: its data is made up.");
   const root = opts.root ?? backupRoot()?.root;
-  if (!root) throw new Error("No backup folder: set BACKUP_DIR in .env (for example your OneDrive Personal Finance folder\\2. Web App Backup).");
+  if (!root) throw new Error("No backup folder: set BACKUP_DIR in .env (for example OneDrive\\Raponiberg\\Backup).");
   if (!existsSync(path.dirname(root))) throw new Error(`The backup folder's parent doesn't exist: ${path.dirname(root)}`);
   const dataDir = opts.dataDir ?? defaultDataDir();
   const now = opts.now ?? new Date();

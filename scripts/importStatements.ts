@@ -7,7 +7,7 @@
  *   node scripts/importStatements.ts [folder] [--review] [--reparse-outdated]
  *
  *   folder              defaults to the folder the app scans (STATEMENTS_DIR in .env,
- *                       else ../3. Statements next to the app folder)
+ *                       else ../Statements next to the app folder)
  *   --review            hold even reconciled statements for manual commit (default:
  *                       statements that tie out to the cent are committed; anything
  *                       else waits for review)
@@ -29,7 +29,7 @@ import path from "node:path";
 
 const args = process.argv.slice(2);
 const review = args.includes("--review");
-// The same folder the app scans: STATEMENTS_DIR from .env, else "3. Statements" beside the app.
+// The same folder the app scans: STATEMENTS_DIR from .env, else "Statements" beside the app.
 if (existsSync(".env")) process.loadEnvFile(".env");
 const folder = args.find((a) => !a.startsWith("--")) ?? statementsFolder();
 

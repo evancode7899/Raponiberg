@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Scans the statements folder (STATEMENTS_DIR, default "../3. Statements") for PDFs
+ * Scans the statements folder (STATEMENTS_DIR, default "../Statements") for PDFs
  * whose bytes aren't imported yet and imports them like an upload, then reads the tax
  * documents folder (TAX_DOCS_DIR) again when one is set up. Body: { review?: boolean }.
  */

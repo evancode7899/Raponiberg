@@ -100,12 +100,12 @@ export async function importStatementFiles(
 }
 
 /**
- * The statements folder: STATEMENTS_DIR, or "3. Statements" next to the app folder. The
+ * The statements folder: STATEMENTS_DIR, or "Statements" next to the app folder. The
  * demo instance only ever looks in its own data folder's inbox, never the real statements.
  */
 export function statementsFolder(): string {
   if (isDemo()) return path.join(dataDir(), "inbox");
-  return process.env.STATEMENTS_DIR?.trim() || path.resolve(process.cwd(), "..", "3. Statements");
+  return process.env.STATEMENTS_DIR?.trim() || path.resolve(process.cwd(), "..", "Statements");
 }
 
 async function walkPdfs(dir: string): Promise<string[]> {

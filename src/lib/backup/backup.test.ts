@@ -119,13 +119,13 @@ describe("dataFiles / backupRoot", () => {
 
   it("finds the folder from BACKUP_DIR, else beside the statements folder", () => {
     expect(backupRoot({ BACKUP_DIR: root })).toEqual({ root, source: "BACKUP_DIR" });
-    const statements = path.join(tmp, "OneDrive", "3. Statements");
-    expect(backupRoot({ STATEMENTS_DIR: statements })).toEqual({ root: path.join(tmp, "OneDrive", "2. Web App Backup"), source: "statements" });
-    expect(backupRoot({ STATEMENTS_DIR: path.join(tmp, "missing", "3. Statements") })).toBeNull();
+    const statements = path.join(tmp, "OneDrive", "Statements");
+    expect(backupRoot({ STATEMENTS_DIR: statements })).toEqual({ root: path.join(tmp, "OneDrive", "Backup"), source: "statements" });
+    expect(backupRoot({ STATEMENTS_DIR: path.join(tmp, "missing", "Statements") })).toBeNull();
   });
 
   it("never gives the demo a backup folder, even with BACKUP_DIR set", () => {
     expect(backupRoot({ APP_PROFILE: "demo", BACKUP_DIR: root })).toBeNull();
-    expect(backupRoot({ APP_PROFILE: "demo", STATEMENTS_DIR: path.join(tmp, "OneDrive", "3. Statements") })).toBeNull();
+    expect(backupRoot({ APP_PROFILE: "demo", STATEMENTS_DIR: path.join(tmp, "OneDrive", "Statements") })).toBeNull();
   });
 });

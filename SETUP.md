@@ -6,9 +6,9 @@ cloud placeholders and breaks `next build`. The statements and the backups stay 
 | Folder | What | Set by |
 |--------|------|--------|
 | `C:\dev\personal-finance` | the app (this Git repo) | — |
-| `OneDrive\Desktop\Personal Finance\3. Statements` | statement PDFs, one subfolder per institution | `STATEMENTS_DIR` in `.env` |
-| `OneDrive\Desktop\Tax` | filed tax returns, W-2s, 1099s, K-1s, one subfolder per year | `TAX_DOCS_DIR` in `.env` |
-| `OneDrive\Desktop\Personal Finance\2. Web App Backup` | automatic backups of `data/` | `BACKUP_DIR` in `.env` |
+| `OneDrive\Raponiberg\Statements` | statement PDFs, one subfolder per institution | `STATEMENTS_DIR` in `.env` |
+| `OneDrive\Raponiberg\Tax documents` | filed tax returns, W-2s, 1099s, K-1s, one subfolder per year | `TAX_DOCS_DIR` in `.env` |
+| `OneDrive\Raponiberg\Backup` | automatic backups of `data/` | `BACKUP_DIR` in `.env` |
 
 ## 1. Prerequisites
 
@@ -23,7 +23,7 @@ git config --global user.name "Your Name"
 git config --global user.email "you@example.com"
 ```
 
-- **OneDrive** signed in, with `Desktop\Personal Finance` synced.
+- **OneDrive** signed in, with the `Raponiberg` folder synced.
 
 ## 2. New or wiped computer
 
@@ -37,7 +37,7 @@ npm run setup
 `npm run setup`:
 
 1. creates `.env` from `.env.example` if it's missing;
-2. restores the newest snapshot from `2. Web App Backup` (the database, every decision file in
+2. restores the newest snapshot from `Backup` (the database, every decision file in
    `data/`, and the stored statement PDFs) and sets `BACKUP_DIR` / `STATEMENTS_DIR` in `.env`;
 3. brings the database up to the current schema (`npm run db:refresh`);
 4. turns on the privacy check before every `git push` (`.githooks/pre-push`);
@@ -47,7 +47,7 @@ Then double-click **Raponiberg**. Optional: `npm run logon:register` starts it a
 
 If OneDrive is still downloading the backup, the restore stops and says so; wait and run
 `npm run setup` again. If the backup folder is somewhere else:
-`npm run setup -- --from "D:\path\to\2. Web App Backup"`.
+`npm run setup -- --from "D:\path\to\Backup"`.
 
 ## 3. Backups
 
@@ -56,7 +56,7 @@ when you close it with the power button; a launch that pulls new code backs up b
 **Settings › Data › Cloud backup** shows the latest snapshot and has **Back up now**.
 
 ```
-2. Web App Backup\
+Backup\
   README.txt               restore steps
   snapshots\<date_time>\   finance.db + every file from data\ + manifest.json (hashes)
   statements\              data\statements, mirrored once (PDFs never change)

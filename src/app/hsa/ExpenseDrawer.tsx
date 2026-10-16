@@ -147,7 +147,7 @@ export function ExpenseDrawer({ draft, r, send, onClose }: { draft: DraftExpense
             I have the receipt or EOB saved
           </label>
           <Field label="Where it is" hint="A file path, folder or email subject: the IRS can ask for it whenever you reimburse, even decades later." className="mt-2">
-            <input className={inputCls} value={f.receiptRef} onChange={(e) => set({ receiptRef: e.target.value })} placeholder="e.g. OneDrive/Medical/2026/dr-lee.pdf" />
+            <input className={inputCls} value={f.receiptRef} onChange={(e) => set({ receiptRef: e.target.value })} placeholder="e.g. Receipts/2026/pharmacy.pdf" />
           </Field>
         </fieldset>
         <fieldset className="rounded-md border border-line p-3">

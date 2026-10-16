@@ -212,8 +212,8 @@ each step with a progress bar. Close the app with the **power button** in its to
 
 With `BACKUP_DIR` set, the app backs up `data/finance.db` and every file in `data/` there
 every 15 minutes while it runs (only when something changed), and when you close it with
-the power button. Without `BACKUP_DIR` it uses `2. Web App Backup` beside your statements
-folder, or `OneDrive\Desktop\Personal Finance\2. Web App Backup` when that folder exists,
+the power button. Without `BACKUP_DIR` it uses `Backup` beside your statements
+folder, or `OneDrive\Raponiberg\Backup` when `OneDrive\Raponiberg` exists,
 and otherwise it doesn't back up. **Settings › Data › Cloud backup** shows the latest
 snapshot and has **Back up now**.
 
