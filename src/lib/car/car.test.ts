@@ -127,6 +127,49 @@ describe("which statement rows are car costs", () => {
     expect(statementCharges([reimported], g).map((c) => [c.rowId, c.status, c.kind])).toEqual([["new-id", "COUNTED", "EQUIPMENT"]]);
   });
 
+  describe("a category the owner set by hand", () => {
+    const byHand = (category: string, by = "USER") => ({ category, classifiedBy: by });
+
+    it("takes a car-looking row off the Car tab when filed under anything but Transportation", () => {
+      const rows = [
+        row("2025-02-03", "SHELL OIL 123", 30, byHand("Travel")),
+        row("2025-02-04", "GEICO AUTO", 90, byHand("Shopping", "user-merchant-rule")),
+        row("2025-02-05", "EXXON RIVERSIDE", 40, byHand("Transportation")),
+        // Filed by the classifier, not the owner: the merchant still decides.
+        row("2025-02-06", "SUNOCO 77", 35, { category: "Travel", classifiedBy: "merchant-rule" }),
+      ];
+      expect(statementCharges(rows, garage()).map((c) => [c.payee, c.status])).toEqual([
+        ["EXXON RIVERSIDE", "COUNTED"],
+        ["SUNOCO 77", "COUNTED"],
+      ]);
+    });
+
+    it("beats a keyword, a shared store number and a log entry's amount", () => {
+      const g = garage({ matchRules: [{ id: "k", pattern: "CORNER MART", kind: "FUEL" }], entries: [entry({ date: "2025-03-01", kind: "FUEL", cents: 2800 })] });
+      const rows = [
+        row("2025-02-01", "SHELL SERVICE STATION 10004242001 SPRINGFIELD", 30),
+        row("2025-02-10", "12 MAIN STREET 10004242001 SPRINGFIELD", 22, byHand("Dining")),
+        row("2025-02-12", "CORNER MART 55", 15, byHand("Groceries")),
+        row("2025-03-01", "THAI KITCHEN", 28, byHand("Dining")),
+      ];
+      expect(statementCharges(rows, g).map((c) => c.payee.slice(0, 14))).toEqual(["SHELL SERVICE "]);
+      expect(hintsOf(g, rows)[0]).toMatchObject({ status: "NOT_FOUND" });
+    });
+
+    it("gives way to the owner's word on the Car tab: a row decision or a tied log entry", () => {
+      const decided = row("2025-02-03", "SHELL OIL 123", 30, byHand("Travel"));
+      const tied = row("2025-02-08", "THAI KITCHEN", 18, byHand("Dining"));
+      const g = garage({
+        rowDecisions: { [decided.id]: { kind: "FUEL", key: rowKey(decided) } },
+        entries: [entry({ date: "2025-02-08", kind: "CARE", cents: 1800, links: [{ rowId: tied.id, key: rowKey(tied) }] })],
+      });
+      expect(statementCharges([decided, tied], g).map((c) => [c.payee, c.status, c.how])).toEqual([
+        ["SHELL OIL 123", "COUNTED", "decision"],
+        ["THAI KITCHEN", "COUNTED", "log"],
+      ]);
+    });
+  });
+
   it("reads an insurer's term from the gap between its charges", () => {
     const monthly = [row("2025-02-18", "GEICO AUTO", 100), row("2025-03-18", "GEICO AUTO", 100), row("2025-04-18", "GEICO AUTO", 100)];
     expect(report(garage(), monthly, "2025-05-01").insurance.premiums.map((p) => p.months)).toEqual([1, 1, 1]);

@@ -10,8 +10,11 @@ import { ownedOn, SHARED, type Car, type CarEntry, type CarKind, type GarageSett
  * gas station, an auto insurer, a toll account, parking, or the same store as one of
  * those: the same store number or phone). Places that may or may not be the car (a parts
  * store, a car loan, the town, a merchant seen on a logged entry) are only suggested until
- * the owner says. Categories are never trusted: the card issuers file a gas station under
- * Dining often enough.
+ * the owner says. The issuers' and the classifier's categories are never trusted (a gas
+ * station is filed under Dining often enough), but a category the owner set by hand on
+ * the Transactions page is their word: a row they filed under anything but Transportation
+ * is not the car, unless they placed it here (a decision on the row, or a log entry tied
+ * to it), which wins.
  *
  * A log entry is a note on the charge it matches (what it was, gallons, the odometer). It
  * never adds money of its own: an entry with no charge is listed as not found, or as
@@ -20,7 +23,7 @@ import { ownedOn, SHARED, type Car, type CarEntry, type CarKind, type GarageSett
  * dollar counts once however it reached the app.
  */
 
-export type MatchRow = Pick<BookRow, "id" | "date" | "amountCents" | "lane" | "payee" | "merchantKey" | "category" | "accountId"> & Partial<Pick<BookRow, "detail">>;
+export type MatchRow = Pick<BookRow, "id" | "date" | "amountCents" | "lane" | "payee" | "merchantKey" | "category" | "accountId"> & Partial<Pick<BookRow, "detail" | "classifiedBy">>;
 
 type Rule = { re: RegExp; kind: CarKind; counted: boolean };
 
@@ -60,6 +63,10 @@ const RULES: Rule[] = [
 const NOT_CAR = /UBER|LYFT|\bTAXI|AMTRAK|METRO-?NORTH|\bMTA\b|NJ ?TRANSIT|GAS (&|AND) ELEC|NATURAL GAS|NATIONAL GRID|CON ?ED|EVERSOURCE|PSE&G|SOUTHERN CONN|YANKEE GAS|PROPANE|HOME ?INS|RENTERS|LEMONADE/;
 /** Categories a car cost is never filed under, for the rules (a matched log entry or the owner's word can still say otherwise). */
 const NOT_CAR_CATEGORIES = new Set(["Housing & utilities", "Groceries", "Dining"]);
+/** The category the cars' costs are filed under. */
+const CAR_CATEGORY = "Transportation";
+/** The owner set the category by hand (on this row, or for every row of its merchant). */
+const ownerFiled = (r: Pick<MatchRow, "classifiedBy">) => r.classifiedBy === "USER" || r.classifiedBy === "user-merchant-rule";
 /** Kinds of the same family: a log entry for a car wash can be the charge the rules read as a repair shop. */
 const SERVICE = new Set<CarKind>(["MAINTENANCE", "REPAIR", "CARE", "EQUIPMENT", "OTHER"]);
 /** Bills that buy time: one payment, many months. */
@@ -270,7 +277,6 @@ export type Reconciled = { charges: StatementCharge[]; hints: HintMatch[] };
 export function reconcile(rows: MatchRow[], settings: GarageSettings, opts: { statementsThrough?: string } = {}): Reconciled {
   const cars = settings.cars.filter((c) => c.vehicle.purchaseDate);
   const through = opts.statementsThrough ?? rows.reduce((m, r) => (r.date > m ? r.date : m), "");
-  const expense = rows.filter((r) => r.lane === "EXPENSE" && r.amountCents !== 0);
   const resolve = resolver(rows);
   const keyOf = new Map(rows.map((r) => [r.id, rowKey(r)]));
   const ref = (r: MatchRow): RowRef => ({ rowId: r.id, key: keyOf.get(r.id)!, date: r.date, payee: r.payee, cents: spent(r), accountId: r.accountId });
@@ -281,6 +287,17 @@ export function reconcile(rows: MatchRow[], settings: GarageSettings, opts: { st
     const r = resolve(id, d.key);
     if (r) decided.set(r.id, d);
   }
+  // Rows the owner placed on the Car tab: a decision, or a log entry tied to the row.
+  const placed = new Set(decided.keys());
+  for (const e of settings.entries)
+    for (const l of e.links) {
+      const r = resolve(l.rowId, l.key);
+      if (r) placed.add(r.id);
+    }
+  // A row the owner filed by hand under another category isn't the car, whatever its
+  // merchant, a keyword, a shared store number or a log entry's amount say.
+  const filedElsewhere = (r: MatchRow) => ownerFiled(r) && r.category !== CAR_CATEGORY && !placed.has(r.id);
+  const expense = rows.filter((r) => r.lane === "EXPENSE" && r.amountCents !== 0 && !filedElsewhere(r));
 
   // What each row's merchant says.
   const match = carMatcher(settings);
