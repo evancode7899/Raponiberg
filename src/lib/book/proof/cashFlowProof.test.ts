@@ -3,7 +3,9 @@ import { NO_HOUSEHOLD } from "../../household/patterns";
 import type { Book, BookRow, BookStatement } from "../load";
 import { buildCashFlowReport } from "../reports/cashFlow";
 import type { AcceptedFinding, CheckPass, Finding } from "../types";
-import { buildCashFlowProof, parseDescriptor, selfCheck, type ProofDescriptor } from "./cashFlowProof";
+import { buildCashFlowProof, type CashFlowDescriptor } from "./cashFlowProof";
+import { sumCheck } from "./common";
+import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 
 // An invented household: Pat Example's checking (••1234) and a card (••5678) at
 // Springfield Bank, Jan – Apr 2025. Every name and amount is made up.
@@ -92,7 +94,7 @@ function makeBook(rows: BookRow[], extra: Partial<Pick<Book, "passes" | "integri
   } as Book;
 }
 
-const d = (x: Partial<ProofDescriptor>): ProofDescriptor => ({ report: "cash-flow", metric: "spending", granularity: "month", start: "2025-01-01", end: "2025-04-30", ...x });
+const d = (x: Partial<CashFlowDescriptor>): CashFlowDescriptor => ({ report: "cash-flow", metric: "spending", granularity: "month", start: "2025-01-01", end: "2025-04-30", ...x });
 
 function household() {
   n = 0;
@@ -211,8 +213,8 @@ describe("buildCashFlowProof", () => {
   });
 
   it("flags rows that don't come to the figure", () => {
-    expect(selfCheck(10_000, 10_000)).toEqual({ ok: true, deltaCents: 0 });
-    expect(selfCheck(10_000, 9_999)).toEqual({ ok: false, deltaCents: -1 });
+    expect(sumCheck(10_000, 10_000, "x")).toEqual({ ok: true, deltaCents: 0, explain: "x" });
+    expect(sumCheck(10_000, 9_999, "x")).toEqual({ ok: false, deltaCents: -1, explain: "x" });
   });
 
   it("gives each check a tri-state: passed, open, accepted, or nothing in scope", () => {
@@ -258,5 +260,49 @@ describe("parseDescriptor", () => {
     expect(parseDescriptor({ report: "cash-flow", metric: "income", granularity: "month", start: "2025-02-01", end: "2025-01-31" })).toHaveProperty("error");
     expect(parseDescriptor({ report: "cash-flow", metric: "net", granularity: "month", start: "2025-01-01", end: "2025-01-31", category: "Dining" })).toHaveProperty("error");
     expect(parseDescriptor({ report: "cash-flow", metric: "spending", granularity: "week", start: "2025-01-01", end: "2025-01-31" })).toHaveProperty("error");
+  });
+});
+
+describe("as a registered proof kind", () => {
+  const ctx = () => ({ book: makeBook(household()), db: {} as never });
+  const links = (p: Proof): ProofLink[] =>
+    p.blocks.flatMap((b) => (b.kind === "breakdown" ? b.items.flatMap((i) => (i.link ? [i.link] : [])) : b.kind === "chain" ? b.lines.flatMap((l) => (l.link ? [l.link] : [])) : []));
+
+  it("builds the drawer's blocks: by month, by category, then rows by statement", async () => {
+    const p = await buildProof(ctx(), d({}));
+    expect(p.blocks.map((b) => `${b.kind}:${b.title}`)).toEqual(["breakdown:By month", "breakdown:By category", "rows:How it adds up"]);
+    expect(p.figure).toEqual({ cents: buildCashFlowProof(ctx().book, d({})).figureCents });
+    expect(p.selfCheck?.ok).toBe(true);
+    expect(p.selfCheck?.explain).toMatch(/^The \d+ rows below add up to \$[\d,.]+$/);
+  });
+
+  it("emits links that parse, build and re-add to the part they came from", async () => {
+    const c = ctx();
+    for (const metric of ["income", "spending", "net"] as const) {
+      const p = await buildProof(c, d({ metric }));
+      const ls = links(p);
+      expect(ls.length).toBeGreaterThan(0);
+      for (const l of ls) {
+        const parsed = parseDescriptor(JSON.parse(JSON.stringify(l.descriptor)));
+        expect(parsed, l.label).not.toHaveProperty("error");
+        const q = await buildProof(c, parsed as CashFlowDescriptor);
+        expect(q.selfCheck?.ok, l.label).toBe(true);
+      }
+      // Each month's link opens a proof of exactly that month's part.
+      const months = p.blocks.find((b) => b.kind === "breakdown" && b.title === "By month");
+      if (months?.kind !== "breakdown") throw new Error("no months");
+      for (const i of months.items) expect((await buildProof(c, i.link!.descriptor)).figure).toEqual(i.value);
+    }
+  });
+
+  it("splits a net figure's categories by side, each linking to that side", async () => {
+    const p = await buildProof(ctx(), d({ metric: "net", start: "2025-02-01", end: "2025-02-28" }));
+    const spend = p.blocks.find((b) => b.title === "By category · Spending");
+    expect(spend?.kind === "breakdown" && spend.items.every((i) => i.link?.descriptor.metric === "spending")).toBe(true);
+  });
+
+  it("rejects a report no kind is registered for", () => {
+    expect(parseDescriptor({ report: "horoscope" })).toEqual({ error: "report must be one of: cash-flow." });
+    expect(parseDescriptor({ report: "toString" })).toHaveProperty("error");
   });
 });

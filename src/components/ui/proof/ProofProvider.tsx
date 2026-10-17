@@ -1,36 +1,48 @@
 "use client";
 
 import { apiSecretHeaders } from "@/components/ledger/useApi";
-import type { CashFlowProof } from "@/lib/book/proof/cashFlowProof";
-import { useCallback, useState, type ReactNode } from "react";
+import type { Proof, ProofDescriptor } from "@/lib/book/proof";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { ProofContext, type ProofTarget } from "./context";
 import { ProofPanel } from "./ProofPanel";
 
-export type ProofState = { target: ProofTarget; proof: (CashFlowProof & { stamp: string }) | null; error: string | null };
+/** One proof in the drawer: what was asked for, and the answer once it arrives. */
+export type ProofEntry = { target: ProofTarget; proof: (Proof & { stamp: string }) | null; error: string | null };
 
 /**
- * One proof drawer for the whole app (mounted by AppShell). A plain fetch, not useApi's
- * call: that clears the page's cached answers on every non-GET, and asking for a proof
- * changes nothing.
+ * One proof drawer for the whole app (mounted by AppShell). Clicking a figure opens its
+ * proof; a link inside a proof opens the linked one on top, and Back returns to the one
+ * before. A plain fetch, not useApi's call: that clears the page's cached answers on
+ * every non-GET, and asking for a proof changes nothing.
  */
 export function ProofProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ProofState | null>(null);
-  const open = useCallback((target: ProofTarget) => {
-    setState({ target, proof: null, error: null });
+  const [stack, setStack] = useState<ProofEntry[]>([]);
+  // Which request each entry is waiting on, so a slow answer never lands on a newer entry.
+  const seq = useRef(0);
+
+  const load = useCallback((target: ProofTarget, mode: "open" | "push") => {
+    const id = ++seq.current;
+    const entry: ProofEntry & { id: number } = { target, proof: null, error: null, id };
+    setStack((s) => (mode === "open" ? [entry] : [...s, entry]));
+    const settle = (patch: Partial<ProofEntry>) => setStack((s) => s.map((e) => ((e as typeof entry).id === id ? { ...e, ...patch } : e)));
     fetch("/api/proof", { method: "POST", headers: { "content-type": "application/json", ...apiSecretHeaders() }, body: JSON.stringify(target.descriptor) })
       .then(async (r) => {
-        const j = (await r.json().catch(() => ({ error: `The server answered ${r.status}.` }))) as CashFlowProof & { stamp: string; error?: string };
+        const j = (await r.json().catch(() => ({ error: `The server answered ${r.status}.` }))) as Proof & { stamp: string; error?: string };
         if (!r.ok || j.error) throw new Error(j.error ?? `The server answered ${r.status}.`);
-        // Only if this figure is still the one open (another click may have replaced it).
-        setState((s) => (s?.target === target ? { target, proof: j, error: null } : s));
+        settle({ proof: j });
       })
-      .catch((e: Error) => setState((s) => (s?.target === target ? { target, proof: null, error: e.message } : s)));
+      .catch((e: Error) => settle({ error: e.message }));
   }, []);
-  const close = useCallback(() => setState(null), []);
+
+  const open = useCallback((t: ProofTarget) => load(t, "open"), [load]);
+  const follow = useCallback((descriptor: ProofDescriptor) => load({ descriptor }, "push"), [load]);
+  const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
+  const close = useCallback(() => setStack([]), []);
+
   return (
     <ProofContext.Provider value={open}>
       {children}
-      <ProofPanel state={state} onClose={close} />
+      <ProofPanel stack={stack} onFollow={follow} onBack={back} onClose={close} />
     </ProofContext.Provider>
   );
 }

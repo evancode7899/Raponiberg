@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProofDescriptor } from "@/lib/book/proof/cashFlowProof";
+import type { ProofDescriptor } from "@/lib/book/proof";
 import { createContext, useContext } from "react";
 
 /**

@@ -1,125 +1,147 @@
 "use client";
 
 import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
-import type { CashFlowProof, ProofCheck, ProofGroup, ProofRow, ProofSection, ProofStatement } from "@/lib/book/proof/cashFlowProof";
+import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
+import type { ChainLine, ProofCheck, ProofGroup, ProofRow, ProofStatement, ProofValue } from "@/lib/book/proof/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, formatUsdFromCents, usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
-import type { ProofState } from "./ProofProvider";
+import { useEffect, useState, type ReactNode } from "react";
+import type { ProofEntry } from "./ProofProvider";
 
 const date = (iso: string) => formatDisplayDateFromYmd(iso);
 const cents = (c: number) => formatUsdFromCents(Math.round(c));
 const month = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd0(v.cents) : cents(v.cents)) : "ratio" in v ? formatPercentRatio(v.ratio, 2) : v.text);
 
 /**
- * The proof behind a figure: the figure and whether its rows really add up to it, the
- * rows by statement, the statements, every check over it, and what's estimated. Read
- * only: findings are fixed on Statements → Issues.
+ * The proof behind a figure, whatever kind it is: the figure and whether its parts
+ * really add up to it, the proof's blocks (rows by statement, breakdowns, derivation
+ * chains), the statements, every check over it, and what's estimated. Links open the
+ * linked proof on top; Back (or Escape) returns. Read only: findings are fixed on
+ * Statements → Issues.
  */
-export function ProofPanel({ state, onClose }: { state: ProofState | null; onClose: () => void }) {
-  const p = state?.proof;
+export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofEntry[]; onFollow: (d: ProofDescriptor) => void; onBack: () => void; onClose: () => void }) {
+  const top = stack.at(-1);
+  const prev = stack.at(-2);
+  const p = top?.proof;
+  // Escape steps back through followed links before closing, and is the drawer's alone:
+  // a drill-down drawer open underneath stays open.
+  const depth = stack.length;
+  useEffect(() => {
+    if (!depth) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      if (depth > 1) onBack();
+      else onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [depth, onBack, onClose]);
+
   return (
-    <Drawer open={!!state} onClose={onClose} title={p ? p.describes : "How this figure adds up"} subtitle={p ? `From statements on file · cash flow runs through ${date(p.through)}` : undefined} width="46rem">
-      {state?.error && <ErrorNote>{state.error}</ErrorNote>}
-      {state && !p && !state.error && <Loading label="Adding up the rows…" />}
-      {state && p && <ProofBody p={p} shownCents={state.target.shownCents} perMonths={state.target.perMonths} />}
+    <Drawer
+      open={!!top}
+      onClose={onClose}
+      title={p ? p.describes : "How this figure adds up"}
+      subtitle={p ? `From statements on file · data runs through ${date(p.through)}` : undefined}
+      width="46rem"
+    >
+      {prev && (
+        <button type="button" onClick={onBack} className="mb-3 text-xs font-medium text-accent hover:underline">
+          ← Back{prev.proof ? ` to ${prev.proof.describes}` : ""}
+        </button>
+      )}
+      {top?.error && <ErrorNote>{top.error}</ErrorNote>}
+      {top && !p && !top.error && <Loading label="Adding up the parts…" />}
+      {top && p && <ProofBody key={stack.length} p={p} shownCents={top.target.shownCents} perMonths={top.target.perMonths} onFollow={onFollow} />}
     </Drawer>
   );
 }
 
-function ProofBody({ p, shownCents, perMonths }: { p: CashFlowProof; shownCents?: number; perMonths?: number }) {
-  const rowCount = p.sections.reduce((t, s) => t + s.groups.reduce((u, g) => u + g.rows.length, 0), 0);
-  const statements = uniqueStatements(p.sections);
+function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof; shownCents?: number; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
+  const statements = uniqueStatements(p.blocks);
+  const figureCents = "cents" in p.figure ? p.figure.cents : null;
   return (
     <div className="flex flex-col gap-5">
       <section>
-        <div className="num text-3xl font-semibold tracking-tight text-fg">{usd0(p.figureCents)}</div>
-        {perMonths && perMonths > 1 ? (
+        <div className="num text-3xl font-semibold tracking-tight text-fg">{valueText(p.figure, true)}</div>
+        {figureCents != null && perMonths && perMonths > 1 ? (
           <div className="mt-0.5 text-xs text-muted">
-            Shown as {usd0(p.figureCents / perMonths)} a month: this total ÷ {perMonths} months.
+            Shown as {usd0(figureCents / perMonths)} a month: this total ÷ {perMonths} months.
           </div>
         ) : null}
-        {shownCents != null && shownCents !== p.figureCents && (
+        {figureCents != null && shownCents != null && shownCents !== figureCents && (
           <div className="mt-2">
             <Callout tone="warn" title="The data changed since this page loaded">
-              The page shows {usd0(shownCents)}; the statements on file now give {usd0(p.figureCents)}. Reload the page to see the new figures.
+              The page shows {usd0(shownCents)}; the data on file now gives {usd0(figureCents)}. Reload the page to see the new figures.
             </Callout>
           </div>
         )}
-        <div className="mt-3">
-          {p.selfCheck.ok ? (
-            <Callout tone="good">
-              The {rowCount} row{rowCount === 1 ? "" : "s"} below add up to exactly {cents(p.rowsCents)}
-              {p.sections.length > 1 ? " (income less spending)" : ""}, the figure shown.
-            </Callout>
-          ) : (
-            <Callout tone="bad" title="The rows don't add up to the figure">
-              They come to {cents(p.rowsCents)}, {cents(p.selfCheck.deltaCents)} off. That&apos;s a bug in the app, not in your statements.
-            </Callout>
-          )}
-        </div>
+        {p.selfCheck && (
+          <div className="mt-3">
+            {p.selfCheck.ok ? (
+              <Callout tone="good">{p.selfCheck.explain}: exactly the figure shown.</Callout>
+            ) : (
+              <Callout tone="bad" title="The parts don't add up to the figure">
+                {p.selfCheck.explain}, {cents(p.selfCheck.deltaCents)} off the figure. That&apos;s a bug in the app, not in your documents.
+              </Callout>
+            )}
+          </div>
+        )}
         {p.withheld && (
           <div className="mt-2">
             <Callout tone="warn" title="Part of this is withheld">
-              An open finding covers these months (see Checks below); pages withhold a figure until it&apos;s resolved.
+              An open finding covers it (see Checks below); pages withhold a figure until it&apos;s resolved.
             </Callout>
           </div>
         )}
       </section>
 
-      {p.periods.length > 1 && (
+      {p.blocks.map((b, i) => (
+        <BlockView key={`${b.kind}:${b.title}:${i}`} b={b} onFollow={onFollow} />
+      ))}
+
+      {statements.length > 0 && (
         <section>
-          <SectionTitle>By {p.descriptor.granularity}</SectionTitle>
-          <ul className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[13px] sm:grid-cols-3">
-            {p.periods.map((x) => (
-              <li key={x.start} className="flex justify-between gap-2">
-                <span className="text-muted">
-                  {x.label}
-                  {x.through ? ` (to ${date(x.through)})` : ""}
+          <SectionTitle sub={`${statements.length} statement${statements.length === 1 ? "" : "s"}`}>Statements behind it</SectionTitle>
+          <ul className="flex flex-col divide-y divide-line text-[13px]">
+            {statements.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5">
+                <span className="min-w-0">
+                  <span className="font-medium text-fg">{s.account}</span>
+                  <span className="text-muted">
+                    {" "}
+                    · {date(s.periodStart)} – {date(s.periodEnd)}
+                  </span>
                 </span>
-                <span className="num">{usd0(x.cents)}</span>
+                <span className="min-w-0 truncate text-xs text-muted" title={s.documentTitle}>
+                  {s.documentTitle || "—"}
+                </span>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      {p.sections.map((s) => (
-        <SectionView key={s.label} s={s} showLabel={p.sections.length > 1} category={p.descriptor.category} />
-      ))}
-
-      <section>
-        <SectionTitle sub={`${statements.length} statement${statements.length === 1 ? "" : "s"}`}>Statements behind it</SectionTitle>
-        <ul className="flex flex-col divide-y divide-line text-[13px]">
-          {statements.map((s) => (
-            <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5">
-              <span className="min-w-0">
-                <span className="font-medium text-fg">{s.account}</span>
-                <span className="text-muted">
-                  {" "}
-                  · {date(s.periodStart)} – {date(s.periodEnd)}
-                </span>
-              </span>
-              <span className="min-w-0 truncate text-xs text-muted" title={s.documentTitle}>
-                {s.documentTitle || "—"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section>
-        <SectionTitle sub="Every check that could withhold this figure, over its months and accounts">Checks</SectionTitle>
-        <ul className="flex flex-col divide-y divide-line">
-          {p.checks.map((c) => (
-            <CheckRow key={c.id} c={c} />
-          ))}
-        </ul>
-        <p className="mt-2 text-xs text-muted">
-          Details and fixes: <Link className="text-accent hover:underline" href="/statements?tab=issues">Statements → Issues</Link>.
-        </p>
-      </section>
+      {p.checks.length > 0 && (
+        <section>
+          <SectionTitle sub="Every check that could withhold this figure, over its dates and accounts">Checks</SectionTitle>
+          <ul className="flex flex-col divide-y divide-line">
+            {p.checks.map((c) => (
+              <CheckRow key={c.id} c={c} />
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted">
+            Details and fixes:{" "}
+            <Link className="text-accent hover:underline" href="/statements?tab=issues">
+              Statements → Issues
+            </Link>
+            .
+          </p>
+        </section>
+      )}
 
       {p.estimates.length > 0 && (
         <section>
@@ -147,29 +169,96 @@ function SectionTitle({ children, sub }: { children: ReactNode; sub?: string }) 
   );
 }
 
-function SectionView({ s, showLabel, category }: { s: ProofSection; showLabel: boolean; category?: string }) {
+/** A link to another figure's proof, opened on top of this one. */
+function FollowLink({ link, onFollow, children, className = "" }: { link?: ProofLink; onFollow: (d: ProofDescriptor) => void; children: ReactNode; className?: string }) {
+  if (!link) return <>{children}</>;
+  return (
+    <button
+      type="button"
+      onClick={() => onFollow(link.descriptor)}
+      title={`Open the proof of ${link.label}`}
+      className={`rounded-sm text-left underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function BlockView({ b, onFollow }: { b: ProofBlock; onFollow: (d: ProofDescriptor) => void }) {
+  if (b.kind === "breakdown")
+    return (
+      <section>
+        <SectionTitle>{b.title}</SectionTitle>
+        <ul className="grid grid-cols-1 gap-x-6 gap-y-0.5 text-[13px] sm:grid-cols-2">
+          {b.items.map((x, i) => (
+            <li key={`${x.label}:${i}`} className="flex justify-between gap-2">
+              <span className="min-w-0 truncate text-muted">
+                <FollowLink link={x.link} onFollow={onFollow}>
+                  {x.label}
+                </FollowLink>
+                {x.sub ? ` (${x.sub})` : ""}
+              </span>
+              <span className="num shrink-0">{valueText(x.value, true)}</span>
+            </li>
+          ))}
+        </ul>
+        {b.note && <p className="mt-1.5 text-xs text-muted">{b.note}</p>}
+      </section>
+    );
+  if (b.kind === "chain")
+    return (
+      <section>
+        <SectionTitle>{b.title}</SectionTitle>
+        <ul className="flex flex-col text-[13px]">
+          {b.lines.map((l, i) => (
+            <ChainRow key={i} l={l} onFollow={onFollow} />
+          ))}
+        </ul>
+        {b.note && <p className="mt-1.5 text-xs text-muted">{b.note}</p>}
+      </section>
+    );
   return (
     <section>
-      <SectionTitle sub={`${s.groups.length} statement${s.groups.length === 1 ? "" : "s"} · largest first`}>
-        How it adds up{showLabel ? ` · ${s.label} ${usd0(s.figureCents)}` : ""}
-      </SectionTitle>
-      {s.groups.length === 0 && <p className="text-[13px] text-muted">No rows: nothing was counted here.</p>}
+      <SectionTitle sub={`${usd0(b.figureCents)} · ${b.groups.length} statement${b.groups.length === 1 ? "" : "s"} · largest first`}>{b.title}</SectionTitle>
+      {b.groups.length === 0 && <p className="text-[13px] text-muted">No rows: nothing was counted here.</p>}
       <ul className="flex flex-col gap-1">
-        {s.groups.map((g) => (
-          <GroupView key={g.statement.id} g={g} showCategory={!category} />
+        {b.groups.map((g) => (
+          <GroupView key={g.statement.id} g={g} />
         ))}
       </ul>
-      {!category && s.categoryRoundingCents !== 0 && (
-        <p className="mt-1.5 text-xs text-muted">
-          The categories on the page add up to {cents(s.figureCents - s.categoryRoundingCents)}: each is rounded to the cent on its own, so they can differ from the total by {cents(Math.abs(s.categoryRoundingCents))}.
-        </p>
-      )}
+      {b.note && <p className="mt-1.5 text-xs text-muted">{b.note}</p>}
     </section>
   );
 }
 
-function GroupView({ g, showCategory }: { g: ProofGroup; showCategory: boolean }) {
+const SOURCE: Record<ChainLine["source"], { tone: Tone; label: string }> = {
+  proven: { tone: "pos", label: "Proven" },
+  assumption: { tone: "info", label: "Your assumption" },
+  law: { tone: "neutral", label: "Tax law" },
+  estimate: { tone: "warn", label: "Estimate" },
+  derived: { tone: "neutral", label: "Worked out" },
+};
+
+function ChainRow({ l, onFollow }: { l: ChainLine; onFollow: (d: ProofDescriptor) => void }) {
+  const s = SOURCE[l.source];
+  return (
+    <li className={`grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-baseline gap-x-2 py-1 ${l.op === "=" ? "border-t border-line-strong font-semibold" : ""}`}>
+      <span className="num text-center text-muted">{l.op ?? ""}</span>
+      <span className="min-w-0">
+        <FollowLink link={l.link} onFollow={onFollow}>
+          {l.label}
+        </FollowLink>{" "}
+        <Badge tone={s.tone}>{s.label}</Badge>
+        {l.note && <div className="text-[11px] font-normal leading-snug text-muted">{l.note}</div>}
+      </span>
+      <span className="num text-right">{valueText(l.value)}</span>
+    </li>
+  );
+}
+
+function GroupView({ g }: { g: ProofGroup }) {
   const [open, setOpen] = useState(false);
+  const showCategory = new Set(g.rows.map((r) => r.category)).size > 1;
   return (
     <li className="rounded-md border border-line">
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-baseline gap-2 px-3 py-2 text-left text-[13px] hover:bg-surface-2">
@@ -241,7 +330,7 @@ function CheckRow({ c }: { c: ProofCheck }) {
           </div>
           <div className="text-xs text-muted">
             {c.state === "none"
-              ? "No statement, account or month here for it to check."
+              ? "Nothing here for it to check."
               : [
                   c.passed ? `passed on ${c.passed} ${c.passed === 1 ? "subject" : "subjects"}` : null,
                   c.open.length ? `${c.open.length} open` : null,
@@ -288,8 +377,8 @@ function CheckRow({ c }: { c: ProofCheck }) {
   );
 }
 
-function uniqueStatements(sections: ProofSection[]): ProofStatement[] {
+function uniqueStatements(blocks: ProofBlock[]): ProofStatement[] {
   const m = new Map<string, ProofStatement>();
-  for (const s of sections) for (const g of s.groups) m.set(g.statement.id, g.statement);
+  for (const b of blocks) if (b.kind === "rows") for (const g of b.groups) m.set(g.statement.id, g.statement);
   return [...m.values()].sort((a, b) => a.account.localeCompare(b.account) || a.periodStart.localeCompare(b.periodStart));
 }
