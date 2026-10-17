@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, btn, Card, EmptyState, inputCls, selectCls, table, type Tone } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { LogRow } from "@/lib/car/report";
 import { CAR_KINDS, carName, KIND_INFO, SHARED, type CarKind } from "@/lib/car/settings";
 import { useMemo, useState } from "react";
@@ -42,16 +43,18 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
   const [show, setShow] = useState<Show>("ALL");
   const [q, setQ] = useState("");
   const names = useMemo(() => new Map(s.cars.map((c) => [c.id, carName(c)])), [s.cars]);
+  const { sort, toggle } = useSort();
 
   const items = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return [...g.log]
+    const list = [...g.log]
       .reverse()
       .filter((i) => carFilter === "ALL" || (carFilter === "THIS" ? i.carId === car.id || i.carId === SHARED : i.carId === carFilter))
       .filter((i) => kind === "ALL" || i.kind === kind)
       .filter((i) => show === "ALL" || (show === "COUNTED") === i.counted)
       .filter((i) => !needle || `${i.item} ${i.label ?? ""} ${i.note}`.toLowerCase().includes(needle));
-  }, [g.log, carFilter, car.id, kind, show, q]);
+    return sortRows(list, sort, { date: (i) => i.date, amount: (i) => i.cents, name: (i) => i.item });
+  }, [g.log, carFilter, car.id, kind, show, q, sort]);
   const total = items.filter((i) => i.counted && i.date <= g.today).reduce((t, i) => t + i.cents, 0);
 
   const open = (i: LogRow) => {
@@ -105,11 +108,11 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
             <table className={table.table} style={{ minWidth: many ? "62rem" : "56rem" }}>
               <thead>
                 <tr className={table.head}>
-                  <th className={table.th}>Date</th>
+                  <SortTh k="date" label="Date" sort={sort} toggle={toggle} />
                   {many && <th className={table.th}>Car</th>}
-                  <th className={table.th}>Charge</th>
+                  <SortTh k="name" label="Charge" sort={sort} toggle={toggle} />
                   <th className={table.th}>Kind</th>
-                  <th className={table.thR}>Cost</th>
+                  <SortTh k="amount" label="Cost" sort={sort} toggle={toggle} right />
                   <th className={table.thR}>Gallons</th>
                   <th className={table.thR}>Odometer</th>
                   <th className={table.th}>Source</th>

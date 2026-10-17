@@ -7,7 +7,7 @@ import type { HsaReport, Suggestion } from "@/lib/hsa/report";
 import { useState } from "react";
 import { PatientInput } from "./ExpenseDrawer";
 import type { Send } from "./HsaClient";
-import { sortRows, SortTh, useSort } from "./sort";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 
 const key = (s: Suggestion) => s.rowId ?? `${s.date}|${s.amountCents}|${s.payee}`;
 
@@ -33,6 +33,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
   const shown = sortRows(
     r.suggestions.filter((s) => tier === "ALL" || s.tier === tier),
     sort,
+    { date: (s) => s.date, amount: (s) => s.amountCents, name: (s) => s.payee },
   );
   const chosen = r.suggestions.filter((s) => take.has(key(s)));
 
@@ -115,7 +116,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
                       />
                     </th>
                     <SortTh k="date" label="Date" sort={sort} toggle={toggleSort} />
-                    <th className={table.th}>Charge</th>
+                    <SortTh k="name" label="Charge" sort={sort} toggle={toggleSort} />
                     <th className={table.th}>Why</th>
                     <th className={table.th}>Kind</th>
                     <SortTh k="amount" label="Amount" sort={sort} toggle={toggleSort} right />

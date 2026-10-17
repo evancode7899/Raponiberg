@@ -3,6 +3,7 @@
 import { LaneBadge } from "@/components/ledger/TransactionTable";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table, type Tone } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { Lane } from "@/lib/classifier/taxonomy";
 import { formatUsdFromCents } from "@/lib/formatMoney";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -185,6 +186,8 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
 function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: boolean; onCommit: (force: boolean) => void }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [open, setOpen] = useState(false);
+  // Statement order until a header is clicked.
+  const { sort, toggle: toggleSort } = useSort(null);
   const failed = s.checksJson?.filter((c) => !c.passed) ?? [];
 
   const toggle = async () => {
@@ -225,15 +228,15 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
           <table className={table.table}>
             <thead className={`${table.head} sticky top-0 bg-surface`}>
               <tr>
-                <th className={table.th}>Date</th>
-                <th className={table.th}>Description</th>
+                <SortTh k="date" label="Date" sort={sort} toggle={toggleSort} />
+                <SortTh k="name" label="Description" sort={sort} toggle={toggleSort} />
                 <th className={table.th}>Counts as</th>
                 <th className={table.th}>Category</th>
-                <th className={table.thR}>Amount</th>
+                <SortTh k="amount" label="Amount" sort={sort} toggle={toggleSort} right />
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {sortRows(rows, sort, { date: (r) => r.date, amount: (r) => r.amountCents, name: (r) => r.payee }).map((r) => (
                 <tr key={r.id} className={table.tr}>
                   <td className={`${table.td} num whitespace-nowrap text-muted`}>
                     {r.date.slice(0, 10)}

@@ -2,6 +2,7 @@
 
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { Badge, btn, selectCls, table, type Tone } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort, type Sort, type SortKey } from "@/components/ui/sort";
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import { CATEGORIES, LANE_LABELS, type Lane } from "@/lib/classifier/taxonomy";
 import { formatUsdFromCents } from "@/lib/formatMoney";
@@ -77,6 +78,8 @@ export function LaneBadge({ lane }: { lane: Lane | null }) {
 /**
  * Transactions with inline recategorizing: pick a category, then apply it to this row
  * only (locked against the classifier) or teach it for every row from the merchant.
+ * Date, description and amount headers sort the table; pass `sort` + `onSort` when the
+ * server sorts (the rows are one page of many), otherwise the rows are sorted here.
  */
 export function TransactionTable({
   api,
@@ -84,28 +87,36 @@ export function TransactionTable({
   onChanged,
   showAccount = true,
   maxHeight,
+  sort: serverSort,
+  onSort,
 }: {
   api: Api;
   rows: TxnRow[];
   onChanged: () => void;
   showAccount?: boolean;
   maxHeight?: string;
+  sort?: Sort;
+  onSort?: (k: SortKey) => void;
 }) {
+  const local = useSort();
+  const sort = serverSort ?? local.sort;
+  const toggle = onSort ?? local.toggle;
+  const shown = serverSort ? rows : sortRows(rows, sort, { date: (r) => r.date, amount: (r) => r.amountCents, name: (r) => r.payee });
   return (
     <div className={table.wrap} style={maxHeight ? { maxHeight, overflowY: "auto" } : undefined}>
       <table className={table.table}>
         <thead className={`${table.head} sticky top-0 z-10 bg-surface`}>
           <tr>
-            <th className={table.th}>Date</th>
-            <th className={table.th}>Description</th>
+            <SortTh k="date" label="Date" sort={sort} toggle={toggle} />
+            <SortTh k="name" label="Description" sort={sort} toggle={toggle} />
             {showAccount && <th className={table.th}>Account</th>}
             <th className={table.th}>Counts as</th>
             <th className={table.th}>Category</th>
-            <th className={table.thR}>Amount</th>
+            <SortTh k="amount" label="Amount" sort={sort} toggle={toggle} right />
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {shown.map((r) => (
             <Row key={r.id} r={r} api={api} onChanged={onChanged} showAccount={showAccount} />
           ))}
         </tbody>

@@ -3,6 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Badge, btn, Card, ErrorNote, Segmented, table } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { OneOffExpense } from "@/lib/book/reports/spending";
 import type { FinancialProfileSettings } from "@/lib/profile/settings";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact } from "@/lib/formatMoney";
@@ -201,7 +202,12 @@ function OneOffs({ ctx }: { ctx: Ctx }) {
   const [showAll, setShowAll] = useState(false);
   const from = slice.months[0]!.start;
   const to = slice.months.at(-1)!.end;
-  const list = report.oneOffs.filter((o) => o.date >= from && o.date <= to);
+  const order = useSort({ key: "amount", desc: true });
+  const list = sortRows(
+    report.oneOffs.filter((o) => o.date >= from && o.date <= to),
+    order.sort,
+    { date: (o) => o.date, amount: (o) => o.cents, name: (o) => o.merchant },
+  );
   const shown = showAll ? list : list.slice(0, 12);
   const toggle = async (o: OneOffExpense) => {
     setBusy(o.fingerprint);
@@ -235,11 +241,11 @@ function OneOffs({ ctx }: { ctx: Ctx }) {
           <table className={`${table.table} min-w-[44rem]`}>
             <thead className={table.head}>
               <tr>
-                <th className={table.th}>Date</th>
-                <th className={table.th}>Merchant</th>
+                <SortTh k="date" label="Date" sort={order.sort} toggle={order.toggle} />
+                <SortTh k="name" label="Merchant" sort={order.sort} toggle={order.toggle} />
                 <th className={table.th}>Category</th>
                 <th className={table.th}>Account</th>
-                <th className={table.thR}>Amount</th>
+                <SortTh k="amount" label="Amount" sort={order.sort} toggle={order.toggle} right />
                 <th className={table.thR}>One-off?</th>
               </tr>
             </thead>

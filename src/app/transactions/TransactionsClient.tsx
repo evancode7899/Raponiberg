@@ -5,12 +5,27 @@ import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { useApi } from "@/components/ledger/useApi";
 import { useChanged } from "@/components/useChanged";
 import { btn, Card, EmptyState, ErrorNote, Field, inputCls, Loading, PageBody, selectCls } from "@/components/ui/kit";
+import { firstDesc, type SortKey } from "@/components/ui/sort";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { addDays, localToday, startOfMonth } from "@/lib/dates/isoDate";
 import { usd0 } from "@/lib/formatMoney";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type Filters = { q: string; from: string; to: string; accountId: string; category: string; lane: string; needsReview: boolean };
+/** `min`/`max` are a size range in dollars (either sign); `flow` keeps only money in or out. `sort`/`dir` are the table order, not filters. */
+type Filters = {
+  q: string;
+  from: string;
+  to: string;
+  accountId: string;
+  category: string;
+  lane: string;
+  needsReview: boolean;
+  flow: "" | "in" | "out";
+  min: string;
+  max: string;
+  sort: SortKey;
+  dir: "asc" | "desc";
+};
 type Response = { transactions: TxnRow[]; total: { count: number; inCents: number; outCents: number } };
 
 const LANE_FILTERS: { value: string; label: string }[] = [
@@ -35,10 +50,12 @@ const PRESETS: { id: string; label: string; range: () => [string, string] }[] = 
 
 const CATEGORY_GROUPS = [...new Set(CATEGORIES.map((c) => c.group))];
 
-const EMPTY: Filters = { q: "", from: "", to: "", accountId: "", category: "", lane: "", needsReview: false };
+const EMPTY: Filters = { q: "", from: "", to: "", accountId: "", category: "", lane: "", needsReview: false, flow: "", min: "", max: "", sort: "date", dir: "desc" };
+const SORT_KEYS: SortKey[] = ["date", "amount", "name"];
 
 function readUrl(): Filters {
   const sp = new URLSearchParams(window.location.search);
+  const sort = SORT_KEYS.find((k) => k === sp.get("sort")) ?? "date";
   return {
     q: sp.get("q") ?? "",
     from: sp.get("from") ?? "",
@@ -47,6 +64,11 @@ function readUrl(): Filters {
     category: sp.get("category") ?? "",
     lane: sp.get("lane") ?? "",
     needsReview: sp.get("needsReview") === "1",
+    flow: sp.get("flow") === "in" || sp.get("flow") === "out" ? (sp.get("flow") as "in" | "out") : "",
+    min: sp.get("min") ?? "",
+    max: sp.get("max") ?? "",
+    sort,
+    dir: sp.get("dir") === "asc" || sp.get("dir") === "desc" ? (sp.get("dir") as "asc" | "desc") : firstDesc(sort) ? "desc" : "asc",
   };
 }
 
@@ -54,6 +76,8 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
   const api = useApi(requiresApiSecret);
   const [f, setF] = useState<Filters | null>(null);
   const [qDraft, setQDraft] = useState("");
+  const [minDraft, setMinDraft] = useState("");
+  const [maxDraft, setMaxDraft] = useState("");
   const [limit, setLimit] = useState(300);
   const [data, setData] = useState<Response | null>(null);
   const [loading, setLoading] = useState(false);
@@ -66,6 +90,8 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
     // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the server render can't see the URL, so reading it during render would mismatch hydration
     setF(init);
     setQDraft(init.q);
+    setMinDraft(init.min);
+    setMaxDraft(init.max);
   }, []);
 
   useEffect(() => {
@@ -76,11 +102,11 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
       .catch(() => {});
   }, [api]);
 
-  // Debounce the search box.
+  // Debounce the search box and the size range.
   useEffect(() => {
-    const t = setTimeout(() => setF((cur) => (cur && cur.q !== qDraft ? { ...cur, q: qDraft } : cur)), 250);
+    const t = setTimeout(() => setF((cur) => (cur && (cur.q !== qDraft || cur.min !== minDraft || cur.max !== maxDraft) ? { ...cur, q: qDraft, min: minDraft, max: maxDraft } : cur)), 250);
     return () => clearTimeout(t);
-  }, [qDraft]);
+  }, [qDraft, minDraft, maxDraft]);
 
   const query = useMemo(() => {
     if (!f) return null;
@@ -88,6 +114,9 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
     for (const [k, v] of Object.entries(f)) {
       if (k === "needsReview") {
         if (v) sp.set(k, "1");
+      } else if (k === "sort" || k === "dir") {
+        // Left out at the default order (newest first) to keep links short.
+        if (f.sort !== "date" || f.dir !== "desc") sp.set(k, String(v));
       } else if (v) sp.set(k, String(v));
     }
     return sp;
@@ -120,7 +149,16 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
     setF((cur) => ({ ...(cur ?? EMPTY), ...patch }));
   };
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
-  const active = f && (f.q || f.from || f.to || f.accountId || f.category || f.lane || f.needsReview);
+  const active = f && (f.q || f.from || f.to || f.accountId || f.category || f.lane || f.needsReview || f.flow || f.min || f.max);
+  const onSort = (k: SortKey) => {
+    setLimit(300);
+    setF((cur) => {
+      const c = cur ?? EMPTY;
+      const desc = c.sort === k ? c.dir !== "desc" : firstDesc(k);
+      return { ...c, sort: k, dir: desc ? "desc" : "asc" };
+    });
+  };
+  const newestFirst = !f || (f.sort === "date" && f.dir === "desc");
 
   return (
     <PageBody>
@@ -161,6 +199,20 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
                 </optgroup>
               ))}
             </select>
+          </Field>
+          <Field label="Money">
+            <select className={`${selectCls} !py-2`} value={f?.flow ?? ""} onChange={(e) => set({ flow: e.target.value as Filters["flow"] })}>
+              <option value="">In and out</option>
+              <option value="in">Money in</option>
+              <option value="out">Money out</option>
+            </select>
+          </Field>
+          <Field label="Size ($)">
+            <div className="flex items-center gap-1">
+              <input type="number" min={0} step="any" inputMode="decimal" className={`${inputCls} w-24`} placeholder="Min" aria-label="Smallest amount" value={minDraft} onChange={(e) => setMinDraft(e.target.value)} />
+              <span className="text-muted">–</span>
+              <input type="number" min={0} step="any" inputMode="decimal" className={`${inputCls} w-24`} placeholder="Max" aria-label="Largest amount" value={maxDraft} onChange={(e) => setMaxDraft(e.target.value)} />
+            </div>
           </Field>
           <Field label="Counts as">
             <select className={`${selectCls} !py-2`} value={f?.lane ?? ""} onChange={(e) => set({ lane: e.target.value })}>
@@ -207,7 +259,9 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
               className={`${btn.link} ml-auto`}
               onClick={() => {
                 setQDraft("");
-                set(EMPTY);
+                setMinDraft("");
+                setMaxDraft("");
+                set({ ...EMPTY, sort: f.sort, dir: f.dir });
               }}
             >
               Clear filters
@@ -237,10 +291,18 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
             <EmptyState title="No transactions match">Try a wider date range or clear a filter.</EmptyState>
           ) : (
             <>
-              <TransactionTable api={api} rows={data.transactions} onChanged={refresh} maxHeight="calc(100dvh - 22rem)" />
+              <TransactionTable
+                api={api}
+                rows={data.transactions}
+                onChanged={refresh}
+                maxHeight="calc(100dvh - 22rem)"
+                sort={{ key: f?.sort ?? "date", desc: (f?.dir ?? "desc") === "desc" }}
+                onSort={onSort}
+              />
               {data.total.count > data.transactions.length && (
                 <div className="mt-3 flex items-center gap-3 text-xs text-muted">
-                  Showing the latest {data.transactions.length.toLocaleString()} of {data.total.count.toLocaleString()}.
+                  Showing the {newestFirst ? "latest" : "first"} {data.transactions.length.toLocaleString()} of {data.total.count.toLocaleString()}
+                  {newestFirst ? "" : " in this order"}.
                   {limit < 2000 && (
                     <button type="button" className={btn.secondary} onClick={() => setLimit(Math.min(2000, limit * 3))}>
                       Show more

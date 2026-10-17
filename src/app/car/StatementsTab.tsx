@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, btn, Card, EmptyState, Field, inputCls, Segmented, selectCls, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { HintMatch, RowRef, StatementCharge } from "@/lib/car/detect";
 import { CAR_KINDS, carName, KIND_INFO, newId, SHARED, type CarEntry, type CarKind, type RowDecision } from "@/lib/car/settings";
 import { useMemo, useState } from "react";
@@ -278,13 +279,18 @@ function Charges({ ctx }: { ctx: CarCtx }) {
   const [filter, setFilter] = useState<Filter>(st.suggested ? "OPEN" : st.guessed ? "GUESSED" : "ALL");
   const names = useMemo(() => new Map(s.cars.map((c) => [c.id, carName(c)])), [s.cars]);
   const hintItem = useMemo(() => new Map(st.hints.map((h) => [h.entryId, h])), [st.hints]);
+  const { sort, toggle } = useSort();
   const charges = useMemo(() => {
-    const list = [...st.charges].reverse();
-    if (filter === "OPEN") return list.filter((c) => c.status === "SUGGESTED");
-    if (filter === "GUESSED") return list.filter((c) => c.status === "COUNTED" && c.carGuessed);
-    if (filter === "IGNORED") return list.filter((c) => c.status === "IGNORED");
-    return list.filter((c) => c.status === "COUNTED" || c.status === "COVERED");
-  }, [st.charges, filter]);
+    const keep = (c: StatementCharge) =>
+      filter === "OPEN"
+        ? c.status === "SUGGESTED"
+        : filter === "GUESSED"
+          ? c.status === "COUNTED" && c.carGuessed
+          : filter === "IGNORED"
+            ? c.status === "IGNORED"
+            : c.status === "COUNTED" || c.status === "COVERED";
+    return sortRows([...st.charges].reverse().filter(keep), sort, { date: (c) => c.date, amount: (c) => c.cents, name: (c) => c.payee });
+  }, [st.charges, filter, sort]);
   /** Suggested rows per merchant, for "all from this merchant". */
   const openBy = useMemo(() => {
     const m = new Map<string, number>();
@@ -358,9 +364,9 @@ function Charges({ ctx }: { ctx: CarCtx }) {
           <table className={table.table} style={{ minWidth: many ? "66rem" : "58rem" }}>
             <thead>
               <tr className={table.head}>
-                <th className={table.th}>Date</th>
-                <th className={table.th}>Statement description</th>
-                <th className={table.thR}>Amount</th>
+                <SortTh k="date" label="Date" sort={sort} toggle={toggle} />
+                <SortTh k="name" label="Statement description" sort={sort} toggle={toggle} />
+                <SortTh k="amount" label="Amount" sort={sort} toggle={toggle} right />
                 <th className={table.th}>Counts as</th>
                 {many && <th className={table.th}>Car</th>}
                 <th className={table.th}>Status</th>

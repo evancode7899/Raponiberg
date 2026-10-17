@@ -3,6 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, EmptyState, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
@@ -11,6 +12,7 @@ import { fmtDate, miles, perMile, usd2 } from "./parts";
 export function FuelTab({ ctx }: { ctx: CarCtx }) {
   const { report: r, chart } = ctx;
   const f = r.fuel;
+  const fillSort = useSort();
   const ui = chartChrome(chart);
   const fills = useMemo(
     () => f.fills.map((x) => ({ label: fmtDate(x.date), mpg: +x.mpg.toFixed(1), price: x.pricePerGallon == null ? null : +(x.pricePerGallon / 100).toFixed(3), cpm: x.costPerMile == null ? null : +(x.costPerMile / 100).toFixed(3) })),
@@ -90,11 +92,11 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
             <table className={table.table}>
               <thead>
                 <tr className={table.head}>
-                  <th className={table.th}>Date</th>
+                  <SortTh k="date" label="Date" sort={fillSort.sort} toggle={fillSort.toggle} />
                   <th className={table.thR}>Odometer</th>
                   <th className={table.thR}>Miles</th>
                   <th className={table.thR}>Gallons</th>
-                  <th className={table.thR}>Cost</th>
+                  <SortTh k="amount" label="Cost" sort={fillSort.sort} toggle={fillSort.toggle} right />
                   <th className={table.thR}>$/gal</th>
                   <th className={table.thR}>MPG</th>
                   <th className={table.thR}>$/mile</th>
@@ -102,7 +104,7 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
                 </tr>
               </thead>
               <tbody>
-                {[...f.fills].reverse().map((x) => (
+                {sortRows(f.fills, fillSort.sort, { date: (x) => x.date, amount: (x) => x.cents ?? 0 }).map((x) => (
                   <tr key={`${x.date}-${x.odometer}`} className={table.tr}>
                     <td className={table.td}>
                       {fmtDate(x.date)}
