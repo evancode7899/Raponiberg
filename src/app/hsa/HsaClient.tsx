@@ -3,6 +3,7 @@
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { apiSecretHeaders, cachedResponse, useApi } from "@/components/ledger/useApi";
 import { btn, Callout, downloadResponse, ErrorNote, Loading, PageBody, StatCell, StatGrid, Tabs, useTabParam } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { HsaReport } from "@/lib/hsa/report";
 import type { HsaOp } from "@/lib/hsa/store";
 import { formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ExpenseDrawer, type DraftExpense } from "./ExpenseDrawer";
 import { FoundTab } from "./FoundTab";
 import { GrowthTab } from "./GrowthTab";
+import { hsaProof } from "./proof";
 import { ReceiptsTab } from "./ReceiptsTab";
 import { ReimburseDrawer, ReimburseTab } from "./ReimburseTab";
 import { SettingsTab } from "./SettingsTab";
@@ -97,22 +99,44 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
                 label="Reimbursable today"
                 value={usd0(t.unreimbursedCents)}
                 tone="accent"
+                proof={hsaProof("reimbursable", t.unreimbursedCents)}
                 sub={
-                  t.unreimbursedCount
-                    ? `${t.unreimbursedCount} receipt${t.unreimbursedCount === 1 ? "" : "s"}, tax-free whenever you want it${t.readyCents < t.unreimbursedCents ? ` · ${usd0(t.readyCents)} with the receipt saved` : ""}`
-                    : "Nothing waiting"
+                  t.unreimbursedCount ? (
+                    <>
+                        {t.unreimbursedCount} receipt{t.unreimbursedCount === 1 ? "" : "s"}, tax-free whenever you want it
+                        {t.readyCents < t.unreimbursedCents && (
+                          <>
+                            {" "}
+                            · <ProofValue proof={hsaProof("ready", t.readyCents)}>{usd0(t.readyCents)}</ProofValue> with the receipt saved
+                          </>
+                        )}
+                    </>
+                  ) : (
+                    "Nothing waiting"
+                  )
                 }
               />
               <StatCell
                 label="Growth from waiting"
                 value={usd0(t.growthCents)}
                 tone={t.growthCents > 0 ? "pos" : "neutral"}
+                proof={hsaProof("growth", t.growthCents)}
                 sub={`Est. at ${formatPercentRatio(r.growth.rate, 1)} a year${r.growth.rateSource === "MEASURED" ? " (your HSA's return)" : ""}${t.avgDaysWaiting ? ` · average wait ${Math.round(t.avgDaysWaiting / 30.4)} months` : ""}`}
               />
-              <StatCell label="Reimbursed so far" value={usd0(t.reimbursedCents)} sub={`${t.reimbursedCount} of ${t.count} logged · ${usd0(t.loggedCents)} in all`} />
+              <StatCell
+                label="Reimbursed so far"
+                value={usd0(t.reimbursedCents)}
+                proof={hsaProof("reimbursed", t.reimbursedCents)}
+                sub={
+                  <>
+                    {t.reimbursedCount} of {t.count} logged · <ProofValue proof={hsaProof("logged", t.loggedCents)}>{usd0(t.loggedCents)}</ProofValue> in all
+                  </>
+                }
+              />
               <StatCell
                 label="HSA balance"
                 value={usd0(r.hsa.balanceCents)}
+                proof={r.hsa.balanceCents == null ? undefined : hsaProof("balance", r.hsa.balanceCents)}
                 sub={
                   r.hsa.balanceCents == null
                     ? "No HSA statements imported"
