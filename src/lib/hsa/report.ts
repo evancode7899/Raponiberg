@@ -40,6 +40,29 @@ export type LedgerRowIn = {
   classifiedBy: string | null;
 };
 export type HsaAccountIn = { name: string; balanceCents: number; asOf: string | null; annualizedReturn: number | null };
+/** HSA money from pay stubs for one year, everyone's together: the fallback when the HSA's statements don't say who put it in. */
+export type PayrollHsaIn = {
+  year: number;
+  employeeCents: number;
+  employerCents: number;
+  /** Payroll tax a contributed dollar avoids, from the contributor's wages that year (payrollTaxSaved). */
+  payrollRate: number | null;
+  /** The part of it that's the Additional Medicare surtax (the Taxes page counts that in federal income tax). */
+  surtaxRate?: number;
+};
+
+/** The Taxes page's marginal rates on the next wage dollar (lib/hsa/load.ts hsaTaxMarginal). */
+export type TaxMarginalIn = { year: number; incomeRate: number; payrollRate: number; source: "TAX_REPORT" | "PRIOR_YEAR" };
+
+/**
+ * Payroll tax not paid on a dollar put into the HSA through payroll. Social Security only
+ * if the contributor's wages for the year stay under the wage base (above it, the cap is
+ * reached either way and the dollar saves nothing); Medicare always; the Additional
+ * Medicare surtax when the household's Medicare wages are over its threshold.
+ */
+export function payrollTaxSaved(p: { personWagesCents: number; householdWagesCents: number; wageBaseCents: number; ssRate: number; medicareRate: number; additionalMedicareRate: number; surtaxThresholdCents: number }): number {
+  return (p.personWagesCents < p.wageBaseCents ? p.ssRate : 0) + p.medicareRate + (p.householdWagesCents > p.surtaxThresholdCents ? p.additionalMedicareRate : 0);
+}
 
 export type ReportInput = {
   today: string;
@@ -51,6 +74,10 @@ export type ReportInput = {
   persons: string[];
   /** The Retirement page's marginal rate, when set. */
   marginalRate: number | null;
+  /** Latest year of HSA payroll money on the pay stubs, if any. */
+  payrollHsa?: PayrollHsaIn | null;
+  /** The Taxes page's marginal rates, when its figures are proven. */
+  taxMarginal?: TaxMarginalIn | null;
 };
 
 export type LedgerRef = {
@@ -101,6 +128,23 @@ export type Withdrawal = LedgerRef & {
 export type YearRow = { year: number; count: number; totalCents: number; reimbursedCents: number; unreimbursedCents: number; reimbursedInYearCents: number };
 export type Breakdown = { key: string; count: number; totalCents: number; unreimbursedCents: number };
 
+/**
+ * Who funded the HSA: from the HSA's own statements (contributions labelled employee or
+ * employer) for the latest year they cover, else the latest year's pay stubs, else
+ * unknown (the page then assumes it's all you).
+ */
+export type Funding = {
+  source: "STATEMENTS" | "PAY_STUBS" | "NONE";
+  /** The contribution (tax) year read. */
+  year: number | null;
+  from: string | null;
+  through: string | null;
+  employeeCents: number;
+  employerCents: number;
+  /** Your part of the money, 0–1; 1 when nothing is known. */
+  employeeShare: number;
+};
+
 export type HsaReport = {
   today: string;
   settings: HsaSettings;
@@ -129,7 +173,8 @@ export type HsaReport = {
     rate: number;
     rateSource: "SETTING" | "MEASURED" | "DEFAULT";
     marginalRate: number;
-    marginalSource: "SETTING" | "RETIREMENT" | "DEFAULT";
+    marginalSource: "SETTING" | "RETIREMENT" | "TAX_REPORT" | "DEFAULT";
+    payrollSource: "SETTING" | "PAY_STUBS" | "TAX_REPORT" | "DEFAULT";
     /** The assumptions behind the comparison, defaults filled in. */
     assumptions: StrategyAssumptions;
     planYear: number;
@@ -140,8 +185,10 @@ export type HsaReport = {
     taxableValueCents: number;
     /** Year by year to the plan year: both after tax if taken out that year. */
     path: { year: number; hsaCents: number; taxableCents: number }[];
-    /** Per $1,000 of medical bills: the three ways to pay (strategy.ts). */
+    /** Per $1,000 of medical bills: the three ways to pay (strategy.ts), at the measured split. */
     strategy: StrategyRow[];
+    /** Who put the HSA money in: the default for the split slider. */
+    funding: Funding;
   };
   years: YearRow[];
   byPatient: Breakdown[];
@@ -163,6 +210,36 @@ const DEFAULT_PAYROLL_RATE = 0.0145;
 const DAYS_PER_YEAR = 365.25;
 
 const growthOn = (cents: number, rate: number, days: number) => (days <= 0 ? 0 : Math.round(cents * (Math.pow(1 + rate, days / DAYS_PER_YEAR) - 1)));
+
+const EMPLOYER_PAYEE = /\bEMPLOYER\b/i;
+const EMPLOYEE_PAYEE = /\bEMPLOYEE\b|PAYROLL|CONTRIBUTION/i;
+
+/** Who funded the HSA (see Funding): the latest contribution year on the statements, else the pay stubs. */
+export function hsaFunding(rows: LedgerRowIn[], isHsa: (accountId: string) => boolean, payroll: PayrollHsaIn | null | undefined): Funding {
+  const kind = (r: LedgerRowIn): "EMPLOYER" | "EMPLOYEE" | null =>
+    r.lane === "CONTRIBUTION_EMPLOYER" || EMPLOYER_PAYEE.test(r.payee) ? "EMPLOYER"
+    : r.lane === "CONTRIBUTION_EMPLOYEE" || EMPLOYEE_PAYEE.test(r.payee) ? "EMPLOYEE"
+    : null;
+  const ins = rows.filter((r) => r.amountCents > 0 && isHsa(r.accountId) && kind(r));
+  const share = (ee: number, er: number) => (ee + er > 0 ? ee / (ee + er) : 1);
+  // The tax year a contribution counts for: "Employer Contribution for 2025" deposited in
+  // January 2026 is 2025's. One year, not a rolling 12 months: an employer's first-year
+  // catch-up lumps would otherwise skew the split.
+  const taxYear = (r: LedgerRowIn) => Number(/\bFOR (\d{4})\b/i.exec(r.payee)?.[1] ?? r.date.slice(0, 4));
+  const latest = Math.max(...ins.filter((r) => kind(r) === "EMPLOYER").map(taxYear));
+  if (Number.isFinite(latest)) {
+    const window = ins.filter((r) => taxYear(r) === latest);
+    const sumOf = (k: "EMPLOYER" | "EMPLOYEE") => window.filter((r) => kind(r) === k).reduce((s, r) => s + r.amountCents, 0);
+    const employeeCents = sumOf("EMPLOYEE");
+    const employerCents = sumOf("EMPLOYER");
+    const dates = window.map((r) => r.date).sort();
+    return { source: "STATEMENTS", year: latest, from: dates[0]!, through: dates.at(-1)!, employeeCents, employerCents, employeeShare: share(employeeCents, employerCents) };
+  }
+  if (payroll && payroll.employeeCents + payroll.employerCents > 0) {
+    return { source: "PAY_STUBS", year: payroll.year, from: `${payroll.year}-01-01`, through: `${payroll.year}-12-31`, employeeCents: payroll.employeeCents, employerCents: payroll.employerCents, employeeShare: share(payroll.employeeCents, payroll.employerCents) };
+  }
+  return { source: "NONE", year: null, from: null, through: null, employeeCents: 0, employerCents: 0, employeeShare: 1 };
+}
 
 /** Out of the HSA to the owner rather than to a provider: a transfer, or a payee that says distribution. */
 const DISTRIBUTION_PAYEE = /DISTRIBUTION|DISBURSE|REIMBURSE|WITHDRAWAL|TRANSFER|\bXFER\b|\bACH\b|\bEFT\b|TO CHECKING|TO SAVINGS/i;
@@ -221,8 +298,17 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const measured = hsaAccounts.find((a) => a.annualizedReturn != null && Math.abs(a.annualizedReturn) < 0.5)?.annualizedReturn ?? null;
   const rate = settings.growthRate ?? measured ?? DEFAULT_RATE;
   const rateSource = settings.growthRate != null ? "SETTING" : measured != null ? "MEASURED" : "DEFAULT";
-  const marginal = settings.marginalRate ?? input.marginalRate ?? DEFAULT_MARGINAL;
-  const marginalSource = settings.marginalRate != null ? "SETTING" : input.marginalRate != null ? "RETIREMENT" : "DEFAULT";
+  const taxM = input.taxMarginal ?? null;
+  const marginal = settings.marginalRate ?? input.marginalRate ?? taxM?.incomeRate ?? DEFAULT_MARGINAL;
+  const marginalSource = settings.marginalRate != null ? "SETTING" : input.marginalRate != null ? "RETIREMENT" : taxM ? "TAX_REPORT" : "DEFAULT";
+  // Payroll tax: the contributor's own (pay stubs). The Taxes page's federal rate already
+  // holds the Additional Medicare surtax, so it comes out of the payroll side then.
+  const stubPayroll = input.payrollHsa?.payrollRate ?? null;
+  const payroll =
+    settings.payrollRate != null ? { rate: settings.payrollRate, source: "SETTING" as const }
+    : marginalSource === "TAX_REPORT" ? { rate: stubPayroll != null ? stubPayroll - (input.payrollHsa?.surtaxRate ?? 0) : taxM!.payrollRate, source: stubPayroll != null ? ("PAY_STUBS" as const) : ("TAX_REPORT" as const) }
+    : stubPayroll != null ? { rate: stubPayroll, source: "PAY_STUBS" as const }
+    : { rate: DEFAULT_PAYROLL_RATE, source: "DEFAULT" as const };
 
   // ------------------------------------------------------------ expenses
   // Owner-picked paying rows first, so an automatic match never takes one of them.
@@ -359,7 +445,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     dividendYield: settings.dividendYield ?? DEFAULT_DIVIDEND_YIELD,
     taxableRate: settings.taxableRate ?? DEFAULT_TAXABLE_RATE,
     marginalRate: marginal,
-    payrollRate: settings.payrollRate ?? DEFAULT_PAYROLL_RATE,
+    payrollRate: payroll.rate,
     growthCovered: settings.growthCovered ?? true,
     exitRate: settings.exitRate ?? marginal,
     years,
@@ -369,7 +455,8 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   for (let y = 0; y <= years; y++) {
     path.push({ year: thisYear + y, hsaCents: Math.round(openCents * hsaAfterTax(assumptions, y)), taxableCents: Math.round(openCents * taxableAfterTax(assumptions, y)) });
   }
-  const strategy = strategyRows(assumptions, 100_000, planYear);
+  const funding = hsaFunding(input.rows, isHsa, input.payrollHsa);
+  const strategy = strategyRows(assumptions, 100_000, planYear, funding.employeeShare);
 
   // ------------------------------------------------------------ breakdowns
   const yearMap = new Map<number, YearRow>();
@@ -411,6 +498,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       rateSource,
       marginalRate: marginal,
       marginalSource,
+      payrollSource: payroll.source,
       assumptions,
       planYear,
       years,
@@ -418,6 +506,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       taxableValueCents: path.at(-1)!.taxableCents,
       path,
       strategy,
+      funding,
     },
     years: [...yearMap.values()].sort((a, b) => b.year - a.year),
     byPatient: breakdown((e) => e.patient || "Unassigned"),

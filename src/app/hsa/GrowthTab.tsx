@@ -1,15 +1,26 @@
 "use client";
 
+import { RangeSlider } from "@/app/home-budget/RangeSlider";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL, type ExpenseKind } from "@/lib/hsa/qualify";
-import type { Breakdown, HsaReport } from "@/lib/hsa/report";
+import type { Breakdown, Funding, HsaReport } from "@/lib/hsa/report";
+import { strategyRows } from "@/lib/hsa/strategy";
+import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 
 const RATE_SOURCE = { SETTING: "your setting", MEASURED: "your HSA's measured return", DEFAULT: "a long-run stock-market assumption" };
-const MARGINAL_SOURCE = { SETTING: "your setting", RETIREMENT: "the Account limits page", DEFAULT: "an assumed bracket" };
+const PAYROLL_SOURCE = { SETTING: "your setting", PAY_STUBS: "your pay stubs: Medicare, plus Social Security only under its wage base", TAX_REPORT: "the Taxes page", DEFAULT: "Medicare alone, assumed" };
+const MARGINAL_SOURCE = { SETTING: "your setting", RETIREMENT: "the Account limits page", TAX_REPORT: "the Taxes page: federal, with the 0.9% Medicare surtax, + state", DEFAULT: "an assumed bracket" };
+const SHARE_SPEC = { min: 0, max: 1, step: 0.01, unit: "pct" as const, digits: 0 };
+
+function fundingHint(f: Funding): string {
+  if (f.source === "STATEMENTS") return `Yours: ${usd0(f.employeeCents)} from your pay and ${usd0(f.employerCents)} from your employer for ${f.year} on the HSA's statements (${f.from} to ${f.through}).`;
+  if (f.source === "PAY_STUBS") return `Yours: ${usd0(f.employeeCents)} from your pay and ${usd0(f.employerCents)} from your employer on the ${f.year} pay stubs.`;
+  return "No contributions found on the HSA's statements or pay stubs, so this starts at all you.";
+}
 
 export function GrowthTab({ r }: { r: HsaReport }) {
   const g = r.growth;
@@ -18,6 +29,9 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   const a = g.assumptions;
   const edge = g.futureValueCents - g.taxableValueCents;
   const scale = r.totals.unreimbursedCents / 100_000;
+  const measuredShare = g.funding.employeeShare;
+  const [share, setShare] = useState(measuredShare);
+  const rows = useMemo(() => strategyRows(a, 100_000, g.planYear, share), [a, g.planYear, share]);
   const taxableTerms = `${formatPercentRatio(a.dividendYield, 1)} dividends taxed yearly and ${formatPercentRatio(a.taxableRate, 0)} on the gain when sold`;
   return (
     <>
@@ -57,20 +71,46 @@ export function GrowthTab({ r }: { r: HsaReport }) {
 
       <Card
         title="Three ways to pay a medical bill"
-        subtitle={`Per $1,000 of bills, with the HSA contribution made either way, reimbursed in ${g.planYear} (${g.years} years). Ahead is your wealth in ${g.planYear} vs. no HSA, after every tax: whatever a way costs less today is invested in a taxable account, plus what comes out of the HSA. Waiting only works if you can cash-flow the bills and keep the receipts.`}
+        subtitle={`Per $1,000 of HSA money spent on bills, reimbursed in ${g.planYear} (${g.years} years). Ahead is your wealth in ${g.planYear} vs. no HSA, after every tax: whatever a way leaves in the bank today is invested in a taxable account, plus what comes out of the HSA. Waiting only works if you can cash-flow the bills and keep the receipts.`}
       >
+        <div className="mb-3 max-w-xl">
+          <RangeSlider
+            label="Your share of the HSA money"
+            hint={`${fundingHint(g.funding)} The rest is your employer's, which costs you nothing and saves no tax.`}
+            spec={SHARE_SPEC}
+            value={share}
+            defaultValue={measuredShare}
+            onChange={setShare}
+            extra={
+              <div className="flex gap-1.5 text-[11px]">
+                {[
+                  { v: 0, label: "All employer" },
+                  { v: measuredShare, label: `Yours (${formatPercentRatio(measuredShare, 0)})` },
+                  { v: 1, label: "All you" },
+                ].map((o) => (
+                  <button key={o.label} type="button" onClick={() => setShare(o.v)} className={`rounded border px-2 py-0.5 ${Math.abs(share - o.v) < 0.005 ? "border-accent text-accent" : "border-line text-muted hover:text-fg"}`}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            }
+          />
+        </div>
         <div className={table.wrap}>
           <table className={table.table}>
             <thead className={table.head}>
               <tr>
                 <th className={table.th}>How</th>
-                <th className={table.thR} title="Pay before tax this uses today: the HSA contribution plus the pay that earned any bank money for the bill">
-                  Pay used now
+                <th className={table.thR} title="Your pay before tax this uses today: your part of the HSA contribution plus the pay that earned any bank money for the bill">
+                  Your pay used now
                 </th>
-                <th className={table.thR} title="The same, after tax: take-home pay it costs today">
-                  Cost now, after tax
+                <th className={table.thR} title="The same, after tax: the take-home it costs you today">
+                  Cost to you now
                 </th>
-                <th className={table.thR} title="Income and payroll tax not paid on the HSA contribution">
+                <th className={table.thR} title="The employer's part of the HSA money: costs you nothing">
+                  Employer put in
+                </th>
+                <th className={table.thR} title="Income and payroll tax not paid on your part of the contribution">
                   Tax saved
                 </th>
                 <th className={table.thR} title={`After-tax money out of the HSA in ${g.planYear}: the receipt's amount plus its growth`}>
@@ -81,7 +121,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
               </tr>
             </thead>
             <tbody>
-              {g.strategy.map((s) => (
+              {rows.map((s) => (
                 <tr key={s.key} className={`${table.tr} ${s.key === "LATER" ? "font-semibold" : ""}`}>
                   <td className={`${table.td} min-w-[18rem]`}>
                     <div className="text-fg">{s.label}</div>
@@ -89,6 +129,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
                   </td>
                   <td className={table.tdR}>{usd0(s.payNowCents)}</td>
                   <td className={table.tdR}>{usd0(s.costNowCents)}</td>
+                  <td className={table.tdR}>{usd0(s.employerCents)}</td>
                   <td className={table.tdR}>{usd0(s.taxSavedCents)}</td>
                   <td className={table.tdR}>{usd0(s.hsaLaterCents)}</td>
                   <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>{usd0(s.aheadCents)}</td>
@@ -99,7 +140,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
           </table>
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-muted">
-          Tax saved uses {formatPercentRatio(g.marginalRate, 0)} income tax ({MARGINAL_SOURCE[g.marginalSource]}) + {formatPercentRatio(a.payrollRate, 2)} payroll tax. Not counted: employer contributions (they make having an HSA better still, but they arrive however you pay a bill), the plan&apos;s premium and deductible, and account fees. The tax saved is assumed invested, not spent; spending it lowers both HSA rows by the same amount, so waiting&apos;s edge over paying now doesn&apos;t change.
+          Tax saved uses {formatPercentRatio(g.marginalRate, 0)} income tax ({MARGINAL_SOURCE[g.marginalSource]}) + {formatPercentRatio(a.payrollRate, 2)} payroll tax ({PAYROLL_SOURCE[g.payrollSource]}), on your part only. Who funds the HSA moves both HSA rows against no HSA by the same amount, so it never changes waiting&apos;s edge over paying now. Not counted: the plan&apos;s premium and deductible, and account fees. Money left in the bank is assumed invested, not spent; spending it lowers both HSA rows alike.
         </p>
       </Card>
 

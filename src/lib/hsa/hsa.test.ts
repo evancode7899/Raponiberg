@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { guessKind, qualifyPayee } from "./qualify.ts";
-import { buildHsaReport, exactSubset, withdrawalKind, type LedgerRowIn, type ReportInput } from "./report.ts";
+import { buildHsaReport, exactSubset, hsaFunding, payrollTaxSaved, withdrawalKind, type LedgerRowIn, type ReportInput } from "./report.ts";
 import { applyHsaOp, EMPTY_SETTINGS, readHsaFile, type HsaExpense, type HsaFile } from "./store.ts";
 
 describe("what counts as a qualified expense", () => {
@@ -286,5 +286,71 @@ describe("the HSA log file", () => {
     expect(readHsaFile(f)).toMatchObject({ dismissed: [fp], ignoredMerchants: ["CVS"] });
     applyHsaOp({ op: "undismiss", rows: [fp] }, f);
     expect(readHsaFile(f).dismissed).toEqual([]);
+  });
+});
+
+describe("who funded the HSA", () => {
+  const hsaOnly = (id: string) => id === "hsa";
+  const t = { lane: "TRANSFER" };
+
+  it("reads the split off the HSA's statements, for the latest contribution year", () => {
+    const rows = [
+      // Last year's, with an employer catch-up lump (one deposited in January): left out.
+      row("2025-11-01", 10_000, "Employee Contribution for 2025", "hsa", t),
+      row("2025-12-01", 90_000, "Employer Contribution for 2025", "hsa", t),
+      row("2026-01-09", 40_000, "Employer Contribution for 2025", "hsa", t),
+      row("2026-01-15", 10_000, "Employee Contribution for 2026", "hsa", t),
+      row("2026-01-15", 30_000, "Employer Contribution for 2026", "hsa", t),
+      row("2026-05-01", 15_000, "Employee Contribution for 2026", "hsa", t),
+      row("2026-05-01", 45_000, "Employer Contribution for 2026", "hsa", t),
+      row("2026-07-01", 3_000, "Interest", "hsa", t), // not a contribution
+      row("2026-07-01", 99_000, "Payroll deposit", "card", t), // not the HSA
+    ];
+    const f = hsaFunding(rows, hsaOnly, { year: 2026, employeeCents: 1, employerCents: 1, payrollRate: null });
+    expect(f).toMatchObject({ source: "STATEMENTS", year: 2026, from: "2026-01-15", through: "2026-05-01", employeeCents: 25_000, employerCents: 75_000, employeeShare: 0.25 });
+  });
+
+  it("falls back to the pay stubs, then to all you", () => {
+    expect(hsaFunding([], hsaOnly, { year: 2025, employeeCents: 30_000, employerCents: 70_000, payrollRate: null })).toMatchObject({ source: "PAY_STUBS", employeeShare: 0.3 });
+    expect(hsaFunding([], hsaOnly, null)).toMatchObject({ source: "NONE", employeeShare: 1 });
+  });
+
+  it("prices the strategy table at the measured split", () => {
+    const rows = [row("2026-05-01", 20_000, "Employee Contribution", "hsa", t), row("2026-05-01", 80_000, "Employer Contribution", "hsa", t)];
+    const r = buildHsaReport(input(file([]), rows));
+    expect(r.growth.funding.employeeShare).toBe(0.2);
+    expect(r.growth.strategy[1]).toMatchObject({ employerCents: 80_000, taxSavedCents: Math.round(20_000 * 0.3645) });
+  });
+});
+
+describe("payroll tax a payroll HSA dollar avoids", () => {
+  const p = { wageBaseCents: 18_450_000, ssRate: 0.062, medicareRate: 0.0145, additionalMedicareRate: 0.009, surtaxThresholdCents: 25_000_000 };
+  it("is Social Security and Medicare under the wage base", () => {
+    expect(payrollTaxSaved({ ...p, personWagesCents: 9_000_000, householdWagesCents: 15_000_000 })).toBeCloseTo(0.0765, 6);
+  });
+  it("drops Social Security over the wage base (the cap is hit either way)", () => {
+    expect(payrollTaxSaved({ ...p, personWagesCents: 20_000_000, householdWagesCents: 22_000_000 })).toBeCloseTo(0.0145, 6);
+  });
+  it("adds the Additional Medicare surtax when the household is over its threshold", () => {
+    expect(payrollTaxSaved({ ...p, personWagesCents: 30_000_000, householdWagesCents: 38_000_000 })).toBeCloseTo(0.0235, 6);
+  });
+});
+
+describe("the rates behind the strategy table", () => {
+  const stubs = { year: 2026, employeeCents: 20_000, employerCents: 80_000, payrollRate: 0.0235, surtaxRate: 0.009 };
+  const taxes = { year: 2026, incomeRate: 0.394, payrollRate: 0.0145, source: "TAX_REPORT" as const };
+  const blank = () => file([], { settings: { ...EMPTY_SETTINGS, growthRate: 0.07, planYear: 2046 } });
+
+  it("takes the Taxes page's income rate, and leaves its surtax out of payroll so it isn't counted twice", () => {
+    const g = buildHsaReport(input(blank(), [], { payrollHsa: stubs, taxMarginal: taxes })).growth;
+    expect(g).toMatchObject({ marginalSource: "TAX_REPORT", payrollSource: "PAY_STUBS" });
+    expect(g.assumptions.marginalRate).toBe(0.394);
+    expect(g.assumptions.payrollRate).toBeCloseTo(0.0145, 6);
+  });
+
+  it("keeps the surtax in payroll when the income rate is typed in", () => {
+    const g = buildHsaReport(input(blank(), [], { payrollHsa: stubs, taxMarginal: taxes, marginalRate: 0.3 })).growth;
+    expect(g).toMatchObject({ marginalSource: "RETIREMENT", payrollSource: "PAY_STUBS" });
+    expect(g.assumptions.payrollRate).toBeCloseTo(0.0235, 6);
   });
 });

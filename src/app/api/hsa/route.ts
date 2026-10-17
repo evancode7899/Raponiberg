@@ -3,8 +3,11 @@ import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { localToday } from "@/lib/dates/isoDate";
 import { cachedReport } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
-import { hsaLedger, type HsaLedger } from "@/lib/hsa/load";
-import { buildHsaReport } from "@/lib/hsa/report";
+import { taxLink } from "@/lib/forecast/forecast";
+import { loadForecast } from "@/lib/forecast/load";
+import { hsaLedger, hsaTaxMarginal, type HsaLedger } from "@/lib/hsa/load";
+import { buildHsaReport, type TaxMarginalIn } from "@/lib/hsa/report";
+import { loadProfileSettings } from "@/lib/profile/settings";
 import { applyHsaOp, readHsaFile, type HsaOp } from "@/lib/hsa/store";
 import { loadJsonSetting } from "@/lib/settingsStore";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "@/lib/taxAccounts/settings";
@@ -20,7 +23,11 @@ export async function GET(request: NextRequest) {
   try {
     const file = readHsaFile();
     const [ledger, retirement] = await Promise.all([
-      cachedReport(prisma, "hsa-ledger", (book) => hsaLedger(book)).then((t) => JSON.parse(t) as HsaLedger),
+      cachedReport(prisma, "hsa-ledger", async (book) => {
+        // The Taxes page's marginal rates, on the same forecast and birth years it uses.
+        const [{ forecast }, profile] = await Promise.all([loadForecast(prisma, book), loadProfileSettings(prisma)]);
+        return { ...hsaLedger(book), taxMarginal: hsaTaxMarginal(book, Number(localToday().slice(0, 4)), forecast ? taxLink(forecast) : null, profile.birthYears) };
+      }).then((t) => JSON.parse(t) as HsaLedger & { taxMarginal: TaxMarginalIn | null }),
       loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings),
     ]);
     const report = buildHsaReport({ today: localToday(), file, ...ledger, marginalRate: retirement.marginalRate });
