@@ -6,7 +6,7 @@ import { KIND_LABEL } from "@/lib/hsa/qualify";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { Send } from "./HsaClient";
-import { sortRows, SortTh, useSort } from "./sort";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 
 type Status = "open" | "done" | "review" | "all";
 
@@ -63,6 +63,7 @@ export function ReceiptsTab({
       (!q || `${e.provider} ${e.notes} ${e.patient} ${KIND_LABEL[e.kind]}`.toLowerCase().includes(q.toLowerCase())),
     ),
     sort,
+    { date: (e) => e.date, amount: (e) => e.amountCents, name: (e) => e.provider },
   );
   const picked = r.expenses.filter((e) => selected.has(e.id));
   const pickedCents = picked.reduce((s, e) => s + e.amountCents, 0);
@@ -282,7 +283,7 @@ export function ReceiptsTab({
                     />
                   </th>
                   <SortTh k="date" label="Date" sort={sort} toggle={toggleSort} />
-                  <th className={table.th}>Provider</th>
+                  <SortTh k="name" label="Provider" sort={sort} toggle={toggleSort} />
                   <th className={table.th}>Patient</th>
                   <th className={table.th}>Paid with</th>
                   <th className={table.th} title="Receipt or EOB saved">

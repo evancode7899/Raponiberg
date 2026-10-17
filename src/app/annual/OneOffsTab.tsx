@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, btn, Card, Callout, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { fireNumber } from "@/lib/fire/fire";
 import { resolveBasePay } from "@/lib/profile/basePay";
 import { TAX_YEARS } from "@/lib/tax/params";
@@ -29,6 +30,8 @@ export function OneOffsTab({
   const [cats, setCats] = useState(r.settings.nonRecurringCategories);
   const [status, setStatus] = useState<{ tone: "pos" | "neg" | "muted"; text: string } | null>(null);
   const queue = useRef(Promise.resolve());
+  // Marked ones first, then biggest, until a header is clicked.
+  const { sort, toggle } = useSort(null);
   // New settings from the server reset the lists (adjusted during render, not in an effect).
   const [seen, setSeen] = useState(r.settings);
   if (r.settings !== seen) {
@@ -127,15 +130,15 @@ export function OneOffsTab({
               <thead className={table.head}>
                 <tr>
                   <th className={table.th}>One-off?</th>
-                  <th className={table.th}>Date</th>
-                  <th className={table.th}>Payee</th>
+                  <SortTh k="date" label="Date" sort={sort} toggle={toggle} />
+                  <SortTh k="name" label="Payee" sort={sort} toggle={toggle} />
                   <th className={table.th}>Category</th>
-                  <th className={table.thR}>Amount</th>
+                  <SortTh k="amount" label="Amount" sort={sort} toggle={toggle} right />
                   <th className={table.th}>What it was</th>
                 </tr>
               </thead>
               <tbody>
-                {y.oneOffCandidates.map((c) => {
+                {sortRows(y.oneOffCandidates, sort, { date: (c) => c.date, amount: (c) => c.cents, name: (c) => c.payee }).map((c) => {
                   const viaCategory = cats.includes(c.category);
                   const tagged = c.fingerprint in oneOffs;
                   const on = tagged || viaCategory;

@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, btn, Callout, Card, Drawer, EmptyState, Field, inputCls, MoneyInput, selectCls, table } from "@/components/ui/kit";
+import { sortRows, SortTh, useSort, type SortGetters } from "@/components/ui/sort";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
 import { useMemo, useState } from "react";
@@ -33,8 +34,19 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
   const plan = target ? planWithdrawal(pool, target) : [];
   const planCents = plan.reduce((s, e) => s + e.amountCents, 0);
   const byId = new Map(r.expenses.map((e) => [e.id, e]));
-  const distributions = r.withdrawals.filter((w) => w.kind === "DISTRIBUTION");
-  const direct = r.withdrawals.filter((w) => w.kind === "DIRECT");
+  const distSort = useSort();
+  const directSort = useSort();
+  const byWithdrawal: SortGetters<HsaReport["withdrawals"][number]> = { date: (w) => w.date, amount: (w) => w.amountCents, name: (w) => w.payee };
+  const distributions = sortRows(
+    r.withdrawals.filter((w) => w.kind === "DISTRIBUTION"),
+    distSort.sort,
+    byWithdrawal,
+  );
+  const direct = sortRows(
+    r.withdrawals.filter((w) => w.kind === "DIRECT"),
+    directSort.sort,
+    byWithdrawal,
+  );
 
   return (
     <>
@@ -96,9 +108,9 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
             <table className={table.table}>
               <thead className={table.head}>
                 <tr>
-                  <th className={table.th}>Date</th>
-                  <th className={table.th}>Description</th>
-                  <th className={table.thR}>Amount</th>
+                  <SortTh k="date" label="Date" sort={distSort.sort} toggle={distSort.toggle} />
+                  <SortTh k="name" label="Description" sort={distSort.sort} toggle={distSort.toggle} />
+                  <SortTh k="amount" label="Amount" sort={distSort.sort} toggle={distSort.toggle} right />
                   <th className={table.th}>Receipts</th>
                 </tr>
               </thead>
@@ -154,9 +166,9 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
             <table className={table.table}>
               <thead className={table.head}>
                 <tr>
-                  <th className={table.th}>Date</th>
-                  <th className={table.th}>Paid to</th>
-                  <th className={table.thR}>Amount</th>
+                  <SortTh k="date" label="Date" sort={directSort.sort} toggle={directSort.toggle} />
+                  <SortTh k="name" label="Paid to" sort={directSort.sort} toggle={directSort.toggle} />
+                  <SortTh k="amount" label="Amount" sort={directSort.sort} toggle={directSort.toggle} right />
                   <th className={table.th} />
                 </tr>
               </thead>

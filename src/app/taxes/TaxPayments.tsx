@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ledger/LedgerBits";
 import type { PaymentAttribution, TaxProfile } from "@/lib/tax/profile";
+import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { useState } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { Callout, formatDate, NumberTable, usd } from "./taxUi";
@@ -15,6 +16,7 @@ const AUTH: Record<string, string> = { FEDERAL: "IRS", CT: "Connecticut", OTHER_
 export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) => Promise<void> }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { sort, toggle } = useSort();
 
   const setAttribution = async (txId: string, value: string) => {
     const profile = structuredClone(r.profile);
@@ -74,14 +76,14 @@ export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProf
             <table className="w-full min-w-[36rem] text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
-                  <th className="py-1.5 pr-3 font-medium">Date</th>
-                  <th className="py-1.5 pr-3 font-medium">To / from</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">Amount</th>
+                  <SortTh k="date" label="Date" sort={sort} toggle={toggle} className="py-1.5 pr-3 font-medium" />
+                  <SortTh k="name" label="To / from" sort={sort} toggle={toggle} className="py-1.5 pr-3 font-medium" />
+                  <SortTh k="amount" label="Amount" sort={sort} toggle={toggle} className="py-1.5 pr-3 text-right font-medium" />
                   <th className="py-1.5 pr-3 font-medium">Counts as</th>
                 </tr>
               </thead>
               <tbody>
-                {r.payments.map((p) => (
+                {sortRows(r.payments, sort, { date: (p) => p.date, amount: (p) => p.amount, name: (p) => `${AUTH[p.authority]} ${p.payee}` }).map((p) => (
                   <tr key={p.transactionId} className="border-t border-line">
                     <td className="py-1.5 pr-3 whitespace-nowrap">{formatDate(p.date)}</td>
                     <td className="py-1.5 pr-3">
