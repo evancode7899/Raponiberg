@@ -138,7 +138,7 @@ type Breakdown = Record<CostLine, number>;
 export type CarReport = {
   carId: string;
   today: string;
-  /** The last day the figures run to: today, or the day it was sold. */
+  /** The last day the figures run to: today or the day it was sold, or the last day the statements are in for when that's earlier. */
   through: string;
   sold: boolean;
   configured: boolean;
@@ -494,7 +494,7 @@ export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: s
           own.push({ ...it, id: `${it.id}:${car.id}`, cents: it.cents / ways, gallons: null, odometer: null, splitWays: ways > 1 ? ways : null });
       }
     }
-    return buildCarReport(car, own, factsFor(car.id), today);
+    return buildCarReport(car, own, factsFor(car.id), today, opts.statementsThrough);
   });
 
   // The log: counted costs, rent months, and every entry that counts nothing.
@@ -578,13 +578,22 @@ export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: s
 }
 
 /** One car's figures from its own cost items (its charges, and its share of shared ones) and what its log says (readings, fill-ups). */
-export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, today: string): CarReport {
+/**
+ * `provenThrough`: the last day every statement is in for (the cash-flow horizon). Money
+ * figures stop there, like every other page; odometer readings, service and warranty still
+ * run to today (they're facts about the car, not money).
+ */
+export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, today: string, provenThrough?: string): CarReport {
   const v = car.vehicle;
   const p = car.purchase;
   const purchaseDate = v.purchaseDate;
   const sold = !!car.sale && car.sale.date <= today;
-  /** Figures run to here: today, or the day it was sold. */
-  const end = sold ? car.sale!.date : today;
+  /** The car's own facts (odometer readings) run to here: today, or the day it was sold. */
+  const lastDay = sold ? car.sale!.date : today;
+  /** Figures run to here: that day, or the last day the statements are in for if that's earlier. */
+  const end = provenThrough && provenThrough < lastDay ? provenThrough : lastDay;
+  /** Sold within the figures (a sale after the edge isn't in them yet). */
+  const soldIn = sold && car.sale!.date <= end;
   const missing: string[] = [];
   if (!purchaseDate) missing.push("the purchase date");
   if (v.purchaseOdometer == null) missing.push("the odometer at purchase");
@@ -643,7 +652,7 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
   const odo: typeof readings = [];
   for (const r of readings) {
     if (purchaseDate && r.date < purchaseDate) continue;
-    if (r.date > end) continue;
+    if (r.date > lastDay) continue;
     if (odo.length && r.miles < odo[odo.length - 1]!.miles) continue;
     if (odo.length && odo[odo.length - 1]!.date === r.date) {
       if (r.miles > odo[odo.length - 1]!.miles) odo[odo.length - 1] = r;
@@ -663,10 +672,11 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
     }
     return lastR!.miles;
   };
-  const driven = first && lastR ? lastR.miles - first.miles : 0;
+  /** Miles driven through the figures' last day (the odometer there, between readings a straight line). */
+  const driven = first && lastR ? Math.max(0, odoAt(end)! - first.miles) : 0;
   const daysOwned = purchaseDate ? Math.max(0, daysBetween(purchaseDate, end)) : 0;
   const readDays = first && lastR ? daysBetween(first.date, lastR.date) : 0;
-  const perDay = readDays >= 14 ? driven / readDays : null;
+  const perDay = readDays >= 14 ? (lastR!.miles - first!.miles) / readDays : null;
   let recentPerDay: number | null = null;
   if (lastR && readDays >= 14) {
     const from = addDays(lastR.date, -90);
@@ -686,7 +696,7 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
   // ---- purchase & depreciation
   const acquisition = p.priceCents + p.feesCents + p.warrantyCents + p.registrationCents + p.salesTaxCents;
   const recoverable = p.priceCents + p.warrantyCents;
-  const realized = sold ? acquisition - car.sale!.priceCents : null;
+  const realized = soldIn ? acquisition - car.sale!.priceCents : null;
   const lifeMiles = v.purchaseOdometer != null ? car.plan.sellAtMiles - v.purchaseOdometer : 0;
   const plannedPerMile =
     realized != null ? (driven > 0 ? Math.max(0, realized) / driven : null) : acquisition && lifeMiles > 0 ? Math.max(0, acquisition - car.plan.residualCents) / lifeMiles : null;
@@ -717,9 +727,9 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
     const last = pts[pts.length - 1]!;
     return last.cents + (trendSlope ?? 0) * daysBetween(last.date, date);
   };
-  const marketValueNow = sold ? car.sale!.priceCents : marketValueAt(end);
+  const marketValueNow = soldIn ? car.sale!.priceCents : marketValueAt(end);
   const marketToDate = marketValueNow != null ? acquisition - marketValueNow : null;
-  const method: CarReport["depreciation"]["method"] = sold ? "SOLD" : car.plan.depreciation === "MARKET" && marketToDate != null ? "MARKET" : "PLANNED";
+  const method: CarReport["depreciation"]["method"] = soldIn ? "SOLD" : car.plan.depreciation === "MARKET" && marketToDate != null ? "MARKET" : "PLANNED";
   const depreciationToDate = method === "MARKET" ? marketToDate! : plannedToDate;
 
   // ---- totals to date
@@ -747,7 +757,7 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
   const fixed = COST_LINES.filter((l) => LINE_INFO[l].group === "FIXED").reduce((s, l) => s + accrued[l], 0);
   const monthsOwned = daysOwned / DAYS_PER_MONTH;
   const per = (c: number, d: number) => (d > 0 ? c / d : null);
-  const cashOutTheDoor = acquisition + p.interestCents - (sold ? car.sale!.priceCents : 0) + Object.entries(cash).reduce((s, [k, c]) => (k === "PAYMENT" || k === "INTEREST" ? s : s + c), 0);
+  const cashOutTheDoor = acquisition + p.interestCents - (soldIn ? car.sale!.priceCents : 0) + Object.entries(cash).reduce((s, [k, c]) => (k === "PAYMENT" || k === "INTEREST" ? s : s + c), 0);
 
   // ---- months
   const months: MonthRow[] = [];
@@ -892,10 +902,10 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
       valueSeries.push({
         date: d,
         label: new Date(`${d}T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
-        privateCents: x?.privateCents ?? (sold && d === end ? car.sale!.priceCents : null),
+        privateCents: x?.privateCents ?? (soldIn && d === end ? car.sale!.priceCents : null),
         tradeInCents: x?.tradeInCents ?? null,
         planned: planned == null ? null : Math.round(planned),
-        trend: !sold && lastValue && d >= lastValue.date ? Math.round(marketValueAt(d)!) : null,
+        trend: !soldIn && lastValue && d >= lastValue.date ? Math.round(marketValueAt(d)!) : null,
       });
     }
   }

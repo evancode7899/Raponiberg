@@ -185,7 +185,8 @@ describe("buildCarProof", () => {
     const p = buildCarProof(book, s, fig({}));
     const quiet = p.blocks.find((b) => b.title === "In your log, not on any statement: not counted");
     if (quiet?.kind !== "breakdown") throw new Error("no not-counted block");
-    expect(quiet.items.map((i) => i.label).sort()).toEqual(["Gas", "Oil change"]);
+    // September's fill-up is past the last statement: outside the figure, so not listed here.
+    expect(quiet.items.map((i) => i.label)).toEqual(["Oil change"]);
     expect(quiet.items.every((i) => "text" in i.value && i.value.text === "$0 counted")).toBe(true);
     // Taking their amounts out of the log changes no figure. (Their odometer readings stay:
     // miles are facts about the car, and depreciation follows them.)
@@ -268,6 +269,27 @@ describe("buildCarProof", () => {
   });
 });
 
+describe("the data edge", () => {
+  it("stops every figure at the last day the statements are in for, so nothing past it withholds one", () => {
+    // An awaited statement past the edge: an open finding, but after the last proven day.
+    const past = { id: "statement.overdue:x", check: "statement.overdue" as const, status: "MISSING" as const, title: "awaiting", detail: "", fix: "", atEdge: true, scope: { accountId: "card", from: "2025-09-01", to: "2025-09-30", affects: ["CASH_FLOW" as const, "NET_WORTH" as const] } };
+    const book = { ...makeBook(), integrity: { checks: [], findings: [past], inferences: [], accepted: [], stale: [], retired: [] } } as unknown as Book;
+    const s = settings();
+    const r = report(book, s);
+    expect(r.through).toBe("2025-08-31");
+    expect(r.months.at(-1)!.month).toBe("2025-08");
+    // The odometer still reads to today; miles driven stop at the edge.
+    expect(r.odometer.current).toBe(25_900);
+    expect(r.odometer.driven).toBeLessThan(25_900 - 20_000);
+    for (const span of ["toDate", "last12", "2025", "2025-08"]) {
+      const p = buildCarProof(book, s, fig({ span }));
+      expect(p.withheld, span).toBe(false);
+      expect(p.through).toBe("2025-08-31");
+      expect(p.selfCheck?.ok, span).toBe(true);
+    }
+  });
+});
+
 describe("parseDescriptor (car)", () => {
   it("accepts a figure's recipe and rejects anything else", () => {
     expect(parseDescriptor({ report: "car", carId: "a", span: "2025" })).toEqual({ report: "car", carId: "a", basis: "accrued", span: "2025" });
@@ -321,6 +343,6 @@ describe("car as a registered proof kind", () => {
   it("reads the garage from the database, as the page does", async () => {
     const p = await buildProof(ctx(), fig({}));
     expect(cents(p)).toBe(report(makeBook(), s).totals.tco);
-    expect(p.describes).toBe("Acme Roadster · Cost of ownership, to date (through 2025-09-15)");
+    expect(p.describes).toBe("Acme Roadster · Cost of ownership, to date (through 2025-08-31)");
   });
 });

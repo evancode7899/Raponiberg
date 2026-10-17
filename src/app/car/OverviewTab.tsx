@@ -12,7 +12,7 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis 
 import type { CarCtx } from "./CarClient";
 import { isReading } from "./EntryEditor";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { BUCKETS, bucketColor, bucketOf, byBucket, carProof, fmtDate, miles, NumInput, perMile, relative, Swatch, usd2 } from "./parts";
+import { BUCKETS, bucketColor, bucketOf, byBucket, carProof, fmtDate, miles, NumInput, perMile, relative, Swatch, throughText, usd2 } from "./parts";
 import { serviceDue } from "./ServiceTab";
 
 type Span = "toDate" | "last12" | "next12";
@@ -24,10 +24,11 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
   const [span, setSpan] = useState<Span>("toDate");
 
   const view = useMemo(() => {
-    if (span === "last12") return { lines: r.last12.lines as Partial<Record<CostLine, number>>, total: r.last12.total, miles: r.last12.miles, months: 12, note: `${fmtDate(r.last12.from)} – today` };
+    const until = throughText(r, ctx.car.sale?.date ?? null);
+    if (span === "last12") return { lines: r.last12.lines as Partial<Record<CostLine, number>>, total: r.last12.total, miles: r.last12.miles, months: 12, note: `${fmtDate(r.last12.from)} – ${until}` };
     if (span === "next12") return { lines: r.outlook12.lines, total: r.outlook12.total, miles: r.outlook12.miles, months: 12, note: `Estimate. ${r.outlook12.notes.join(" · ")}` };
-    return { lines: r.accrued as Partial<Record<CostLine, number>>, total: t.tco, miles: r.odometer.driven, months: r.odometer.daysOwned / (365.25 / 12), note: `${fmtDate(r.odometer.readings[0]?.date)} – ${r.sold ? `sold ${fmtDate(r.through)}` : "today"}; prepaid premiums count as they're used` };
-  }, [span, r, t.tco]);
+    return { lines: r.accrued as Partial<Record<CostLine, number>>, total: t.tco, miles: r.odometer.driven, months: r.odometer.daysOwned / (365.25 / 12), note: `${fmtDate(r.odometer.readings[0]?.date)} – ${until}; prepaid premiums count as they're used` };
+  }, [span, r, t.tco, ctx.car.sale?.date]);
 
   const monthly = useMemo(
     () =>
