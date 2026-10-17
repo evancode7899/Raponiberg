@@ -122,7 +122,7 @@ function Fire({
   const forecast = useMemo(() => buildForecast({ seeds: s, bonusFacts: data.bonusFacts }, a), [s, data.bonusFacts, a]);
   const pay = forecast.pay;
   const plans = useMemo(() => firePlans(forecast), [forecast]);
-  const f = useMemo(() => analyzeFire(plans.full, plans.base, { asOf: s.start.asOf, retirementAge: a.retirementAge, baristaMonthly: a.baristaMonthly }), [plans, s.start.asOf, a.retirementAge, a.baristaMonthly]);
+  const f = useMemo(() => analyzeFire(plans.full, plans.base, { asOf: s.start.asOf, retirementAge: a.retirementAge }), [plans, s.start.asOf, a.retirementAge]);
   const outFull = useMemo(() => projectOutlook(plans.full), [plans.full]);
   const outBase = useMemo(() => (plans.base === plans.full ? outFull : projectOutlook(plans.base)), [plans, outFull]);
   const walkBase = useMemo(() => (plans.base === plans.full ? null : walkAwayTable(plans.base)), [plans]);
@@ -153,7 +153,7 @@ function Fire({
           title="FIRE's settings back to their defaults (the forecast's assumptions are changed on the Forecast page)"
           onClick={() => {
             const d = DEFAULT_OUTLOOK;
-            setA({ ...a, walkAwayYear: d.walkAwayYear, withdrawalRate: d.withdrawalRate, stateTaxRate: d.stateTaxRate, retirementAge: d.retirementAge, baristaMonthly: d.baristaMonthly, volatility: d.volatility });
+            setA({ ...a, walkAwayYear: d.walkAwayYear, withdrawalRate: d.withdrawalRate, stateTaxRate: d.stateTaxRate, retirementAge: d.retirementAge, volatility: d.volatility });
           }}
         >
           Defaults

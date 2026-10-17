@@ -10,7 +10,7 @@ import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import { monthLabel } from "@/app/forecast/forecastUi";
 import type { FireTab } from "./FireClient";
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
+import { Fragment, useMemo, type ReactNode } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { deflator, DollarsToggle, pct, short, tipUsd, usd, yearAge, yearsFrom, type FireProps } from "./ui";
 
@@ -53,10 +53,11 @@ export function OverviewTab({
           sub={f.retireYear ? `stop saving, still FI at ${f.retireYear - plan.birthYear!}` : "add birth years in Settings"}
         />
       </StatGrid>
-      <Insights f={f} r={r} s={s} livingLabel={livingLabel} livingTyped={livingTyped} onGo={onGo} />
+      <Insights f={f} onGo={onGo} />
       <TargetChart f={f} r={r} dollars={dollars} setDollars={setDollars} />
       <Flavors f={f} />
       <Milestones f={f} />
+      <OneOffsNote f={f} r={r} s={s} livingLabel={livingLabel} livingTyped={livingTyped} />
     </>
   );
 }
@@ -96,7 +97,7 @@ function Progress({ f }: { f: FireProps["f"] }) {
   );
 }
 
-function Insights({ f, r, s, livingLabel, livingTyped, onGo }: { f: FireProps["f"]; r: AnnualProfileReport; s: OutlookSeeds; livingLabel: string; livingTyped: boolean; onGo: (t: Tab) => void }) {
+function Insights({ f, onGo }: { f: FireProps["f"]; onGo: (t: Tab) => void }) {
   const { plan } = f;
   const items: { tone: "info" | "warn" | "good"; title: string; body: ReactNode; action?: ReactNode }[] = [];
   const creep = plan.livingGrowth - plan.inflation;
@@ -116,26 +117,6 @@ function Insights({ f, r, s, livingLabel, livingTyped, onGo }: { f: FireProps["f
         <button type="button" className={btn.secondary} onClick={() => onGo("levers")}>
           See the levers
         </button>
-      ),
-    });
-  }
-  const base = r.years.find((y) => y.year === s.baseYear);
-  const untagged = base?.oneOffCandidates.filter((c) => !c.tagged) ?? [];
-  if (!livingTyped && untagged.length) {
-    const cents = untagged.reduce((t, c) => t + c.cents, 0);
-    items.push({
-      tone: "warn",
-      title: `Living cost may include ${s.baseYear} one-offs`,
-      body: (
-        <>
-          The plan starts from {usd(f.now.livingCost)} a year ({livingLabel.toLowerCase()}). {s.baseYear} living expenses include {usd(cents)} in {untagged.length} single charges of $1,500 or more not marked one-off. Each
-          $1,000 a year that won&apos;t recur lowers your FIRE number by about {short(fireNumber(plan, plan.start.year, 1_000_00))}.
-        </>
-      ),
-      action: (
-        <Link href="/annual?tab=one-offs" className={btn.secondary}>
-          Review one-offs
-        </Link>
       ),
     });
   }
@@ -174,6 +155,29 @@ function Insights({ f, r, s, livingLabel, livingTyped, onGo }: { f: FireProps["f
         </Callout>
       ))}
     </div>
+  );
+}
+
+/** A quiet note at the foot of the page: the base year's large charges not yet marked one-off may be inflating living cost. */
+function OneOffsNote({ f, r, s, livingLabel, livingTyped }: { f: FireProps["f"]; r: AnnualProfileReport; s: OutlookSeeds; livingLabel: string; livingTyped: boolean }) {
+  const { plan } = f;
+  const base = r.years.find((y) => y.year === s.baseYear);
+  const untagged = base?.oneOffCandidates.filter((c) => !c.tagged) ?? [];
+  if (livingTyped || !untagged.length) return null;
+  const cents = untagged.reduce((t, c) => t + c.cents, 0);
+  return (
+    <Callout
+      tone="info"
+      title={`Living cost may include ${s.baseYear} one-offs`}
+      action={
+        <Link href="/annual?tab=one-offs" className={btn.secondary}>
+          Review one-offs
+        </Link>
+      }
+    >
+      The plan starts from {usd(f.now.livingCost)} a year ({livingLabel.toLowerCase()}). {s.baseYear} living expenses include {usd(cents)} in {untagged.length} single charges of $1,500 or more not marked one-off. Each
+      $1,000 a year that won&apos;t recur lowers your FIRE number by about {short(fireNumber(plan, plan.start.year, 1_000_00))}.
+    </Callout>
   );
 }
 
@@ -262,28 +266,29 @@ function Flavors({ f }: { f: FireProps["f"] }) {
       <p className="text-[11px] leading-snug text-muted">{what}</p>
     </div>
   );
+  const flavors: { title: string; target: string; row: FireRow | null; what: ReactNode; reached: boolean }[] = [
+    { title: "Lean FIRE", target: `${short(now.leanNumber)} today`, row: f.lean, what: `Retire on a leaner budget: ${LEAN_SHARE * 100}% of today's living cost (${short(now.livingCost * LEAN_SHARE)}/yr).`, reached: now.netWorth >= now.leanNumber },
+    {
+      title: "Coast FIRE",
+      target: now.coastNumber != null ? `${short(now.coastNumber)} invested today` : "needs a birth year",
+      row: f.coast,
+      what: f.retireYear
+        ? `Stop saving; returns alone grow your money to the FIRE number by ${f.retireYear} (age ${f.retireYear - plan.birthYear!}). Work only to cover spending.`
+        : "Stop saving and let returns finish the job by retirement age.",
+      reached: now.coastNumber != null && now.netWorth >= now.coastNumber,
+    },
+    { title: "FIRE", target: `${short(now.fireNumber)} today`, row: f.fi, what: "Walk-away income covers your full living cost, after tax. Work becomes optional.", reached: now.netWorth >= now.fireNumber },
+    { title: "Fat FIRE", target: `${short(now.fatNumber)} today`, row: f.fat, what: `Room to spare: walk-away income covers ${FAT_SHARE * 100}% of living cost — upgrades, travel, a buffer for bad markets.`, reached: now.netWorth >= now.fatNumber },
+  ];
+  // Soonest first: reached now, then by year, never-reached last (ties keep the order above).
+  const when = (x: (typeof flavors)[number]) => (x.reached ? -Infinity : (x.row?.year ?? Infinity));
+  flavors.sort((a, b) => when(a) - when(b));
   return (
-    <Card title="The flavors of FIRE" subtitle="The community's names for different finish lines. Each is a first year you could make the switch, keeping the rest of the plan as set.">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
-        {card("Lean FIRE", `${short(now.leanNumber)} today`, f.lean, `Retire on a leaner budget: ${LEAN_SHARE * 100}% of today's living cost (${short(now.livingCost * LEAN_SHARE)}/yr).`, now.netWorth >= now.leanNumber)}
-        {card(
-          "Coast FIRE",
-          now.coastNumber != null ? `${short(now.coastNumber)} invested today` : "needs a birth year",
-          f.coast,
-          f.retireYear
-            ? `Stop saving; returns alone grow your money to the FIRE number by ${f.retireYear} (age ${f.retireYear - plan.birthYear!}). Work only to cover spending.`
-            : "Stop saving and let returns finish the job by retirement age.",
-          now.coastNumber != null && now.netWorth >= now.coastNumber,
-        )}
-        {card(
-          "Barista FIRE",
-          `${usd(f.baristaMonthly)}/mo part-time, today's $`,
-          f.barista,
-          "Leave the career for part-time work that covers the gap between walk-away income and living cost (set the amount under Retiring).",
-          false,
-        )}
-        {card("FIRE", `${short(now.fireNumber)} today`, f.fi, "Walk-away income covers your full living cost, after tax. Work becomes optional.", now.netWorth >= now.fireNumber)}
-        {card("Fat FIRE", `${short(now.fatNumber)} today`, f.fat, `Room to spare: walk-away income covers ${FAT_SHARE * 100}% of living cost — upgrades, travel, a buffer for bad markets.`, now.netWorth >= now.fatNumber)}
+    <Card title="The flavors of FIRE" subtitle="The community's names for different finish lines, soonest first. Each is a first year you could make the switch, keeping the rest of the plan as set.">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        {flavors.map((x) => (
+          <Fragment key={x.title}>{card(x.title, x.target, x.row, x.what, x.reached)}</Fragment>
+        ))}
       </div>
     </Card>
   );

@@ -89,15 +89,14 @@ function Crossover({ f, rows, dollars, setDollars }: FireProps & { rows: FirePro
     () =>
       rows.map((w) => {
         const k = 100 * deflator(plan, dollars, w.year);
-        const barista = f.baristaMonthly * (1 + plan.inflation) ** (w.year - plan.start.year);
-        return { year: String(w.year), income: w.monthly / k, living: w.livingCost / 12 / k, barista: (w.monthly + barista) / k };
+        return { year: String(w.year), income: w.monthly / k, living: w.livingCost / 12 / k };
       }),
-    [rows, plan, dollars, f.baristaMonthly],
+    [rows, plan, dollars],
   );
   return (
     <Card
       title="The crossover point"
-      subtitle="Monthly after-tax income your money could pay if you stopped on Jan 1 of each year, against monthly living cost. Where income crosses living cost you're financially independent; with part-time (Barista) income the crossing comes sooner."
+      subtitle="Monthly after-tax income your money could pay if you stopped on Jan 1 of each year, against monthly living cost. Where income crosses living cost you're financially independent."
       actions={<DollarsToggle value={dollars} onChange={setDollars} />}
     >
       <div className="h-[320px] w-full min-w-0">
@@ -109,7 +108,6 @@ function Crossover({ f, rows, dollars, setDollars }: FireProps & { rows: FirePro
             <Tooltip {...ui.tooltip} labelFormatter={(v) => `Stop on Jan 1, ${v}`} formatter={(v, name) => [`${tipUsd(v)}/mo`, String(name)]} />
             <Legend {...ui.legend} />
             <Line type="monotone" dataKey="living" name="Living cost" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="barista" name="Walk-away + part-time" stroke={chart.series[3]} strokeDasharray="5 3" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             <Line type="monotone" dataKey="income" name="Walk-away income" stroke={chart.series[0]} strokeWidth={2.5} dot={false} isAnimationActive={false} />
             {f.fi && <ReferenceLine x={String(f.fi.year)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: `FI ${f.fi.year}`, fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />}
           </ComposedChart>
