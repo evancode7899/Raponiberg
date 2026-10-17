@@ -25,6 +25,8 @@ import type { SegmentInput } from "./timeline.ts";
 export type BillRow = { id: string; date: string; precision: "EXACT" | "PERIOD"; amountCents: number; lane: Lane };
 
 export type BillStatement = {
+  /** The statement (StatementImport) it was read from. */
+  importId?: string;
   periodStart: string;
   periodEnd: string;
   openingCents: number;
@@ -66,12 +68,12 @@ export function bookBill(
   const clamp = (date: string, b: BillStatement) => (date < b.periodStart ? b.periodStart : date > b.periodEnd ? b.periodEnd : date);
 
   // Every booked piece: which bill printed it, which bill's days it falls in.
-  const placed: { from: number; to: number; part: BookedPart }[] = [];
+  const placed: { from: number; to: number; part: BookedPart; rowId: string }[] = [];
   /** Where a piece goes: the bill whose days hold it, else (a gap between bills) clamped into its own. */
-  const place = (from: number, part: BookedPart): BookedPart => {
+  const place = (from: number, rowId: string, part: BookedPart): BookedPart => {
     const to = windowOf(part.date);
     const booked = to >= 0 ? part : { ...part, date: clamp(part.date, bills[from]!) };
-    placed.push({ from, to: to >= 0 ? to : from, part: booked });
+    placed.push({ from, to: to >= 0 ? to : from, part: booked, rowId });
     return booked;
   };
 
@@ -81,7 +83,7 @@ export function bookBill(
       const legs = paidBy.get(r.id) ?? [];
       if (legs.length === 0 && difference === 0 && r.date > lastEnd) {
         rows.set(r.id, { pending: true });
-        placed.push({ from: i, to: Infinity, part: { date: r.date, amountCents: r.amountCents, lane: r.lane } });
+        placed.push({ from: i, to: Infinity, part: { date: r.date, amountCents: r.amountCents, lane: r.lane }, rowId: r.id });
         continue;
       }
       const paid = r.amountCents - difference;
@@ -90,8 +92,8 @@ export function bookBill(
       pieces[0]!.amountCents += paid - pieces.reduce((s, p) => s + p.amountCents, 0);
       rows.set(r.id, {
         pending: false,
-        parts: pieces.map((p) => place(i, p)),
-        ...(difference !== 0 ? { correction: place(i, { date: r.date, amountCents: difference, lane: "EXPENSE" }) } : {}),
+        parts: pieces.map((p) => place(i, r.id, p)),
+        ...(difference !== 0 ? { correction: place(i, r.id, { date: r.date, amountCents: difference, lane: "EXPENSE" }) } : {}),
       });
     }
   });
@@ -104,13 +106,14 @@ export function bookBill(
     const closingCents = b.closingCents - leftAfter + cameBefore;
     return {
       accountId,
+      ...(b.importId ? { importId: b.importId } : {}),
       periodStart: b.periodStart,
       periodEnd: b.periodEnd,
       openingCents: closingCents - flows.reduce((s, p) => s + p.part.amountCents, 0),
       closingCents,
       growthCents: 0,
       feesCents: 0,
-      flows: flows.map((p) => ({ date: p.part.date, precision: "EXACT", amountCents: p.part.amountCents, lane: p.part.lane })),
+      flows: flows.map((p) => ({ id: p.rowId, date: p.part.date, precision: "EXACT", amountCents: p.part.amountCents, lane: p.part.lane })),
     };
   });
   return { segments, rows };

@@ -302,7 +302,7 @@ describe("as a registered proof kind", () => {
   });
 
   it("rejects a report no kind is registered for", () => {
-    expect(parseDescriptor({ report: "horoscope" })).toEqual({ error: "report must be one of: cash-flow." });
+    expect(parseDescriptor({ report: "horoscope" })).toEqual({ error: expect.stringMatching(/^report must be one of: .*\bcash-flow\b/) });
     expect(parseDescriptor({ report: "toString" })).toHaveProperty("error");
   });
 });

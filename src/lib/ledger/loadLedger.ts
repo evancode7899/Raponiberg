@@ -94,6 +94,7 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
       where: { status: "COMMITTED" },
       orderBy: { periodStart: "asc" },
       select: {
+        id: true,
         accountId: true,
         isSummary: true,
         periodStart: true,
@@ -142,6 +143,7 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
     if (bills.has(s.accountId) && !s.isSummary) {
       const list = billStatements.get(s.accountId) ?? [];
       list.push({
+        importId: s.id,
         periodStart: iso(s.periodStart),
         periodEnd: iso(s.periodEnd),
         openingCents: s.openingBalanceCents,
@@ -165,13 +167,14 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
       const d = transferFees.get(t.id) ?? 0;
       const date = iso(t.date);
       const precision = (t.datePrecision === "PERIOD" ? "PERIOD" : "EXACT") as "PERIOD" | "EXACT";
-      const flow = { date, precision, amountCents: t.amountCents - d, lane: (t.lane ?? "EXPENSE") as Lane };
+      const flow = { id: t.id, date, precision, amountCents: t.amountCents - d, lane: (t.lane ?? "EXPENSE") as Lane };
       if (d < 0) feesCents += d;
       else growthCents += d;
       return flow;
     });
     const seg: SegmentInput = {
       accountId: s.accountId,
+      importId: s.id,
       periodStart: iso(s.periodStart),
       periodEnd: iso(s.periodEnd),
       openingCents: s.openingBalanceCents,
