@@ -6,7 +6,7 @@
  * Usage:
  *   node scripts/ingestDryRun.ts [folder] [--show <substring>] [--failures]
  *
- * Defaults to ../3. Statements next to the app folder.
+ * Defaults to ../Statements next to the app folder.
  */
 import { extractPdfText } from "../src/lib/statements/extractPdfText.ts";
 import { householdPatterns } from "../src/lib/household/householdFile.ts";
@@ -21,7 +21,7 @@ const show = showIdx >= 0 ? args[showIdx + 1] : undefined;
 const failuresOnly = args.includes("--failures");
 const folder =
   args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--show") ??
-  path.resolve(process.cwd(), "..", "3. Statements");
+  path.resolve(process.cwd(), "..", "Statements");
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {

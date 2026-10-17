@@ -78,7 +78,7 @@ export async function restore(opts: RestoreOptions): Promise<"restored" | "none"
       return "none";
     }
     throw new Error(
-      `No backup folder found. Let OneDrive finish syncing, or pass it: npm run restore -- --from "<OneDrive>\\Desktop\\Personal Finance\\${BACKUP_FOLDER_NAME}"`,
+      `No backup folder found. Let OneDrive finish syncing, or pass it: npm run restore -- --from "<OneDrive>\\Raponiberg\\${BACKUP_FOLDER_NAME}"`,
     );
   }
   const snapshots = listSnapshots(root);
@@ -128,7 +128,7 @@ export async function restore(opts: RestoreOptions): Promise<"restored" | "none"
   const env: Record<string, string> = {};
   if (!process.env.BACKUP_DIR) env.BACKUP_DIR = root;
   const statements = process.env.STATEMENTS_DIR;
-  const sibling = path.join(path.dirname(root), "3. Statements");
+  const sibling = path.join(path.dirname(root), "Statements");
   if ((!statements || !existsSync(statements)) && existsSync(sibling)) env.STATEMENTS_DIR = sibling;
   if (Object.keys(env).length) {
     setEnvValues(ENV_FILE, env);
