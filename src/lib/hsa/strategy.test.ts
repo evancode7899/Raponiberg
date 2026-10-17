@@ -63,3 +63,38 @@ describe("strategyRows", () => {
     expect(noneP!.payNowCents).toBe(Math.round(100_000 / (1 - 0.3145)));
   });
 });
+
+describe("strategyRows with an employer funding part of the HSA", () => {
+  const F = grown - 0.2 * (grown - 1);
+  // A made-up 20% you / 80% employer split at 30% tax.
+  const [none, now, later] = strategyRows(base, 100_000, 2046, 0.2);
+
+  it("saves tax only on your part, and costs you only its take-home", () => {
+    expect(none).toMatchObject({ employerCents: 0, costNowCents: 100_000 });
+    expect(now).toMatchObject({ payNowCents: 20_000, costNowCents: 14_000, employerCents: 80_000, taxSavedCents: 6_000 });
+    expect(later).toMatchObject({ payNowCents: 20_000 + 142_857, costNowCents: 114_000, employerCents: 80_000, taxSavedCents: 6_000 });
+  });
+
+  it("invests the whole bill the HSA paid, less your share's take-home, when paying now", () => {
+    expect(now!.aheadCents).toBe(Math.round(86_000 * F));
+  });
+
+  it("keeps the whole $1,000 growing in the HSA when waiting, less what your share would have grown to", () => {
+    expect(later!.aheadCents).toBe(Math.round(100_000 * grown - 14_000 * F));
+  });
+
+  it("never changes waiting's edge over paying now, whoever funds it", () => {
+    const edge = (e: number) => {
+      const [, n, l] = strategyRows(base, 100_000, 2046, e);
+      return l!.aheadCents - n!.aheadCents;
+    };
+    expect(edge(0)).toBeCloseTo(edge(1), -1);
+    expect(edge(0.2)).toBeCloseTo(edge(1), -1);
+  });
+
+  it("is the whole bill invested when the employer funds it all", () => {
+    const [, n0, l0] = strategyRows(base, 100_000, 2046, 0);
+    expect(n0).toMatchObject({ payNowCents: 0, costNowCents: 0, taxSavedCents: 0, employerCents: 100_000, aheadCents: Math.round(100_000 * F) });
+    expect(l0!.aheadCents).toBe(Math.round(100_000 * grown));
+  });
+});

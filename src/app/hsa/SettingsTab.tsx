@@ -73,14 +73,14 @@ export function SettingsTab({ r, send }: { r: HsaReport; send: Send }) {
         >
           {rateInput("growth", r.hsa.measuredReturn ?? 0.07)}
         </Field>
-        <Field label="Marginal tax rate (%)" hint={`Federal + state income tax on your next dollar of pay. Blank: ${r.growth.marginalSource === "RETIREMENT" ? "from the Account limits page" : "32%"}.`}>
+        <Field label="Marginal tax rate (%)" hint={`Federal + state income tax on your next dollar of pay. Blank: ${r.growth.marginalSource === "RETIREMENT" ? "from the Account limits page" : r.growth.marginalSource === "TAX_REPORT" ? `the Taxes page's ${formatPercentRatio(r.growth.marginalRate, 1)} (federal, with the 0.9% Medicare surtax, + state)` : "32%"}.`}>
           {rateInput("marginal", r.growth.marginalSource === "SETTING" ? 0.32 : r.growth.marginalRate)}
         </Field>
         <Field label="Reimburse the backlog in" hint="The year you expect to draw the receipts down (retirement, a big purchase). Blank: 20 years out.">
           <input className={`${inputCls} num text-right`} inputMode="numeric" value={f.plan} onChange={(e) => setF((x) => ({ ...x, plan: e.target.value.replace(/\D/g, "").slice(0, 4) }))} placeholder={String(thisYear + 20)} />
         </Field>
-        <Field label="Payroll tax saved (%)" hint="Contributions through payroll skip Medicare (1.45%) and, below the Social Security wage base, Social Security (6.2%). 0 if you contribute outside payroll. Blank: 1.45%.">
-          {rateInput("payroll", 0.0145)}
+        <Field label="Payroll tax saved (%)" hint={`Contributions through payroll skip Medicare (1.45%) and, below the Social Security wage base, Social Security (6.2%). 0 if you contribute outside payroll. Blank: ${r.growth.payrollSource === "PAY_STUBS" ? "worked out from your pay stubs" : r.growth.payrollSource === "TAX_REPORT" ? "the Taxes page's" : "1.45%"}.`}>
+          {rateInput("payroll", r.growth.payrollSource === "SETTING" ? 0.0145 : r.growth.assumptions.payrollRate)}
         </Field>
         <Field label="Dividend yield (%)" hint="The part of the return a taxable account pays out, and is taxed on, each year. Blank: 1.5% (a broad stock index).">
           {rateInput("dividend", 0.015)}
