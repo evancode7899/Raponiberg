@@ -6,9 +6,23 @@ import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { computeBudgetScenario, priceForHousingShare, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import { useMemo, type ReactNode } from "react";
 import type { Patch } from "./HomeBudgetClient";
-import { StackBar, StressGauge, stressOf } from "./parts";
+import { spendingFit, StackBar, StressGauge, stressOf } from "./parts";
 
-export function PriceTab({ ins, patch, maxPrice, allCashDownPct }: { ins: HomeBudgetInputs; patch: Patch; maxPrice: number; allCashDownPct: number }) {
+export function PriceTab({
+  ins,
+  patch,
+  maxPrice,
+  lenderMaxPrice,
+  allCashDownPct,
+  spendMonthly,
+}: {
+  ins: HomeBudgetInputs;
+  patch: Patch;
+  maxPrice: number;
+  lenderMaxPrice: number;
+  allCashDownPct: number;
+  spendMonthly: number | null;
+}) {
   const chart = useChartPalette();
   const b = useMemo(() => computeBudgetScenario(ins), [ins]);
   const cap = ins.housingCostMaxOfGross;
@@ -19,6 +33,7 @@ export function PriceTab({ ins, patch, maxPrice, allCashDownPct }: { ins: HomeBu
   const short = b.cashSurplus < -0.5;
   const vsMax = b.homePrice - maxPrice;
   const capPrice = priceForHousingShare(ins, cap);
+  const fit = spendMonthly != null ? spendingFit(left, spendMonthly) : null;
 
   const housingSegments = [
     { key: "pmt", label: "Mortgage (P&I)", value: b.monthlyMortgagePayment, color: chart.series[0]! },
@@ -114,9 +129,22 @@ export function PriceTab({ ins, patch, maxPrice, allCashDownPct }: { ins: HomeBu
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
-          <Tile label="Left to spend" value={`${formatUsd(left)}/mo`} tone={left < 0 ? "neg" : "pos"} sub={`after tax, housing, ${formatUsd(ins.minimumMonthlySavings)} savings`} />
+          <Tile
+            label="Left to spend"
+            value={`${formatUsd(left)}/mo`}
+            tone={left < 0 ? "neg" : "pos"}
+            sub={
+              spendMonthly != null ? (
+                <>
+                  you spend {formatUsd(spendMonthly)}/mo outside housing{fit?.label ? <> · <Badge tone={fit.tone}>{fit.label}</Badge></> : null}
+                </>
+              ) : (
+                `after tax, housing, ${formatUsd(ins.minimumMonthlySavings)} savings`
+              )
+            }
+          />
           <Tile label={short ? "Cash short" : "Cash to spare"} value={formatUsd(Math.abs(b.cashSurplus))} tone={short ? "neg" : "neutral"} sub={`needs ${formatUsd(b.cashNeeded)} of ${formatUsd(ins.cashForHome)}`} />
-          <Tile label={vsMax > 0 ? "Over your max" : "Under your max"} value={formatUsd(Math.abs(vsMax))} tone={vsMax > 0 ? "neg" : "neutral"} sub={`max ${formatUsd(Math.round(maxPrice / 1000) * 1000)} with all cash in`} />
+          <Tile label={vsMax > 0 ? "Over your max" : "Under your max"} value={formatUsd(Math.abs(vsMax))} tone={vsMax > 0 ? "neg" : "neutral"} sub={`max ${formatUsd(Math.round(maxPrice / 1000) * 1000)} with all cash in · lender ${formatUsd(Math.floor(lenderMaxPrice / 1000) * 1000)}`} />
           <Tile label="Loan" value={formatUsd(b.loanAmount)} sub={`${formatPercentRatio(b.downPaymentPct, 1)} down · ${formatUsd(b.monthlyMortgagePayment)}/mo P&I`} />
         </div>
       </section>
@@ -146,7 +174,7 @@ export function PriceTab({ ins, patch, maxPrice, allCashDownPct }: { ins: HomeBu
   );
 }
 
-function Tile({ label, value, sub, tone = "neutral" }: { label: string; value: string; sub?: string; tone?: "neutral" | "pos" | "neg" }) {
+function Tile({ label, value, sub, tone = "neutral" }: { label: string; value: string; sub?: ReactNode; tone?: "neutral" | "pos" | "neg" }) {
   const cls = tone === "pos" ? "text-pos" : tone === "neg" ? "text-neg" : "text-fg";
   return (
     <div className="min-w-0 bg-surface px-3 py-2.5">

@@ -1,4 +1,5 @@
 import { resolveBasePay, type OutlookSeeds, type ResolvedBasePay } from "../profile/basePay.ts";
+import type { Dependent } from "../tax/computeReturn.ts";
 import { projectOutlook, type OutlookMonth, type OutlookPlan, type OutlookYear } from "../profile/outlook.ts";
 import type { OutlookAssumptions } from "../profile/settings.ts";
 import { TAX_YEARS } from "../tax/params.ts";
@@ -145,13 +146,36 @@ export type HomeForecast = {
   months: { key: string; liquid: number; liquidGrowth: number }[];
   /** Household base salary for a full year, by year. */
   salary: Record<number, number>;
+  /** What the tax engine needs to tax any household salary: each earner's share of base pay, the dependents and the law year. */
+  tax: { year: number; earners: { id: string; name: string; share: number }[]; dependents: Dependent[] };
+  /**
+   * Bonus as a lender counts it: each earner's cash bonuses averaged over their last two
+   * complete years (fewer if that's all there is), summed. Null with no bonus history.
+   */
+  lenderBonus: { annual: number; years: number[] } | null;
 };
 
-export function homeForecast(f: Forecast): HomeForecast {
+export function homeForecast(f: Forecast, seeds: OutlookSeeds): HomeForecast {
   const { start, salary, salaryGrowth } = f.plan;
   const salaryByYear: Record<number, number> = {};
   for (let y = start.year; y <= f.plan.horizonYear; y++) salaryByYear[y] = Math.round(salary * (1 + salaryGrowth) ** (y - start.year));
-  return { startKey: f.startKey, startLiquid: start.liquid, months: f.months.map(({ key, liquid, liquidGrowth }) => ({ key, liquid, liquidGrowth })), salary: salaryByYear };
+  const earners = f.pay.people.filter((p) => p.salary > 0).map((p) => ({ id: p.personId, name: p.name, share: salary > 0 ? p.salary / salary : 0 }));
+  let bonus = 0;
+  const years = new Set<number>();
+  for (const p of seeds.people) {
+    const last = p.bonusHistory.filter((h) => !h.partial).slice(-2);
+    if (!last.length) continue;
+    bonus += last.reduce((t, h) => t + h.bonus, 0) / last.length;
+    for (const h of last) years.add(h.year);
+  }
+  return {
+    startKey: f.startKey,
+    startLiquid: start.liquid,
+    months: f.months.map(({ key, liquid, liquidGrowth }) => ({ key, liquid, liquidGrowth })),
+    salary: salaryByYear,
+    tax: { year: seeds.taxYear, earners, dependents: seeds.dependents },
+    lenderBonus: bonus > 0 ? { annual: Math.round(bonus), years: [...years].sort((a, b) => a - b) } : null,
+  };
 }
 
 /** Investment growth on liquid money from the start through month `key` (for capital-gains estimates). */

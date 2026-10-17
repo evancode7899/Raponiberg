@@ -1,11 +1,15 @@
 "use client";
 
 import { useChartPalette } from "@/components/shell/chartPalette";
-import { Badge, btn, Callout, Card } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, Segmented } from "@/components/ui/kit";
+import type { HomeSpending } from "@/lib/book/reports/homeFunds";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
-import { computeBudgetScenario, computeMaxApproval, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
+import { computeBudgetScenario, computeMaxApproval, defaultHomeBudgetInputs, type HomeBudgetInputs, type MaxApprovalResult } from "@/lib/home-budget/homeBudgetModel";
 import { useMemo } from "react";
-import { StackBar, tiersFor, type TierKey } from "./parts";
+import type { LenderState, Patch } from "./HomeBudgetClient";
+import { spendingFit, StackBar, tiersFor, type TierKey } from "./parts";
+import { RangeSlider } from "./RangeSlider";
+import { spec } from "./specs";
 
 // Floor, so a quoted "up to" price never lands past the limit.
 const round1k = (v: number) => Math.floor(v / 1000) * 1000;
@@ -30,7 +34,21 @@ const LEVERS: { label: string; apply: (i: HomeBudgetInputs) => Partial<HomeBudge
   { label: "No renovation budget", apply: () => ({ renovationPctOfHomePrice: 0 }) },
 ];
 
-export function AffordTab({ ins, testPrice }: { ins: HomeBudgetInputs; testPrice: (price: number, downPct: number) => void }) {
+export function AffordTab({
+  ins,
+  patch,
+  testPrice,
+  lender,
+  lenderMax,
+  spending,
+}: {
+  ins: HomeBudgetInputs;
+  patch: Patch;
+  testPrice: (price: number, downPct: number) => void;
+  lender: LenderState;
+  lenderMax: MaxApprovalResult;
+  spending: HomeSpending | null;
+}) {
   const chart = useChartPalette();
   const tiers = useMemo(() => tiersFor(ins.housingCostMaxOfGross).map((t) => ({ ...t, ...maxAt(ins, t.share) })), [ins]);
   const mine = tiers.find((t) => t.key === "limit")!;
@@ -92,6 +110,7 @@ export function AffordTab({ ins, testPrice }: { ins: HomeBudgetInputs; testPrice
               Leaves <span className={`num font-semibold ${at.remainingDiscretionaryMonthly < 0 ? "text-neg" : "text-pos"}`}>{formatUsd(at.remainingDiscretionaryMonthly)}</span>/mo to spend after tax and{" "}
               {formatUsd(ins.minimumMonthlySavings)} of savings.
             </p>
+            {spending && <SpendCheck left={at.remainingDiscretionaryMonthly} spending={spending} />}
           </div>
           <button type="button" className={btn.primary} onClick={() => testPrice(price, Math.max(0.03, max.downPaymentPctOfHome))}>
             Stress-test this price →
@@ -136,6 +155,8 @@ export function AffordTab({ ins, testPrice }: { ins: HomeBudgetInputs; testPrice
             </Figure>
           </div>
         </Card>
+
+        <LenderCard ins={ins} patch={patch} lender={lender} max={lenderMax} comfortMax={maxValue} testPrice={testPrice} />
 
         <Card title="What moves the number" subtitle="Change in the most you can afford from one step on each input.">
           <ul className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
@@ -214,5 +235,88 @@ function Figure({ title, value, children }: { title: string; value: string; chil
       </div>
       {children}
     </div>
+  );
+}
+
+/** Today's spending outside housing next to what this price leaves, with a verdict. */
+export function SpendCheck({ left, spending }: { left: number; spending: HomeSpending }) {
+  const spend = spending.monthlyCents / 100;
+  const fit = spendingFit(left, spend);
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-2">
+      <span>
+        You spend <span className="num font-semibold text-fg">{formatUsd(spend)}</span>/mo today outside housing
+        <span className="text-xs text-faint"> (last {spending.months} months, one-offs out)</span>
+      </span>
+      {fit.label && <Badge tone={fit.tone}>{fit.label}</Badge>}
+    </p>
+  );
+}
+
+const DEF = defaultHomeBudgetInputs();
+
+/**
+ * The lender's view: the most a lender would likely approve. Not a target — it counts
+ * only the costs a lender does, on base pay plus (optionally) the two-year bonus average.
+ */
+function LenderCard({
+  ins,
+  patch,
+  lender,
+  max,
+  comfortMax,
+  testPrice,
+}: {
+  ins: HomeBudgetInputs;
+  patch: Patch;
+  lender: LenderState;
+  max: MaxApprovalResult;
+  comfortMax: number;
+  testPrice: (price: number, downPct: number) => void;
+}) {
+  const price = round1k(max.impliedMaxHomeValue);
+  const counted = max.monthlyMortgagePayment + max.monthlyPropertyTax + max.monthlyInsurance + ins.hoaMonthly + max.monthlyMortgageInsurance;
+  const sp = spec("lenderMaxDti");
+  return (
+    <Card
+      title="Lender view"
+      subtitle="The most a lender would likely approve — a ceiling, not a target. Counts only the loan payment, property tax, insurance, HOA and mortgage insurance (no utilities or upkeep)."
+      actions={
+        <button type="button" className={btn.ghost} onClick={() => testPrice(price, Math.max(0.03, max.downPaymentPctOfHome))}>
+          Stress-test →
+        </button>
+      }
+    >
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="num text-3xl font-semibold tracking-tight text-fg">{formatUsd(price)}</div>
+          <p className="mt-1 text-xs text-fg-2">
+            <span className="num font-semibold text-fg">{formatUsd(counted)}</span>/mo counted against{" "}
+            <span className="num font-semibold text-fg">{formatUsd(lender.income)}</span>/yr of income ({formatPercentRatio(ins.lenderMaxDti, 1)}) ·{" "}
+            <span className="num">{signed(round1k(max.impliedMaxHomeValue - comfortMax))}</span> vs your limit
+          </p>
+        </div>
+        {lender.bonus && (
+          <div className="flex flex-col items-end gap-1">
+            <Segmented
+              size="xs"
+              ariaLabel="Income the lender counts"
+              options={[
+                { value: "bonus", label: "Base + bonus" },
+                { value: "base", label: "Base only" },
+              ]}
+              value={lender.countBonus ? "bonus" : "base"}
+              onChange={(v) => lender.setCountBonus(v === "bonus")}
+            />
+            <span className="text-[11px] text-faint">
+              Bonus {formatUsd(lender.bonus.annual)}/yr: average of {lender.bonus.years.join(" and ")}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="mt-3 max-w-md">
+        <RangeSlider compact label="Lender's limit (% of gross)" hint={sp.hint} spec={sp} value={ins.lenderMaxDti} defaultValue={DEF.lenderMaxDti} onChange={(v) => patch("lenderMaxDti", v)} />
+      </div>
+    </Card>
   );
 }
