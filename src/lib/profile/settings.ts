@@ -92,8 +92,6 @@ export type OutlookAssumptions = {
   plannedExpenses: PlannedExpense[];
   /** FIRE: the age a conventional retirement starts (the Coast FIRE target). */
   retirementAge: number;
-  /** FIRE: after-tax part-time income a month (Barista FIRE). */
-  baristaMonthly: number;
   /** FIRE stress test: standard deviation of a year's return. */
   volatility: number;
 };
@@ -131,7 +129,6 @@ export const DEFAULT_OUTLOOK: OutlookAssumptions = {
   inflation: 0.025,
   plannedExpenses: [],
   retirementAge: 65,
-  baristaMonthly: 2_500_00,
   volatility: 0.15,
 };
 
@@ -237,7 +234,6 @@ export function normalizeSettings(raw: Partial<FinancialProfileSettings> | null 
           ...(num(e.month) && e.month >= 1 && e.month <= 12 ? { month: Math.round(e.month) } : {}),
         })),
       retirementAge: num(o.retirementAge) && o.retirementAge >= 40 && o.retirementAge <= 80 ? Math.round(o.retirementAge) : d.retirementAge,
-      baristaMonthly: num(o.baristaMonthly) && o.baristaMonthly >= 0 ? Math.round(o.baristaMonthly) : d.baristaMonthly,
       volatility: rate(o.volatility, d.volatility, 0, 0.5),
     },
   };

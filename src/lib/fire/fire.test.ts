@@ -55,12 +55,11 @@ describe("FIRE number", () => {
 });
 
 describe("analyzeFire", () => {
-  const a = analyzeFire(plan, plan, { asOf: "2029-12-31", retirementAge: 65, baristaMonthly: 2_000_00 });
+  const a = analyzeFire(plan, plan, { asOf: "2029-12-31", retirementAge: 65 });
 
-  it("orders the flavors: Coast and Lean and Barista before FIRE, FIRE before Fat", () => {
+  it("orders the flavors: Coast and Lean before FIRE, FIRE before Fat", () => {
     expect(a.fi).not.toBeNull();
     expect(a.lean!.year).toBeLessThanOrEqual(a.fi!.year);
-    expect(a.barista!.year).toBeLessThanOrEqual(a.fi!.year);
     expect(a.coast!.year).toBeLessThanOrEqual(a.fi!.year);
     expect(a.fat!.year).toBeGreaterThanOrEqual(a.fi!.year);
     expect(a.fi!.year).toBe(fiYear(plan));

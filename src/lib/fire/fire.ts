@@ -4,7 +4,7 @@ import { financialIndependenceYear, projectOutlook, retirementTax, walkAwayTable
 /**
  * FIRE (financial independence, retire early) analysis on top of the outlook engine
  * (profile/outlook.ts). Nothing here projects money on its own: every "when" comes from
- * running the engine's walk-away table, so the FIRE number, the Lean/Fat/Coast/Barista
+ * running the engine's walk-away table, so the FIRE number, the Lean/Fat/Coast
  * years, the levers and the stress test all agree with the walk-away income. Pure; money
  * is integer cents, rates are ratios.
  */
@@ -52,8 +52,6 @@ export function fireNumber(plan: Pick<OutlookPlan, "tax" | "inflation" | "stateT
 /** Full-year living cost the plan expects in `year` (grows each January from the start year). */
 export const livingIn = (plan: OutlookPlan, year: number) => Math.round(plan.livingCost * (1 + plan.livingGrowth) ** (year - plan.start.year));
 
-/** Barista income (start-year dollars, indexed to inflation) in `year`. */
-const baristaIncome = (plan: OutlookPlan, monthly: number, year: number) => Math.round(monthly * 12 * (1 + plan.inflation) ** (year - plan.start.year));
 
 export type FireRow = WalkAwayRow & {
   fireNumber: number;
@@ -94,11 +92,8 @@ export type FireAnalysis = {
   lean: FireRow | null;
   fat: FireRow | null;
   coast: FireRow | null;
-  barista: FireRow | null;
   /** Year the owner reaches retirement age (Coast target), when a birth year is known. */
   retireYear: number | null;
-  /** Part-time income a month (start-year dollars) the Barista year assumes. */
-  baristaMonthly: number;
   now: {
     netWorth: number;
     liquid: number;
@@ -126,7 +121,7 @@ export type FireAnalysis = {
  * included); `base` is base pay alone. The plan starts from the latest proven net worth,
  * which is "now".
  */
-export function analyzeFire(full: OutlookPlan, base: OutlookPlan, opts: { asOf: string; retirementAge: number; baristaMonthly: number }): FireAnalysis {
+export function analyzeFire(full: OutlookPlan, base: OutlookPlan, opts: { asOf: string; retirementAge: number }): FireAnalysis {
   const plan = full;
   const ext = extended(plan);
   const projection = projectOutlook(plan).years;
@@ -154,7 +149,6 @@ export function analyzeFire(full: OutlookPlan, base: OutlookPlan, opts: { asOf: 
   const lean = first((r) => r.coverage != null && r.coverage >= LEAN_SHARE);
   const fat = first((r) => r.coverage != null && r.coverage >= FAT_SHARE);
   const coast = first((r) => r.coastNumber != null && r.netWorth >= r.coastNumber);
-  const barista = first((r) => r.afterTaxIncome + baristaIncome(plan, opts.baristaMonthly, r.year) >= r.livingCost);
 
   const living0 = livingIn(plan, y0);
   const fn0 = fireNumber(plan, y0, living0);
@@ -186,9 +180,7 @@ export function analyzeFire(full: OutlookPlan, base: OutlookPlan, opts: { asOf: 
     lean,
     fat,
     coast,
-    barista,
     retireYear,
-    baristaMonthly: opts.baristaMonthly,
     now,
     savingsRate,
     milestones: milestones(plan, rows, now, { fi, lean, fat, coast }),

@@ -1,6 +1,6 @@
 "use client";
 
-import { Field, MoneyInput, PercentInput } from "@/components/ui/kit";
+import { Field, PercentInput } from "@/components/ui/kit";
 import type { Forecast } from "@/lib/forecast/forecast";
 import type { OutlookSeeds } from "@/lib/profile/basePay";
 import type { OutlookAssumptions } from "@/lib/profile/settings";
@@ -12,7 +12,7 @@ import { pct, short, usd } from "./ui";
 
 /**
  * FIRE's own settings — how you'd retire on the forecast: walk-away year, withdrawal
- * rate, tax on draws, the Coast target age, Barista income, stress-test swings. Pay,
+ * rate, tax on draws, the Coast target age stress-test swings. Pay,
  * bonuses, living cost and returns are the forecast's and are only shown here, with a
  * link to change them on the Forecast page.
  */
@@ -66,9 +66,6 @@ export function FireInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: Outlo
           </Field>
           <Field label="Yearly swings" hint="stress test (std. dev.)">
             <PercentInput value={a.volatility} onChange={(v) => set("volatility", v)} />
-          </Field>
-          <Field label="Barista income / mo" hint="part-time, after tax, today's $">
-            <MoneyInput size="xs" cents={a.baristaMonthly} allowNegative={false} onChange={(v) => set("baristaMonthly", v ?? 0)} />
           </Field>
         </div>
       </div>

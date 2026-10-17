@@ -102,7 +102,6 @@ function Body({ data, s, a, setA, onSave }: { data: ForecastData; s: OutlookSeed
                 withdrawalRate: a.withdrawalRate,
                 stateTaxRate: a.stateTaxRate,
                 retirementAge: a.retirementAge,
-                baristaMonthly: a.baristaMonthly,
                 volatility: a.volatility,
               })
             }

@@ -69,8 +69,7 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
       idea: (
         <>
           <strong>Lean FIRE</strong> retires on a frugal budget. <strong>Fat FIRE</strong> keeps a generous one. <strong>Coast FIRE</strong> means you&apos;ve saved enough that,
-          with no new contributions, growth alone reaches your number by a normal retirement age — so you only need to earn your spending. <strong>Barista FIRE</strong> leaves the
-          career for part-time work that fills the gap.
+          with no new contributions, growth alone reaches your number by a normal retirement age — so you only need to earn your spending.
         </>
       ),
       yours: f && n && (

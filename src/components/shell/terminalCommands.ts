@@ -95,7 +95,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     label: "FIRE",
     description: "Financial independence, retire early: your FIRE number, when you get there, and what moves the date. Built on the forecast. Estimates, not financial advice.",
     group: "Planning",
-    keywords: ["financial independence", "retire early", "fi", "coast", "lean", "fat", "barista", "4% rule", "safe withdrawal", "walk away", "savings rate"],
+    keywords: ["financial independence", "retire early", "fi", "coast", "lean", "fat", "4% rule", "safe withdrawal", "walk away", "savings rate"],
   },
   {
     mnemonic: "TAX",

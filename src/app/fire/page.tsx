@@ -3,7 +3,7 @@ import { FireClient } from "./FireClient";
 
 export const metadata: Metadata = {
   title: "FIRE",
-  description: "Financial independence, retire early: FIRE number, FI date, Lean/Coast/Barista/Fat FIRE, levers, stress test and the FIRE playbook",
+  description: "Financial independence, retire early: FIRE number, FI date, Lean/Coast/Fat FIRE, levers, stress test and the FIRE playbook",
 };
 
 export const dynamic = "force-dynamic";
