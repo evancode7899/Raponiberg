@@ -13,7 +13,8 @@
  *     that exists but can't be read fails the check;
  *   - data/bonus-awards.json: employers, and every salary, bonus and comp figure;
  *   - data/page-inputs.json: the dollar figures typed into the calculators ($10,000 and up,
- *     except round multiples of $50,000, which examples use, and the calculators' defaults);
+ *     except round multiples of $2,500, which examples and tax tables use, and the
+ *     calculators' defaults);
  *   - data/tax-documents.json (the tax documents folder as read): employers, partnerships,
  *     the names on the forms, EINs, and each W-2's wages and each filed return's AGI and
  *     total tax;
@@ -177,7 +178,7 @@ if (existsSync(pageInputsFilePath())) {
     const defaults: Record<string, Record<string, unknown>> = { "pf-home-budget-inputs": defaultHomeBudgetInputs(), "pf-mortgage-v2": defaultMortgageInputs() };
     for (const [key, entry] of Object.entries(saved.inputs ?? {}))
       for (const [field, v] of Object.entries(entry.value ?? {}))
-        if (typeof v === "number" && v >= 10_000 && v % 50_000 !== 0 && v !== defaults[key]?.[field]) figure(v);
+        if (typeof v === "number" && v >= 10_000 && v % 2_500 !== 0 && v !== defaults[key]?.[field]) figure(v);
   } catch {
     /* unreadable calculator inputs: nothing to add */
   }
