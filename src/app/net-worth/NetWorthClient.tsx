@@ -346,7 +346,8 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
         )}
         <div className="h-[300px] w-full min-w-0">
           <RechartsResponsive>
-            <ComposedChart data={cumulative} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            {/* The latest label always sits on the right edge (ticks count back from it), so leave room for half of it. */}
+            <ComposedChart data={cumulative} margin={{ top: 8, right: 28, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} interval={0} ticks={xTicks} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
