@@ -120,17 +120,21 @@ function trailing(r: NetWorthReport, months: number) {
   };
 }
 
-/**
- * The height a group's band gets in the stacked chart, in dollars. The chart stacks by sign
- * (positives above zero, negatives below), so a group whose net balance flips sign, like
- * cards with a refund or overpayment, would jump from below zero to the top of the asset stack.
- * The tooltip still shows the true balance; the bold net-worth line is drawn separately.
- */
 /** Row key suffix holding a group's true balance, for the tooltip. */
 const RAW = "__raw";
 
+const isDebt = (group: string) => group === "Credit cards";
+
+/**
+ * The height a group's band gets in the stacked chart, in dollars: debts at or below zero,
+ * everything else at or above. Debts and assets stack separately (see the Areas' stackId),
+ * so a month when cards net to a credit draws the card band as zero on the zero line. Under
+ * one stack with stackOffset="sign", Recharts files a zero with the positives, which put the
+ * card band's outline on top of the asset bands in those months: a thin line jumping up.
+ * The tooltip still shows the true balance; the bold net-worth line is drawn separately.
+ */
 function bandValue(group: string, cents: number): number {
-  return (group === "Credit cards" ? Math.min(0, cents) : Math.max(0, cents)) / 100;
+  return (isDebt(group) ? Math.min(0, cents) : Math.max(0, cents)) / 100;
 }
 
 function Overview({ r }: { r: NetWorthReport }) {
@@ -209,7 +213,7 @@ function Overview({ r }: { r: NetWorthReport }) {
       >
         <div className="h-[380px] w-full min-w-0">
           <RechartsResponsive>
-            <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} stackOffset="sign">
+            <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={28} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={[yFloor, "auto"]} allowDataOverflow />
@@ -228,7 +232,7 @@ function Overview({ r }: { r: NetWorthReport }) {
                 <ReferenceLine x={mergeLabel} stroke={chart.axis} strokeDasharray="4 3" label={{ value: "Finances merged", fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />
               )}
               {groups.map((g) => (
-                <Area key={g} type="monotone" dataKey={g} stackId="nw" stroke={groupColor(chart, g)} fill={groupColor(chart, g)} fillOpacity={0.55} strokeWidth={1} isAnimationActive={false} />
+                <Area key={g} type="monotone" dataKey={g} stackId={isDebt(g) ? "debts" : "assets"} stroke={groupColor(chart, g)} fill={groupColor(chart, g)} fillOpacity={0.55} strokeWidth={1} isAnimationActive={false} />
               ))}
               <Line type="monotone" dataKey="total" stroke={chart.lineBalance} strokeWidth={2} dot={false} isAnimationActive={false} />
             </ComposedChart>
