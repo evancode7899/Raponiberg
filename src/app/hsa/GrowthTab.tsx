@@ -15,19 +15,26 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   const g = r.growth;
   const p = useChartPalette();
   const chrome = chartChrome(p);
+  const a = g.assumptions;
   const edge = g.futureValueCents - g.taxableValueCents;
   const scale = r.totals.unreimbursedCents / 100_000;
+  const taxableTerms = `${formatPercentRatio(a.dividendYield, 1)} dividends taxed yearly and ${formatPercentRatio(a.taxableRate, 0)} on the gain when sold`;
   return (
     <>
       <StatGrid cols={3}>
-        <StatCell label={`Worth in ${g.planYear}`} value={usd0(g.futureValueCents)} tone="accent" sub={`today's ${usd0(r.totals.unreimbursedCents)} of receipts left invested ${g.years} years at ${formatPercentRatio(g.rate, 1)}`} />
-        <StatCell label="Tax-free growth by then" value={usd0(g.futureValueCents - r.totals.unreimbursedCents)} tone="pos" sub="yours on top of the receipts, never taxed if spent on medical care" />
-        <StatCell label="Edge over taxable" value={usd0(edge)} tone={edge > 0 ? "pos" : "neutral"} sub={`vs. ${usd0(g.taxableValueCents)} in a taxable account at ${formatPercentRatio(g.marginalRate, 0)} tax on growth`} />
+        <StatCell label={`Worth in ${g.planYear}`} value={usd0(g.futureValueCents)} tone="accent" sub={`today's ${usd0(r.totals.unreimbursedCents)} of receipts left invested ${g.years} years at ${formatPercentRatio(g.rate, 1)}, after any tax`} />
+        <StatCell
+          label={a.growthCovered ? "Tax-free growth by then" : "Growth by then, after tax"}
+          value={usd0(g.futureValueCents - r.totals.unreimbursedCents)}
+          tone="pos"
+          sub={a.growthCovered ? "on top of the receipts; tax-free as long as later medical bills cover it" : `on top of the receipts, taxed at ${formatPercentRatio(a.exitRate, 0)} with no receipt behind it`}
+        />
+        <StatCell label="Edge over reimbursing now" value={usd0(edge)} tone={edge > 0 ? "pos" : "neutral"} sub={`vs. ${usd0(g.taxableValueCents)} if reimbursed today and invested in a taxable account (${taxableTerms})`} />
       </StatGrid>
 
       <Card
         title={`Letting the receipts ride until ${g.planYear}`}
-        subtitle={`Today's unreimbursed total compounding in the HSA (tax-free in, tax-free growth, tax-free out against these receipts) vs. the same money in a taxable account. Growth: ${formatPercentRatio(g.rate, 1)} from ${RATE_SOURCE[g.rateSource]}; tax: ${formatPercentRatio(g.marginalRate, 0)} from ${MARGINAL_SOURCE[g.marginalSource]}. Both are set on Settings.`}
+        subtitle={`Today's unreimbursed total left in the HSA vs. reimbursed today and invested in a taxable account (${taxableTerms}). Both lines are after every tax, as if taken out that year. Growth: ${formatPercentRatio(g.rate, 1)} from ${RATE_SOURCE[g.rateSource]}. All set on Settings.`}
       >
         {r.totals.unreimbursedCents === 0 ? (
           <p className="text-xs text-muted">Nothing unreimbursed to project.</p>
@@ -41,7 +48,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
                 <Tooltip {...chrome.tooltip} formatter={(v) => usd0(Number(v) * 100)} />
                 <Legend {...chrome.legend} />
                 <Line type="monotone" dataKey="hsa" name="Left in the HSA" stroke={p.series[2]} strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="taxable" name="Taxable account" stroke={p.neutral} strokeWidth={2} strokeDasharray="4 3" dot={false} />
+                <Line type="monotone" dataKey="taxable" name="Reimbursed now, in a taxable account" stroke={p.neutral} strokeWidth={2} strokeDasharray="4 3" dot={false} />
               </LineChart>
             </RechartsResponsive>
           </div>
@@ -50,39 +57,50 @@ export function GrowthTab({ r }: { r: HsaReport }) {
 
       <Card
         title="Three ways to pay a medical bill"
-        subtitle={`Per $1,000 of bills, reimbursed in ${g.planYear} (${g.years} years). Paying out of pocket and reimbursing later keeps the HSA's tax-free compounding; it only works if you can cash-flow the bills and keep the receipts.`}
+        subtitle={`Per $1,000 of bills, with the HSA contribution made either way, reimbursed in ${g.planYear} (${g.years} years). Ahead is your wealth in ${g.planYear} vs. no HSA, after every tax: whatever a way costs less today is invested in a taxable account, plus what comes out of the HSA. Waiting only works if you can cash-flow the bills and keep the receipts.`}
       >
         <div className={table.wrap}>
           <table className={table.table}>
             <thead className={table.head}>
               <tr>
                 <th className={table.th}>How</th>
-                <th className={table.thR} title="Pay it takes to cover the $1,000 bill">
-                  Pre-tax pay used
+                <th className={table.thR} title="Pay before tax this uses today: the HSA contribution plus the pay that earned any bank money for the bill">
+                  Pay used now
                 </th>
-                <th className={table.thR}>Tax saved</th>
-                <th className={table.thR}>Extra growth</th>
-                <th className={table.thR}>Benefit per $1,000</th>
+                <th className={table.thR} title="The same, after tax: take-home pay it costs today">
+                  Cost now, after tax
+                </th>
+                <th className={table.thR} title="Income and payroll tax not paid on the HSA contribution">
+                  Tax saved
+                </th>
+                <th className={table.thR} title={`After-tax money out of the HSA in ${g.planYear}: the receipt's amount plus its growth`}>
+                  Out of the HSA, {g.planYear}
+                </th>
+                <th className={table.thR}>Ahead in {g.planYear}</th>
                 {scale > 0 && <th className={table.thR}>On your {usd0(r.totals.unreimbursedCents)}</th>}
               </tr>
             </thead>
             <tbody>
-              {g.strategy.map((s, i) => (
-                <tr key={s.label} className={`${table.tr} ${i === g.strategy.length - 1 ? "font-semibold" : ""}`}>
-                  <td className={table.td}>
+              {g.strategy.map((s) => (
+                <tr key={s.key} className={`${table.tr} ${s.key === "LATER" ? "font-semibold" : ""}`}>
+                  <td className={`${table.td} min-w-[18rem]`}>
                     <div className="text-fg">{s.label}</div>
                     <div className="text-[11px] font-normal text-muted">{s.note}</div>
                   </td>
-                  <td className={table.tdR}>{usd0(s.pretaxCostCents)}</td>
+                  <td className={table.tdR}>{usd0(s.payNowCents)}</td>
+                  <td className={table.tdR}>{usd0(s.costNowCents)}</td>
                   <td className={table.tdR}>{usd0(s.taxSavedCents)}</td>
-                  <td className={table.tdR}>{usd0(s.growthCents)}</td>
-                  <td className={`${table.tdR} ${s.netBenefitCents > 0 ? "text-pos" : ""}`}>{usd0(s.netBenefitCents)}</td>
-                  {scale > 0 && <td className={`${table.tdR} ${s.netBenefitCents > 0 ? "text-pos" : ""}`}>{usd0(Math.round(s.netBenefitCents * scale))}</td>}
+                  <td className={table.tdR}>{usd0(s.hsaLaterCents)}</td>
+                  <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>{usd0(s.aheadCents)}</td>
+                  {scale > 0 && <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>{usd0(Math.round(s.aheadCents * scale))}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          Tax saved uses {formatPercentRatio(g.marginalRate, 0)} income tax ({MARGINAL_SOURCE[g.marginalSource]}) + {formatPercentRatio(a.payrollRate, 2)} payroll tax. Not counted: employer contributions (they make having an HSA better still, but they arrive however you pay a bill), the plan&apos;s premium and deductible, and account fees. The tax saved is assumed invested, not spent; spending it lowers both HSA rows by the same amount, so waiting&apos;s edge over paying now doesn&apos;t change.
+        </p>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">

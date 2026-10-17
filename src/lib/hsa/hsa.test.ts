@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { guessKind, qualifyPayee } from "./qualify.ts";
 import { buildHsaReport, exactSubset, withdrawalKind, type LedgerRowIn, type ReportInput } from "./report.ts";
-import { applyHsaOp, readHsaFile, type HsaExpense, type HsaFile } from "./store.ts";
+import { applyHsaOp, EMPTY_SETTINGS, readHsaFile, type HsaExpense, type HsaFile } from "./store.ts";
 
 describe("what counts as a qualified expense", () => {
   it("separates care from the medical-adjacent", () => {
@@ -94,7 +94,7 @@ const file = (expenses: HsaExpense[], patch: Partial<HsaFile> = {}): HsaFile => 
   expenses,
   dismissed: [],
   ignoredMerchants: [],
-  settings: { openedOn: null, growthRate: 0.07, marginalRate: 0.35, planYear: 2046 },
+  settings: { ...EMPTY_SETTINGS, growthRate: 0.07, marginalRate: 0.35, planYear: 2046 },
   ...patch,
 });
 const input = (f: HsaFile, rows: LedgerRowIn[], extra: Partial<ReportInput> = {}): ReportInput => ({
@@ -143,7 +143,7 @@ describe("the HSA report", () => {
     const rows = [row("2026-02-01", -10_000, "ONE MEDICAL GROUP"), row("2026-02-02", -20_000, "TWO DENTAL"), row("2024-12-01", -30_000, "THREE DENTAL")];
     const dismissed = [{ institution: "Amex", identifiers: ["1001"], date: "2026-02-01", amountCents: -10_000, payee: "ONE MEDICAL GROUP" }];
     const r = buildHsaReport(
-      input(file([expense("old", "2024-11-01", 5_000)], { dismissed, ignoredMerchants: ["TWO DENTAL"], settings: { openedOn: "2025-01-01", growthRate: null, marginalRate: null, planYear: null } }), rows),
+      input(file([expense("old", "2024-11-01", 5_000)], { dismissed, ignoredMerchants: ["TWO DENTAL"], settings: { ...EMPTY_SETTINGS, openedOn: "2025-01-01" } }), rows),
     );
     expect(r.suggestions).toEqual([]);
     expect(r.expenses[0]!.flags).toContain("BEFORE_OPEN");
@@ -165,11 +165,15 @@ describe("the HSA report", () => {
     // $1,000 waiting a year (365 of 365.25 days) at 7%.
     expect(r.expenses.find((e) => e.id === "a")!.growthCents).toBe(6_995);
     expect(r.years.find((y) => y.year === 2026)).toMatchObject({ count: 2, reimbursedInYearCents: 21_475 });
-    // Paying out of pocket and waiting beats paying from the HSA now, which beats no HSA.
+    // Defaults fill the rest: 1.5% dividends, 20% on taxable gains, 1.45% payroll tax, growth covered by bills.
+    expect(r.growth.assumptions).toMatchObject({ rate: 0.07, dividendYield: 0.015, taxableRate: 0.2, marginalRate: 0.35, payrollRate: 0.0145, growthCovered: true, exitRate: 0.35, years: 20 });
+    // Both HSA rows save the same tax; waiting beats paying now by exactly the HSA-vs-taxable gap on the $1,000.
     const [none, now, later] = r.growth.strategy;
-    expect(none!.netBenefitCents).toBe(0);
-    expect(now!.netBenefitCents).toBe(35_000);
-    expect(later!.netBenefitCents).toBeGreaterThan(now!.netBenefitCents);
+    expect(none!.aheadCents).toBe(0);
+    expect(now!.taxSavedCents).toBe(36_450);
+    expect(later!.taxSavedCents).toBe(36_450);
+    const perDollarEdge = (r.growth.futureValueCents - r.growth.taxableValueCents) / r.totals.unreimbursedCents;
+    expect(later!.aheadCents - now!.aheadCents).toBeCloseTo(100_000 * perDollarEdge, -1);
     expect(r.growth.futureValueCents).toBeGreaterThan(r.growth.taxableValueCents);
   });
 

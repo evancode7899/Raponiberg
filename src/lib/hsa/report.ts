@@ -2,6 +2,7 @@ import { daysBetween } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
 import { ownerFiled, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
 import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store.ts";
+import { hsaAfterTax, strategyRows, taxableAfterTax, type StrategyAssumptions, type StrategyRow } from "./strategy.ts";
 
 /**
  * The HSA page: the receipts log joined to the ledger. Pure (no I/O), so it's tested on
@@ -129,16 +130,18 @@ export type HsaReport = {
     rateSource: "SETTING" | "MEASURED" | "DEFAULT";
     marginalRate: number;
     marginalSource: "SETTING" | "RETIREMENT" | "DEFAULT";
+    /** The assumptions behind the comparison, defaults filled in. */
+    assumptions: StrategyAssumptions;
     planYear: number;
     years: number;
-    /** The unreimbursed total left invested until the plan year. */
+    /** The unreimbursed total left invested until the plan year, taken out then after any tax. */
     futureValueCents: number;
-    /** The same money in a taxable account, growth taxed yearly at the marginal rate. */
+    /** The same money in a taxable account by then, after selling (dividends taxed yearly, the gain at sale). */
     taxableValueCents: number;
-    /** Year by year to the plan year: tax-free vs taxable. */
+    /** Year by year to the plan year: both after tax if taken out that year. */
     path: { year: number; hsaCents: number; taxableCents: number }[];
-    /** Per $1,000 of medical bills: the three ways to pay (the spreadsheet's comparison). */
-    strategy: { label: string; pretaxCostCents: number; taxSavedCents: number; growthCents: number; netBenefitCents: number; note: string }[];
+    /** Per $1,000 of medical bills: the three ways to pay (strategy.ts). */
+    strategy: StrategyRow[];
   };
   years: YearRow[];
   byPatient: Breakdown[];
@@ -153,6 +156,10 @@ const CANDIDATE_DAYS = 45;
 const REFUND_DAYS = 90;
 const DEFAULT_RATE = 0.07;
 const DEFAULT_MARGINAL = 0.32;
+const DEFAULT_DIVIDEND_YIELD = 0.015;
+const DEFAULT_TAXABLE_RATE = 0.2;
+/** Medicare's 1.45% applies to every wage dollar; Social Security's 6.2% only below its wage base. */
+const DEFAULT_PAYROLL_RATE = 0.0145;
 const DAYS_PER_YEAR = 365.25;
 
 const growthOn = (cents: number, rate: number, days: number) => (days <= 0 ? 0 : Math.round(cents * (Math.pow(1 + rate, days / DAYS_PER_YEAR) - 1)));
@@ -347,27 +354,22 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const thisYear = Number(today.slice(0, 4));
   const planYear = settings.planYear && settings.planYear > thisYear ? settings.planYear : thisYear + 20;
   const years = planYear - thisYear;
-  const afterTaxRate = rate * (1 - marginal);
+  const assumptions: StrategyAssumptions = {
+    rate,
+    dividendYield: settings.dividendYield ?? DEFAULT_DIVIDEND_YIELD,
+    taxableRate: settings.taxableRate ?? DEFAULT_TAXABLE_RATE,
+    marginalRate: marginal,
+    payrollRate: settings.payrollRate ?? DEFAULT_PAYROLL_RATE,
+    growthCovered: settings.growthCovered ?? true,
+    exitRate: settings.exitRate ?? marginal,
+    years,
+  };
+  // Both lines are what the money is worth if taken out that year, after every tax.
   const path: HsaReport["growth"]["path"] = [];
   for (let y = 0; y <= years; y++) {
-    path.push({ year: thisYear + y, hsaCents: Math.round(openCents * Math.pow(1 + rate, y)), taxableCents: Math.round(openCents * Math.pow(1 + afterTaxRate, y)) });
+    path.push({ year: thisYear + y, hsaCents: Math.round(openCents * hsaAfterTax(assumptions, y)), taxableCents: Math.round(openCents * taxableAfterTax(assumptions, y)) });
   }
-  const per = 100_000; // $1,000
-  const hsaGrowth = Math.round(per * (Math.pow(1 + rate, years) - 1));
-  const taxableGrowth = Math.round(per * (Math.pow(1 + afterTaxRate, years) - 1));
-  const taxSaved = Math.round(per * marginal);
-  const strategy = [
-    { label: "No HSA", pretaxCostCents: Math.round(per / (1 - marginal)), taxSavedCents: 0, growthCents: 0, netBenefitCents: 0, note: "Paid with after-tax money: it takes more pay than the bill to cover it." },
-    { label: "Pay from the HSA now", pretaxCostCents: per, taxSavedCents: taxSaved, growthCents: 0, netBenefitCents: taxSaved, note: "Pre-tax dollars pay the bill: the income tax on them is saved, but that money stops growing." },
-    {
-      label: `Pay out of pocket, reimburse in ${planYear}`,
-      pretaxCostCents: per,
-      taxSavedCents: taxSaved,
-      growthCents: hsaGrowth - taxableGrowth,
-      netBenefitCents: taxSaved + hsaGrowth - taxableGrowth,
-      note: `The same tax saved, and the $1,000 keeps compounding tax-free in the HSA. The cash you paid with would otherwise have grown in a taxable account (${(afterTaxRate * 100).toFixed(1)}% after tax), so the edge is the difference.`,
-    },
-  ];
+  const strategy = strategyRows(assumptions, 100_000, planYear);
 
   // ------------------------------------------------------------ breakdowns
   const yearMap = new Map<number, YearRow>();
@@ -409,6 +411,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       rateSource,
       marginalRate: marginal,
       marginalSource,
+      assumptions,
       planYear,
       years,
       futureValueCents: path.at(-1)!.hsaCents,
