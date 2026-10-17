@@ -10,7 +10,7 @@ import { BudgetTab } from "./BudgetTab";
 import { CategoryDrill, MerchantDrill } from "./Drills";
 import { IncomeTab } from "./IncomeTab";
 import { MerchantsTab } from "./MerchantsTab";
-import { monthKey, proofTarget, sliceRange, type RangeId, type Report, type Slice } from "./model";
+import { monthKey, proofTarget, sliceRange, type ProofOptions, type RangeId, type Report, type Slice } from "./model";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
@@ -40,7 +40,7 @@ export type Ctx = {
   focus: string | null;
   setFocus: (c: string | null) => void;
   /** The proof target for a figure over some of the selected months (see model.proofTarget), with the page's account filter. */
-  proof: (metric: CashFlowMetric, months: SpendingMonth[], o?: { category?: string; perMonth?: boolean; shownCents?: number }) => ProofTarget | undefined;
+  proof: (metric: CashFlowMetric, months: SpendingMonth[], o?: ProofOptions) => ProofTarget | undefined;
 };
 
 type View = { range: RangeId; from: string; to: string };

@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, btn, Callout, Card, ErrorNote, Loading, MoneyInput, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { BudgetSettings } from "@/lib/budget/settings";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 import { useEffect, useState } from "react";
@@ -36,11 +37,13 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
   const rows = SPEND_CATEGORIES.map((c) => {
     const series = slice.months.map((m) => categoryCents(m, c));
     const target = draft[c] ?? null;
+    const total = series.reduce((s, v) => s + v, 0);
     return {
       c,
       target,
       typical: median(series),
-      avg: series.reduce((s, v) => s + v, 0) / Math.max(1, series.length),
+      total,
+      avg: total / Math.max(1, series.length),
       latest: categoryCents(last, c),
       over: target == null ? 0 : series.filter((v) => v > target).length,
     };
@@ -161,9 +164,13 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
                     <td className={table.td}>
                       <Bar ratio={r.latest / scale} color={r.target != null && ratio > 1 ? "var(--neg)" : categoryColor(chart, r.c)} marker={r.target != null ? r.target / scale : null} />
                     </td>
-                    <td className={`${table.tdR} font-medium`}>{usd0(r.latest)}</td>
+                    <td className={`${table.tdR} font-medium`}>
+                      <ProofValue proof={ctx.proof("spending", [last], { category: r.c, shownCents: r.latest })}>{usd0(r.latest)}</ProofValue>
+                    </td>
                     <td className={`${table.tdR} text-muted`}>{usd0(r.typical)}</td>
-                    <td className={`${table.tdR} text-muted`}>{usd0(r.avg)}</td>
+                    <td className={`${table.tdR} text-muted`}>
+                      <ProofValue proof={ctx.proof("spending", slice.months, { category: r.c, perMonth: true, shownCents: r.total })}>{usd0(r.avg)}</ProofValue>
+                    </td>
                     <td className={table.tdR}>{r.target == null ? <span className="text-faint">—</span> : `${r.over} of ${slice.months.length}`}</td>
                     <td className={table.tdR}>{status}</td>
                   </tr>
@@ -173,9 +180,13 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
                 <td className={table.td}>Total</td>
                 <td className={table.tdR}>{hasTargets ? usd0(budgeted) : "—"}</td>
                 <td className={table.td} />
-                <td className={table.tdR}>{usd0(last.spendingCents)}</td>
+                <td className={table.tdR}>
+                  <ProofValue proof={ctx.proof("spending", [last], { shownCents: last.spendingCents })}>{usd0(last.spendingCents)}</ProofValue>
+                </td>
                 <td className={`${table.tdR} text-muted`}>{usd0(t.typicalSpending)}</td>
-                <td className={`${table.tdR} text-muted`}>{usd0(t.avgSpending)}</td>
+                <td className={`${table.tdR} text-muted`}>
+                  <ProofValue proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })}>{usd0(t.avgSpending)}</ProofValue>
+                </td>
                 <td className={table.tdR} />
                 <td className={table.tdR} />
               </tr>
