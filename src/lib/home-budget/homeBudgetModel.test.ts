@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cashForHomeFromNetWorth,
   computeBudgetScenario,
+  computeLenderMax,
   computeMaxApproval,
   computeRentVsBuy,
   computeSensitivityCell,
@@ -187,5 +188,63 @@ describe("priceForHousingShare", () => {
   it("is never negative when fixed bills exceed the share", () => {
     const ins = { ...defaultHomeBudgetInputs(), annualHouseholdSalary: 10_000 };
     expect(priceForHousingShare(ins, 0.28)).toBe(0);
+  });
+});
+
+describe("mortgage insurance", () => {
+  const ins = { ...defaultHomeBudgetInputs(), annualMortgageInsuranceRateOnLoan: 0.006 };
+
+  it("applies only under 20% down", () => {
+    expect(computeBudgetScenario({ ...ins, budgetDownPaymentPct: 0.25 }).monthlyMortgageInsurance).toBe(0);
+    expect(computeBudgetScenario({ ...ins, budgetDownPaymentPct: 0.2 }).monthlyMortgageInsurance).toBe(0);
+    const ten = computeBudgetScenario({ ...ins, budgetDownPaymentPct: 0.1 });
+    expect(ten.monthlyMortgageInsurance).toBeCloseTo((ten.loanAmount * 0.006) / 12, 6);
+  });
+
+  it("leaves a max with 20%+ down unchanged", () => {
+    // Enough cash for well over 20% down at the max, so the rate shouldn't move it.
+    const rich = { ...ins, cashForHome: 250_000 };
+    const m = computeMaxApproval(rich);
+    expect(m.downPaymentPctOfHome).toBeGreaterThan(0.2);
+    expect(m.monthlyMortgageInsurance).toBe(0);
+    expect(m.impliedMaxHomeValue).toBeCloseTo(computeMaxApproval({ ...rich, annualMortgageInsuranceRateOnLoan: 0 }).impliedMaxHomeValue, 2);
+  });
+
+  it("is never charged in the simulation at 20%+ down", () => {
+    const at21 = { ...ins, budgetDownPaymentPct: 0.21 };
+    const none = { ...at21, annualMortgageInsuranceRateOnLoan: 0 };
+    expect(simulateRentVsBuy(at21, computeBudgetScenario(at21), 1).years[0]!.ownerMonthlyCost).toBeCloseTo(
+      simulateRentVsBuy(none, computeBudgetScenario(none), 1).years[0]!.ownerMonthlyCost,
+      6,
+    );
+  });
+});
+
+describe("computeLenderMax", () => {
+  it("counts only lender costs, so it sits above the all-in max at the same share", () => {
+    const ins = { ...defaultHomeBudgetInputs(), lenderMaxDti: 0.36 };
+    const lender = computeLenderMax(ins, ins.annualHouseholdSalary);
+    const comfort = computeMaxApproval(ins);
+    expect(lender.impliedMaxHomeValue).toBeGreaterThan(comfort.impliedMaxHomeValue);
+    // Loan payment + tax + insurance land on 36% of gross.
+    const counted = lender.monthlyMortgagePayment + lender.monthlyPropertyTax + lender.monthlyInsurance;
+    expect(counted).toBeCloseTo((ins.annualHouseholdSalary / 12) * 0.36, 2);
+    expect(lender.monthlyMaintenance).toBe(0);
+  });
+
+  it("rises with counted bonus", () => {
+    const ins = defaultHomeBudgetInputs();
+    expect(computeLenderMax(ins, ins.annualHouseholdSalary + 30_000).impliedMaxHomeValue).toBeGreaterThan(computeLenderMax(ins, ins.annualHouseholdSalary).impliedMaxHomeValue);
+  });
+});
+
+describe("renter setup", () => {
+  it("the renter spends half the renovation budget and invests the rest", () => {
+    const ins = { ...defaultHomeBudgetInputs(), investmentReturnRate: 0, marketRentMonthly: 0, horizonYears: 1 };
+    const b = computeBudgetScenario(ins);
+    const sim = simulateRentVsBuy(ins, b);
+    expect(sim.renterSetup).toBeCloseTo(b.renovationDollars / 2, 6);
+    const noSetup = simulateRentVsBuy({ ...ins, renovationPctOfHomePrice: 0 }, computeBudgetScenario({ ...ins, renovationPctOfHomePrice: 0 }));
+    expect(noSetup.renterSetup).toBe(0);
   });
 });

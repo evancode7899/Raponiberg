@@ -1,6 +1,6 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { cachedReport, jsonBody } from "@/lib/book/cache";
-import { buildHomeFunds } from "@/lib/book/reports/homeFunds";
+import { buildHomeFunds, buildHomeSpending } from "@/lib/book/reports/homeFunds";
 import { prisma } from "@/lib/db";
 import { homeForecast } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
@@ -19,8 +19,13 @@ export async function GET(request: NextRequest) {
   }
   return jsonBody(
     await cachedReport(prisma, "home-funds", async (book) => {
-      const { forecast } = await loadForecast(prisma, book);
-      return { ...buildHomeFunds(book), forecast: forecast ? homeForecast(forecast) : null };
+      const { forecast, data } = await loadForecast(prisma, book);
+      const seeds = data.profile.seeds;
+      return {
+        ...buildHomeFunds(book),
+        forecast: forecast && seeds ? homeForecast(forecast, seeds) : null,
+        spending: buildHomeSpending(book, data.profile.settings),
+      };
     }),
   );
 }

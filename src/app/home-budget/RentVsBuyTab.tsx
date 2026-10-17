@@ -7,7 +7,8 @@ import { axisUsd, formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { computeBudgetScenario, computeRentVsBuy, defaultHomeBudgetInputs, simulateRentVsBuy, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import { useMemo } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import type { Patch } from "./HomeBudgetClient";
+import type { FundsState, Patch } from "./HomeBudgetClient";
+import { GainsTaxControl } from "./InputsPanel";
 import { Group, StackBar } from "./parts";
 import { RangeSlider } from "./RangeSlider";
 import { spec } from "./specs";
@@ -26,7 +27,7 @@ const LABELS: Partial<Record<keyof HomeBudgetInputs, string>> = {
   equityRiskPremium: "Equity risk premium",
 };
 
-export function RentVsBuyTab({ ins, patch, goToBudget }: { ins: HomeBudgetInputs; patch: Patch; goToBudget: () => void }) {
+export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudgetInputs; patch: Patch; goToBudget: () => void; funds: FundsState }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const b = useMemo(() => computeBudgetScenario(ins), [ins]);
@@ -55,6 +56,7 @@ export function RentVsBuyTab({ ins, patch, goToBudget }: { ins: HomeBudgetInputs
           ? `${sim.breakEvenYear === 1 ? "Buying is ahead from the first year" : `Buying overtakes renting in year ${sim.breakEvenYear}`}${sim.breakEvenYear > horizon ? ` — after you'd sell, so stay ${sim.breakEvenYear}+ years for it to pay` : ""}.`
           : `Buying never catches up within ${SIM_YEARS} years at these assumptions.`}{" "}
         Both households start with the same {formatUsd(sim.upfrontCash)} and spend the same each month; whoever&apos;s housing costs less invests the difference.
+        {sim.renterSetup > 0 && ` The renter spends ${formatUsd(sim.renterSetup)} of it on moving and furniture — half the buyer's renovation / furnishing budget.`}
       </Callout>
 
       <StatGrid cols={4}>
@@ -95,7 +97,7 @@ export function RentVsBuyTab({ ins, patch, goToBudget }: { ins: HomeBudgetInputs
             <Group title="Markets">
               {S("homeAppreciationRate")}
               {S("investmentReturnRate")}
-              {S("capitalGainsTaxRate", { hint: "On the investments either household cashes out, and on a home gain above the exclusion." })}
+              <GainsTaxControl ins={ins} patch={patch} funds={funds} full />
             </Group>
             <Group title="Selling">
               {S("horizonYears")}
@@ -181,7 +183,7 @@ export function RentVsBuyTab({ ins, patch, goToBudget }: { ins: HomeBudgetInputs
               </table>
             </div>
             <p className="mt-2 text-[11px] leading-snug text-faint">
-              Owning / mo is the cash cost (mortgage, tax, insurance, upkeep, HOA, mortgage insurance until the loan reaches 78% of the price), excluding utilities, which both pay. The mortgage-interest deduction is ignored.
+              Owning / mo is the cash cost (mortgage, tax, insurance, upkeep, HOA, and mortgage insurance under 20% down until the loan reaches 78% of the price), excluding utilities, which both pay. The mortgage-interest deduction is ignored.
             </p>
           </Card>
         </div>

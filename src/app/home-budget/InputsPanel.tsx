@@ -141,7 +141,19 @@ export function InputsPanel({
           S("annualHouseholdSalary", funds.buy.salary != null ? { extra: <button type="button" className="text-accent hover:underline" onClick={() => funds.setConfig({ ...funds.config, salary: "forecast" })}>use the Forecast ({formatUsd(funds.buy.salary)} in {funds.buy.year})</button> } : {})
         )}
         {S("housingCostMaxOfGross")}
-        {S("incomeTaxRate")}
+        {funds.tax.income.linked ? (
+          <EngineRate
+            label={LABELS.incomeTaxRate!}
+            value={ins.incomeTaxRate}
+            note={`Federal + Connecticut income tax and payroll on ${formatUsd(ins.annualHouseholdSalary)} of wages, ${funds.tax.year} law, from the tax engine.`}
+            onManual={() => {
+              patch("incomeTaxRate", Math.round(ins.incomeTaxRate * 200) / 200);
+              funds.setConfig({ ...funds.config, incomeTax: "manual" });
+            }}
+          />
+        ) : (
+          S("incomeTaxRate", funds.tax.income.engine != null ? { extra: <EngineLink rate={funds.tax.income.engine} onClick={() => funds.setConfig({ ...funds.config, incomeTax: "engine" })} /> } : {})
+        )}
         <RangeSlider compact label={LABELS.minimumMonthlySavings!} hint={`${spec("minimumMonthlySavings").hint} Typical: 5–15% of gross.`} spec={savingsSpec} value={ins.minimumMonthlySavings} defaultValue={DEF.minimumMonthlySavings} onChange={(v) => patch("minimumMonthlySavings", v)} />
       </Section>
 
@@ -334,7 +346,7 @@ function FundsSection({ ins, patch, funds }: { ins: HomeBudgetInputs; patch: Pat
             hint="The rest stays invested as your reserve."
             extra={<>{formatUsd(derived.afterTax - derived.available)} stays invested as reserve</>}
           />
-          <RangeSlider compact label={LABELS.capitalGainsTaxRate!} hint={spec("capitalGainsTaxRate").hint} spec={spec("capitalGainsTaxRate")} value={ins.capitalGainsTaxRate} defaultValue={DEF.capitalGainsTaxRate} onChange={(v) => patch("capitalGainsTaxRate", v)} />
+          <GainsTaxControl ins={ins} patch={patch} funds={funds} />
         </div>
       )}
 
@@ -355,6 +367,61 @@ function FundsSection({ ins, patch, funds }: { ins: HomeBudgetInputs; patch: Pat
         <span className="num text-base font-semibold text-fg">{formatUsd(ins.cashForHome)}</span>
       </div>
     </>
+  );
+}
+
+/** A rate the tax engine works out, shown read-only with a way to type your own. */
+function EngineRate({ label, value, note, onManual }: { label: string; value: number; note: string; onManual: () => void }) {
+  return (
+    <div className="py-1.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs font-medium text-fg-2">{label}</span>
+        <span className="num text-sm font-semibold text-fg">{formatPercentRatio(value, 1)}</span>
+      </div>
+      <p className="text-[11px] leading-snug text-faint">
+        {note}{" "}
+        <button type="button" className="text-accent hover:underline" onClick={onManual}>
+          Type my own
+        </button>
+      </p>
+    </div>
+  );
+}
+
+function EngineLink({ rate, onClick }: { rate: number; onClick: () => void }) {
+  return (
+    <button type="button" className="text-accent hover:underline" onClick={onClick}>
+      use the tax engine ({formatPercentRatio(rate, 1)})
+    </button>
+  );
+}
+
+/** Capital-gains tax: from the engine (federal, NIIT, Connecticut) unless typed. Shared with Rent vs buy. */
+export function GainsTaxControl({ ins, patch, funds, full }: { ins: HomeBudgetInputs; patch: Patch; funds: Pick<FundsState, "tax" | "config" | "setConfig">; full?: boolean }) {
+  const { gains, year } = funds.tax;
+  if (gains.linked)
+    return (
+      <EngineRate
+        label={LABELS.capitalGainsTaxRate!}
+        value={ins.capitalGainsTaxRate}
+        note={`Federal 15/20% + 3.8% NIIT + Connecticut on ${formatUsd(Math.max(50_000, gains.gain))} of long-term gains on top of the salary, ${year} law.`}
+        onManual={() => {
+          patch("capitalGainsTaxRate", Math.round(ins.capitalGainsTaxRate * 1000) / 1000);
+          funds.setConfig({ ...funds.config, gainsTax: "manual" });
+        }}
+      />
+    );
+  return (
+    <RangeSlider
+      compact={!full}
+      label={LABELS.capitalGainsTaxRate!}
+      hint={spec("capitalGainsTaxRate").hint}
+      spec={spec("capitalGainsTaxRate")}
+      value={ins.capitalGainsTaxRate}
+      defaultValue={DEF.capitalGainsTaxRate}
+      onChange={(v) => patch("capitalGainsTaxRate", v)}
+      extra={gains.engine != null ? <EngineLink rate={gains.engine} onClick={() => funds.setConfig({ ...funds.config, gainsTax: "engine" })} /> : undefined}
+    />
   );
 }
 

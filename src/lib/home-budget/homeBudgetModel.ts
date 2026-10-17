@@ -40,6 +40,8 @@ export type HomeBudgetInputs = {
   rentGrowthRate: number;
   /** Annual home price appreciation. */
   homeAppreciationRate: number;
+  /** Lender view: the most a lender lets the loan payment, tax, insurance, HOA and mortgage insurance take of gross income. */
+  lenderMaxDti: number;
   /** Annual return on money invested instead (before tax on gains). */
   investmentReturnRate: number;
   /** Agent + transfer costs when the home is sold, as a fraction of its value then. */
@@ -126,6 +128,7 @@ const DEFAULTS: HomeBudgetInputs = {
   rentGrowthRate: 0.03,
   homeAppreciationRate: 0.035,
   investmentReturnRate: 0.07,
+  lenderMaxDti: 0.43,
   sellingCostsPct: 0.06,
   horizonYears: 10,
   capitalGainsTaxRate: 0.2,
@@ -148,6 +151,11 @@ export function monthlyPaymentOnLoan(
   return (loan * r) / (1 - Math.pow(1 + r, -n));
 }
 
+/** Lenders charge mortgage insurance only when the loan is over 80% of the home's value (under 20% down). */
+export const MORTGAGE_INSURANCE_ABOVE_LTV = 0.8;
+
+const needsMortgageInsurance = (loan: number, homeValue: number) => loan > MORTGAGE_INSURANCE_ABOVE_LTV * homeValue + 1e-6;
+
 function nonMortgageMonthly(
   homeValue: number,
   loan: number,
@@ -159,7 +167,7 @@ function nonMortgageMonthly(
     ins.utilitiesMonthly +
     (homeValue * ins.annualPropertyTaxRate) / 12 +
     (homeValue * ins.annualMaintenanceRate) / 12 +
-    (loan * ins.annualMortgageInsuranceRateOnLoan) / 12
+    (needsMortgageInsurance(loan, homeValue) ? (loan * ins.annualMortgageInsuranceRateOnLoan) / 12 : 0)
   );
 }
 
@@ -263,8 +271,9 @@ function buildMaxResult(
     (impliedMaxHomeValue * ins.annualPropertyTaxRate) / 12;
   const monthlyMaintenance =
     (impliedMaxHomeValue * ins.annualMaintenanceRate) / 12;
-  const monthlyMortgageInsurance =
-    (impliedMaxLoan * ins.annualMortgageInsuranceRateOnLoan) / 12;
+  const monthlyMortgageInsurance = needsMortgageInsurance(impliedMaxLoan, impliedMaxHomeValue)
+    ? (impliedMaxLoan * ins.annualMortgageInsuranceRateOnLoan) / 12
+    : 0;
   const monthlyTotalHousing =
     monthlyMortgagePayment +
     monthlyInsurance +
@@ -306,8 +315,9 @@ export function computeBudgetScenario(
   const monthlyInsurance = (homePrice * ins.annualInsuranceRateOnValue) / 12;
   const monthlyPropertyTax = (homePrice * ins.annualPropertyTaxRate) / 12;
   const monthlyMaintenance = (homePrice * ins.annualMaintenanceRate) / 12;
-  const monthlyMortgageInsurance =
-    (loanAmount * ins.annualMortgageInsuranceRateOnLoan) / 12;
+  const monthlyMortgageInsurance = needsMortgageInsurance(loanAmount, homePrice)
+    ? (loanAmount * ins.annualMortgageInsuranceRateOnLoan) / 12
+    : 0;
   const monthlyTotalHousing =
     monthlyMortgagePayment +
     monthlyInsurance +
@@ -364,9 +374,25 @@ export function priceForHousingShare(
   const perDollar =
     monthlyPaymentOnLoan(loanPerDollar, ins.annualMortgageRate, ins.mortgageTermYears) +
     (ins.annualPropertyTaxRate + ins.annualInsuranceRateOnValue + ins.annualMaintenanceRate) / 12 +
-    (loanPerDollar * ins.annualMortgageInsuranceRateOnLoan) / 12;
+    (loanPerDollar > MORTGAGE_INSURANCE_ABOVE_LTV + 1e-9 ? (loanPerDollar * ins.annualMortgageInsuranceRateOnLoan) / 12 : 0);
   const room = (share * ins.annualHouseholdSalary) / 12 - ins.hoaMonthly - ins.utilitiesMonthly;
   return perDollar > 0 ? Math.max(0, room / perDollar) : 0;
+}
+
+/**
+ * The lender's view: the most a lender would likely lend toward. It counts only what a
+ * lender holds against income — loan payment, property tax, insurance, HOA and mortgage
+ * insurance (no utilities or upkeep) — up to `lenderMaxDti` of `annualIncome` (base pay,
+ * plus bonus when counted). Same solver as the comfort view, all the cash for the home in.
+ */
+export function computeLenderMax(ins: HomeBudgetInputs, annualIncome: number): MaxApprovalResult {
+  return computeMaxApproval({
+    ...ins,
+    annualHouseholdSalary: annualIncome,
+    housingCostMaxOfGross: ins.lenderMaxDti,
+    utilitiesMonthly: 0,
+    annualMaintenanceRate: 0,
+  });
 }
 
 /**
@@ -377,11 +403,10 @@ export function computeRentVsBuy(
   budget: BudgetScenarioResult,
 ): RentVsBuyResult {
   const homePrice = budget.homePrice;
-  const loan = budget.loanAmount;
   const simpleAnnualInterestPct =
     homePrice > 0 ? ((homePrice - budget.downPaymentDollars) * ins.annualMortgageRate) / homePrice : 0;
   const annualHoa = ins.hoaMonthly * 12;
-  const annualMi = loan * ins.annualMortgageInsuranceRateOnLoan;
+  const annualMi = budget.monthlyMortgageInsurance * 12;
   const closingOpportunity = ins.equityRiskPremium * ins.closingCostsPctOfHomePrice;
   const dpRenoOpportunity =
     homePrice > 0
@@ -431,17 +456,23 @@ export type RentVsBuySimulation = {
   years: RentVsBuyYear[];
   /** First year-end from which buying stays ahead through the whole run, if any. */
   breakEvenYear: number | null;
-  /** Cash the buyer puts in on day one; the renter invests the same amount instead. */
+  /** Cash the buyer puts in on day one; the renter invests it, less `renterSetup`. */
   upfrontCash: number;
+  /** What the renter spends on day one on moving and furniture. */
+  renterSetup: number;
 };
+
+/** A renter still moves and furnishes, on a smaller scale: this share of the buyer's renovation / furnishing budget. */
+export const RENTER_SETUP_SHARE = 0.5;
 
 /**
  * Two households with the same cash and the same monthly budget, one buying the budget
  * home and one renting, run month by month. Day one: the buyer pays down payment,
- * closing and renovation; the renter invests that cash. Each month whoever spends less
- * on housing invests the difference. Rent steps up yearly; the home (and the property
- * tax, insurance and maintenance priced off it) appreciates monthly; mortgage insurance
- * stops once the balance reaches 78% of the purchase price. At each year-end both
+ * closing and renovation; the renter spends half the renovation budget on moving and
+ * furniture (RENTER_SETUP_SHARE) and invests the rest. Each month whoever spends less on
+ * housing invests the difference. Rent steps up yearly; the home (and the property tax,
+ * insurance and maintenance priced off it) appreciates monthly; mortgage insurance applies
+ * only to a loan over 80% of the price and stops once the balance reaches 78% of it. At each year-end both
  * liquidate: the buyer sells (selling costs; tax on the gain above the exclusion, basis =
  * price + renovation) and both pay capital-gains tax on their investment gains.
  * Utilities are left out (both households pay them); the mortgage-interest deduction is
@@ -461,12 +492,14 @@ export function simulateRentVsBuy(
   const invM = Math.pow(1 + ins.investmentReturnRate, 1 / 12) - 1;
   const appM = Math.pow(1 + ins.homeAppreciationRate, 1 / 12) - 1;
   const homeBasis = price + budget.renovationDollars;
+  const renterSetup = RENTER_SETUP_SHARE * budget.renovationDollars;
+  const insured = needsMortgageInsurance(loan0, price);
 
   let home = price;
   let balance = loan0;
   let rent = ins.marketRentMonthly;
   // Investment accounts: value and money put in (basis).
-  const renter = { value: upfrontCash, basis: upfrontCash };
+  const renter = { value: upfrontCash - renterSetup, basis: upfrontCash - renterSetup };
   const buyer = { value: 0, basis: 0 };
   const afterTax = (a: { value: number; basis: number }) =>
     a.value - ins.capitalGainsTaxRate * Math.max(0, a.value - a.basis);
@@ -479,7 +512,7 @@ export function simulateRentVsBuy(
     const carrying =
       (home * (ins.annualPropertyTaxRate + ins.annualInsuranceRateOnValue + ins.annualMaintenanceRate)) / 12 +
       ins.hoaMonthly +
-      (balance > 0.78 * price + 1e-9 ? (loan0 * ins.annualMortgageInsuranceRateOnLoan) / 12 : 0);
+      (insured && balance > 0.78 * price + 1e-9 ? (loan0 * ins.annualMortgageInsuranceRateOnLoan) / 12 : 0);
     let mortgage = 0;
     if (m <= termMonths && balance > 0) {
       const interest = balance * mRate;
@@ -520,7 +553,7 @@ export function simulateRentVsBuy(
   // The first year after which buying never falls behind again (a one-year blip ahead isn't break-even).
   let breakEvenYear: number | null = null;
   for (let i = years.length - 1; i >= 0 && years[i]!.buyAdvantage >= 0; i--) breakEvenYear = years[i]!.year;
-  return { years, breakEvenYear, upfrontCash };
+  return { years, breakEvenYear, upfrontCash, renterSetup };
 }
 
 /** Spreadsheet's fixed grid, kept for reference. */

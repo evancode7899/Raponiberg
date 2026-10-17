@@ -141,11 +141,17 @@ function income(p: PayForTax, params: TaxYearParams): PersonIncome {
   };
 }
 
-/** Federal + CT income tax, Social Security, Medicare (incl. the 0.9% surtax) and CT paid leave on wages alone, filing jointly. */
-export function taxOnPay(params: TaxYearParams, people: PayForTax[], dependents: Dependent[]): PayTax {
+/**
+ * Federal + CT income tax, Social Security, Medicare (incl. the 0.9% surtax) and CT paid leave
+ * on wages alone, filing jointly — plus, when given, a long-term capital gain (on the first
+ * earner; it is a joint return either way), so a gain's own federal, NIIT and CT tax can be read off.
+ */
+export function taxOnPay(params: TaxYearParams, people: PayForTax[], dependents: Dependent[], longTermGain = 0): PayTax {
   const paid = people.filter((p) => p.salary + p.bonus > 0);
   if (!paid.length) return { ...ZERO_TAX };
-  const r = computeReturn({ params, filingStatus: "MFJ", people: paid.map((p) => income(p, params)), dependents, itemizeMode: "STANDARD" });
+  const incomes = paid.map((p) => income(p, params));
+  if (longTermGain > 0) incomes[0] = { ...incomes[0]!, longTermGain };
+  const r = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents, itemizeMode: "STANDARD" });
   const t = { federal: r.federal.totalTax, ct: r.ct.totalTax, socialSecurity: r.fica.socialSecurity, medicare: r.fica.medicare, pfml: r.fica.ctPfml, total: 0 };
   t.total = t.federal + t.ct + t.socialSecurity + t.medicare + t.pfml;
   return t;

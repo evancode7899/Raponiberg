@@ -19,6 +19,10 @@ export const SPECS: Partial<Record<Field, SliderSpec & { hint?: string }>> = {
     min: 0.2, max: 0.5, step: 0.005, unit: "pct", band: [0.28, 0.36], sides: CA,
     hint: "All-in housing as a share of gross pay. Lenders' classic limits: 28% front-end, 36% back-end; 43% is the usual hard ceiling.",
   },
+  lenderMaxDti: {
+    min: 0.36, max: 0.5, step: 0.005, unit: "pct", band: [0.43, 0.45], sides: CA,
+    hint: "Debt-to-income a lender allows. 43% is common for jumbo loans; Fannie Mae's automated approval reaches 50%.",
+  },
   incomeTaxRate: {
     min: 0.1, max: 0.5, step: 0.005, unit: "pct", band: [0.25, 0.38], sides: AC,
     hint: "Average all-in rate (federal, state, payroll) on gross pay — not the top marginal bracket.",

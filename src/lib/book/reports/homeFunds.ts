@@ -1,7 +1,9 @@
 import type { AccountGroup } from "../../ledger/loadLedger.ts";
 import type { Book } from "../load.ts";
 import type { BlockerRef } from "./blockerRef.ts";
+import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { buildNetWorth } from "./netWorth.ts";
+import { buildSpendingReport } from "./spending.ts";
 
 /** Groups that can be spent on a home without penalty: bank cash and taxable brokerage. */
 const LIQUID: AccountGroup[] = ["Cash", "Taxable investments"];
@@ -39,6 +41,44 @@ export type HomeFunds = {
   cardsCents: number;
   blockers: BlockerRef[];
 };
+
+/** What the household spends today outside housing: what's left after a home's costs has to cover it. */
+export type HomeSpending = {
+  /** Average a month over the latest proven months (up to twelve), one-offs left out. */
+  monthlyCents: number;
+  months: number;
+  from: string;
+  to: string;
+  /** The housing it leaves out a month (rent, renter's insurance, utilities): the home's own costs replace it. */
+  housingMonthlyCents: number;
+};
+
+const HOUSING_CATEGORY = "Housing & utilities";
+
+/**
+ * Average monthly spending other than housing, over the latest proven months (up to a
+ * year), with one-offs left out as on Cash flow. Housing & utilities are left out whole:
+ * the home's all-in cost (which includes utilities) takes their place. Null with no
+ * proven month.
+ */
+export function buildHomeSpending(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">): HomeSpending | null {
+  const months = buildSpendingReport(book, settings).months.slice(-12);
+  if (!months.length) return null;
+  let spent = 0;
+  let housing = 0;
+  for (const m of months) {
+    const h = m.spendingByCategory.find((c) => c.category === HOUSING_CATEGORY)?.cents ?? 0;
+    housing += h;
+    spent += m.spendingCents - m.oneOffCents - h;
+  }
+  return {
+    monthlyCents: Math.round(spent / months.length),
+    months: months.length,
+    from: months[0]!.start,
+    to: months.at(-1)!.end,
+    housingMonthlyCents: Math.round(housing / months.length),
+  };
+}
 
 /**
  * What the household could put toward a home from the Book: bank cash plus taxable

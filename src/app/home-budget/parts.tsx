@@ -65,7 +65,7 @@ export function StackBar({
   );
 }
 
-/** Housing as a share of gross pay: the classic 28% front-end rule and the usual 43% lender ceiling. */
+/** All-in housing as a share of gross pay: the comfort tiers either side of your own limit (lender rules live in the Lender view). */
 export const COMFORTABLE_SHARE = 0.28;
 export const STRETCH_SHARE = 0.43;
 
@@ -75,9 +75,9 @@ export type Tier = { key: TierKey; label: string; share: number; note: string };
 /** Affordability tiers around the household's own housing limit. */
 export function tiersFor(cap: number): Tier[] {
   const out: Tier[] = [];
-  if (COMFORTABLE_SHARE < cap - 0.0025) out.push({ key: "comfortable", label: "Comfortable", share: COMFORTABLE_SHARE, note: "front-end rule" });
+  if (COMFORTABLE_SHARE < cap - 0.0025) out.push({ key: "comfortable", label: "Comfortable", share: COMFORTABLE_SHARE, note: "all-in" });
   out.push({ key: "limit", label: "Your limit", share: cap, note: "your setting" });
-  if (STRETCH_SHARE > cap + 0.0025) out.push({ key: "stretch", label: "Stretch", share: STRETCH_SHARE, note: "lender ceiling" });
+  if (STRETCH_SHARE > cap + 0.0025) out.push({ key: "stretch", label: "Stretch", share: STRETCH_SHARE, note: "all-in" });
   return out;
 }
 
@@ -94,6 +94,23 @@ export function stressOf(share: number, cap: number): Stress {
   if (share <= stretch + eps) return { label: "Stretch", tone: "warn", zone: "bg-warn" };
   return { label: "Over the ceiling", tone: "neg", zone: "bg-neg" };
 }
+
+export type SpendingFit = { label: string; tone: "pos" | "warn" | "neg" };
+
+/**
+ * Does what's left after tax, housing and the savings target cover what the household
+ * spends today outside housing? `left` and `spend` are dollars a month; `spend` is the
+ * average of the latest proven months with one-offs and housing & utilities left out.
+ */
+export function spendingFit(left: number, spend: number): SpendingFit {
+  // A 10% cushion over today's spending reads as covered; within 10% under it, tight.
+  if (left >= spend * (1 + SPEND_CUSHION)) return { label: "Covers it", tone: "pos" };
+  if (left >= spend * (1 - SPEND_CUSHION)) return { label: "Tight", tone: "warn" };
+  return { label: "Short", tone: "neg" };
+}
+
+/** Months vary, so a verdict needs slack either side of today's average spending. */
+const SPEND_CUSHION = 0.1;
 
 /**
  * Housing as a share of gross pay on a zoned scale (comfortable / your limit / stretch /

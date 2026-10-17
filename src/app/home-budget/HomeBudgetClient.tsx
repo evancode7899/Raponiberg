@@ -3,9 +3,10 @@
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { btn, ErrorNote, PageBody, Tabs, useSavedState, useTabParam } from "@/components/ui/kit";
-import type { HomeFunds } from "@/lib/book/reports/homeFunds";
+import type { HomeFunds, HomeSpending } from "@/lib/book/reports/homeFunds";
 import type { HomeForecast } from "@/lib/forecast/forecast";
-import { cashForHomeFromNetWorth, computeMaxApproval, defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
+import { cashForHomeFromNetWorth, computeLenderMax, computeMaxApproval, defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
+import { gainsTaxRate, payTaxRate } from "@/lib/home-budget/homeTax";
 import { useEffect, useMemo, useState } from "react";
 import { AffordTab } from "./AffordTab";
 import { InputsPanel } from "./InputsPanel";
@@ -19,12 +20,25 @@ export type HomeTab = (typeof TABS)[number];
 /**
  * Where the cash for the home comes from (net worth or a fixed amount) and when you buy:
  * null = today's proven balances, or a month (YYYY-MM) read from the shared forecast. The
- * household salary follows the forecast for that year unless typed (`salary: "manual"`).
+ * household salary follows the forecast for that year unless typed (`salary: "manual"`);
+ * the income and capital-gains tax rates come from the tax engine unless typed; the lender
+ * view counts bonus unless `lenderBonus` is false.
  */
-export type FundsConfig = { mode: "networth" | "manual"; share: number; buyAt?: string | null; salary?: "forecast" | "manual" };
-const defaultFunds = (): FundsConfig => ({ mode: "networth", share: 0.8, buyAt: null, salary: "forecast" });
+export type FundsConfig = {
+  mode: "networth" | "manual";
+  share: number;
+  buyAt?: string | null;
+  salary?: "forecast" | "manual";
+  incomeTax?: "engine" | "manual";
+  gainsTax?: "engine" | "manual";
+  lenderBonus?: boolean;
+};
+const defaultFunds = (): FundsConfig => ({ mode: "networth", share: 0.8, buyAt: null, salary: "forecast", incomeTax: "engine", gainsTax: "engine", lenderBonus: true });
 
-export type FundsBook = HomeFunds & { forecast: HomeForecast | null };
+export type FundsBook = HomeFunds & { forecast: HomeForecast | null; spending: HomeSpending | null };
+
+/** A tax rate from the engine (null when it can't be worked out) and whether the page uses it. */
+export type LinkedRate = { engine: number | null; linked: boolean };
 
 /** Where the cash for the home comes from, as shown in the Cash card. */
 export type FundsState = {
@@ -40,7 +54,12 @@ export type FundsState = {
   buy: { key: string | null; year: number; salary: number | null; salaryLinked: boolean };
   /** True when the cash for the home is the net-worth figure (linked, loaded, proven). */
   linked: boolean;
+  /** Income tax on the salary and capital-gains tax, from the tax engine. */
+  tax: { year: number | null; income: LinkedRate; gains: LinkedRate & { gain: number } };
 };
+
+/** What the lender view counts: base salary plus, when counted, the lender's two-year bonus average. */
+export type LenderState = { bonus: { annual: number; years: number[] } | null; countBonus: boolean; setCountBonus: (v: boolean) => void; income: number };
 
 export type Patch = <K extends keyof HomeBudgetInputs>(key: K, v: HomeBudgetInputs[K]) => void;
 
@@ -63,30 +82,66 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
   // A buy month only means something with a forecast that reaches it.
   const fc = book?.forecast ?? null;
   const buyKey = fc && config.buyAt && config.buyAt > fc.startKey && fc.months.some((m) => m.key === config.buyAt) ? config.buyAt : null;
-  const derived = useMemo(() => {
-    if (!book) return null;
-    // At a future month: today's proven liquid money plus what the forecast adds by then, and the growth in it as more gain.
-    const at = buyKey && fc ? fc.months.find((m) => m.key === buyKey)! : null;
-    const added = at && fc ? (at.liquid - fc.startLiquid) / 100 : 0;
-    const gainAdded = at && fc ? fc.months.filter((m) => m.key <= buyKey!).reduce((t, m) => t + m.liquidGrowth, 0) / 100 : 0;
-    const liquid = (book.cashCents + book.investmentsCents + book.cardsCents) / 100 + added;
-    const gain = book.gainCents / 100 + gainAdded;
-    return { liquid, gain, buyKey, added, gainAdded, ...cashForHomeFromNetWorth({ liquid, gain, taxRate: stored.capitalGainsTaxRate, share: config.share }) };
-  }, [book, fc, buyKey, stored.capitalGainsTaxRate, config.share]);
   const buyYear = buyKey ? Number(buyKey.slice(0, 4)) : fc ? Number(fc.startKey.slice(0, 4)) : new Date().getFullYear();
   const forecastSalary = fc?.salary[buyYear] != null ? fc.salary[buyYear]! / 100 : null;
   const salaryLinked = config.salary !== "manual" && forecastSalary != null;
   const buy = { key: buyKey, year: buyYear, salary: forecastSalary, salaryLinked };
+  const salary = salaryLinked ? forecastSalary! : stored.annualHouseholdSalary;
+
+  // At a future month: today's proven liquid money plus what the forecast adds by then, and the growth in it as more gain.
+  const gains = useMemo(() => {
+    if (!book) return null;
+    const at = buyKey && fc ? fc.months.find((m) => m.key === buyKey)! : null;
+    const added = at && fc ? (at.liquid - fc.startLiquid) / 100 : 0;
+    const gainAdded = at && fc ? fc.months.filter((m) => m.key <= buyKey!).reduce((t, m) => t + m.liquidGrowth, 0) / 100 : 0;
+    return { added, gainAdded, gain: book.gainCents / 100 + gainAdded };
+  }, [book, fc, buyKey]);
+
+  // Tax rates from the engine at this salary, unless typed.
+  const tax = useMemo(() => {
+    const basis = fc?.tax ?? null;
+    const gain = gains?.gain ?? 0;
+    const incomeEngine = basis ? payTaxRate(basis, salary) : null;
+    const gainsEngine = basis ? gainsTaxRate(basis, salary, gain) : null;
+    return {
+      year: basis?.year ?? null,
+      income: { engine: incomeEngine, linked: config.incomeTax !== "manual" && incomeEngine != null },
+      gains: { engine: gainsEngine, linked: config.gainsTax !== "manual" && gainsEngine != null, gain },
+    };
+  }, [fc, salary, gains, config.incomeTax, config.gainsTax]);
+  const capitalGainsTaxRate = tax.gains.linked ? tax.gains.engine! : stored.capitalGainsTaxRate;
+
+  const derived = useMemo(() => {
+    if (!book || !gains) return null;
+    const liquid = (book.cashCents + book.investmentsCents + book.cardsCents) / 100 + gains.added;
+    return { liquid, gain: gains.gain, buyKey, added: gains.added, gainAdded: gains.gainAdded, ...cashForHomeFromNetWorth({ liquid, gain: gains.gain, taxRate: capitalGainsTaxRate, share: config.share }) };
+  }, [book, gains, buyKey, capitalGainsTaxRate, config.share]);
 
   const linked = config.mode === "networth" && derived !== null && book!.blockers.length === 0;
   // The model only sees one number each: the linked figure, or the typed amount.
   const ins = useMemo<HomeBudgetInputs>(
-    () => ({ ...stored, cashForHome: linked ? derived!.available : stored.cashForHome, annualHouseholdSalary: salaryLinked ? forecastSalary! : stored.annualHouseholdSalary }),
-    [stored, linked, derived, salaryLinked, forecastSalary],
+    () => ({
+      ...stored,
+      cashForHome: linked ? derived!.available : stored.cashForHome,
+      annualHouseholdSalary: salary,
+      incomeTaxRate: tax.income.linked ? tax.income.engine! : stored.incomeTaxRate,
+      capitalGainsTaxRate,
+    }),
+    [stored, linked, derived, salary, tax, capitalGainsTaxRate],
   );
 
   const patch: Patch = (key, v) => setStored((s) => ({ ...s, [key]: v }));
-  const funds: FundsState = { config, setConfig, book, loading: api.ready && !book && !error, error, derived, linked, buy };
+  const funds: FundsState = { config, setConfig, book, loading: api.ready && !book && !error, error, derived, linked, buy, tax };
+  const lenderBonus = fc?.lenderBonus ? { annual: fc.lenderBonus.annual / 100, years: fc.lenderBonus.years } : null;
+  const countBonus = config.lenderBonus !== false && lenderBonus != null;
+  const lender: LenderState = {
+    bonus: lenderBonus,
+    countBonus,
+    setCountBonus: (v) => setConfig({ ...config, lenderBonus: v }),
+    income: ins.annualHouseholdSalary + (countBonus ? lenderBonus!.annual : 0),
+  };
+  const lenderMax = useMemo(() => computeLenderMax(ins, lender.income), [ins, lender.income]);
+  const spendMonthly = book?.spending ? book.spending.monthlyCents / 100 : null;
   const reset = () => {
     setStored(defaultHomeBudgetInputs());
     setConfig(defaultFunds());
@@ -140,21 +195,24 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
                         band: [Math.round(Math.min(at(0.28), max.impliedMaxHomeValue)), Math.round(max.impliedMaxHomeValue)],
                         sides: ["Conservative", "Aggressive"],
                       },
-                      markers: [{ value: max.impliedMaxHomeValue, label: "Your max" }],
+                      markers: [
+                        { value: max.impliedMaxHomeValue, label: "Your max" },
+                        { value: lenderMax.impliedMaxHomeValue, label: "Lender max" },
+                      ],
                       allCashDownPct,
                     }
                   : undefined
               }
             />
             {tab === "afford" ? (
-              <AffordTab ins={ins} testPrice={testPrice} />
+              <AffordTab ins={ins} patch={patch} testPrice={testPrice} lender={lender} lenderMax={lenderMax} spending={book?.spending ?? null} />
             ) : (
-              <PriceTab ins={ins} patch={patch} maxPrice={max.impliedMaxHomeValue} allCashDownPct={allCashDownPct} />
+              <PriceTab ins={ins} patch={patch} maxPrice={max.impliedMaxHomeValue} lenderMaxPrice={lenderMax.impliedMaxHomeValue} allCashDownPct={allCashDownPct} spendMonthly={spendMonthly} />
             )}
           </div>
         ) : (
           <>
-            {tab === "rent" ? <RentVsBuyTab ins={ins} patch={patch} goToBudget={() => setTab("price")} /> : <SensitivityTab ins={ins} />}
+            {tab === "rent" ? <RentVsBuyTab ins={ins} patch={patch} goToBudget={() => setTab("price")} funds={funds} /> : <SensitivityTab ins={ins} />}
             <div className="flex justify-end">
               <button type="button" className={btn.ghost} onClick={reset} title="Every input back to its default, cash linked to net worth again">
                 Reset all inputs
