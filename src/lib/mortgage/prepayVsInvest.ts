@@ -46,7 +46,7 @@ export type MortgagePlan = {
   investReturn: number;
   /** Part of that return paid out as dividends each year. */
   dividendYield: number;
-  /** Tax on dividends as paid and on gains when sold (federal LTCG + NIIT + state). */
+  /** Tax on dividends as paid and on gains when sold (federal LTCG + NIIT + state; Connecticut taxes them as ordinary income). */
   investTaxRate: number;
   /** Roth/401(k)-style account: no tax on dividends or gains. */
   taxFreeAccount: boolean;
@@ -54,14 +54,20 @@ export type MortgagePlan = {
   sellAtHorizon: boolean;
   /** Itemize and deduct mortgage interest. */
   deductInterest: boolean;
-  /** Marginal ordinary income rate (federal + state) on the deduction. */
+  /** Federal marginal rate on the deduction. Connecticut has no itemized deductions, so no state rate. */
   marginalRate: number;
   /** Standard deduction in the first payment's year; grows with inflation. */
   standardDeduction: number;
-  /** Other itemized deductions (state & local tax up to the cap, charity) through 2029. */
-  otherItemized: number;
-  /** Same from 2030, when the SALT cap returns to $10k under current law. */
-  otherItemizedFrom2030: number;
+  /** State income tax paid a year: deductible as SALT, up to the cap. */
+  stateIncomeTax: number;
+  /** Property tax on the home a year, in the first payment's year: SALT too. */
+  propertyTax: number;
+  /** Charitable gifts a year: itemized outside the SALT cap. */
+  charity: number;
+  /** SALT cap through 2029. */
+  saltCap: number;
+  /** SALT cap from 2030, when it returns to $10k under current law. */
+  saltCapFrom2030: number;
   /** Acquisition debt whose interest is deductible ($750k for loans after Dec 15, 2017). */
   debtCap: number;
   /** For today's-dollar figures and the standard deduction's growth. */
@@ -141,6 +147,19 @@ export function monthlyReturn(annual: number): number {
 /** Tax saved by deducting `interest` on top of `other` itemized deductions. */
 export function deductionValue(interest: number, other: number, standard: number, rate: number): number {
   return rate * (Math.max(standard, other + interest) - Math.max(standard, other));
+}
+
+/**
+ * Itemized deductions other than mortgage interest in calendar `year`: state income tax and
+ * property tax together up to that year's SALT cap, plus charity. Property tax and charity
+ * grow with inflation from the first payment's year, like the standard deduction; the cap
+ * is fixed in dollars.
+ */
+export function otherItemizedFor(plan: MortgagePlan, year: number): number {
+  const grow = Math.pow(1 + plan.inflation, Math.max(0, year - plan.startYear));
+  const cap = year >= 2030 ? plan.saltCapFrom2030 : plan.saltCap;
+  const salt = Math.min(cap, Math.max(0, plan.stateIncomeTax) + Math.max(0, plan.propertyTax) * grow);
+  return salt + Math.max(0, plan.charity) * grow;
 }
 
 /**
@@ -246,7 +265,7 @@ export function simulatePath(plan: MortgagePlan, strategy: Strategy, returns?: F
     if (cal.month === 12 || m === H) {
       if (plan.deductInterest && yearInterest > 0) {
         const standard = plan.standardDeduction * Math.pow(1 + plan.inflation, cal.year - plan.startYear);
-        const other = cal.year >= 2030 ? plan.otherItemizedFrom2030 : plan.otherItemized;
+        const other = otherItemizedFor(plan, cal.year);
         const saved = deductionValue(yearInterest, other, standard, plan.marginalRate);
         inv += saved;
         basis += saved;

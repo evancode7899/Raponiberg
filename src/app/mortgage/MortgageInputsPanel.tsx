@@ -58,7 +58,7 @@ export function MortgageInputsPanel({
         title="The loan"
         subtitle={`Principal & interest ${formatUsd(payment)} a month.`}
         actions={
-          <button type="button" className={btn.ghost} onClick={homeBudget} title="Loan amount, rate, term and return from the Home budget page's Test a price scenario">
+          <button type="button" className={btn.ghost} onClick={homeBudget} title="Loan amount, rate, term, return and property tax from the Home budget page's Test a price scenario">
             Use home budget
           </button>
         }
@@ -175,7 +175,8 @@ export function MortgageInputsPanel({
             ]}
             onChange={(v) => set({ account: v })}
           />
-          {S("investTaxRate", "Tax on dividends & gains", "Qualified dividends and long-term gains: 15% federal (20% above ~$600k joint) + 3.8% NIIT above $250k joint, plus your state.", undefined, !taxable)}
+          {S("fedGainsRate", "Federal tax on dividends & gains", "Qualified dividends and long-term gains: 20% at the top (15% below ~$614k joint) + 3.8% NIIT above $250k joint.", undefined, !taxable)}
+          {S("ctGainsRate", "Connecticut tax on dividends & gains", "Connecticut taxes dividends and gains as ordinary income: 6.99% at the top. Set 0 for a state without income tax.", undefined, !taxable)}
           {S("dividendYield", "Dividend yield", "Taxed every year as paid; the rest of the return is unrealized gain, taxed only when sold.", undefined, !taxable)}
           <Toggle
             label="Value investments"
@@ -202,17 +203,11 @@ export function MortgageInputsPanel({
         />
         {ins.deductInterest && (
           <>
-            {S("marginalRate", "Marginal income tax rate", "Federal bracket plus state — the rate each deducted dollar saves.")}
+            {S("fedMarginalRate", "Federal marginal rate", "The rate each deducted dollar saves. Connecticut has no itemized deductions, so the deduction saves no state tax.")}
             {S("standardDeduction", "Standard deduction", "2026: $32,200 joint, $16,100 single. Grows with inflation here.")}
-            {S("otherItemized", "Other itemized, through 2029", "State & local taxes (capped at $40k) plus charity.")}
-            <RangeSlider
-              label="Other itemized, from 2030"
-              hint="Under current law the SALT cap falls back to $10k in 2030."
-              spec={SPECS.otherItemized}
-              value={ins.otherItemizedFrom2030}
-              defaultValue={DEF.otherItemizedFrom2030}
-              onChange={(v) => set({ otherItemizedFrom2030: v })}
-            />
+            {S("stateIncomeTax", "State income tax a year", "Deductible as SALT together with property tax, capped at $40,400 through 2029 and $10,000 from 2030.")}
+            {S("propertyTax", "Property tax a year", "On this home, in the first payment's year; SALT, so it shares the cap. Use home budget fills it from the price and tax rate.")}
+            {S("charity", "Charity a year", "Itemized outside the SALT cap.")}
             <Toggle
               label="Deductible debt cap"
               hint="Interest on the balance above this isn't deductible."
