@@ -9,6 +9,8 @@ export type BlockerQuery = {
   /** Only findings for these accounts (any account when omitted). */
   accountIds?: string[];
   personId?: string;
+  /** Only findings for these employers (stub employer keys; any employer when omitted). */
+  employerKeys?: string[];
 };
 
 /**
@@ -36,6 +38,7 @@ export function scopeHits(book: Book, q: BlockerQuery): (s: FindingScope, atEdge
     if (s.to < q.from || from > q.to) return false;
     if (q.accountIds && s.accountId && !q.accountIds.includes(s.accountId)) return false;
     if (q.personId && s.personId && s.personId !== q.personId) return false;
+    if (q.employerKeys && s.employerKey && !q.employerKeys.includes(s.employerKey)) return false;
     return true;
   };
 }

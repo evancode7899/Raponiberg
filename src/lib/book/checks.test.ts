@@ -127,6 +127,21 @@ describe("pay checks", () => {
     expect(ids(b, "pay.unexplained-deposits")).toEqual([]);
   });
 
+  it("scopes each paycheck's pass to whose pay it is (its stub's, or the chain inferring it)", () => {
+    const pay = (date: string, id?: string) => ({ date, cents: 100, key: "ACME", lane: "INCOME" as const, ...(id ? { id } : {}) });
+    const b = makeBook({
+      accounts: [checking([pay("2025-01-15", "r1"), pay("2025-01-31"), pay("2025-02-14", "r3")])],
+      stubs: [stub("2025-01-15", 100, 100, "r1"), stub("2025-02-14", 100, 300, "r3")],
+    });
+    // So one person's pay proof doesn't list another's paychecks deposited to a joint account.
+    const passes = b.passes.filter((p) => p.check === "pay.unexplained-deposits");
+    expect(passes.map((p) => [p.scope.from, p.scope.personId, p.scope.employerKey])).toEqual([
+      ["2025-01-15", "pat", "ACME"],
+      ["2025-01-31", "pat", "ACME"],
+      ["2025-02-14", "pat", "ACME"],
+    ]);
+  });
+
   it("reports missing stubs when the deposits don't explain the YTD jump", () => {
     const b = makeBook({
       accounts: [checking([{ date: "2025-01-15", cents: 100, key: "ACME", id: "r1" }, { date: "2025-02-14", cents: 100, key: "ACME", id: "r3" }])],

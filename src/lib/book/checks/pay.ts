@@ -91,6 +91,9 @@ export function checkPay(book: Book, c: Collector) {
 
   // Year chains, per person | employer | year.
   const inferredIds = new Set<string>();
+  /** Whose pay each paycheck deposit is (from its stub, or the chain that infers it), so its pass is scoped to them. */
+  const depositOwner = new Map<string, { personId?: string; employerKey: string }>();
+  for (const s of book.stubs) if (s.depositTransactionId) depositOwner.set(s.depositTransactionId, { personId: s.personId ?? undefined, employerKey: s.employerKey });
   const employerKeys = new Map<string, string>();
   for (const [key, stubs] of stubGroups(book)) {
     const [personId, employerKey, yearStr] = key.split("|") as [string, string, string];
@@ -137,7 +140,10 @@ export function checkPay(book: Book, c: Collector) {
             scope: { personId: scope.personId, employerKey, from: `${year}-01-01`, to: addDays(s.payDate, -1) },
           });
         } else if (jump > 0 && explained === jump) {
-          for (const r of between) inferredIds.add(r.id);
+          for (const r of between) {
+            inferredIds.add(r.id);
+            depositOwner.set(r.id, { personId: scope.personId, employerKey });
+          }
           c.infer({
             id: `pay.continuity:${stubRef(s)}`,
             check: "pay.continuity",
@@ -288,6 +294,7 @@ export function checkPay(book: Book, c: Collector) {
     c.pass("pay.unexplained-deposits", {
       subject: `${r.payee} ${r.date} ${money(r.amountCents)} ${linked.has(r.id) ? "has its stub" : "is explained by the stubs around it"}`,
       accountId: r.accountId,
+      ...depositOwner.get(r.id),
       from: r.date,
       to: r.date,
       affects: ["PAY", "TAX"],
