@@ -4,7 +4,9 @@ import { BlockedNote } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Loading, PageBody, StatCell, StatGrid, table, Tabs, useTabParam, type Tone } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { PaymentKind } from "@/lib/bonuses/awardStore";
+import type { PayLine } from "@/lib/book/proof/payProof";
 import type { AwardRow, BonusesReport, BonusWarning, VestWindow, WindowStatus } from "@/lib/book/reports/bonuses";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
@@ -36,6 +38,9 @@ const KIND: Record<PaymentKind, { title: string; tag: string | null; part: strin
 };
 
 const ratio = (part: number, whole: number | null) => (whole ? formatPercentRatio(part / whole, 1) : "—");
+
+/** A person's calendar year of pay as the stubs give it (year to date on each employer's last stub). */
+const yearPay = (personId: string, year: number, lines: PayLine[], cents: number) => ({ descriptor: { report: "pay" as const, basis: "ytd" as const, personId, year, lines }, shownCents: cents });
 
 export function BonusesClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
@@ -221,7 +226,7 @@ function AwardTr({ a }: { a: AwardRow }) {
       </td>
       <td className={`${table.td} text-fg-2`}>{a.employer}</td>
       <td className={table.tdR} title={baseTitle(a)}>
-        {usd0(a.base?.cents ?? null)}
+        {a.base?.from === "STUBS" ? <ProofValue proof={yearPay(a.personId, a.year, ["base"], a.base.cents)}>{usd0(a.base.cents)}</ProofValue> : usd0(a.base?.cents ?? null)}
         {baseOk && <span className="ml-1 text-pos" aria-label="matches the stubs">✓</span>}
         {a.base?.from === "STUBS" && <div className="text-[11px] text-faint">from stubs{a.base.parts.length > 1 ? `, ${a.base.parts.length} employers` : ""}</div>}
       </td>
@@ -308,9 +313,15 @@ function StubOnly({ r }: { r: BonusesReport }) {
                         )}
                       </td>
                       <td className={`${table.td} text-fg-2`}>{y.employers.join(", ")}</td>
-                      <td className={table.tdR}>{usd0(y.baseCents)}</td>
-                      <td className={`${table.tdR} font-semibold`}>{usd0(y.bonusCents)}</td>
-                      <td className={table.tdR}>{usd0(y.baseCents + y.bonusCents)}</td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={yearPay(y.personId, y.year, ["base"], y.baseCents)}>{usd0(y.baseCents)}</ProofValue>
+                      </td>
+                      <td className={`${table.tdR} font-semibold`}>
+                        <ProofValue proof={yearPay(y.personId, y.year, ["bonus"], y.bonusCents)}>{usd0(y.bonusCents)}</ProofValue>
+                      </td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={yearPay(y.personId, y.year, ["base", "bonus"], y.baseCents + y.bonusCents)}>{usd0(y.baseCents + y.bonusCents)}</ProofValue>
+                      </td>
                       <td className={`${table.tdR} text-muted`}>{ratio(y.bonusCents, y.baseCents)}</td>
                     </tr>
                   ))}
@@ -517,7 +528,16 @@ function Payouts({ r }: { r: BonusesReport }) {
                   <td className={table.td}>{y.personName}</td>
                   <td className={`${table.td} text-fg-2`}>{y.employer}</td>
                   <td className={table.tdR}>{y.payments}</td>
-                  <td className={`${table.tdR} font-medium`}>{formatUsdCents(y.cents)}</td>
+                  <td className={`${table.tdR} font-medium`}>
+                    <ProofValue
+                      proof={{
+                        descriptor: { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end: `${y.year}-12-31` },
+                        shownCents: y.cents,
+                      }}
+                    >
+                      {formatUsdCents(y.cents)}
+                    </ProofValue>
+                  </td>
                   <td className={table.td}>
                     {y.explainedCents === y.cents ? (
                       <Badge tone="pos">On a letter</Badge>

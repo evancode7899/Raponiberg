@@ -5,6 +5,8 @@ import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { Card, QualityBadge } from "@/components/ledger/LedgerBits";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Badge, btn, Callout, StatCell, StatGrid } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { PayLine } from "@/lib/book/proof/payProof";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatUsd } from "@/lib/formatMoney";
 import type { AnnualProfileReport, PersonYear, YearCash, YearNetWorth, YearProfile } from "@/lib/profile/buildAnnualProfile";
@@ -18,18 +20,20 @@ const m = (cents: number | null | undefined, title?: string): Cell => ({ text: u
 const payCell = (y: YearProfile, fn: (people: PersonYear[]) => Cell) => (y.people ? fn(y.people) : blockedCell(y.blockers.pay));
 const cashCell = (y: YearProfile, fn: (c: YearCash) => Cell) => (y.cash ? fn(y.cash) : blockedCell(y.blockers.cash));
 const nwCell = (y: YearProfile, fn: (n: YearNetWorth) => Cell) => (y.netWorth ? fn(y.netWorth) : blockedCell(y.blockers.netWorth));
-/** A pay figure, tagged partial when part of the year is known only from year-to-date totals. */
-const payFig = (p: PersonYear, cents: number, title?: string): Cell =>
-  p.partial.length
+/** A pay figure (it opens the stubs behind it), tagged partial when part of the year is known only from year-to-date totals. */
+const payFig = (y: YearProfile, p: PersonYear, line: PayLine, cents: number, title?: string): Cell => {
+  const fig = <ProofValue proof={{ descriptor: { report: "pay", basis: "ytd", personId: p.personId, year: y.year, through: y.asOf, lines: [line] }, shownCents: cents }}>{usd(cents)}</ProofValue>;
+  return p.partial.length
     ? {
         text: (
           <>
-            {usd(cents)} <Badge tone="warn">partial</Badge>
+            {fig} <Badge tone="warn">partial</Badge>
           </>
         ),
         title: [title, ...p.partial].filter(Boolean).join("\n"),
       }
-    : m(cents, title || undefined);
+    : { text: fig, title: title || undefined };
+};
 
 export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () => void }) {
   const ys = r.years;
@@ -127,8 +131,8 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
   // ------------------------------------------------------------ cash
   rows.push({ kind: "heading", label: "Cash flow (tax basis)", sub: "paid during the calendar year" });
   for (const p of persons) {
-    rows.push({ label: `${p.name} — salary`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(person(ps, p.id), person(ps, p.id).salary, person(ps, p.id).employers.join(" + ")))) });
-    rows.push({ label: `${p.name} — bonus`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(person(ps, p.id), person(ps, p.id).bonus))) });
+    rows.push({ label: `${p.name} — salary`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(y, person(ps, p.id), "base", person(ps, p.id).salary, person(ps, p.id).employers.join(" + ")))) });
+    rows.push({ label: `${p.name} — bonus`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(y, person(ps, p.id), "bonus", person(ps, p.id).bonus))) });
   }
   rows.push({
     label: "Investment & other income",
