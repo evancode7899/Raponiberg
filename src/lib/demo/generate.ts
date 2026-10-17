@@ -6,7 +6,7 @@ import type { AwardsFile } from "../bonuses/awardStore.ts";
 import type { BudgetSettings } from "../budget/settings.ts";
 import { normalizeGarage, type GarageSettings } from "../car/settings.ts";
 import type { GoalSettings } from "../goals/settings.ts";
-import type { HsaExpense, HsaFile } from "../hsa/store.ts";
+import { EMPTY_SETTINGS, type HsaExpense, type HsaFile } from "../hsa/store.ts";
 import type { TaxProfile } from "../tax/profile.ts";
 
 /**
@@ -619,7 +619,7 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
     ],
     dismissed: [],
     ignoredMerchants: [],
-    settings: { openedOn: "2024-01-01", growthRate: null, marginalRate: null, planYear: null },
+    settings: { ...EMPTY_SETTINGS, openedOn: "2024-01-01" },
   };
   return { documents, taxProfile, awards, budget, goals, car: demoCar(documents), hsa, closing: Object.fromEntries(Object.entries(balance)) };
 }

@@ -62,6 +62,16 @@ export type HsaSettings = {
   marginalRate: number | null;
   /** Year the owner plans to reimburse the backlog (null: 20 years out). */
   planYear: number | null;
+  /** Part of the return paid as dividends, taxed yearly in a taxable account (null: 1.5%). */
+  dividendYield: number | null;
+  /** Tax on taxable-account dividends and gains: LTCG + NIIT + state (null: 20%). */
+  taxableRate: number | null;
+  /** Social Security + Medicare saved by contributing through payroll (null: 1.45%, Medicare alone). */
+  payrollRate: number | null;
+  /** Later medical bills will cover the HSA's growth, so it comes out tax-free too (null: yes). */
+  growthCovered: boolean | null;
+  /** Tax on HSA growth with no receipt behind it, when it isn't covered (null: the marginal rate). */
+  exitRate: number | null;
 };
 
 export type HsaFile = {
@@ -74,7 +84,17 @@ export type HsaFile = {
   settings: HsaSettings;
 };
 
-export const EMPTY_SETTINGS: HsaSettings = { openedOn: null, growthRate: null, marginalRate: null, planYear: null };
+export const EMPTY_SETTINGS: HsaSettings = {
+  openedOn: null,
+  growthRate: null,
+  marginalRate: null,
+  planYear: null,
+  dividendYield: null,
+  taxableRate: null,
+  payrollRate: null,
+  growthCovered: null,
+  exitRate: null,
+};
 
 export function hsaFilePath(): string {
   return process.env.HSA_EXPENSES_FILE || path.join(dataDir(), "hsa-expenses.json");
@@ -131,7 +151,17 @@ const isoOrNull = (v: unknown) => (typeof v === "string" && isIsoDate(v) ? v : n
 export function normalizeSettings(raw: unknown): HsaSettings {
   const r = asObject(raw);
   const planYear = isNum(r.planYear) && r.planYear >= 2000 && r.planYear <= 2100 ? Math.round(r.planYear) : null;
-  return { openedOn: isoOrNull(r.openedOn), growthRate: ratio(r.growthRate, 0.3), marginalRate: ratio(r.marginalRate, 0.7), planYear };
+  return {
+    openedOn: isoOrNull(r.openedOn),
+    growthRate: ratio(r.growthRate, 0.3),
+    marginalRate: ratio(r.marginalRate, 0.7),
+    planYear,
+    dividendYield: ratio(r.dividendYield, 0.1),
+    taxableRate: ratio(r.taxableRate, 0.5),
+    payrollRate: ratio(r.payrollRate, 0.2),
+    growthCovered: typeof r.growthCovered === "boolean" ? r.growthCovered : null,
+    exitRate: ratio(r.exitRate, 0.7),
+  };
 }
 
 export function normalizeFingerprint(raw: unknown): RowFingerprint | null {
