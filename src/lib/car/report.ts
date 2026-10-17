@@ -327,7 +327,7 @@ export function addMonths(iso: string, n: number): string {
 }
 
 /** Cents of an item that fall in [from, to] (inclusive days). */
-function overlap(item: Pick<CostItem, "start" | "end" | "cents">, from: string, to: string): number {
+export function overlap(item: Pick<CostItem, "start" | "end" | "cents">, from: string, to: string): number {
   const span = daysBetween(item.start, item.end);
   if (span <= 0) return 0;
   const a = item.start > from ? item.start : from;
@@ -337,7 +337,15 @@ function overlap(item: Pick<CostItem, "start" | "end" | "cents">, from: string, 
   return days >= span ? item.cents : (item.cents * days) / span;
 }
 
-const lineOf = (k: CarKind): CostLine | null => (k === "PAYMENT" ? null : k);
+export const lineOf = (k: CarKind): CostLine | null => (k === "PAYMENT" ? null : k);
+
+/** Financing interest as a cost spread from purchase to payoff (null without a purchase date or interest). */
+export function interestSpan(car: Car): { start: string; end: string; cents: number } | null {
+  const { purchaseDate } = car.vehicle;
+  const p = car.purchase;
+  if (!purchaseDate || !p.interestCents) return null;
+  return { start: purchaseDate, end: p.loanPaidOffDate && p.loanPaidOffDate > purchaseDate ? addDays(p.loanPaidOffDate, 1) : addDays(purchaseDate, 1), cents: p.interestCents };
+}
 
 /** Least-squares slope (cents per day) of value points, or null with fewer than two dates. */
 function trendPerDay(points: { date: string; cents: number }[]): number | null {
@@ -622,10 +630,7 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
   items.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 
   // Financing interest, spread from purchase to payoff.
-  const interestItem =
-    purchaseDate && p.interestCents
-      ? { start: purchaseDate, end: p.loanPaidOffDate && p.loanPaidOffDate > purchaseDate ? addDays(p.loanPaidOffDate, 1) : addDays(purchaseDate, 1), cents: p.interestCents }
-      : null;
+  const interestItem = interestSpan(car);
 
   // ---- odometer
   const readings: { date: string; miles: number; source: string }[] = [];

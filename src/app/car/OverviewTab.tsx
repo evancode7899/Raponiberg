@@ -11,7 +11,8 @@ import { useMemo, useState } from "react";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
 import { isReading } from "./EntryEditor";
-import { BUCKETS, bucketColor, bucketOf, byBucket, fmtDate, miles, NumInput, perMile, relative, Swatch, usd2 } from "./parts";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { BUCKETS, bucketColor, bucketOf, byBucket, carProof, fmtDate, miles, NumInput, perMile, relative, Swatch, usd2 } from "./parts";
 import { serviceDue } from "./ServiceTab";
 
 type Span = "toDate" | "last12" | "next12";
@@ -37,6 +38,8 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
     [r.months],
   );
 
+  // The next 12 months are an estimate on no statement: only figures to date and over the last 12 months open a proof.
+  const proven = span === "next12" ? null : span;
   const segments = BUCKETS.map((b) => ({ id: b.id, label: b.label, cents: b.lines.reduce((s, l) => s + (view.lines[l] ?? 0), 0), color: bucketColor(chart, b.id) }));
   const lines = COST_LINES.filter((l) => (view.lines[l] ?? 0) !== 0).sort((a, b) => (view.lines[b] ?? 0) - (view.lines[a] ?? 0));
 
@@ -45,9 +48,9 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
       <Garage ctx={ctx} />
 
       <StatGrid cols={6}>
-        <StatCell label="Cost of ownership" value={usd0(t.tco)} sub={`${miles(r.odometer.daysOwned / 30.44, 0)} months, all-in`} />
-        <StatCell label="All-in per mile" value={perMile(t.perMile)} tone="accent" sub={r.last12.perMile != null ? `${perMile(r.last12.perMile)} over the last 12 months` : undefined} />
-        <StatCell label="Per month" value={usd0(t.perMonth)} sub={t.perDay != null ? `${perMile(t.perDay)} a day` : undefined} />
+        <StatCell label="Cost of ownership" value={usd0(t.tco)} proof={carProof(r.carId, { span: "toDate" }, t.tco)} sub={`${miles(r.odometer.daysOwned / 30.44, 0)} months, all-in`} />
+        <StatCell label="All-in per mile" value={perMile(t.perMile)} proof={t.perMile != null ? carProof(r.carId, { span: "toDate", per: "mile" }) : undefined} tone="accent" sub={r.last12.perMile != null ? `${perMile(r.last12.perMile)} over the last 12 months` : undefined} />
+        <StatCell label="Per month" value={usd0(t.perMonth)} proof={t.perMonth != null ? carProof(r.carId, { span: "toDate", per: "month" }) : undefined} sub={t.perDay != null ? `${perMile(t.perDay)} a day` : undefined} />
         <StatCell
           label="One more mile"
           value={perMile(t.marginalPerMile)}
@@ -100,18 +103,22 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                           {l === "DEPRECIATION" && <Badge tone="neutral">{r.depreciation.method === "MARKET" ? "market" : r.depreciation.method === "SOLD" ? "sold" : "planned"}</Badge>}
                         </span>
                       </td>
-                      <td className={table.tdR}>{usd0(c)}</td>
-                      <td className={table.tdR}>{view.miles > 0 ? perMile(c / view.miles) : "—"}</td>
-                      <td className={table.tdR}>{view.months >= 1 ? usd0(c / view.months) : "—"}</td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : undefined}>{usd0(c)}</ProofValue>
+                      </td>
+                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }) : undefined}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }) : undefined}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
                       <td className={`${table.tdR} text-muted`}>{view.total ? formatPercentRatio(c / view.total, 0) : "—"}</td>
                     </tr>
                   );
                 })}
                 <tr className="border-t-[3px] border-double border-line-strong font-semibold">
                   <td className={table.td}>Total</td>
-                  <td className={table.tdR}>{usd0(view.total)}</td>
-                  <td className={table.tdR}>{view.miles > 0 ? perMile(view.total / view.miles) : "—"}</td>
-                  <td className={table.tdR}>{view.months >= 1 ? usd0(view.total / view.months) : "—"}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : undefined}>{usd0(view.total)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }) : undefined}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }) : undefined}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
                   <td className={table.tdR} />
                 </tr>
               </tbody>

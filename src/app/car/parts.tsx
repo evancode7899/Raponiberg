@@ -1,6 +1,8 @@
 "use client";
 
 import type { ChartPalette } from "@/components/shell/chartPalette";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { CarFigureDescriptor } from "@/lib/book/proof/carProof";
 import { EM_DASH } from "@/lib/formatMoney";
 import type { CostLine } from "@/lib/car/report";
 import { useState } from "react";
@@ -37,6 +39,14 @@ export function byBucket(lines: Partial<Record<CostLine, number>>): Record<Bucke
   for (const [l, c] of Object.entries(lines) as [CostLine, number][]) out[bucketOf(l)] += c ?? 0;
   return out;
 }
+
+/** A Car figure that opens its proof: the recipe (lib/book/proof/carProof.ts) and the figure as the page has it. */
+export function carProof(carId: string, x: Omit<CarFigureDescriptor, "report" | "carId" | "basis"> & { basis?: CarFigureDescriptor["basis"] }, shownCents?: number | null): ProofTarget {
+  return { descriptor: { report: "car", carId, basis: x.basis ?? "accrued", span: x.span, ...(x.line ? { line: x.line } : {}), ...(x.per ? { per: x.per } : {}) }, ...(shownCents != null && !x.per ? { shownCents: Math.round(shownCents) } : {}) };
+}
+
+/** A line of the car log at its full amount. */
+export const logProof = (itemId: string, cents: number): ProofTarget => ({ descriptor: { report: "car", itemId }, shownCents: cents });
 
 /** Cents per mile as "$0.17". */
 export function perMile(cents: number | null | undefined, digits = 2): string {
