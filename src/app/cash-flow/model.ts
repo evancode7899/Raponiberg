@@ -314,16 +314,26 @@ export const KINDS = [
 /** Where a slice's months sit in the report (the slice is a contiguous run of them). */
 export const sliceStart = (r: Report, s: Slice) => Math.max(0, r.months.indexOf(s.months[0]!));
 
+export type ProofOptions = {
+  category?: string;
+  merchantKey?: string;
+  /** With merchantKey: the merchant's charges dated in the twelve months ending with the last of `months` (Recurring's "last 12 months"). */
+  charges?: boolean;
+  perMonth?: boolean;
+  shownCents?: number;
+};
+
 /**
  * The proof target for a figure summed over `months` (contiguous, as a slice is): the
  * server re-derives it from the Book and lists the rows behind it. `perMonth`: the page
  * shows the total divided by the months; `shownCents` is the total the page computed.
+ * `merchantKey`: one merchant's (or, with income, one payer's) part, as mergeMerchants sums it.
  */
 export function proofTarget(
   metric: CashFlowMetric,
   months: SpendingMonth[],
   accountIds: string[] | undefined,
-  o: { category?: string; perMonth?: boolean; shownCents?: number } = {},
+  o: ProofOptions = {},
 ): ProofTarget | undefined {
   if (!months.length) return undefined;
   return {
@@ -331,9 +341,10 @@ export function proofTarget(
       report: "cash-flow",
       metric,
       granularity: "month",
-      start: months[0]!.start,
+      start: o.charges ? `${shiftMonth(monthKey(months.at(-1)!.start), -11)}-01` : months[0]!.start,
       end: months.at(-1)!.end,
       ...(o.category ? { category: o.category } : {}),
+      ...(o.merchantKey ? { merchantKey: o.merchantKey, ...(o.charges ? { merchantBasis: "charges" as const } : {}) } : {}),
       ...(accountIds?.length ? { accountIds } : {}),
     },
     ...(o.shownCents != null ? { shownCents: o.shownCents } : {}),

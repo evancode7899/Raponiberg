@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NO_HOUSEHOLD } from "../../household/patterns";
 import type { Book, BookRow, BookStatement } from "../load";
 import { buildCashFlowReport } from "../reports/cashFlow";
+import { buildSpendingReport, type SpendingMonth } from "../reports/spending";
 import type { AcceptedFinding, CheckPass, Finding } from "../types";
 import { buildCashFlowProof, type CashFlowDescriptor } from "./cashFlowProof";
 import { sumCheck } from "./common";
@@ -304,5 +305,130 @@ describe("as a registered proof kind", () => {
   it("rejects a report no kind is registered for", () => {
     expect(parseDescriptor({ report: "horoscope" })).toEqual({ error: "report must be one of: cash-flow." });
     expect(parseDescriptor({ report: "toString" })).toHaveProperty("error");
+  });
+});
+
+describe("one merchant's part", () => {
+  // Invented merchants on top of the household above. Corner Market charges on two card
+  // statements and gives a partial refund; Gadget Shop's charge is reversed in full (both
+  // sides drop out of merchant views) beside a charge that stays; Streamflix bills monthly
+  // and refunds part of one bill.
+  function shops() {
+    const base = household();
+    const market = { payee: "CORNER MARKET 042", merchantKey: "CORNER MARKET" };
+    const gadget = { payee: "GADGET SHOP", merchantKey: "GADGET SHOP", category: "Shopping & gifts" };
+    const stream = { payee: "STREAMFLIX", merchantKey: "STREAMFLIX", category: "Travel & entertainment" };
+    return [
+      ...base,
+      row("card", "2025-01-20", -6_420, market),
+      row("card", "2025-02-12", -3_310, market),
+      row("card", "2025-02-14", 1_250, { ...market, lane: "EXPENSE" }),
+      row("card", "2025-02-15", -30_000, gadget),
+      row("card", "2025-02-18", 30_000, { ...gadget, lane: "EXPENSE" }),
+      row("card", "2025-02-20", -1_200, gadget),
+      ...["2025-01-10", "2025-02-10", "2025-03-10", "2025-04-10"].map((date) => row("chk", date, -1_599, stream)),
+      row("chk", "2025-04-12", 200, { ...stream, lane: "EXPENSE" }),
+    ];
+  }
+  const spendingReport = (book: Book) => buildSpendingReport(book, { oneOffs: {}, nonRecurringCategories: [] });
+  const md = (key: string, x: Partial<CashFlowDescriptor> = {}) => d({ merchantKey: key, ...x });
+
+  it("re-adds to every merchant and payer as the spending report shows them, month by month and over the range", () => {
+    const book = makeBook(shops());
+    const report = spendingReport(book);
+    const lanes = [
+      { metric: "spending" as const, pick: (m: SpendingMonth) => m.merchants },
+      { metric: "income" as const, pick: (m: SpendingMonth) => m.payers },
+    ];
+    let seen = 0;
+    for (const { metric, pick } of lanes) {
+      const keys = new Set(report.months.flatMap((m) => pick(m).map((x) => x.key)));
+      for (const key of keys) {
+        for (const m of report.months) {
+          const proof = buildCashFlowProof(book, md(key, { metric, start: m.start, end: m.end }));
+          expect(proof.figureCents, `${key} ${m.label}`).toBe(pick(m).find((x) => x.key === key)?.cents ?? 0);
+          expect(proof.selfCheck, `${key} ${m.label}`).toEqual({ ok: true, deltaCents: 0 });
+        }
+        const all = buildCashFlowProof(book, md(key, { metric }));
+        expect(all.figureCents, key).toBe(report.months.reduce((t, m) => t + (pick(m).find((x) => x.key === key)?.cents ?? 0), 0));
+        expect(all.selfCheck.ok, key).toBe(true);
+        expect(all.periods.map((p) => p.cents)).toEqual(report.months.map((m) => pick(m).find((x) => x.key === key)?.cents ?? 0));
+        seen++;
+      }
+    }
+    expect(seen).toBeGreaterThanOrEqual(6);
+  });
+
+  it("nets a partial refund, and lists a merchant's rows under each statement they came from", () => {
+    const proof = buildCashFlowProof(makeBook(shops()), md("CORNER MARKET"));
+    expect(proof.figureCents).toBe(6_420 + 3_310 - 1_250);
+    const [s] = proof.sections;
+    expect(s!.groups.map((g) => g.statement.id).sort()).toEqual(["st-card-2025-01-05", "st-card-2025-02-05"]);
+    expect(s!.groups.flatMap((g) => g.rows).find((r) => r.amountCents === 1_250)?.countedCents).toBe(-1_250);
+    expect(s!.byCategory).toEqual([]);
+    expect(proof.describes).toBe("Spending at Corner Market, Jan 2025 – Apr 2025");
+  });
+
+  it("leaves out a charge reversed in full, as the merchant views do, and says so", () => {
+    const proof = buildCashFlowProof(makeBook(shops()), md("GADGET SHOP"));
+    expect(proof.figureCents).toBe(1_200);
+    expect(proof.selfCheck.ok).toBe(true);
+    expect(proof.sections[0]!.groups.flatMap((g) => g.rows).map((r) => r.amountCents)).toEqual([-1_200]);
+    expect(proof.sections[0]!.note).toMatch(/^2 rows left out: a charge and its exact refund/);
+  });
+
+  it("counts a landlord's rent in the month it pays for", () => {
+    const book = makeBook(shops());
+    const mar = buildCashFlowProof(book, md("SPRINGFIELD PROPERTY MGMT", { start: "2025-03-01", end: "2025-03-31" }));
+    expect(mar.figureCents).toBe(0);
+    const apr = buildCashFlowProof(book, md("SPRINGFIELD PROPERTY MGMT", { start: "2025-04-01", end: "2025-04-30" }));
+    expect(apr.figureCents).toBe(210_000);
+    expect(apr.sections[0]!.groups[0]!.rows[0]!.movedTo).toEqual({ date: "2025-04-01", why: "rent" });
+  });
+
+  it("sums a recurring charge's last twelve months as the Recurring tab does: charges only, by statement date", () => {
+    const book = makeBook(shops());
+    const bill = spendingReport(book).recurring.find((c) => c.key === "STREAMFLIX");
+    expect(bill?.kind).toBe("bill");
+    const proof = buildCashFlowProof(book, md("STREAMFLIX", { merchantBasis: "charges", start: "2024-05-01", end: "2025-04-30" }));
+    expect(proof.figureCents).toBe(bill!.last12Cents);
+    expect(proof.figureCents).toBe(4 * 1_599);
+    expect(proof.selfCheck.ok).toBe(true);
+    expect(proof.periods).toEqual([]);
+    expect(proof.describes).toBe("Charges at Streamflix dated 2024-05-01 or later, counted through 2025-04-30");
+    // Net of the refund, as the Merchants tab shows it.
+    expect(buildCashFlowProof(book, md("STREAMFLIX")).figureCents).toBe(4 * 1_599 - 200);
+  });
+
+  it("emits only links that parse, build and re-add, and no split by month for a charges sum", async () => {
+    const c = { book: makeBook(shops()), db: {} as never };
+    for (const desc of [md("CORNER MARKET"), md("EXAMPLE PARTNERS LP PAYROLL", { metric: "income" }), md("STREAMFLIX", { merchantBasis: "charges", start: "2024-05-01" })]) {
+      const p = await buildProof(c, desc);
+      expect(p.selfCheck?.ok).toBe(true);
+      expect(p.blocks.some((b) => b.title.startsWith("By category"))).toBe(false);
+      for (const b of p.blocks) {
+        if (b.kind !== "breakdown") continue;
+        for (const i of b.items) {
+          const parsed = parseDescriptor(JSON.parse(JSON.stringify(i.link!.descriptor)));
+          expect(parsed, i.label).not.toHaveProperty("error");
+          const q = await buildProof(c, parsed as CashFlowDescriptor);
+          expect(q.selfCheck?.ok, i.label).toBe(true);
+          expect(q.figure, i.label).toEqual(i.value);
+        }
+      }
+      expect(p.blocks.some((b) => b.title === "By month")).toBe(desc.merchantBasis !== "charges");
+    }
+  });
+
+  it("parses a merchant recipe and rejects mixed ones", () => {
+    const base = { report: "cash-flow", metric: "spending", granularity: "month", start: "2025-01-01", end: "2025-01-31" };
+    expect(parseDescriptor({ ...base, merchantKey: "CORNER MARKET" })).toEqual({ ...base, merchantKey: "CORNER MARKET" });
+    expect(parseDescriptor({ ...base, merchantKey: "STREAMFLIX", merchantBasis: "charges" })).toEqual({ ...base, merchantKey: "STREAMFLIX", merchantBasis: "charges" });
+    expect(parseDescriptor({ ...base, merchantKey: "" })).toHaveProperty("error");
+    expect(parseDescriptor({ ...base, merchantKey: 7 })).toHaveProperty("error");
+    expect(parseDescriptor({ ...base, metric: "net", merchantKey: "CORNER MARKET" })).toHaveProperty("error");
+    expect(parseDescriptor({ ...base, merchantKey: "CORNER MARKET", category: "Groceries" })).toHaveProperty("error");
+    expect(parseDescriptor({ ...base, merchantBasis: "charges" })).toHaveProperty("error");
+    expect(parseDescriptor({ ...base, metric: "income", merchantKey: "X", merchantBasis: "charges" })).toHaveProperty("error");
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { RecurringCharge } from "@/lib/book/reports/spending";
 import { usd0, usdDelta } from "@/lib/formatMoney";
 import { useState } from "react";
@@ -78,7 +79,9 @@ export function RecurringTab({ ctx }: { ctx: Ctx }) {
                     <span className="text-xs text-muted"> in {c.monthsSeen} mo</span>
                   </td>
                   <td className={`${table.tdR} text-muted`}>{usd0(c.typicalCents)}</td>
-                  <td className={`${table.tdR} font-medium`}>{usd0(c.last12Cents)}</td>
+                  <td className={`${table.tdR} font-medium`}>
+                    <ProofValue proof={ctx.proof("spending", report.months, { merchantKey: c.key, charges: true, shownCents: c.last12Cents })}>{usd0(c.last12Cents)}</ProofValue>
+                  </td>
                   <td className={`${table.tdR} text-xs text-muted`}>{c.lastDate}</td>
                   <td className={table.tdR}>{c.active ? <Badge tone="info">active</Badge> : <Badge>lapsed</Badge>}</td>
                 </tr>

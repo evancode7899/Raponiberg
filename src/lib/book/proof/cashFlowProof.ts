@@ -3,6 +3,7 @@ import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { Book, BookRow } from "../load.ts";
 import { countsOn, rentPayments } from "../rent.ts";
 import { buildCashFlowReport, cashFlowContributions, type CashFlowPeriod } from "../reports/cashFlow.ts";
+import { detectRecurring, merchantKeyOf, merchantName, merchantsIn, spendingRows } from "../reports/spending.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor, isIsoDate, sumCheck } from "./common.ts";
 import type { Proof, ProofBlock, ProofCheck, ProofEstimate, ProofGroup, ProofKind, ProofRow } from "./types.ts";
@@ -28,6 +29,18 @@ export type CashFlowDescriptor = {
   category?: string;
   /** The page's account filter. */
   accountIds?: string[];
+  /**
+   * One merchant's part (spending) or one payer's (income), grouped the way the spending
+   * report groups them (merchantKeyOf): net of refunds, each row whole in the month it
+   * counts in, less charges reversed in full. The Merchants and Year-over-year tabs.
+   */
+  merchantKey?: string;
+  /**
+   * With a merchantKey: "charges" is the merchant's charges only (no refunds), picked by the
+   * date the statement prints from `start` on, among rows counted through `end`, as the
+   * Recurring tab's "last 12 months" sums them.
+   */
+  merchantBasis?: "charges";
 };
 
 export type CashFlowSection = {
@@ -43,6 +56,8 @@ export type CashFlowSection = {
   byCategory: { category: string; cents: number }[];
   /** figureCents − Σ byCategory: rounding per category vs per total, cents at most. */
   categoryRoundingCents: number;
+  /** What the rows leave out or where they stop (a merchant's reversed pairs). */
+  note?: string;
 };
 
 export type CashFlowProof = {
@@ -86,6 +101,10 @@ export function parseCashFlowDescriptor(d: Record<string, unknown>): CashFlowDes
   if (d.category != null && (typeof d.category !== "string" || !d.category)) return { error: "category must be a name." };
   if (d.category != null && d.metric === "net") return { error: "net has no category." };
   if (d.accountIds != null && (!Array.isArray(d.accountIds) || d.accountIds.some((x) => typeof x !== "string"))) return { error: "accountIds must be a list of ids." };
+  if (d.merchantKey != null && (typeof d.merchantKey !== "string" || !d.merchantKey)) return { error: "merchantKey must be a merchant's key." };
+  if (d.merchantKey != null && d.metric !== "spending" && d.metric !== "income") return { error: "merchantKey goes with spending (a merchant) or income (a payer)." };
+  if (d.merchantKey != null && d.category != null) return { error: "Give a category or a merchantKey, not both." };
+  if (d.merchantBasis != null && (d.merchantBasis !== "charges" || !d.merchantKey || d.metric !== "spending")) return { error: "merchantBasis can only be charges, with a merchantKey and spending." };
   return {
     report: "cash-flow",
     metric: d.metric as CashFlowMetric,
@@ -94,8 +113,13 @@ export function parseCashFlowDescriptor(d: Record<string, unknown>): CashFlowDes
     end: d.end,
     ...(d.category ? { category: d.category as string } : {}),
     ...((d.accountIds as string[] | undefined)?.length ? { accountIds: d.accountIds as string[] } : {}),
+    ...(d.merchantKey ? { merchantKey: d.merchantKey as string } : {}),
+    ...(d.merchantBasis ? { merchantBasis: "charges" as const } : {}),
   };
 }
+
+/** A row's part in one period: as the statement prints it, times its share. */
+type Picked = { row: BookRow; periodIndex: number; share: number; cents: number };
 
 type Part = { lane: "INCOME" | "EXPENSE" | "EXTERNAL_TRANSFER"; label: string; sign: 1 | -1; pick: (p: CashFlowPeriod) => number; cats: (p: CashFlowPeriod) => { category: string; cents: number }[] };
 
@@ -109,18 +133,56 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor): CashFlowP
   const report = buildCashFlowReport(book, { granularity: d.granularity, from: d.start, to: d.end, accountIds: d.accountIds });
   const periods = report.periods;
   const accountFilter = d.accountIds?.length ? new Set(d.accountIds) : null;
-  const contributions = cashFlowContributions(book, periods, accountFilter);
+  const contributions = d.merchantKey ? [] : cashFlowContributions(book, periods, accountFilter);
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
   const statementById = new Map(book.statements.map((s) => [s.id, s]));
   const rent = new Set(rentPayments(book.rows, book.accounts, book.household.merchantRules).map((p) => p.rowId));
   const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
 
+  // A merchant's figure reads the spending report's own rows (reversed pairs left out,
+  // each row whole on the day it counts), through the same grouping step the page sums.
+  const spend = d.merchantKey ? spendingRows(book, d.accountIds) : null;
+  const merchantNotes: string[] = [];
+  /** A merchant figure's part in each period, as the page sums it month by month. */
+  let merchantPeriods: number[] = [];
+  const merchantPart = (part: Part): { mine: Picked[]; figureCents: number } => {
+    const s = spend!;
+    const lane = part.lane as "EXPENSE" | "INCOME";
+    const isMine = (r: BookRow) => r.lane === lane && merchantKeyOf(r) === d.merchantKey;
+    const at = (iso: string) => periods.findIndex((p) => p.start <= iso && iso <= p.end);
+    let mine: Picked[];
+    let figureCents: number;
+    if (d.merchantBasis === "charges") {
+      // The recurring charge's own sum (detectRecurring), over the rows counted through `end`.
+      const rows = s.windowRows.filter((r) => s.dayOf(r) <= d.end);
+      figureCents = detectRecurring(rows, d.end, d.start).find((c) => c.key === d.merchantKey)?.last12Cents ?? 0;
+      mine = rows.filter((r) => isMine(r) && r.amountCents < 0 && r.date >= d.start).map((row) => ({ row, periodIndex: Math.max(0, at(s.dayOf(row))), share: 1, cents: row.amountCents }));
+      if (!figureCents && mine.length) merchantNotes.push("This merchant isn't a recurring charge through this date, so the Recurring tab shows no figure for it.");
+    } else {
+      merchantPeriods = periods.map((p) => merchantsIn(s.inScope, p, s.dayOf)[lane === "EXPENSE" ? "merchants" : "payers"].find((m) => m.key === d.merchantKey)?.cents ?? 0);
+      figureCents = merchantPeriods.reduce((t, v) => t + v, 0);
+      mine = s.inScope.flatMap((row) => {
+        const i = isMine(row) ? at(s.dayOf(row)) : -1;
+        return i < 0 ? [] : [{ row, periodIndex: i, share: 1, cents: row.amountCents }];
+      });
+    }
+    const from = periods[0]?.start ?? d.start;
+    const to = periods.at(-1)?.end ?? d.end;
+    const reversed = s.reversed.filter((r) => isMine(r) && s.dayOf(r) >= (d.merchantBasis === "charges" ? s.from ?? from : from) && s.dayOf(r) <= to);
+    if (reversed.length)
+      merchantNotes.push(
+        `${reversed.length} row${reversed.length === 1 ? "" : "s"} left out: ${reversed.length === 2 ? "a charge and its exact refund" : "charges and their exact refunds"} on the same account within a week cancel, so the merchant views show neither (${reversed.map((r) => `${r.date} ${formatUsdFromCents(r.amountCents)}`).join(", ")}).`,
+      );
+    if (s.from && s.to && (from < s.from || to > s.to)) merchantNotes.push(`Merchant figures cover the proven months the Merchants tab shows (${s.from} – ${s.to}); rows outside them aren't counted.`);
+    return { mine, figureCents };
+  };
+
   const section = (part: Part): CashFlowSection => {
-    const mine = contributions.filter((c) => c.row.lane === part.lane && (!d.category || c.row.category === d.category));
-    const figureCents = periods.reduce(
-      (t, p) => t + (d.category ? (part.cats(p).find((c) => c.category === d.category)?.cents ?? 0) : part.pick(p)),
-      0,
-    );
+    const m = d.merchantKey ? merchantPart(part) : null;
+    const mine = m?.mine ?? contributions.filter((c) => c.row.lane === part.lane && (!d.category || c.row.category === d.category));
+    const figureCents =
+      m?.figureCents ??
+      periods.reduce((t, p) => t + (d.category ? (part.cats(p).find((c) => c.category === d.category)?.cents ?? 0) : part.pick(p)), 0);
     // Re-added from the rows alone: each period's rows summed, then rounded once (as the report does).
     const perPeriod = periods.map(() => 0);
     for (const c of mine) perPeriod[c.periodIndex]! += part.sign * c.cents;
@@ -174,12 +236,13 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor): CashFlowP
     }
     const byCat = new Map<string, number>();
     // The report's category amounts are already in the figure's sign (spending positive).
-    for (const p of periods) for (const c of part.cats(p)) if (!d.category || c.category === d.category) byCat.set(c.category, (byCat.get(c.category) ?? 0) + c.cents);
+    if (!d.merchantKey) for (const p of periods) for (const c of part.cats(p)) if (!d.category || c.category === d.category) byCat.set(c.category, (byCat.get(c.category) ?? 0) + c.cents);
     const byCategory = [...byCat].map(([category, cents]) => ({ category, cents })).filter((c) => c.cents !== 0).sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents));
     return {
       label: part.label,
       figureCents,
       rowsCents,
+      ...(merchantNotes.length ? { note: merchantNotes.join(" ") } : {}),
       groups: [...groups.values()]
         .map((g) => ({ ...g, subtotalCents: Math.round(g.subtotalCents), rows: g.rows.sort((a, b) => (a.bookedOn < b.bookedOn ? -1 : a.bookedOn > b.bookedOn ? 1 : 0)) }))
         .sort((a, b) => Math.abs(b.subtotalCents) - Math.abs(a.subtotalCents)),
@@ -211,7 +274,11 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor): CashFlowP
     rowsCents,
     selfCheck: { ok: figureCents === rowsCents, deltaCents: rowsCents - figureCents },
     sections,
-    periods: periods.map((p) => ({ label: p.label, start: p.start, end: p.end, through: p.through, cents: periodCents(p) })),
+    // A charges sum picks rows by statement date, not by month: it has no split by period.
+    periods:
+      d.merchantBasis === "charges"
+        ? []
+        : periods.map((p, i) => ({ label: p.label, start: p.start, end: p.end, through: p.through, cents: d.merchantKey ? merchantPeriods[i]! : periodCents(p) })),
     withheld,
     checks,
     estimates,
@@ -241,7 +308,7 @@ export function cashFlowToProof(p: CashFlowProof): Proof {
     });
   for (const s of p.sections) {
     const net = p.sections.length > 1;
-    if (!d.category && s.byCategory.length > 1)
+    if (!d.category && !d.merchantKey && s.byCategory.length > 1)
       blocks.push({
         kind: "breakdown",
         title: `By category${net ? ` · ${s.label}` : ""}`,
@@ -255,7 +322,7 @@ export function cashFlowToProof(p: CashFlowProof): Proof {
             ? `The categories add up to ${formatUsdFromCents(s.figureCents - s.categoryRoundingCents)}: each is rounded to the cent on its own, so they can differ from the total by ${formatUsdFromCents(Math.abs(s.categoryRoundingCents))}.`
             : undefined,
       });
-    blocks.push({ kind: "rows", title: `How it adds up${net ? ` · ${s.label}` : ""}`, figureCents: s.figureCents, groups: s.groups });
+    blocks.push({ kind: "rows", title: `How it adds up${net ? ` · ${s.label}` : ""}`, figureCents: s.figureCents, groups: s.groups, ...(s.note ? { note: s.note } : {}) });
   }
   return {
     report: "cash-flow",
@@ -284,10 +351,12 @@ export const cashFlowKind: ProofKind<CashFlowDescriptor> = {
 
 function describe(d: CashFlowDescriptor, book: Book, periods: CashFlowPeriod[]): string {
   const what = { income: "Income", spending: "Spending", external: "Outside money", net: "Income minus spending" }[d.metric];
-  const span = periods.length === 0 ? `${d.start} – ${d.end}` : periods.length === 1 ? periods[0]!.label : `${periods[0]!.label} – ${periods.at(-1)!.label}`;
-  const cut = periods.at(-1)?.through ? ` (through ${periods.at(-1)!.through})` : "";
   const accounts = d.accountIds?.length
     ? `, ${d.accountIds.map((id) => book.accounts.find((a) => a.id === id)?.name ?? "an account").join(", ")} only`
     : "";
-  return `${what}${d.category ? ` · ${d.category}` : ""}, ${span}${cut}${accounts}`;
+  if (d.merchantKey && d.merchantBasis === "charges") return `Charges at ${merchantName(d.merchantKey)} dated ${d.start} or later, counted through ${d.end}${accounts}`;
+  const span = periods.length === 0 ? `${d.start} – ${d.end}` : periods.length === 1 ? periods[0]!.label : `${periods[0]!.label} – ${periods.at(-1)!.label}`;
+  const cut = periods.at(-1)?.through ? ` (through ${periods.at(-1)!.through})` : "";
+  const who = d.merchantKey ? ` ${d.metric === "income" ? "from" : "at"} ${merchantName(d.merchantKey)}` : "";
+  return `${what}${who}${d.category ? ` · ${d.category}` : ""}, ${span}${cut}${accounts}`;
 }

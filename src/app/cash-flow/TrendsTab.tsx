@@ -3,6 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
 import { useState } from "react";
@@ -50,6 +51,8 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
   const rateNow = rate(inc12[hi] ?? null, spend12[hi] ?? null);
   const rateBefore = rate(prevAt(inc12), prevAt(spend12));
   const endLabel = slice.months.at(-1)!.label;
+  // The twelve months the trailing totals at the end of the range sum (none until twelve exist).
+  const last12 = hi >= 11 ? all.slice(hi - 11, hi + 1) : [];
 
   const kinds = slice.months.map((m) => {
     const total = Math.max(1, m.spendingCents);
@@ -83,11 +86,13 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         <StatCell
           label="Spending, last 12 months"
           value={spend12[hi] == null ? "—" : usd0(spend12[hi])}
+          proof={spend12[hi] == null ? undefined : ctx.proof("spending", last12, { shownCents: spend12[hi]! })}
           sub={<><Delta now={spend12[hi] ?? 0} before={prevAt(spend12)} goodWhenDown /> vs the 12 before{prevAt(spend12) != null ? ` (${usd0(prevAt(spend12))})` : ""}</>}
         />
         <StatCell
           label="Income, last 12 months"
           value={inc12[hi] == null ? "—" : usd0(inc12[hi])}
+          proof={inc12[hi] == null ? undefined : ctx.proof("income", last12, { shownCents: inc12[hi]! })}
           sub={<><Delta now={inc12[hi] ?? 0} before={prevAt(inc12)} /> vs the 12 before{prevAt(inc12) != null ? ` (${usd0(prevAt(inc12))})` : ""}</>}
         />
         <StatCell
@@ -280,9 +285,11 @@ function Momentum({ ctx, hi }: { ctx: Ctx; hi: number }) {
   const recent = report.months.slice(Math.max(0, hi - 2), hi + 1);
   const before = report.months.slice(Math.max(0, hi - 14), Math.max(0, hi - 2));
   const rows = SPEND_CATEGORIES.map((c) => {
-    const now = sum(recent, (m) => categoryCents(m, c)) / Math.max(1, recent.length);
-    const then = sum(before, (m) => categoryCents(m, c)) / Math.max(1, before.length);
-    return { c, now, then, d: now - then };
+    const nowCents = sum(recent, (m) => categoryCents(m, c));
+    const thenCents = sum(before, (m) => categoryCents(m, c));
+    const now = nowCents / Math.max(1, recent.length);
+    const then = thenCents / Math.max(1, before.length);
+    return { c, now, then, nowCents, thenCents, d: now - then };
   })
     .filter((r) => r.now > 0 || r.then > 0)
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
@@ -317,8 +324,12 @@ function Momentum({ ctx, hi }: { ctx: Ctx; hi: number }) {
                       {r.c}
                     </span>
                   </td>
-                  <td className={`${table.tdR} text-muted`}>{usd0(r.then)}</td>
-                  <td className={table.tdR}>{usd0(r.now)}</td>
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={ctx.proof("spending", before, { category: r.c, perMonth: true, shownCents: r.thenCents })}>{usd0(r.then)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={ctx.proof("spending", recent, { category: r.c, perMonth: true, shownCents: r.nowCents })}>{usd0(r.now)}</ProofValue>
+                  </td>
                   <td className={table.td}>
                     <DivergingBar value={r.d} max={max} />
                   </td>
