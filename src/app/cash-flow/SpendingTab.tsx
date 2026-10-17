@@ -3,6 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Badge, btn, Card, ErrorNote, Segmented, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { OneOffExpense } from "@/lib/book/reports/spending";
 import type { FinancialProfileSettings } from "@/lib/profile/settings";
@@ -76,9 +77,13 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
                     <td className={table.td}>
                       <Sparkline values={series} color={categoryColor(chart, c.category)} />
                     </td>
-                    <td className={`${table.tdR} font-medium`}>{usd0(c.cents / t.n)}</td>
+                    <td className={`${table.tdR} font-medium`}>
+                      <ProofValue proof={ctx.proof("spending", slice.months, { category: c.category, perMonth: true, shownCents: c.cents })}>{usd0(c.cents / t.n)}</ProofValue>
+                    </td>
                     <td className={`${table.tdR} text-muted`}>{usd0(median(series))}</td>
-                    <td className={table.tdR}>{usd0(c.cents)}</td>
+                    <td className={table.tdR}>
+                      <ProofValue proof={ctx.proof("spending", slice.months, { category: c.category, shownCents: c.cents })}>{usd0(c.cents)}</ProofValue>
+                    </td>
                     <td className={`${table.tdR} text-muted`}>{c.cents > 0 && t.spending > 0 ? formatPercentRatio(c.cents / t.spending, 0) : "—"}</td>
                     <td className={table.tdR}>{p && <Delta now={c.cents / t.n} before={(before?.cents ?? 0) / p.n} goodWhenDown />}</td>
                   </tr>
@@ -89,9 +94,13 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
                 <td className={table.td}>
                   <Sparkline values={slice.months.map((m) => m.spendingCents)} color={chart.spending} />
                 </td>
-                <td className={table.tdR}>{usd0(t.avgSpending)}</td>
+                <td className={table.tdR}>
+                  <ProofValue proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })}>{usd0(t.avgSpending)}</ProofValue>
+                </td>
                 <td className={`${table.tdR} text-muted`}>{usd0(t.typicalSpending)}</td>
-                <td className={table.tdR}>{usd0(t.spending)}</td>
+                <td className={table.tdR}>
+                  <ProofValue proof={ctx.proof("spending", slice.months, { shownCents: t.spending })}>{usd0(t.spending)}</ProofValue>
+                </td>
                 <td className={table.tdR} />
                 <td className={table.tdR}>{p && <Delta now={t.avgSpending} before={p.avgSpending} goodWhenDown />}</td>
               </tr>

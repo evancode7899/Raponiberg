@@ -21,6 +21,8 @@ const row = (date: string, cents: number, key: string, extra: Partial<BookRow> =
   counterpartyAccountHint: null,
   classifiedBy: null,
   transferMatchId: null,
+  statementImportId: "st",
+  documentId: "doc",
   ...extra,
 });
 const covers = (rows: BookRow[]) => Object.fromEntries(rentPayments(rows).map((p) => [p.date, p.covers.slice(0, 7)]));

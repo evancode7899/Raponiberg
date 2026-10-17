@@ -104,7 +104,8 @@ export function checkConsistency(book: Book, c: Collector) {
         a.timeline.lastDay!,
       );
     }
-    if (ok) c.pass("ledger.consistency");
+    if (ok)
+      c.pass("ledger.consistency", { subject: `${a.name}: statements tie, no day twice, rows book what the timeline does`, accountId: a.id, from: a.timeline.firstDay ?? book.today, to: a.timeline.lastDay ?? book.today, affects: ["CASH_FLOW", "NET_WORTH"] });
   }
 
   for (const m of book.matches) {
@@ -121,7 +122,7 @@ export function checkConsistency(book: Book, c: Collector) {
     if (rows.some((r) => !r)) problems.push("a leg is on a statement that isn't in the ledger (held, a year-end summary, or an archived account)");
     if (rows.some((r) => r && r.lane !== "TRANSFER")) problems.push("a leg is no longer filed as a transfer, so the pair would count it twice");
     if (problems.length === 0) {
-      c.pass("ledger.consistency");
+      c.pass("ledger.consistency", { subject: `Transfer pairing ${label}`, from: first, to: last, affects: ["CASH_FLOW", "NET_WORTH"] });
       continue;
     }
     c.add({
@@ -139,7 +140,7 @@ export function checkConsistency(book: Book, c: Collector) {
     if (!s.depositTransactionId) continue;
     const r = book.rowById.get(s.depositTransactionId);
     if (r && r.amountCents === s.printed.netCurrent) {
-      c.pass("ledger.consistency");
+      c.pass("ledger.consistency", { subject: `${s.employer} stub ${s.payDate} is linked to its deposit`, personId: s.personId ?? undefined, employerKey: s.employerKey, from: s.payDate, to: s.payDate, affects: ["PAY", "TAX"] });
       continue;
     }
     c.add({

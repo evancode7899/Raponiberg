@@ -24,7 +24,13 @@ export function checkTransfers(book: Book, c: Collector) {
   for (const r of book.rows) {
     if (r.lane !== "TRANSFER") continue;
     if (r.transferMatchId || paidIdle.has(r.id)) {
-      c.pass("transfer.unmatched");
+      c.pass("transfer.unmatched", {
+        subject: `${nameOf(r.accountId)} ${r.date} ${money(r.amountCents)} ${r.transferMatchId ? "pairs with its other leg" : "paid off a card in a cycle with no statement"}`,
+        accountId: r.accountId,
+        from: r.date,
+        to: r.date,
+        affects: ["CASH_FLOW", "NET_WORTH"],
+      });
       continue;
     }
     const candidates = otherLegCandidates(book, r);

@@ -48,11 +48,11 @@ export function checkFreshness(book: Book, c: Collector) {
       scope: { ...span(docs), affects: affects(parserId) },
     });
   }
-  if (outdated.size === 0) c.pass("ledger.freshness");
+  if (outdated.size === 0) c.pass("ledger.freshness", { subject: `Every document read by its current parser`, from: firstDay, to: book.today, affects: ["CASH_FLOW", "NET_WORTH", "PAY", "TAX"] });
 
   // Facts read by an older extractor.
   const staleFacts = book.documents.filter((d) => FACT_PARSERS.includes(d.parserId) && d.factsVersion < FACTS_VERSION && !outdated.has(d.parserId));
-  if (staleFacts.length === 0) c.pass("ledger.freshness");
+  if (staleFacts.length === 0) c.pass("ledger.freshness", { subject: `Pay stub, tax and holdings figures from the current extractor`, from: firstDay, to: book.today, affects: ["CASH_FLOW", "PAY", "TAX"] });
   else
     c.add({
       id: `ledger.freshness:facts:v${FACTS_VERSION}`,
@@ -77,7 +77,8 @@ export function checkFreshness(book: Book, c: Collector) {
   // and taxes; balances (net worth) don't depend on them.
   const rulesCurrent = (book.classifiedWith ?? 0) >= CLASSIFIER_VERSION;
   const householdCurrent = (book.classifiedWithHousehold ?? "") === book.household.fingerprint;
-  if ((rulesCurrent && householdCurrent) || book.rows.length === 0) c.pass("ledger.freshness");
+  if ((rulesCurrent && householdCurrent) || book.rows.length === 0)
+    c.pass("ledger.freshness", { subject: `Transactions filed by the current classification rules and household file`, from: firstDay, to: book.today, affects: ["CASH_FLOW", "PAY", "TAX"] });
   else if (rulesCurrent)
     c.add({
       id: `ledger.freshness:household:${book.household.fingerprint || "none"}`,

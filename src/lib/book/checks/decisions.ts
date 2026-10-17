@@ -54,7 +54,7 @@ export function checkDecisions(book: Book, c: Collector) {
     const rs = found.map((f) => f.rows[0]).filter((r): r is BookRow => !!r);
     const match = rs[0]?.transferMatchId ? book.matches.find((m) => m.id === rs[0]!.transferMatchId) : undefined;
     if (!missing.length && !ambiguous.length && pairedTogether(rs) && match?.status === "CONFIRMED") {
-      c.pass("transfer.decisions");
+      c.pass("transfer.decisions", { subject: `Your confirmed pairing ${label}`, ...scopeOf(d.legs) });
       continue;
     }
     const why = missing.length
@@ -78,7 +78,7 @@ export function checkDecisions(book: Book, c: Collector) {
   for (const d of book.decisions.rejected) {
     const rs = d.legs.map((leg) => hits(leg));
     if (rs.some((x) => x.length !== 1) || !pairedTogether(rs.map((x) => x[0]!))) {
-      c.pass("transfer.decisions");
+      c.pass("transfer.decisions", { subject: `Your rejected pairing ${d.legs.map(describe).join(" ↔ ")} stays unpaired`, ...scopeOf(d.legs) });
       continue;
     }
     c.add({

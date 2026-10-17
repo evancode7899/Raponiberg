@@ -7,6 +7,8 @@
  */
 
 import { apiSecretHeaders } from "@/components/ledger/useApi";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
@@ -290,17 +292,22 @@ export function Stat({
   sub,
   tone = "neutral",
   size = "md",
+  proof,
 }: {
   label: ReactNode;
   value: ReactNode;
   sub?: ReactNode;
   tone?: Tone;
   size?: "md" | "lg";
+  /** Clicking the value shows the rows and checks behind it. */
+  proof?: ProofTarget;
 }) {
   return (
     <div className="min-w-0">
       <div className="truncate text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className={`num mt-1 font-semibold tracking-tight ${size === "lg" ? "text-3xl" : "text-xl"} ${TONE_TEXT[tone]}`}>{value}</div>
+      <div className={`num mt-1 font-semibold tracking-tight ${size === "lg" ? "text-3xl" : "text-xl"} ${TONE_TEXT[tone]}`}>
+        <ProofValue proof={proof}>{value}</ProofValue>
+      </div>
       {sub && <div className="mt-0.5 text-xs leading-snug text-muted">{sub}</div>}
     </div>
   );
@@ -659,7 +666,7 @@ export type TableRow =
       kind?: "row";
       label: ReactNode;
       help?: string;
-      cells: ({ text: ReactNode; title?: string; dim?: boolean } | null)[];
+      cells: ({ text: ReactNode; title?: string; dim?: boolean; proof?: ProofTarget } | null)[];
       strong?: boolean;
       /** A total that closes a section: double rule. */
       total?: boolean;
@@ -728,7 +735,7 @@ export function StatementTable({
                     title={c?.title}
                     className={`num whitespace-nowrap px-2 py-1 text-right ${colCls(j)} ${c?.dim ? "text-faint" : ""} ${r.muted ? "text-[12px]" : ""}`}
                   >
-                    {c?.text ?? ""}
+                    {c ? <ProofValue proof={c.proof}>{c.text}</ProofValue> : ""}
                   </td>
                 ))}
               </tr>

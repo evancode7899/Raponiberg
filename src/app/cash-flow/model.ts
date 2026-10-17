@@ -2,6 +2,8 @@ import type { CategoryAmount } from "@/lib/book/reports/cashFlow";
 import type { MerchantMonth, SpendingMonth, SpendingReport } from "@/lib/book/reports/spending";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 
 export type Report = SpendingReport & { accounts: { id: string; name: string }[] };
 export type RangeId = "3m" | "6m" | "12m" | "ytd" | "all" | "custom";
@@ -311,3 +313,30 @@ export const KINDS = [
 
 /** Where a slice's months sit in the report (the slice is a contiguous run of them). */
 export const sliceStart = (r: Report, s: Slice) => Math.max(0, r.months.indexOf(s.months[0]!));
+
+/**
+ * The proof target for a figure summed over `months` (contiguous, as a slice is): the
+ * server re-derives it from the Book and lists the rows behind it. `perMonth`: the page
+ * shows the total divided by the months; `shownCents` is the total the page computed.
+ */
+export function proofTarget(
+  metric: CashFlowMetric,
+  months: SpendingMonth[],
+  accountIds: string[] | undefined,
+  o: { category?: string; perMonth?: boolean; shownCents?: number } = {},
+): ProofTarget | undefined {
+  if (!months.length) return undefined;
+  return {
+    descriptor: {
+      report: "cash-flow",
+      metric,
+      granularity: "month",
+      start: months[0]!.start,
+      end: months.at(-1)!.end,
+      ...(o.category ? { category: o.category } : {}),
+      ...(accountIds?.length ? { accountIds } : {}),
+    },
+    ...(o.shownCents != null ? { shownCents: o.shownCents } : {}),
+    ...(o.perMonth && months.length > 1 ? { perMonths: months.length } : {}),
+  };
+}

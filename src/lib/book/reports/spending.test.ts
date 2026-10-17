@@ -21,6 +21,8 @@ const row = (date: string, cents: number, key: string, extra: Partial<BookRow> =
   counterpartyAccountHint: null,
   classifiedBy: null,
   transferMatchId: null,
+  statementImportId: "st",
+  documentId: "doc",
   ...extra,
 });
 const monthly = (key: string, cents: number[], from = 1) => cents.map((c, i) => row(`2026-${String(from + i).padStart(2, "0")}-11`, -c, key));

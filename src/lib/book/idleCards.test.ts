@@ -22,7 +22,7 @@ function ledgerOf(accts: Acct[]): Ledger {
 
 const row = (id: string, accountId: string, date: string, cents: number, matchId: string | null = null): BookRow => ({
   id, date, precision: "EXACT", statement: { start: date, end: date }, bookedOn: date, amountCents: cents, lane: "TRANSFER", accountId, payee: "CAPITAL ONE CRCARDPMT", merchantKey: null, category: "Transfers", categoryGroup: null,
-  counterpartyKind: "OWN_ACCOUNT", counterpartyInstitution: "Capital One", counterpartyAccountHint: null, classifiedBy: null, transferMatchId: matchId,
+  counterpartyKind: "OWN_ACCOUNT", counterpartyInstitution: "Capital One", counterpartyAccountHint: null, classifiedBy: null, transferMatchId: matchId, statementImportId: "st", documentId: "doc",
 });
 const match = (id: string, bankRow: BookRow, cardId: string): BookTransferMatch => ({
   id, status: "CONFIRMED", differenceCents: 0,

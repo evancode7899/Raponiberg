@@ -48,7 +48,7 @@ function makeBook(opts: {
         rows.push({
           id: r.id, date: r.date, precision, statement, bookedOn: bookedOn({ date: r.date, statement }), amountCents: r.cents, lane, accountId: a.id,
           payee: r.payee ?? "X", merchantKey: null, category: lane === "INCOME" ? "Interest" : "Other", categoryGroup: null,
-          counterpartyKind: null, counterpartyInstitution: null, counterpartyAccountHint: null, classifiedBy: null, transferMatchId: matchOf.get(r.id) ?? null,
+          counterpartyKind: null, counterpartyInstitution: null, counterpartyAccountHint: null, classifiedBy: null, transferMatchId: matchOf.get(r.id) ?? null, statementImportId: "st", documentId: "doc",
         });
         return { date: r.date, precision, amountCents: r.cents, lane };
       });
@@ -91,6 +91,7 @@ function makeBook(opts: {
     persons: [{ id: "pat", name: "Pat", match: ["PAT"] }],
     idle: { proven: [], unproven: [] },
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
+    passes: [],
   };
   book.integrity = runChecks(book);
   return book;

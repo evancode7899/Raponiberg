@@ -1,6 +1,6 @@
 import { addDays, maxIso, minIso } from "../dates/isoDate.ts";
 import type { Book } from "./load.ts";
-import type { Finding, FindingScope } from "./types.ts";
+import type { AcceptedFinding, CheckPass, Finding, FindingScope } from "./types.ts";
 
 export type BlockerQuery = {
   affects: FindingScope["affects"][number];
@@ -18,8 +18,19 @@ export type BlockerQuery = {
  * window's lead-in (a transfer's matching days) doesn't reach back into proven data.
  */
 export function blockersFor(book: Book, q: BlockerQuery): Finding[] {
+  const hits = scopeHits(book, q);
+  return book.integrity.findings.filter((f) => [f.scope, ...(f.extraScopes ?? [])].some((s) => hits(s, !!f.atEdge)));
+}
+
+/**
+ * Whether a scope bears on a figure: the right kind, a window overlapping the figure's
+ * period, and its accounts/person when both name one. The one test behind blockers, the
+ * exceptions and the passes a figure's proof lists (book/proof), so they can't disagree
+ * about what covers a figure.
+ */
+export function scopeHits(book: Book, q: BlockerQuery): (s: FindingScope, atEdge?: boolean) => boolean {
   const afterEdge = addDays(book.horizon.netWorth, 1);
-  const hits = (s: FindingScope, atEdge: boolean) => {
+  return (s, atEdge = false) => {
     if (!s.affects.includes(q.affects)) return false;
     const from = atEdge ? maxIso(s.from, afterEdge) : s.from;
     if (s.to < q.from || from > q.to) return false;
@@ -27,7 +38,18 @@ export function blockersFor(book: Book, q: BlockerQuery): Finding[] {
     if (q.personId && s.personId && s.personId !== q.personId) return false;
     return true;
   };
-  return book.integrity.findings.filter((f) => [f.scope, ...(f.extraScopes ?? [])].some((s) => hits(s, !!f.atEdge)));
+}
+
+/** The passing checks that cover a figure (Book.passes), by the same test as its blockers. */
+export function passesFor(book: Book, q: BlockerQuery): CheckPass[] {
+  const hits = scopeHits(book, q);
+  return book.passes.filter((p) => hits(p.scope));
+}
+
+/** The owner's accepted exceptions that cover a figure: listed, never blocking. */
+export function acceptedFor(book: Book, q: BlockerQuery): AcceptedFinding[] {
+  const hits = scopeHits(book, q);
+  return book.integrity.accepted.filter((f) => [f.scope, ...(f.extraScopes ?? [])].some((s) => hits(s, !!f.atEdge)));
 }
 
 /**

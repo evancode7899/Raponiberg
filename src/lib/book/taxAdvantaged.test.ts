@@ -31,6 +31,8 @@ const row = (accountId: string, date: string, amount: number, payee: string, ove
   counterpartyAccountHint: null,
   classifiedBy: null,
   transferMatchId: null,
+  statementImportId: "st",
+  documentId: "doc",
   ...over,
 });
 

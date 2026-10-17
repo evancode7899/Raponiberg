@@ -1,6 +1,6 @@
 import { staleEvidence } from "../exceptions.ts";
 import type { Book } from "../load.ts";
-import type { IntegrityReport, StandingException } from "../types.ts";
+import type { CheckPass, IntegrityReport, StandingException } from "../types.ts";
 import { Collector } from "./collector.ts";
 import { checkConsistency } from "./consistency.ts";
 import { checkDecisions } from "./decisions.ts";
@@ -14,6 +14,11 @@ import { checkTransfers } from "./transfers.ts";
 
 /** Every integrity check, over the whole Book. Order matters: later checks skip what earlier ones block. */
 export function runChecks(book: Book, exceptions: StandingException[] = []): IntegrityReport {
+  return runChecksWithPasses(book, exceptions).report;
+}
+
+/** runChecks, plus what every passing check covered (Book.passes): kept apart from the report. */
+export function runChecksWithPasses(book: Book, exceptions: StandingException[] = []): { report: IntegrityReport; passes: CheckPass[] } {
   const c = new Collector(exceptions, book.horizon.netWorth);
   checkConsistency(book, c);
   checkFreshness(book, c);
@@ -27,5 +32,5 @@ export function runChecks(book: Book, exceptions: StandingException[] = []): Int
   checkNetWorth(book, c);
   const report = c.report();
   report.stale = report.stale.map((e) => ({ ...e, evidence: staleEvidence(book, report, e) }));
-  return report;
+  return { report, passes: c.passes };
 }

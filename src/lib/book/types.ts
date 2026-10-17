@@ -89,6 +89,17 @@ export type Finding = {
   atEdge?: boolean;
 };
 
+/**
+ * What one passing check covered, so a figure can show the checks behind it (book/proof)
+ * rather than only that nothing failed. `subject` names the thing in plain words (a
+ * statement period, a pay stub, a month), never by database id; `scope` is what its
+ * failure would have blocked, so passes are looked up exactly like blockers.
+ */
+export type CheckPass = { check: CheckId; n: number; subject: string; scope: FindingScope };
+
+/** The evidence a check passes with: what it covered and the scope it vouches for. */
+export type PassEvidence = FindingScope & { subject: string };
+
 /** A figure that was inferred rather than read directly, and from what. */
 export type Inference = {
   /** Stable across runs and database rebuilds, like a finding's id (see findingKeys.ts). */

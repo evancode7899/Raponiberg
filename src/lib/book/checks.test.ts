@@ -5,8 +5,9 @@ import { NO_HOUSEHOLD } from "../household/patterns";
 import type { StubLine } from "../ingest/payroll/types";
 import { groupFor } from "../ledger/loadLedger";
 import { buildTimeline, type SegmentInput } from "../ledger/timeline";
-import { blockersFor, netWorthAtBlockers, netWorthBlockers } from "./blockers";
-import { runChecks } from "./checks/index";
+import { blockersFor, netWorthAtBlockers, netWorthBlockers, passesFor } from "./blockers";
+import { runChecksWithPasses } from "./checks/index";
+import { Collector } from "./checks/collector";
 import { staleEvidence } from "./exceptions";
 import { cashFlowThrough, type Book, type BookAccount, type BookRow, type BookStub } from "./load";
 import type { StandingException } from "./types";
@@ -31,7 +32,7 @@ function makeBook(opts: {
     const segs: SegmentInput[] = a.segs.map((s) => {
       const flows = (s.rows ?? []).map((r, i) => {
         const id = r.id ?? `${a.id}-${s.start}-${i}`;
-        rows.push({ id, date: r.date, precision: "EXACT", statement: { start: s.start, end: s.end }, bookedOn: r.date, amountCents: r.cents, lane: r.lane ?? "INCOME", accountId: a.id, payee: r.payee ?? "X", merchantKey: r.key ?? null, category: r.lane === "INCOME" ? "Paycheck" : "Other", categoryGroup: null, counterpartyKind: null, counterpartyInstitution: null, counterpartyAccountHint: null, classifiedBy: null, transferMatchId: null });
+        rows.push({ id, date: r.date, precision: "EXACT", statement: { start: s.start, end: s.end }, bookedOn: r.date, amountCents: r.cents, lane: r.lane ?? "INCOME", accountId: a.id, payee: r.payee ?? "X", merchantKey: r.key ?? null, category: r.lane === "INCOME" ? "Paycheck" : "Other", categoryGroup: null, counterpartyKind: null, counterpartyInstitution: null, counterpartyAccountHint: null, classifiedBy: null, transferMatchId: null, statementImportId: `st-${a.id}-${s.start}`, documentId: `doc-${a.id}-${s.start}` });
         return { date: r.date, precision: "EXACT" as const, amountCents: r.cents, lane: r.lane ?? ("INCOME" as Lane) };
       });
       // Committed statements always tie; whatever the rows leave unexplained is market change.
@@ -64,8 +65,11 @@ function makeBook(opts: {
     persons: opts.persons ?? [{ id: "pat", name: "Pat", match: ["PAT"] }],
     idle: { proven: [], unproven: [] },
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
+    passes: [],
   };
-  book.integrity = runChecks(book, opts.exceptions);
+  const checked = runChecksWithPasses(book, opts.exceptions);
+  book.integrity = checked.report;
+  book.passes = checked.passes;
   return book;
 }
 
@@ -387,5 +391,61 @@ describe("permanent exceptions", () => {
     expect(filled.integrity.stale[0]!.evidence.join(" ")).toMatch(/code changed/);
     filled.statements.push({ id: "st", accountId: "card", documentId: "d2", documentTitle: "card-feb-apr.pdf", importedAt: "2025-07-01T00:00:00.000Z", status: "COMMITTED", isSummary: false, periodStart: "2025-02-01", periodEnd: "2025-04-30", deltaCents: 0 });
     expect(staleEvidence(filled, filled.integrity, ex).join(" ")).toMatch(/card-feb-apr\.pdf/);
+  });
+});
+
+describe("check passes carry their evidence", () => {
+  const busy = () =>
+    makeBook({
+      accounts: [
+        checking([{ date: "2025-01-15", cents: 100, key: "ACME", id: "r1" }, { date: "2025-01-31", cents: 100, key: "ACME", id: "r2" }, { date: "2025-02-10", cents: -40, lane: "EXPENSE" }]),
+        { id: "card", name: "Card ••5678", subtype: "CREDIT_CARD", institution: "Bank", idents: ["5678"], segs: [{ start: "2025-01-05", end: "2025-02-04", open: 0, close: -25, rows: [{ date: "2025-01-20", cents: -25, lane: "EXPENSE" }] }, { start: "2025-02-05", end: "2025-12-31", open: -25, close: -25 }] },
+      ],
+      stubs: [stub("2025-01-15", 100, 100, "r1"), stub("2025-01-31", 100, 200, "r2")],
+    });
+
+  it("records one piece of evidence per pass, so every check's tally equals its evidence", () => {
+    const b = busy();
+    expect(b.passes.length).toBeGreaterThan(10);
+    for (const c of b.integrity.checks) expect(b.passes.filter((p) => p.check === c.id).reduce((t, p) => t + p.n, 0), c.id).toBe(c.passed);
+  });
+
+  it("names what passed in plain words, never by database id", () => {
+    const b = busy();
+    for (const p of b.passes) {
+      expect(p.subject.length).toBeGreaterThan(0);
+      expect(p.subject).not.toMatch(/\b(r1|r2|s-2025|chk-2025)\b/);
+    }
+    expect(b.passes.filter((p) => p.check === "statement.chain").map((p) => p.subject)).toContain("Card ••5678: 2025-01-05 – 2025-12-31, every opening = the previous closing");
+  });
+
+  it("keeps passes off the integrity report (the Statements page's payload)", () => {
+    const b = busy();
+    expect(Object.keys(b.integrity)).not.toContain("passes");
+  });
+
+  it("collects evidence with a scope and tallies n", () => {
+    const c = new Collector();
+    c.pass("tax.params", { subject: "2025 tax law", from: "2025-01-01", to: "2025-12-31", affects: ["TAX"] });
+    c.pass("pay.unexplained-deposits", { subject: "two paychecks", accountId: "chk", from: "2025-01-15", to: "2025-01-31", affects: ["PAY", "TAX"] }, 2);
+    expect(c.passes).toEqual([
+      { check: "tax.params", n: 1, subject: "2025 tax law", scope: { from: "2025-01-01", to: "2025-12-31", affects: ["TAX"] } },
+      { check: "pay.unexplained-deposits", n: 2, subject: "two paychecks", scope: { accountId: "chk", from: "2025-01-15", to: "2025-01-31", affects: ["PAY", "TAX"] } },
+    ]);
+    const r = c.report();
+    expect(r.checks.find((x) => x.id === "pay.unexplained-deposits")!.passed).toBe(2);
+    expect(r).not.toHaveProperty("passes");
+  });
+
+  it("finds the passes covering a figure by the same overlap as its blockers", () => {
+    const b = busy();
+    const held = (q: Parameters<typeof passesFor>[1]) => passesFor(b, q).filter((p) => p.check === "statement.chain").map((p) => p.scope.accountId);
+    // The card's chain runs from its first statement (Jan 5): a window ending the day before misses it.
+    expect(held({ affects: "CASH_FLOW", from: "2025-01-01", to: "2025-01-04" })).toEqual(["chk"]);
+    expect(held({ affects: "CASH_FLOW", from: "2025-01-01", to: "2025-01-05" }).sort()).toEqual(["card", "chk"]);
+    expect(held({ affects: "CASH_FLOW", from: "2025-03-01", to: "2025-03-31", accountIds: ["card"] })).toEqual(["card"]);
+    // Pay passes never vouch for cash flow; household-wide ones cover every account filter.
+    expect(passesFor(b, { affects: "CASH_FLOW", from: "2025-01-01", to: "2025-12-31" }).some((p) => p.check === "paystub.arithmetic")).toBe(false);
+    expect(passesFor(b, { affects: "CASH_FLOW", from: "2025-06-01", to: "2025-06-30", accountIds: ["card"] }).some((p) => p.check === "ledger.freshness")).toBe(true);
   });
 });
