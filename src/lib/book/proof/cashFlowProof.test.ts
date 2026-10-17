@@ -299,7 +299,7 @@ describe("as a registered proof kind", () => {
   it("splits a net figure's categories by side, each linking to that side", async () => {
     const p = await buildProof(ctx(), d({ metric: "net", start: "2025-02-01", end: "2025-02-28" }));
     const spend = p.blocks.find((b) => b.title === "By category · Spending");
-    expect(spend?.kind === "breakdown" && spend.items.every((i) => i.link?.descriptor.metric === "spending")).toBe(true);
+    expect(spend?.kind === "breakdown" && spend.items.every((i) => i.link?.descriptor.report === "cash-flow" && i.link.descriptor.metric === "spending")).toBe(true);
   });
 
   it("rejects a report no kind is registered for", () => {
