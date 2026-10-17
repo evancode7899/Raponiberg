@@ -1,0 +1,29 @@
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { cachedReport } from "../book/cache.ts";
+import { localToday } from "../dates/isoDate.ts";
+import { taxLink } from "../forecast/forecast.ts";
+import { loadForecast } from "../forecast/load.ts";
+import { loadProfileSettings } from "../profile/settings.ts";
+import { loadJsonSetting } from "../settingsStore.ts";
+import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../taxAccounts/settings.ts";
+import { hsaLedger, hsaTaxMarginal, type HsaLedger } from "./load.ts";
+import { buildHsaReport, type HsaReport, type TaxMarginalIn } from "./report.ts";
+import { readHsaFile } from "./store.ts";
+
+/**
+ * The HSA page's report, as GET /api/hsa serves it: the receipts log (read fresh, it isn't
+ * in the Book) joined to the cached Book-derived ledger. The proof drawer reads the same
+ * thing, so what it proves is exactly what the page shows.
+ */
+export async function loadHsaReport(db: PrismaClient | Prisma.TransactionClient): Promise<HsaReport> {
+  const file = readHsaFile();
+  const [ledger, retirement] = await Promise.all([
+    cachedReport(db, "hsa-ledger", async (book) => {
+      // The Taxes page's marginal rates, on the same forecast and birth years it uses.
+      const [{ forecast }, profile] = await Promise.all([loadForecast(db, book), loadProfileSettings(db)]);
+      return { ...hsaLedger(book), taxMarginal: hsaTaxMarginal(book, Number(localToday().slice(0, 4)), forecast ? taxLink(forecast) : null, profile.birthYears) };
+    }).then((t) => JSON.parse(t) as HsaLedger & { taxMarginal: TaxMarginalIn | null }),
+    loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings),
+  ]);
+  return buildHsaReport({ today: localToday(), file, ...ledger, marginalRate: retirement.marginalRate });
+}

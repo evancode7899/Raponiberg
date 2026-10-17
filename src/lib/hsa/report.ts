@@ -214,18 +214,25 @@ const growthOn = (cents: number, rate: number, days: number) => (days <= 0 ? 0 :
 const EMPLOYER_PAYEE = /\bEMPLOYER\b/i;
 const EMPLOYEE_PAYEE = /\bEMPLOYEE\b|PAYROLL|CONTRIBUTION/i;
 
+/** Whose money an HSA deposit is, by its lane or what the statement calls it; null: not a contribution the split counts. */
+export const contributionKind = (r: Pick<LedgerRowIn, "lane" | "payee">): "EMPLOYER" | "EMPLOYEE" | null =>
+  r.lane === "CONTRIBUTION_EMPLOYER" || EMPLOYER_PAYEE.test(r.payee) ? "EMPLOYER"
+  : r.lane === "CONTRIBUTION_EMPLOYEE" || EMPLOYEE_PAYEE.test(r.payee) ? "EMPLOYEE"
+  : null;
+
+/**
+ * The tax year a contribution counts for: "Employer Contribution for 2025" deposited in
+ * January 2026 is 2025's. One year, not a rolling 12 months: an employer's first-year
+ * catch-up lumps would otherwise skew the split.
+ */
+export const contributionTaxYear = (r: Pick<LedgerRowIn, "date" | "payee">) => Number(/\bFOR (\d{4})\b/i.exec(r.payee)?.[1] ?? r.date.slice(0, 4));
+
 /** Who funded the HSA (see Funding): the latest contribution year on the statements, else the pay stubs. */
 export function hsaFunding(rows: LedgerRowIn[], isHsa: (accountId: string) => boolean, payroll: PayrollHsaIn | null | undefined): Funding {
-  const kind = (r: LedgerRowIn): "EMPLOYER" | "EMPLOYEE" | null =>
-    r.lane === "CONTRIBUTION_EMPLOYER" || EMPLOYER_PAYEE.test(r.payee) ? "EMPLOYER"
-    : r.lane === "CONTRIBUTION_EMPLOYEE" || EMPLOYEE_PAYEE.test(r.payee) ? "EMPLOYEE"
-    : null;
+  const kind = contributionKind;
+  const taxYear = contributionTaxYear;
   const ins = rows.filter((r) => r.amountCents > 0 && isHsa(r.accountId) && kind(r));
   const share = (ee: number, er: number) => (ee + er > 0 ? ee / (ee + er) : 1);
-  // The tax year a contribution counts for: "Employer Contribution for 2025" deposited in
-  // January 2026 is 2025's. One year, not a rolling 12 months: an employer's first-year
-  // catch-up lumps would otherwise skew the split.
-  const taxYear = (r: LedgerRowIn) => Number(/\bFOR (\d{4})\b/i.exec(r.payee)?.[1] ?? r.date.slice(0, 4));
   const latest = Math.max(...ins.filter((r) => kind(r) === "EMPLOYER").map(taxYear));
   if (Number.isFinite(latest)) {
     const window = ins.filter((r) => taxYear(r) === latest);

@@ -8,18 +8,35 @@ import { axisUsd, formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatM
 import { KIND_LABEL, type ExpenseKind } from "@/lib/hsa/qualify";
 import type { Breakdown, Funding, HsaReport } from "@/lib/hsa/report";
 import { strategyRows } from "@/lib/hsa/strategy";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { hsaProof } from "./proof";
 
 const RATE_SOURCE = { SETTING: "your setting", MEASURED: "your HSA's measured return", DEFAULT: "a long-run stock-market assumption" };
 const PAYROLL_SOURCE = { SETTING: "your setting", PAY_STUBS: "your pay stubs: Medicare, plus Social Security only under its wage base", TAX_REPORT: "the Taxes page", DEFAULT: "Medicare alone, assumed" };
 const MARGINAL_SOURCE = { SETTING: "your setting", RETIREMENT: "the Account limits page", TAX_REPORT: "the Taxes page: federal, with the 0.9% Medicare surtax, + state", DEFAULT: "an assumed bracket" };
 const SHARE_SPEC = { min: 0, max: 1, step: 0.01, unit: "pct" as const, digits: 0 };
 
-function fundingHint(f: Funding): string {
-  if (f.source === "STATEMENTS") return `Yours: ${usd0(f.employeeCents)} from your pay and ${usd0(f.employerCents)} from your employer for ${f.year} on the HSA's statements (${f.from} to ${f.through}).`;
-  if (f.source === "PAY_STUBS") return `Yours: ${usd0(f.employeeCents)} from your pay and ${usd0(f.employerCents)} from your employer on the ${f.year} pay stubs.`;
-  return "No contributions found on the HSA's statements or pay stubs, so this starts at all you.";
+function fundingHint(f: Funding): ReactNode {
+  if (f.source === "NONE") return "No contributions found on the HSA's statements or pay stubs, so this starts at all you.";
+  const amounts = (
+    <>
+      Yours: <ProofValue proof={hsaProof("contributions", f.employeeCents, "employee")}>{usd0(f.employeeCents)}</ProofValue> from your pay and{" "}
+      <ProofValue proof={hsaProof("contributions", f.employerCents, "employer")}>{usd0(f.employerCents)}</ProofValue> from your employer
+    </>
+  );
+  if (f.source === "STATEMENTS")
+    return (
+      <>
+        {amounts} for {f.year} on the HSA&apos;s statements ({f.from} to {f.through}).
+      </>
+    );
+  return (
+    <>
+      {amounts} on the {f.year} pay stubs.
+    </>
+  );
 }
 
 export function GrowthTab({ r }: { r: HsaReport }) {
@@ -36,11 +53,12 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   return (
     <>
       <StatGrid cols={3}>
-        <StatCell label={`Worth in ${g.planYear}`} value={usd0(g.futureValueCents)} tone="accent" sub={`today's ${usd0(r.totals.unreimbursedCents)} of receipts left invested ${g.years} years at ${formatPercentRatio(g.rate, 1)}, after any tax`} />
+        <StatCell label={`Worth in ${g.planYear}`} value={usd0(g.futureValueCents)} tone="accent" proof={hsaProof("future", g.futureValueCents)} sub={`today's ${usd0(r.totals.unreimbursedCents)} of receipts left invested ${g.years} years at ${formatPercentRatio(g.rate, 1)}, after any tax`} />
         <StatCell
           label={a.growthCovered ? "Tax-free growth by then" : "Growth by then, after tax"}
           value={usd0(g.futureValueCents - r.totals.unreimbursedCents)}
           tone="pos"
+          proof={hsaProof("future-growth", g.futureValueCents - r.totals.unreimbursedCents)}
           sub={a.growthCovered ? "on top of the receipts; tax-free as long as later medical bills cover it" : `on top of the receipts, taxed at ${formatPercentRatio(a.exitRate, 0)} with no receipt behind it`}
         />
         <StatCell label="Edge over reimbursing now" value={usd0(edge)} tone={edge > 0 ? "pos" : "neutral"} sub={`vs. ${usd0(g.taxableValueCents)} if reimbursed today and invested in a taxable account (${taxableTerms})`} />

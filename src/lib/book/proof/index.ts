@@ -3,6 +3,7 @@ import { netWorthKind, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { payKind, type PayDescriptor } from "./payProof.ts";
 import { investmentsKind, type InvestmentsDescriptor } from "./investmentsProof.ts";
 import { filedReturnKind, type FiledReturnDescriptor } from "./filedReturnProof.ts";
+import { hsaKind, type HsaDescriptor } from "./hsaProof.ts";
 import type { Proof, ProofContext, ProofKind } from "./types.ts";
 
 /**
@@ -19,7 +20,7 @@ import type { Proof, ProofContext, ProofKind } from "./types.ts";
  * Checks over the figure come from checksFor (common.ts), with the list of checks that
  * can withhold that kind of figure.
  */
-export type ProofDescriptor = CashFlowDescriptor | NetWorthDescriptor | PayDescriptor | InvestmentsDescriptor | FiledReturnDescriptor;
+export type ProofDescriptor = CashFlowDescriptor | NetWorthDescriptor | PayDescriptor | InvestmentsDescriptor | FiledReturnDescriptor | HsaDescriptor;
 
 const KINDS: { [R in ProofDescriptor["report"]]: ProofKind<Extract<ProofDescriptor, { report: R }>> } = {
   "cash-flow": cashFlowKind,
@@ -27,6 +28,7 @@ const KINDS: { [R in ProofDescriptor["report"]]: ProofKind<Extract<ProofDescript
   pay: payKind,
   investments: investmentsKind,
   "filed-return": filedReturnKind,
+  hsa: hsaKind,
 };
 
 const kindOf = (report: string) => (Object.hasOwn(KINDS, report) ? (KINDS[report as ProofDescriptor["report"]] as ProofKind<ProofDescriptor>) : null);
