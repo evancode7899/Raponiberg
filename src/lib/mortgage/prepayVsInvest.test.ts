@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { taxYearParams } from "../tax/params";
+import { CT_TOP_RATE, FED_TOP_GAINS_RATE, SALT_CAP_2026 } from "./inputs";
 import {
   breakEvenReturn,
   calendarToLoanPaymentMonth,
@@ -9,6 +11,7 @@ import {
   INVEST_ALL,
   loanMonthToCalendar,
   monteCarlo,
+  otherItemizedFor,
   PREPAY_ALL,
   PREPAY_EXTRA_ONLY,
   PREPAY_LUMPS_ONLY,
@@ -34,8 +37,11 @@ const plain = (over: Partial<MortgagePlan> = {}): MortgagePlan => ({
   deductInterest: false,
   marginalRate: 0,
   standardDeduction: 32_200,
-  otherItemized: 0,
-  otherItemizedFrom2030: 0,
+  stateIncomeTax: 0,
+  propertyTax: 0,
+  charity: 0,
+  saltCap: 40_400,
+  saltCapFrom2030: 10_000,
   debtCap: 750_000,
   inflation: 0.025,
   ...over,
@@ -123,7 +129,7 @@ describe("simulatePath", () => {
   });
 
   it("interest deduction: fully valued when other deductions already pass the standard", () => {
-    const plan = plain({ extraMonthly: 0, horizonMonths: 12, deductInterest: true, marginalRate: 0.24, otherItemized: 40_000 });
+    const plan = plain({ extraMonthly: 0, horizonMonths: 12, deductInterest: true, marginalRate: 0.24, charity: 40_000 });
     const s = simulatePath(plan, INVEST_ALL);
     expect(last(s.deduction)).toBeCloseTo(0.24 * last(s.interest), 6);
   });
@@ -134,18 +140,49 @@ describe("simulatePath", () => {
   });
 
   it("interest on the balance above the debt cap is not deductible", () => {
-    const plan = plain({ principal: 1_000_000, extraMonthly: 0, horizonMonths: 1, deductInterest: true, marginalRate: 0.3, otherItemized: 100_000 });
+    const plan = plain({ principal: 1_000_000, extraMonthly: 0, horizonMonths: 1, deductInterest: true, marginalRate: 0.3, charity: 100_000 });
     const s = simulatePath(plan, INVEST_ALL);
     expect(last(s.deduction)).toBeCloseTo(0.3 * 1_000_000 * 0.005 * 0.75, 6);
   });
 
   it("the SALT cap reverting in 2030 shrinks the deduction's value", () => {
-    const plan = plain({ startYear: 2029, extraMonthly: 0, horizonMonths: 24, deductInterest: true, marginalRate: 0.24, otherItemized: 40_000, otherItemizedFrom2030: 0 });
+    const plan = plain({ startYear: 2029, extraMonthly: 0, horizonMonths: 24, deductInterest: true, marginalRate: 0.24, stateIncomeTax: 40_000 });
     const s = simulatePath(plan, INVEST_ALL);
     const y1 = s.deduction[12]!;
     const y2 = s.deduction[24]! - y1;
     expect(y1).toBeCloseTo(0.24 * s.interest[12]!, 4);
     expect(y2).toBeLessThan(0.24 * (s.interest[24]! - s.interest[12]!) - 1000);
+  });
+});
+
+describe("other itemized deductions", () => {
+  it("state income and property tax share the SALT cap; charity sits outside it", () => {
+    const plan = plain({ stateIncomeTax: 30_000, propertyTax: 15_000, charity: 5_000 });
+    expect(otherItemizedFor(plan, 2026)).toBeCloseTo(40_400 + 5_000, 6);
+    expect(otherItemizedFor(plain({ stateIncomeTax: 20_000, propertyTax: 8_000 }), 2026)).toBeCloseTo(28_000, 6);
+  });
+
+  it("from 2030 the cap falls to $10k; charity keeps growing with inflation", () => {
+    expect(otherItemizedFor(plain({ stateIncomeTax: 30_000, propertyTax: 15_000, charity: 5_000 }), 2030)).toBeCloseTo(10_000 + 5_000 * 1.025 ** 4, 6);
+  });
+
+  it("property tax grows with inflation until it meets the cap", () => {
+    const plan = plain({ stateIncomeTax: 20_000, propertyTax: 10_000 });
+    expect(otherItemizedFor(plan, 2028)).toBeCloseTo(20_000 + 10_000 * 1.025 ** 2, 6);
+    expect(otherItemizedFor({ ...plan, propertyTax: 20_000 }, 2028)).toBe(40_400);
+  });
+
+  it("property tax matters only while the SALT room isn't already used up", () => {
+    const full = plain({ deductInterest: true, marginalRate: 0.35, stateIncomeTax: 45_000 });
+    expect(comparePrepayVsInvest({ ...full, propertyTax: 10_000 }).advantage).toBeCloseTo(comparePrepayVsInvest(full).advantage, 6);
+  });
+
+  it("the page's 2026 tax constants match the tax engine's", () => {
+    const p = taxYearParams(2026);
+    // The tax engine keeps dollars in cents.
+    expect(SALT_CAP_2026 * 100).toBe(p.federal.salt.cap.MFJ);
+    expect(FED_TOP_GAINS_RATE).toBeCloseTo(0.2 + p.federal.niitRate, 10);
+    expect(CT_TOP_RATE).toBe(p.ct.brackets.MFJ.at(-1)![1]);
   });
 });
 
@@ -180,7 +217,7 @@ describe("comparePrepayVsInvest", () => {
 
   it("deducting interest favors investing; taxing returns favors prepaying", () => {
     const base = comparePrepayVsInvest(plain()).advantage;
-    const deduct = comparePrepayVsInvest(plain({ deductInterest: true, marginalRate: 0.24, otherItemized: 40_000, otherItemizedFrom2030: 40_000 })).advantage;
+    const deduct = comparePrepayVsInvest(plain({ deductInterest: true, marginalRate: 0.24, charity: 40_000 })).advantage;
     const taxed = comparePrepayVsInvest(plain({ taxFreeAccount: false, investTaxRate: 0.188, dividendYield: 0.015 })).advantage;
     expect(deduct).toBeGreaterThan(base);
     expect(taxed).toBeLessThan(base);

@@ -1,12 +1,15 @@
 import type { SliderSpec } from "@/app/home-budget/RangeSlider";
 import { fetchSavedInputs } from "@/components/ui/kit";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
-import type { LumpRow, MortgageInputs } from "@/lib/mortgage/inputs";
+import { SALT_CAP_2026, SALT_CAP_FROM_2030, type LumpRow, type MortgageInputs } from "@/lib/mortgage/inputs";
 import { calendarToLoanPaymentMonth, type Lump, type MortgagePlan } from "@/lib/mortgage/prepayVsInvest";
 
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export { defaultInputs, type LumpRow, type MortgageInputs } from "@/lib/mortgage/inputs";
+
+/** Fields of earlier saves whose meaning changed (combined state + federal rates, one "other itemized"); dropped on load. */
+export const RETIRED_KEYS = ["investTaxRate", "marginalRate", "otherItemized", "otherItemizedFrom2030"] as const;
 
 export const STORAGE_KEY = "pf-mortgage-v2";
 
@@ -19,10 +22,13 @@ export const SPECS = {
   investReturn: { min: 0, max: 0.12, step: 0.0025, unit: "pct", digits: 2, band: [0.05, 0.08], sides: ["Conservative", "Optimistic"] },
   volatility: { min: 0, max: 0.3, step: 0.01, unit: "pct", digits: 0, band: [0.12, 0.18], sides: ["Optimistic", "Conservative"] },
   dividendYield: { min: 0, max: 0.05, step: 0.0025, unit: "pct", digits: 2, band: [0.01, 0.02] },
-  investTaxRate: { min: 0, max: 0.4, step: 0.001, unit: "pct", digits: 1, band: [0.15, 0.238] },
-  marginalRate: { min: 0, max: 0.55, step: 0.01, unit: "pct", digits: 0, band: [0.22, 0.37] },
+  fedGainsRate: { min: 0, max: 0.3, step: 0.001, unit: "pct", digits: 1, band: [0.15, 0.238] },
+  ctGainsRate: { min: 0, max: 0.1, step: 0.0001, unit: "pct", digits: 2, band: [0.03, 0.0699] },
+  fedMarginalRate: { min: 0, max: 0.37, step: 0.01, unit: "pct", digits: 0, band: [0.22, 0.37] },
   standardDeduction: { min: 0, max: 60_000, step: 100, unit: "usd" },
-  otherItemized: { min: 0, max: 100_000, step: 500, unit: "usd" },
+  stateIncomeTax: { min: 0, max: 200_000, step: 500, unit: "usd" },
+  propertyTax: { min: 0, max: 60_000, step: 100, unit: "usd" },
+  charity: { min: 0, max: 100_000, step: 500, unit: "usd" },
   inflation: { min: 0, max: 0.06, step: 0.0025, unit: "pct", digits: 2, band: [0.02, 0.03] },
 } satisfies Record<string, SliderSpec>;
 
@@ -60,20 +66,23 @@ export function toPlan(i: MortgageInputs): MortgagePlan {
     horizonMonths: Math.round(i.horizonYears * 12),
     investReturn: i.investReturn,
     dividendYield: i.dividendYield,
-    investTaxRate: i.investTaxRate,
+    investTaxRate: i.fedGainsRate + i.ctGainsRate,
     taxFreeAccount: i.account === "taxFree",
     sellAtHorizon: i.sellAtHorizon,
     deductInterest: i.deductInterest,
-    marginalRate: i.marginalRate,
+    marginalRate: i.fedMarginalRate,
     standardDeduction: i.standardDeduction,
-    otherItemized: i.otherItemized,
-    otherItemizedFrom2030: i.otherItemizedFrom2030,
+    stateIncomeTax: i.stateIncomeTax,
+    propertyTax: i.propertyTax,
+    charity: i.charity,
+    saltCap: SALT_CAP_2026,
+    saltCapFrom2030: SALT_CAP_FROM_2030,
     debtCap: i.debtCap,
     inflation: i.inflation,
   };
 }
 
-/** The loan from the Home budget page's "Test a price" scenario (its saved inputs, else this browser's copy). */
+/** The loan and its property tax from the Home budget page's "Test a price" scenario (its saved inputs, else this browser's copy). */
 export async function fromHomeBudget(): Promise<Partial<MortgageInputs> | null> {
   try {
     let saved = await fetchSavedInputs<HomeBudgetInputs>("pf-home-budget-inputs").catch(() => null);
@@ -88,6 +97,7 @@ export async function fromHomeBudget(): Promise<Partial<MortgageInputs> | null> 
       rate: h.annualMortgageRate,
       termYears: h.mortgageTermYears,
       investReturn: h.investmentReturnRate,
+      propertyTax: Math.round(h.budgetHomePrice * h.annualPropertyTaxRate),
     };
   } catch {
     return null;
@@ -102,7 +112,6 @@ type LegacyInputs = {
   loanStartMonth?: number;
   loanStartYear?: number;
   investReturnPct?: number;
-  marginalTaxPct?: number;
   lumpRows?: { id: string; month: number; year: number; amount: number }[];
 };
 
@@ -122,7 +131,6 @@ export function migrateLegacy(): Partial<MortgageInputs> | null {
     if (o.loanStartMonth) out.startMonth = o.loanStartMonth;
     if (o.loanStartYear) out.startYear = o.loanStartYear;
     if (o.investReturnPct != null) out.investReturn = o.investReturnPct / 100;
-    if (o.marginalTaxPct != null) out.marginalRate = o.marginalTaxPct / 100;
     if (o.lumpRows?.length) out.lumps = o.lumpRows.map((r) => ({ ...r, label: "", repeat: false, untilYear: r.year }));
     if (out.termYears) out.horizonYears = out.termYears;
     return out;

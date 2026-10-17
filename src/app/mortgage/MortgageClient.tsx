@@ -7,7 +7,10 @@ import { comparePrepayVsInvest, loanMonthToCalendar, monteCarlo, type PathSeries
 import { useDeferredValue, useEffect, useMemo } from "react";
 import { BalancesChart, GapChart, INVEST, NetWorthChart, OpportunityChart, PREPAY, SensitivityChart, type YearPoint } from "./MortgageCharts";
 import { MortgageInputsPanel } from "./MortgageInputsPanel";
-import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, STORAGE_KEY, toPlan, type MortgageInputs } from "./inputs";
+import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, RETIRED_KEYS, STORAGE_KEY, toPlan, type MortgageInputs } from "./inputs";
+
+/** A chance of investing winning inside this range is a coin flip, not a verdict. */
+const TOSS_UP = [0.45, 0.55] as const;
 
 const signed = (v: number) => (v > 0 ? `+${formatUsd(v)}` : formatUsd(v));
 const span = (months: number) => {
@@ -23,6 +26,10 @@ export function MortgageClient() {
     const legacy = migrateLegacy();
     if (legacy) setIns((x) => ({ ...x, ...legacy }));
   }, [setIns]);
+  useEffect(() => {
+    if (!RETIRED_KEYS.some((k) => k in ins)) return;
+    setIns((x) => Object.fromEntries(Object.entries(x).filter(([k]) => !(RETIRED_KEYS as readonly string[]).includes(k))) as MortgageInputs);
+  }, [ins, setIns]);
   const set = (p: Partial<MortgageInputs>) => setIns((x) => ({ ...x, ...p }));
 
   const plan = useMemo(() => toPlan(ins), [ins]);
@@ -36,7 +43,14 @@ export function MortgageClient() {
   const H = cmp.horizonMonths;
   const { invest, prepay } = cmp;
   const defl = (m: number) => (ins.realDollars ? Math.pow(1 + ins.inflation, m / 12) : 1);
+  /** A value at month m (a balance), in the display unit. */
   const at = (a: Float64Array, m = H) => a[m]! / defl(m);
+  /** A running total through the horizon: each month's amount deflated by its own month. */
+  const flow = (a: Float64Array) => {
+    let t = 0;
+    for (let m = 1; m <= H; m++) t += (a[m]! - a[m - 1]!) / defl(m);
+    return t;
+  };
   const advantage = cmp.advantage / defl(H);
   const hasChoice = plan.extraMonthly > 0 || plan.lumps.some((l) => l.month <= H);
   const unit = ins.realDollars ? "today's dollars" : "future dollars";
@@ -75,10 +89,11 @@ export function MortgageClient() {
   const hMc = mc.bands[mc.bands.length - 1];
   const mcFresh = hMc?.month === H;
   const sooner = prepay.payoffMonth !== null ? (invest.payoffMonth ?? Math.round(plan.termMonths)) - prepay.payoffMonth : null;
-  const interestSaved = at(invest.interest) - at(prepay.interest);
-  const deductionLost = at(invest.deduction) - at(prepay.deduction);
+  const interestSaved = flow(invest.interest) - flow(prepay.interest);
+  const deductionLost = flow(invest.deduction) - flow(prepay.deduction);
   const hasLumps = plan.lumps.some((l) => l.month <= H);
   const winner = advantage >= 0 ? INVEST : PREPAY;
+  const tossUp = mcFresh && mc.chanceInvestWins >= TOSS_UP[0] && mc.chanceInvestWins <= TOSS_UP[1];
 
   return (
     <PageBody>
@@ -92,14 +107,20 @@ export function MortgageClient() {
             </Callout>
           ) : (
             <Callout
-              tone={advantage >= 0 ? "good" : "info"}
-              title={`${winner} comes out ${formatUsd(Math.abs(advantage))} ahead after ${ins.horizonYears} years`}
+              tone={advantage >= 0 && !tossUp ? "good" : "info"}
+              title={
+                tossUp
+                  ? `Too close to call: ${advantage >= 0 ? "investing" : "paying down"} leads by just ${formatUsd(Math.abs(advantage))} after ${ins.horizonYears} years`
+                  : `${winner} comes out ${formatUsd(Math.abs(advantage))} ahead after ${ins.horizonYears} years`
+              }
             >
               {cmp.breakEvenReturn !== null
                 ? `Investing has to earn more than ${formatPercentRatio(cmp.breakEvenReturn, 2)} a year to beat paying down a ${formatPercentRatio(ins.rate, 3)} loan with these taxes; you assumed ${formatPercentRatio(ins.investReturn, 2)}. `
                 : ""}
               {mcFresh && `In ${Math.round(mc.chanceInvestWins * 100)}% of ${mc.paths} simulated markets investing ended ahead. `}
-              Paying down is a guaranteed return; investing is not — weigh the range below, not just the expected line.
+              {tossUp
+                ? `Anything from ${formatPercentRatio(TOSS_UP[0], 0)} to ${formatPercentRatio(TOSS_UP[1], 0)} is a coin flip: decide on liquidity and risk, not this gap.`
+                : "Paying down is a guaranteed return; investing is not — weigh the range below, not just the expected line."}
             </Callout>
           )}
 
@@ -118,7 +139,7 @@ export function MortgageClient() {
             <StatCell
               label="Chance investing wins"
               value={hasChoice && mcFresh ? `${Math.round(mc.chanceInvestWins * 100)}%` : "—"}
-              tone={mc.chanceInvestWins >= 0.5 ? "pos" : "warn"}
+              tone={tossUp ? "neutral" : mc.chanceInvestWins > 0.5 ? "pos" : "warn"}
               sub={`${formatPercentRatio(ins.volatility, 0)} volatility · ${mc.paths} markets`}
             />
             <StatCell
@@ -188,7 +209,7 @@ export function MortgageClient() {
             </Card>
           )}
 
-          <Ledger invest={invest} prepay={prepay} H={H} at={at} unit={unit} deductionLost={deductionLost} />
+          <Ledger invest={invest} prepay={prepay} H={H} at={at} flow={flow} unit={unit} deductionLost={deductionLost} />
           <YearTable invest={invest} prepay={prepay} H={H} defl={defl} label={label} />
           <Method />
         </div>
@@ -198,22 +219,38 @@ export function MortgageClient() {
 }
 
 /** Every dollar on both paths at the horizon — the audit trail behind the headline. */
-function Ledger({ invest, prepay, H, at, unit, deductionLost }: { invest: PathSeries; prepay: PathSeries; H: number; at: (a: Float64Array, m?: number) => number; unit: string; deductionLost: number }) {
+function Ledger({
+  invest,
+  prepay,
+  H,
+  at,
+  flow,
+  unit,
+  deductionLost,
+}: {
+  invest: PathSeries;
+  prepay: PathSeries;
+  H: number;
+  at: (a: Float64Array, m?: number) => number;
+  flow: (a: Float64Array) => number;
+  unit: string;
+  deductionLost: number;
+}) {
   const taxOnSale = (s: PathSeries) => at(s.invested) - at(s.investedNet);
   const lines: { label: string; get: (s: PathSeries) => number; strong?: boolean; hint?: string }[] = [
-    { label: "Cash sent to the loan", get: (s) => at(s.toLoan) },
-    { label: "Cash invested", get: (s) => at(s.toInvest) },
-    { label: "Total cash out of pocket", get: (s) => at(s.toLoan) + at(s.toInvest), strong: true, hint: "Identical on both paths by construction." },
-    { label: "Interest paid", get: (s) => at(s.interest) },
-    { label: "Tax saved by the deduction (invested)", get: (s) => at(s.deduction) },
-    { label: "Tax on dividends", get: (s) => at(s.dividendTax) },
+    { label: "Cash sent to the loan", get: (s) => flow(s.toLoan) },
+    { label: "Cash invested", get: (s) => flow(s.toInvest) },
+    { label: "Total cash out of pocket", get: (s) => flow(s.toLoan) + flow(s.toInvest), strong: true, hint: "Identical on both paths by construction." },
+    { label: "Interest paid", get: (s) => flow(s.interest) },
+    { label: "Tax saved by the deduction (invested)", get: (s) => flow(s.deduction) },
+    { label: "Tax on dividends", get: (s) => flow(s.dividendTax) },
     { label: "Investments", get: (s) => at(s.invested) },
     { label: "Tax due if sold", get: (s) => -taxOnSale(s) },
     { label: "Loan left", get: (s) => -at(s.balance) },
     { label: "Net worth", get: (s) => at(s.netWorth), strong: true },
   ];
   return (
-    <Card title="The ledger" subtitle={`Totals by the horizon, ${unit}. Cash out of pocket matches on both paths, so the net-worth gap is purely where the dollars went.`}>
+    <Card title="The ledger" subtitle={`Totals by the horizon, ${unit} (in today's dollars each month counts at its own date). Cash out of pocket matches on both paths, so the net-worth gap is purely where the dollars went.`}>
       <div className="overflow-x-auto">
         <table className={`${table.table} min-w-[520px]`}>
           <thead className={table.head}>
@@ -304,11 +341,12 @@ function Method() {
         </li>
         <li>
           <b>Investment taxes.</b> In a taxable account the dividend yield is taxed each year as it&apos;s paid; the rest of the return is unrealized and taxed only when sold.
-          A tax-free account pays neither.
+          The rate is federal (long-term gains + NIIT) plus Connecticut, which taxes gains as ordinary income. A tax-free account pays neither.
         </li>
         <li>
-          <b>The deduction.</b> Each calendar year the interest on up to the debt cap is added to your other itemized deductions; the tax saved is only what that pushes you
-          above the standard deduction, times your marginal rate, and it&apos;s invested at year end. As the balance falls the deduction often stops being worth anything — and
+          <b>The deduction.</b> Each calendar year the interest on up to the debt cap is added to your other itemized deductions (state income and property tax up to the
+          SALT cap, plus charity); the tax saved is only what that pushes you above the standard deduction, times your federal marginal rate — Connecticut has no
+          itemized deductions — and it&apos;s invested at year end. As the balance falls the deduction often stops being worth anything — and
           paying down hastens that.
         </li>
         <li>
