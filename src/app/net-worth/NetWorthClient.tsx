@@ -120,6 +120,19 @@ function trailing(r: NetWorthReport, months: number) {
   };
 }
 
+/**
+ * The height a group's band gets in the stacked chart, in dollars. The chart stacks by sign
+ * (positives above zero, negatives below), so a group whose net balance flips sign, like
+ * cards with a refund or overpayment, would jump from below zero to the top of the asset stack.
+ * The tooltip still shows the true balance; the bold net-worth line is drawn separately.
+ */
+/** Row key suffix holding a group's true balance, for the tooltip. */
+const RAW = "__raw";
+
+function bandValue(group: string, cents: number): number {
+  return (group === "Credit cards" ? Math.min(0, cents) : Math.max(0, cents)) / 100;
+}
+
 function Overview({ r }: { r: NetWorthReport }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
@@ -131,7 +144,10 @@ function Overview({ r }: { r: NetWorthReport }) {
     const row: Record<string, number | string | null> = { label: p.label, total: null };
     if (p.blockers.length) return row;
     row.total = p.household.closingCents / 100;
-    for (const g of p.byGroup) row[g.group] = g.closingCents / 100;
+    for (const g of p.byGroup) {
+      row[g.group] = bandValue(g.group, g.closingCents);
+      row[`${g.group}${RAW}`] = g.closingCents / 100;
+    }
     return row;
   });
   const cur = r.current.blockers;
@@ -197,7 +213,13 @@ function Overview({ r }: { r: NetWorthReport }) {
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={28} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={[yFloor, "auto"]} allowDataOverflow />
-              <Tooltip {...ui.tooltip} formatter={(v, name) => [formatUsd(Math.round(Number(v))), name === "total" ? "Net worth" : String(name)]} />
+              <Tooltip
+                {...ui.tooltip}
+                formatter={(v, name, item) => [
+                  formatUsd(Math.round(Number(name === "total" ? v : (item.payload?.[`${String(name)}${RAW}`] ?? v)))),
+                  name === "total" ? "Net worth" : String(name),
+                ]}
+              />
               <Legend {...ui.legend} formatter={(n) => (n === "total" ? "Net worth" : n)} />
               {flagged.map((p) => (
                 <ReferenceArea key={p.start} x1={p.label} x2={p.label} fill={chart.neutral} fillOpacity={0.18} strokeOpacity={0} />
