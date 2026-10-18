@@ -1,6 +1,8 @@
 "use client";
 
 import { Badge, Card, Segmented, table, usePersistentState } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ForecastDescriptor, LedgerLine } from "@/lib/book/proof/forecastProof";
 import type { ScheduledBonus } from "@/lib/forecast/bonusSchedule";
 import type { Forecast } from "@/lib/forecast/forecast";
 import { monthPeriods, yearPeriods, type Flows, type Period } from "@/lib/forecast/periods";
@@ -9,6 +11,8 @@ import { useMemo, useState } from "react";
 import { monthLabel, pct, usd } from "./forecastUi";
 
 type Row = {
+  /** The cell's proof line (forecastProof.ts LedgerLine). */
+  line: LedgerLine;
   label: string;
   help: string;
   get: (x: Flows) => number | null;
@@ -22,33 +26,35 @@ type Row = {
 };
 
 const ROWS: Row[] = [
-  { label: "Base salary", help: "Regular pay before tax. Actual: pay stubs. Forecast: the drivers' base salary, raised each January.", get: (x) => x.salary },
-  { label: "Bonuses", help: "Gross. Actual: pay stubs. Forecast: the payments listed below (paid, on a letter, or estimated). Hover a cell for its payments.", get: (x) => x.bonus },
-  { label: "Interest & other", help: "Actual only. The forecast counts interest and dividends in growth.", get: (x) => x.otherIncome, optional: true },
+  { line: "salary", label: "Base salary", help: "Regular pay before tax. Actual: pay stubs. Forecast: the drivers' base salary, raised each January.", get: (x) => x.salary },
+  { line: "bonus", label: "Bonuses", help: "Gross. Actual: pay stubs. Forecast: the payments listed below (paid, on a letter, or estimated). Hover a cell for its payments.", get: (x) => x.bonus },
+  { line: "otherIncome", label: "Interest & other", help: "Actual only. The forecast counts interest and dividends in growth.", get: (x) => x.otherIncome, optional: true },
   {
+    line: "taxes",
     label: "Taxes & deductions",
     help: "Income tax, FICA and payroll deductions (health, FSA, after-tax). Actual: withheld + paid − refunds + deductions. Forecast: owed on base pay at the take-home rate, and on bonuses at the bonus keep rate.",
     get: (x) => x.taxes,
     out: true,
   },
-  { label: "Employer 401(k) & HSA", help: "Employer money into retirement accounts.", get: (x) => x.employer },
-  { label: "Living cost", help: "Everything spent except tagged one-offs.", get: (x) => x.living, out: true },
-  { label: "Bonus spent", help: "The part of bonuses kept after tax that isn't saved (the Bonus saved driver).", get: (x) => x.bonusSpent, out: true, optional: true },
-  { label: "One-offs", help: "Actual: tagged one-off expenses. Forecast: planned one-offs.", get: (x) => x.oneOffs, out: true, optional: true },
-  { label: "Saved", help: "Income − taxes & deductions + employer money − spending.", get: (x) => x.saved, kind: "sum" },
-  { label: "to retirement", help: "Your 401(k)/HSA deferrals + employer money.", get: (x) => x.toRetirement, kind: "sub" },
+  { line: "employer", label: "Employer 401(k) & HSA", help: "Employer money into retirement accounts.", get: (x) => x.employer },
+  { line: "living", label: "Living cost", help: "Everything spent except tagged one-offs.", get: (x) => x.living, out: true },
+  { line: "bonusSpent", label: "Bonus spent", help: "The part of bonuses kept after tax that isn't saved (the Bonus saved driver).", get: (x) => x.bonusSpent, out: true, optional: true },
+  { line: "oneOffs", label: "One-offs", help: "Actual: tagged one-off expenses. Forecast: planned one-offs.", get: (x) => x.oneOffs, out: true, optional: true },
+  { line: "saved", label: "Saved", help: "Income − taxes & deductions + employer money − spending.", get: (x) => x.saved, kind: "sum" },
+  { line: "toRetirement", label: "to retirement", help: "Your 401(k)/HSA deferrals + employer money.", get: (x) => x.toRetirement, kind: "sub" },
   {
+    line: "toLiquid",
     label: "to liquid",
     help: "What lands in (or leaves) cash and brokerage.",
     get: (x) => (x.saved == null || x.toRetirement == null ? null : x.saved - x.toRetirement),
     kind: "sub",
     warnNegative: true,
   },
-  { label: "Growth & other", help: "Actual: the change in net worth not explained by cash saved (markets, outside money, gaps). Forecast: investment returns.", get: (x) => x.growth },
-  { label: "Change in net worth", help: "Saved + growth = closing − opening net worth.", get: (x) => x.change, kind: "sum" },
-  { label: "Net worth, end", help: "Balances at the end of the column: Dec 31, or the month shown.", get: (x) => x.close?.netWorth ?? null, kind: "total" },
-  { label: "liquid", help: "Cash and brokerage, less card balances.", get: (x) => x.close?.liquid ?? null, kind: "sub", warnNegative: true },
-  { label: "illiquid", help: "Retirement accounts, HSA, everything else.", get: (x) => x.close?.illiquid ?? null, kind: "sub" },
+  { line: "growth", label: "Growth & other", help: "Actual: the change in net worth not explained by cash saved (markets, outside money, gaps). Forecast: investment returns.", get: (x) => x.growth },
+  { line: "change", label: "Change in net worth", help: "Saved + growth = closing − opening net worth.", get: (x) => x.change, kind: "sum" },
+  { line: "netWorth", label: "Net worth, end", help: "Balances at the end of the column: Dec 31, or the month shown.", get: (x) => x.close?.netWorth ?? null, kind: "total" },
+  { line: "liquid", label: "liquid", help: "Cash and brokerage, less card balances.", get: (x) => x.close?.liquid ?? null, kind: "sub", warnNegative: true },
+  { line: "illiquid", label: "illiquid", help: "Retirement accounts, HSA, everything else.", get: (x) => x.close?.illiquid ?? null, kind: "sub" },
 ];
 
 const SOURCE: Record<ScheduledBonus["source"], { label: string; tone: "pos" | "info" | "neutral" }> = {
@@ -66,7 +72,7 @@ const inPeriod = (p: Period, key: string) => key >= p.from && key <= p.through.s
  * Rows are the same everywhere, so every total is the sum of its parts and every column
  * walks from income to saved to the change in net worth.
  */
-export function ForecastLedger({ f, r }: { f: Forecast; r: AnnualProfileReport }) {
+export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfileReport; provable: boolean }) {
   const lastYear = f.months.at(-1)?.year ?? f.plan.start.year;
   const [view, setView] = usePersistentState<{ span: "5" | "10" | "all"; units: "k" | "usd" }>("pf-forecast-ledger", () => ({ span: "5", units: "k" }));
   const { span, units } = view;
@@ -86,11 +92,11 @@ export function ForecastLedger({ f, r }: { f: Forecast; r: AnnualProfileReport }
   return (
     <Card
       title={monthsOf != null ? `${monthsOf}, month by month` : "Forecast ledger"}
-      subtitle={
+      subtitle={`${
         monthsOf != null
           ? "Each month's flows; the last column is the whole year (same as its year column)."
           : "Income − taxes − spending = saved; saved + growth = change in net worth. Click a forecast year for its months."
-      }
+      } ${provable ? "Click a figure for how it's worked out." : "Save the drivers to see how a figure is worked out."}`}
       actions={
         monthsOf != null ? (
           <span className="flex items-center gap-1">
@@ -180,7 +186,11 @@ export function ForecastLedger({ f, r }: { f: Forecast; r: AnnualProfileReport }
                         row.warnNegative && shown != null && shown < 0 ? "!text-neg" : ""
                       }`}
                     >
-                      {shown == null ? <span className="text-faint">—</span> : shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}
+                      {shown == null ? (
+                        <span className="text-faint">—</span>
+                      ) : (
+                        <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : undefined}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
+                      )}
                     </td>
                   );
                 })}
@@ -260,3 +270,9 @@ export function BonusPayments({ f, throughYear }: { f: Forecast; throughYear: nu
     </Card>
   );
 }
+
+/** The proof recipe of a ledger cell: its line over the column's months (forecastProof.ts, figure "month"). */
+const cellProof = (p: Period, line: LedgerLine): ForecastDescriptor => {
+  const through = p.through.slice(0, 7);
+  return { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line };
+};
