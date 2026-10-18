@@ -5,6 +5,7 @@ import type { Book, BookStub } from "../book/load.ts";
 import { personPayYear, type PersonPayYear } from "../book/pay.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import { buildNetWorth } from "../book/reports/netWorth.ts";
+import { oneOffSubject, withReimbursements } from "../book/reimbursements.ts";
 import { rentPayments } from "../book/rent.ts";
 import { taxRows } from "../book/taxPayments.ts";
 import { CATEGORIES } from "../classifier/taxonomy.ts";
@@ -79,6 +80,8 @@ export type YearCash = {
   waterfall: CashWaterfall;
   otherIncomeDetail: { interest: number; dividends: number; other: number };
   reimbursements: number;
+  /** Paycheck reimbursements linked to specific charges (book/reimbursements.ts): netted in those charges' categories, so left out of `reimbursements`. */
+  payLinked: number;
   spending: CategoryCents[];
   /** The "other" income by category (income rows that aren't pay, interest or reimbursements). */
   otherIncomeByCategory: CategoryCents[];
@@ -139,6 +142,8 @@ type CashRows = {
   interest: number;
   other: number;
   reimbursements: number;
+  /** Paycheck reimbursement lines linked to the charges they paid back: already counted in those charges' categories. */
+  payLinked: number;
   nonRecurring: number;
   taxSpending: number;
   spending: Map<string, number>;
@@ -210,6 +215,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     let interest = 0;
     let other = 0;
     let reimbursements = 0;
+    let payLinked = 0;
     let nonRecurring = 0;
     // Tax payments filed as spending: taxes, not living (Cash flow counts them as spending).
     let taxSpending = 0;
@@ -219,7 +225,9 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     const otherByCategory = new Map<string, number>();
     const taxByCategory = { income: new Map<string, number>(), spending: new Map<string, number>() };
     const bump = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
-    for (const r of book.rows) {
+    // A reimbursement link's pair counts like any row: its credit nets the charge's category,
+    // its debit takes the payback off the income it came in with (book/reimbursements.ts).
+    for (const r of withReimbursements(book)) {
       if (r.bookedOn < from || r.bookedOn > to) continue;
       if (taxIds.has(r.id)) {
         if (r.lane === "EXPENSE") {
@@ -229,7 +237,9 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
         continue;
       }
       if (r.lane === "INCOME") {
-        if (r.category === "P2P & reimbursements") reimbursements += r.amountCents;
+        // Paid inside a paycheck: the stub line already offsets living below, so it's taken off that instead.
+        if (r.reimbursement?.source === "stub") payLinked -= r.amountCents;
+        else if (r.category === "P2P & reimbursements") reimbursements += r.amountCents;
         else if (r.category === "Interest") interest += r.amountCents;
         else if (!NOT_OTHER_INCOME.has(r.category)) {
           other += r.amountCents;
@@ -238,17 +248,19 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
         continue;
       }
       if (r.lane !== "EXPENSE") continue;
-      const fp = expenseFingerprint({ accountId: r.accountId, date: r.date, amountCents: r.amountCents, payee: r.payee });
+      // A reimbursement credit counts the way its charge does (living or one-off).
+      const subject = oneOffSubject(r, book.rowById);
+      const fp = expenseFingerprint({ accountId: subject.accountId, date: subject.date, amountCents: subject.amountCents, payee: subject.payee });
       const viaCategory = nonRecurringCats.has(r.category);
       const tagged = viaCategory || fp in settings.oneOffs;
       if (tagged) nonRecurring -= r.amountCents;
       else spending.set(r.category, (spending.get(r.category) ?? 0) - r.amountCents);
-      if (tagged || (-r.amountCents >= 150_000 && !rentIds.has(r.id))) {
+      if (!r.reimbursement && (tagged || (-r.amountCents >= 150_000 && !rentIds.has(r.id)))) {
         candidates.push({ fingerprint: fp, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
       }
     }
     candidates.sort((a, b) => Number(b.tagged) - Number(a.tagged) || b.cents - a.cents);
-    return { interest, other, reimbursements, nonRecurring, taxSpending, spending, candidates, otherByCategory, taxByCategory };
+    return { interest, other, reimbursements, payLinked, nonRecurring, taxSpending, spending, candidates, otherByCategory, taxByCategory };
   };
 
   /** A living-cost figure's parts, as the forecast's proof lists them. */
@@ -331,7 +343,9 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     for (const v of investmentIncomeByAccount(book, year, cashEnd).values()) if (v.kind === "TAXABLE") dividends += v.cents;
     const sumPeople = (f: (p: PersonYear) => number) => people.reduce((s, p) => s + f(p), 0);
     // Expense reimbursements arrive by Zelle/Venmo or inside a paycheck; both offset spending.
-    reimbursements += sumPeople((p) => p.reimbursements);
+    // Less the paycheck lines linked to specific charges: those are netted in the charges' categories.
+    const payReimbursements = sumPeople((p) => p.reimbursements) - rows.payLinked;
+    reimbursements += payReimbursements;
     const living = [...spending.values()].reduce((s, v) => s + v, 0) - reimbursements;
     const waterfall = cashWaterfall({
       salary: sumPeople((p) => p.salary),
@@ -371,10 +385,11 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
             waterfall,
             otherIncomeDetail: { interest, dividends, other },
             reimbursements,
+            payLinked: rows.payLinked,
             spending: byCents(spending),
             otherIncomeByCategory: byCents(rows.otherByCategory),
             taxRowsByCategory: { income: byCents(rows.taxByCategory.income), spending: byCents(rows.taxByCategory.spending) },
-            livingTrail: livingTrail(start, cashEnd, rows, sumPeople((p) => p.reimbursements)),
+            livingTrail: livingTrail(start, cashEnd, rows, payReimbursements),
           }
         : null;
     const h = period?.household;
@@ -622,7 +637,7 @@ function outlookSeeds(x: {
     if (blockersFor(book, { affects: "CASH_FLOW", from, to }).length === 0) {
       const rows = x.cashRows(from, to, new Set(taxRows(book, from, to).map((r) => r.id)));
       // Reimbursements paid inside a paycheck offset spending, as in each year's figures.
-      const inPay = book.stubs.filter((s) => s.personId && s.payDate >= from && s.payDate <= to).reduce((t, s) => t + amountsFromLines(s.lines, "current").nonTaxable, 0);
+      const inPay = book.stubs.filter((s) => s.personId && s.payDate >= from && s.payDate <= to).reduce((t, s) => t + amountsFromLines(s.lines, "current").nonTaxable, 0) - rows.payLinked;
       const cents = [...rows.spending.values()].reduce((t, v) => t + v, 0) - rows.reimbursements - inPay;
       living.TRAILING_12 = { cents, label: "Last 12 months", detail: `Living expenses ${from} to ${to}, excluding tagged one-offs`, trail: x.livingTrail(from, to, rows, inPay) };
     }

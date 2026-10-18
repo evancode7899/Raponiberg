@@ -71,7 +71,7 @@ function write(file: string, data: RowDecisionsFile, journal: Record<string, unk
   }
 }
 
-const normPayee = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+export const normPayee = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
 /** The same row: same institution, a shared account identifier, same date, amount and payee. */
 export const sameRow = (a: RowFingerprint, b: RowFingerprint) =>
