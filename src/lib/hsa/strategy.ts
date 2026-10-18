@@ -1,35 +1,22 @@
 /**
- * How to pay a medical bill from an HSA funded partly by you (pre-tax, through payroll)
- * and partly by your employer: the money math behind the Growth & strategy tab. Pure, so
- * each piece is tested on its own.
+ * Paying a medical bill from the HSA today, or out of pocket and reimbursing it later: the
+ * money math behind the Growth & strategy tab. Pure, so each piece is tested on its own.
  *
- * Every row is measured the same way: the household's wealth in the plan year, after
- * every tax, compared with having no HSA. Money that isn't spent today is assumed to
- * sit in a taxable brokerage account, so a dollar of cost today is worth
- * `taxableAfterTax(1)` dollars in the plan year.
+ * The HSA is maxed out every year either way, so the contribution, the tax it saves and
+ * who funded it (you or your employer) are the same in both and drop out. Both ways also
+ * cost the same $1,000 of take-home today. The only difference is where that $1,000 sits
+ * until the plan year:
  *
- * Of each $1,000 of HSA money, a share `e` comes from your pay and the rest from the
- * employer. Your share costs $1,000·e·(1 − τ) of take-home (τ: income + payroll tax on the
- * next dollar); the employer's share costs you nothing. Only your share saves tax.
+ *  - Pay from the HSA now: the HSA pays the bill, and the $1,000 of take-home that would
+ *    have paid it goes into a taxable account (dividends taxed each year, the gain when
+ *    it's sold). The baseline.
+ *  - Pay out of pocket, reimburse later: the bank pays the bill and the $1,000 stays
+ *    invested in the HSA. In the plan year the receipt takes $1,000 out tax-free. The
+ *    growth on top comes out tax-free only if other medical bills cover it (retiree care
+ *    and Medicare premiums usually do); otherwise it's taxed.
  *
- *  - No HSA: pay the $1,000 bill from the bank, with after-tax money. The baseline.
- *  - Pay from the HSA now: the HSA pays the bill, so the whole $1,000 that would have left
- *    the bank stays there, less the take-home your share cost. That money is invested in
- *    the taxable account.
- *  - Pay out of pocket, reimburse later: the bank pays the bill (as with no HSA) and your
- *    share still costs its take-home, but the whole $1,000 stays invested in the HSA. In
- *    the plan year the receipt takes $1,000 out tax-free. The growth on top comes out
- *    tax-free only if other medical bills cover it (retiree care and Medicare premiums
- *    usually do); otherwise it's taxed.
- *
- * The two HSA rows put the same money in; they differ only in where $1,000 sits until the
- * plan year: the HSA (no tax on dividends or growth) or the taxable account (tax on
- * dividends each year, and on the gain when it's sold). That gap is the whole case for
- * waiting, and it doesn't depend on who funded the HSA: the split moves both rows against
- * no HSA by the same amount.
- *
- * Not counted, because it's the same in every row or not about the bill: the plan's
- * premium and deductible, and fees (both accounts are assumed to hold the same investments).
+ * Not counted, because it's the same in both: the plan's premium and deductible, and fees
+ * (both accounts are assumed to hold the same investments).
  */
 
 export type StrategyAssumptions = {
@@ -52,19 +39,19 @@ export type StrategyAssumptions = {
 };
 
 export type StrategyRow = {
-  key: "NONE" | "NOW" | "LATER";
+  key: "NOW" | "LATER";
   label: string;
-  /** Your pay, before tax, that this way uses today (your part of the contribution and any bank-paid bill). */
-  payNowCents: number;
-  /** Take-home it costs you today. */
-  costNowCents: number;
-  /** The employer's part of the HSA money (zero without one). */
-  employerCents: number;
-  /** Tax not paid on your part of the contribution (zero without one). */
-  taxSavedCents: number;
-  /** After-tax money that comes back out of the HSA in the plan year. */
-  hsaLaterCents: number;
-  /** Plan-year wealth gained vs. no HSA, after every tax. */
+  /** What the HSA pays toward the bill today. */
+  fromHsaCents: number;
+  /** What the bank (take-home) pays toward the bill today. */
+  fromBankCents: number;
+  /** Take-home put in a taxable account today instead of on the bill. */
+  taxableNowCents: number;
+  /** Money that stays invested in the HSA instead of paying the bill. */
+  hsaNowCents: number;
+  /** Plan-year worth of that money, after every tax. */
+  worthCents: number;
+  /** Plan-year wealth gained vs. paying from the HSA now. */
   aheadCents: number;
   note: string;
 };
@@ -96,79 +83,39 @@ export function hsaAfterTax(a: Pick<StrategyAssumptions, "rate" | "growthCovered
 const usd = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-US")}`;
 const pct = (v: number) => `${+(v * 100).toFixed(2)}%`;
 
-/**
- * The three ways to pay a bill of `billCents`, reimbursed (if at all) in `planYear`, when
- * `employeeShare` (0–1) of the HSA money comes from your pay and the rest from the employer.
- */
-export function strategyRows(a: StrategyAssumptions, billCents: number, planYear: number, employeeShare = 1): StrategyRow[] {
-  const tau = Math.min(0.95, a.marginalRate + a.payrollRate);
-  const e = Math.min(1, Math.max(0, employeeShare));
-  const taxable = taxableAfterTax(a, a.years);
-  const hsa = hsaAfterTax(a, a.years);
-  const pay = (afterTax: number) => afterTax / (1 - tau);
-
-  const yours = billCents * e;
-  const employer = billCents - yours;
-  const taxSaved = yours * tau;
-  const yourTakeHome = yours - taxSaved;
-  // Take-home spent today: no HSA, the bill; HSA now, only what your share of the HSA
-  // money cost; out of pocket, that plus the bill from the bank.
-  const costNone = billCents;
-  const costNow = yourTakeHome;
-  const costLater = yourTakeHome + billCents;
-  const hsaLater = billCents * hsa;
-  // Ahead in the plan year: what spending less today would have grown to in the taxable
-  // account (negative when it costs more), plus whatever comes back out of the HSA.
-  const ahead = (cost: number, back: number) => Math.round((costNone - cost) * taxable + back);
-  const aheadNow = ahead(costNow, 0);
-  const aheadLater = ahead(costLater, hsaLater);
-  const waitEdge = aheadLater - aheadNow;
+/** The two ways to pay a bill of `billCents` with the HSA maxed either way; waiting reimburses it in `planYear`. */
+export function strategyRows(a: StrategyAssumptions, billCents: number, planYear: number): StrategyRow[] {
+  const worthNow = Math.round(billCents * taxableAfterTax(a, a.years));
+  const worthLater = Math.round(billCents * hsaAfterTax(a, a.years));
+  const edge = worthLater - worthNow;
   const growthNote = a.growthCovered ? "growth too, if later bills cover it" : `growth taxed at ${pct(a.exitRate)}, no receipt behind it`;
-  const funded =
-    e >= 1 ? `all ${usd(billCents)} from your pay, pre-tax (${usd(yourTakeHome)} of take-home)`
-    : e <= 0 ? `all ${usd(billCents)} from your employer, nothing from you`
-    : `${usd(employer)} from your employer, ${usd(yours)} from your pay pre-tax (${usd(yourTakeHome)} of take-home)`;
 
   return [
     {
-      key: "NONE",
-      label: "No HSA",
-      payNowCents: Math.round(pay(costNone)),
-      costNowCents: Math.round(costNone),
-      employerCents: 0,
-      taxSavedCents: 0,
-      hsaLaterCents: 0,
-      aheadCents: 0,
-      note: `The bill is paid from the bank with after-tax money: ${usd(pay(costNone))} of pay at ${pct(tau)} tax. The baseline.`,
-    },
-    {
       key: "NOW",
       label: "Pay from the HSA now",
-      payNowCents: Math.round(yours),
-      costNowCents: Math.round(costNow),
-      employerCents: Math.round(employer),
-      taxSavedCents: Math.round(taxSaved),
-      hsaLaterCents: 0,
-      aheadCents: aheadNow,
+      fromHsaCents: billCents,
+      fromBankCents: 0,
+      taxableNowCents: billCents,
+      hsaNowCents: 0,
+      worthCents: worthNow,
+      aheadCents: 0,
       note:
-        `The HSA pays the bill: ${funded}. ` +
-        `The ${usd(billCents)} that stays in the bank${e > 0 ? `, less that ${usd(yourTakeHome)}` : ""}, is ${usd(costNone - costNow)} invested in a taxable account: ${usd(aheadNow)} by ${planYear}.`,
+        `The HSA pays the ${usd(billCents)} bill. The ${usd(billCents)} of take-home you'd have spent on it goes into a taxable account instead: ` +
+        `${usd(worthNow)} by ${planYear}, after the tax on its dividends and gain. The baseline.`,
     },
     {
       key: "LATER",
       label: `Pay out of pocket, reimburse in ${planYear}`,
-      // Your share (pre-tax) plus the pay that earned the bank money for the bill.
-      payNowCents: Math.round(yours + pay(billCents)),
-      costNowCents: Math.round(costLater),
-      employerCents: Math.round(employer),
-      taxSavedCents: Math.round(taxSaved),
-      hsaLaterCents: Math.round(hsaLater),
-      aheadCents: aheadLater,
+      fromHsaCents: 0,
+      fromBankCents: billCents,
+      taxableNowCents: 0,
+      hsaNowCents: billCents,
+      worthCents: worthLater,
+      aheadCents: edge,
       note:
-        `The same ${usd(billCents)} goes into the HSA and stays invested: ${funded}. The bill takes ${usd(billCents)} from the bank, as with no HSA. ` +
-        `In ${planYear} the receipt takes ${usd(billCents)} out tax-free (${growthNote}): ${usd(hsaLater)}` +
-        (e > 0 ? `, less the ${usd(yourTakeHome * taxable)} your ${usd(yourTakeHome)} would have grown to in a taxable account. ` : ". ") +
-        `Waiting is ${waitEdge >= 0 ? "+" : "−"}${usd(Math.abs(waitEdge))} vs. paying now, whoever funds the HSA.`,
+        `The bank pays the ${usd(billCents)} bill; keep the receipt. The ${usd(billCents)} stays invested in the HSA, and in ${planYear} the receipt takes it out tax-free ` +
+        `(${growthNote}): ${usd(worthLater)}. Waiting is ${edge >= 0 ? "+" : "−"}${usd(Math.abs(edge))} vs. paying now.`,
     },
   ];
 }

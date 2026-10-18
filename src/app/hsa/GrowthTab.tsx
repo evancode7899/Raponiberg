@@ -1,43 +1,15 @@
 "use client";
 
-import { RangeSlider } from "@/app/home-budget/RangeSlider";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL, type ExpenseKind } from "@/lib/hsa/qualify";
-import type { Breakdown, Funding, HsaReport } from "@/lib/hsa/report";
-import { strategyRows } from "@/lib/hsa/strategy";
-import { useMemo, useState, type ReactNode } from "react";
+import type { Breakdown, HsaReport } from "@/lib/hsa/report";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
-import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { hsaProof } from "./proof";
 
 const RATE_SOURCE = { SETTING: "your setting", MEASURED: "your HSA's measured return", DEFAULT: "a long-run stock-market assumption" };
-const PAYROLL_SOURCE = { SETTING: "your setting", PAY_STUBS: "your pay stubs: Medicare, plus Social Security only under its wage base", TAX_REPORT: "the Taxes page", DEFAULT: "Medicare alone, assumed" };
-const MARGINAL_SOURCE = { SETTING: "your setting", RETIREMENT: "the Account limits page", TAX_REPORT: "the Taxes page: federal, with the 0.9% Medicare surtax, + state", DEFAULT: "an assumed bracket" };
-const SHARE_SPEC = { min: 0, max: 1, step: 0.01, unit: "pct" as const, digits: 0 };
-
-function fundingHint(f: Funding): ReactNode {
-  if (f.source === "NONE") return "No contributions found on the HSA's statements or pay stubs, so this starts at all you.";
-  const amounts = (
-    <>
-      Yours: <ProofValue proof={hsaProof("contributions", f.employeeCents, "employee")}>{usd0(f.employeeCents)}</ProofValue> from your pay and{" "}
-      <ProofValue proof={hsaProof("contributions", f.employerCents, "employer")}>{usd0(f.employerCents)}</ProofValue> from your employer
-    </>
-  );
-  if (f.source === "STATEMENTS")
-    return (
-      <>
-        {amounts} for {f.year} on the HSA&apos;s statements ({f.from} to {f.through}).
-      </>
-    );
-  return (
-    <>
-      {amounts} on the {f.year} pay stubs.
-    </>
-  );
-}
 
 export function GrowthTab({ r }: { r: HsaReport }) {
   const g = r.growth;
@@ -46,9 +18,6 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   const a = g.assumptions;
   const edge = g.futureValueCents - g.taxableValueCents;
   const scale = r.totals.unreimbursedCents / 100_000;
-  const measuredShare = g.funding.employeeShare;
-  const [share, setShare] = useState(measuredShare);
-  const rows = useMemo(() => strategyRows(a, 100_000, g.planYear, share), [a, g.planYear, share]);
   const taxableTerms = `${formatPercentRatio(a.dividendYield, 1)} dividends taxed yearly and ${formatPercentRatio(a.taxableRate, 0)} on the gain when sold`;
   return (
     <>
@@ -88,68 +57,45 @@ export function GrowthTab({ r }: { r: HsaReport }) {
       </Card>
 
       <Card
-        title="Three ways to pay a medical bill"
-        subtitle={`Per $1,000 of HSA money spent on bills, reimbursed in ${g.planYear} (${g.years} years). Ahead is your wealth in ${g.planYear} vs. no HSA, after every tax: whatever a way leaves in the bank today is invested in a taxable account, plus what comes out of the HSA. Waiting only works if you can cash-flow the bills and keep the receipts.`}
+        title="Pay a medical bill from the HSA, or out of pocket?"
+        subtitle={`Per $1,000 bill, with the HSA maxed out either way, so the contribution, its tax saving and your employer's part are the same in both and left out. Either way the bill costs $1,000 of take-home today; what differs is where that $1,000 sits until ${g.planYear} (${g.years} years): a taxable account (${taxableTerms}) or the HSA. Waiting only works if you can cash-flow the bills and keep the receipts.`}
       >
-        <div className="mb-3 max-w-xl">
-          <RangeSlider
-            label="Your share of the HSA money"
-            hint={`${fundingHint(g.funding)} The rest is your employer's, which costs you nothing and saves no tax.`}
-            spec={SHARE_SPEC}
-            value={share}
-            defaultValue={measuredShare}
-            onChange={setShare}
-            extra={
-              <div className="flex gap-1.5 text-[11px]">
-                {[
-                  { v: 0, label: "All employer" },
-                  { v: measuredShare, label: `Yours (${formatPercentRatio(measuredShare, 0)})` },
-                  { v: 1, label: "All you" },
-                ].map((o) => (
-                  <button key={o.label} type="button" onClick={() => setShare(o.v)} className={`rounded border px-2 py-0.5 ${Math.abs(share - o.v) < 0.005 ? "border-accent text-accent" : "border-line text-muted hover:text-fg"}`}>
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            }
-          />
-        </div>
         <div className={table.wrap}>
           <table className={table.table}>
             <thead className={table.head}>
               <tr>
                 <th className={table.th}>How</th>
-                <th className={table.thR} title="Your pay before tax this uses today: your part of the HSA contribution plus the pay that earned any bank money for the bill">
-                  Your pay used now
+                <th className={table.thR} title="What the HSA pays toward the bill today">
+                  HSA pays
                 </th>
-                <th className={table.thR} title="The same, after tax: the take-home it costs you today">
-                  Cost to you now
+                <th className={table.thR} title="What your bank account (take-home) pays toward the bill today">
+                  Bank pays
                 </th>
-                <th className={table.thR} title="The employer's part of the HSA money: costs you nothing">
-                  Employer put in
+                <th className={table.thR} title="Take-home that goes into a taxable account today instead of paying the bill">
+                  Into taxable
                 </th>
-                <th className={table.thR} title="Income and payroll tax not paid on your part of the contribution">
-                  Tax saved
+                <th className={table.thR} title="Money that stays invested in the HSA instead of paying the bill">
+                  Stays in HSA
                 </th>
-                <th className={table.thR} title={`After-tax money out of the HSA in ${g.planYear}: the receipt's amount plus its growth`}>
-                  Out of the HSA, {g.planYear}
+                <th className={table.thR} title={`What that money is worth in ${g.planYear}, after every tax, as if taken out then`}>
+                  Worth in {g.planYear}
                 </th>
                 <th className={table.thR}>Ahead in {g.planYear}</th>
                 {scale > 0 && <th className={table.thR}>On your {usd0(r.totals.unreimbursedCents)}</th>}
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => (
+              {g.strategy.map((s) => (
                 <tr key={s.key} className={`${table.tr} ${s.key === "LATER" ? "font-semibold" : ""}`}>
                   <td className={`${table.td} min-w-[18rem]`}>
                     <div className="text-fg">{s.label}</div>
                     <div className="text-[11px] font-normal text-muted">{s.note}</div>
                   </td>
-                  <td className={table.tdR}>{usd0(s.payNowCents)}</td>
-                  <td className={table.tdR}>{usd0(s.costNowCents)}</td>
-                  <td className={table.tdR}>{usd0(s.employerCents)}</td>
-                  <td className={table.tdR}>{usd0(s.taxSavedCents)}</td>
-                  <td className={table.tdR}>{usd0(s.hsaLaterCents)}</td>
+                  <td className={table.tdR}>{usd0(s.fromHsaCents)}</td>
+                  <td className={table.tdR}>{usd0(s.fromBankCents)}</td>
+                  <td className={table.tdR}>{usd0(s.taxableNowCents)}</td>
+                  <td className={table.tdR}>{usd0(s.hsaNowCents)}</td>
+                  <td className={table.tdR}>{usd0(s.worthCents)}</td>
                   <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>{usd0(s.aheadCents)}</td>
                   {scale > 0 && <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>{usd0(Math.round(s.aheadCents * scale))}</td>}
                 </tr>
@@ -158,7 +104,11 @@ export function GrowthTab({ r }: { r: HsaReport }) {
           </table>
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-muted">
-          Tax saved uses {formatPercentRatio(g.marginalRate, 0)} income tax ({MARGINAL_SOURCE[g.marginalSource]}) + {formatPercentRatio(a.payrollRate, 2)} payroll tax ({PAYROLL_SOURCE[g.payrollSource]}), on your part only. Who funds the HSA moves both HSA rows against no HSA by the same amount, so it never changes waiting&apos;s edge over paying now. Not counted: the plan&apos;s premium and deductible, and account fees. Money left in the bank is assumed invested, not spent; spending it lowers both HSA rows alike.
+          Ahead is against paying from the HSA now.{" "}
+          {a.growthCovered
+            ? "The HSA's growth is assumed to come out tax-free, backed by later medical bills."
+            : `The HSA's growth comes out taxed at ${formatPercentRatio(a.exitRate, 0)}, with no receipt behind it.`}{" "}
+          Not counted, because it&apos;s the same in both: the plan&apos;s premium and deductible, and account fees.
         </p>
       </Card>
 
