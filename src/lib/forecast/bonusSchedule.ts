@@ -21,7 +21,8 @@ import type { BonusEstimates } from "../profile/settings.ts";
 export type BonusSource = "PAID" | "LETTER" | "ESTIMATE";
 
 /** A letter's payment still to come, per person. */
-export type LetterPayment = { personId: string; employer: string; key: string; gross: number; label: string };
+/** `window`: the letter's vesting window it is paid in (the Bonuses report's window key), so it can link to its proof. */
+export type LetterPayment = { personId: string; employer: string; key: string; gross: number; label: string; window?: string };
 
 /** How a person's award is paid out, as a share of the award: month offsets count from January of the year after the award year (2 = February). */
 export type BonusPattern = {
@@ -50,6 +51,8 @@ export type ScheduledBonus = {
   why?: string;
   /** ESTIMATE: the award year it's part of. */
   awardYear?: number;
+  /** LETTER: the letter's vesting window it is paid in (the Bonuses report's window key). */
+  window?: string;
   /** PAID: the stub's pay date. */
   date?: string;
 };
@@ -93,7 +96,7 @@ export function bonusSchedule(x: {
     for (const l of x.facts.scheduled.filter((s) => s.personId === p.personId && s.key > x.startKey)) {
       // A letter payment already on a stub after the start is counted as PAID.
       if (lastPaid && l.key <= lastPaid) continue;
-      out.push({ key: l.key, personId: p.personId, personName: p.name, source: "LETTER", gross: l.gross, counted: true, label: l.label });
+      out.push({ key: l.key, personId: p.personId, personName: p.name, source: "LETTER", gross: l.gross, counted: true, label: l.label, ...(l.window ? { window: l.window } : {}) });
     }
 
     if (!(p.bonusPct > 0)) continue;
@@ -137,7 +140,7 @@ export function bonusFacts(report: BonusesReport, letters: AwardLetter[]): Bonus
     const emp = l.employment;
     if (!emp || emp.nextEmployer) continue;
     for (const w of report.windows.filter((v) => v.letterId === l.id && (v.status === "UPCOMING" || v.status === "DUE"))) {
-      scheduled.push({ personId: emp.personId, employer: l.employer, key: w.to.slice(0, 7), gross: w.scheduledCents, label: `${l.title}: ${w.label} (letter)` });
+      scheduled.push({ personId: emp.personId, employer: l.employer, key: w.to.slice(0, 7), gross: w.scheduledCents, label: `${l.title}: ${w.label} (letter)`, window: w.key });
     }
     const letter = letters.find((x) => x.id === l.id);
     const awards = (letter?.awards ?? []).filter((a) => !a.partial).sort((a, b) => b.year - a.year);

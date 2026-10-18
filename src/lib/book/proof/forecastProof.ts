@@ -14,6 +14,7 @@ import { buildCashFlowProof, CASH_FLOW_CHECKS, type CashFlowDescriptor } from ".
 import { checksFor, sumCheck } from "./common.ts";
 import { buildNetWorthProof, NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { PAY_CHECKS, type PayDescriptor } from "./payProof.ts";
+import type { BonusesDescriptor } from "./bonusesProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofEstimate, ProofKind, ProofLink } from "./types.ts";
 
 /**
@@ -493,8 +494,12 @@ function bonusProof(c: Ctx): Built {
     blocks.push({
       kind: "breakdown",
       title: "Scheduled by award letters",
-      items: letters.map((b) => ({ label: b.label, sub: `${b.personName} · ${b.key}`, value: { cents: b.gross } })),
-      // TODO(proof "bonuses"): link each letter payment to its bonuses proof once that kind lands.
+      items: letters.map((b) => ({
+        label: b.label,
+        sub: `${b.personName} · ${b.key}`,
+        value: { cents: b.gross },
+        ...(b.window ? { link: { label: b.label, descriptor: { report: "bonuses", figure: "window", window: b.window, measure: "scheduled" } satisfies BonusesDescriptor } } : {}),
+      })),
       note: "Read off the award letters on file (Bonuses page): the amounts are the letters', the dates their vesting windows.",
     });
   const pay = f.pay;
