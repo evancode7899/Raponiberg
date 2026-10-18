@@ -206,12 +206,17 @@ describe("buildPayProof", () => {
   it("re-adds every year figure the pay module reads off the stubs, exactly", () => {
     const book = bookWith();
     const py = personPayYear(book, "pat", 2025);
+    const sum = (f: (a: (typeof py.employers)[number]["ytd"]) => number) => py.employers.reduce((t, e) => t + f(e.ytd), 0);
     const want: Record<PayLine, number> = {
       base: py.totals.salary,
       bonus: py.totals.bonus,
       gross: py.totals.salary + py.totals.bonus + py.totals.reimbursements,
       net: py.totals.net,
       deferrals: py.totals.deferrals,
+      k401: sum((a) => a.retirementPretax + a.retirementRoth),
+      hsa: sum((a) => a.hsa),
+      "employer-k401": sum((a) => a.employerRetirement),
+      "employer-hsa": sum((a) => a.employerHsa),
     };
     for (const l of Object.keys(want) as PayLine[]) {
       const p = buildPayProof(book, ytd({ lines: [l] }));
