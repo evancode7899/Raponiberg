@@ -185,9 +185,9 @@ export type HsaReport = {
     taxableValueCents: number;
     /** Year by year to the plan year: both after tax if taken out that year. */
     path: { year: number; hsaCents: number; taxableCents: number }[];
-    /** Per $1,000 of medical bills: the three ways to pay (strategy.ts), at the measured split. */
+    /** Per $1,000 of medical bills: pay from the HSA now or out of pocket (strategy.ts), the HSA maxed either way. */
     strategy: StrategyRow[];
-    /** Who put the HSA money in: the default for the split slider. */
+    /** Who put the HSA money in (backs the contribution figures). */
     funding: Funding;
   };
   years: YearRow[];
@@ -463,7 +463,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     path.push({ year: thisYear + y, hsaCents: Math.round(openCents * hsaAfterTax(assumptions, y)), taxableCents: Math.round(openCents * taxableAfterTax(assumptions, y)) });
   }
   const funding = hsaFunding(input.rows, isHsa, input.payrollHsa);
-  const strategy = strategyRows(assumptions, 100_000, planYear, funding.employeeShare);
+  const strategy = strategyRows(assumptions, 100_000, planYear);
 
   // ------------------------------------------------------------ breakdowns
   const yearMap = new Map<number, YearRow>();

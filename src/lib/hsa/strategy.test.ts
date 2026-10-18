@@ -27,74 +27,38 @@ describe("hsaAfterTax", () => {
 });
 
 describe("strategyRows", () => {
-  const [none, now, later] = strategyRows(base, 100_000, 2046);
+  const [now, later] = strategyRows(base, 100_000, 2046);
   const F = grown - 0.2 * (grown - 1);
 
-  it("costs the bill's pay without an HSA, the contribution with one, and both when paying out of pocket", () => {
-    expect(none).toMatchObject({ payNowCents: 142_857, costNowCents: 100_000, taxSavedCents: 0, hsaLaterCents: 0, aheadCents: 0 });
-    expect(now).toMatchObject({ payNowCents: 100_000, costNowCents: 70_000, taxSavedCents: 30_000, hsaLaterCents: 0 });
-    expect(later).toMatchObject({ payNowCents: 242_857, costNowCents: 170_000, taxSavedCents: 30_000, hsaLaterCents: Math.round(100_000 * grown) });
+  it("has just the two ways, each costing the same $1,000 of take-home today", () => {
+    expect(strategyRows(base, 100_000, 2046)).toHaveLength(2);
+    expect(now).toMatchObject({ key: "NOW", fromHsaCents: 100_000, fromBankCents: 0, taxableNowCents: 100_000, hsaNowCents: 0, aheadCents: 0 });
+    expect(later).toMatchObject({ key: "LATER", fromHsaCents: 0, fromBankCents: 100_000, taxableNowCents: 0, hsaNowCents: 100_000 });
+    expect(now!.fromBankCents + now!.taxableNowCents).toBe(later!.fromBankCents + later!.taxableNowCents);
   });
 
-  it("counts the tax saved once, grown in the taxable account, in both HSA rows", () => {
-    expect(now!.aheadCents).toBe(Math.round(30_000 * F));
-    expect(later!.aheadCents).toBe(Math.round(-70_000 * F + 100_000 * grown));
+  it("grows paying now's $1,000 in a taxable account and waiting's in the HSA", () => {
+    expect(now!.worthCents).toBe(Math.round(100_000 * F));
+    expect(later!.worthCents).toBe(Math.round(100_000 * grown));
   });
 
-  it("puts waiting ahead of paying now by the taxable account's tax on the $1,000's growth, nothing more", () => {
-    expect(later!.aheadCents - now!.aheadCents).toBeCloseTo(0.2 * (grown - 1) * 100_000, -1); // ≈ $574
+  it("puts waiting ahead by the taxable account's tax on the $1,000's growth, nothing more", () => {
+    expect(later!.aheadCents).toBe(later!.worthCents - now!.worthCents);
+    expect(later!.aheadCents).toBeCloseTo(0.2 * (grown - 1) * 100_000, -1); // ≈ $574
+  });
+
+  it("ignores income and payroll tax: the HSA is maxed either way", () => {
+    const [, l2] = strategyRows({ ...base, marginalRate: 0.45, payrollRate: 0.0765 }, 100_000, 2046);
+    expect(l2!.aheadCents).toBe(later!.aheadCents);
   });
 
   it("gives waiting no edge with no time to grow, or when the taxable account isn't taxed", () => {
-    const [, now0, later0] = strategyRows({ ...base, years: 0 }, 100_000, 2026);
-    expect(later0!.aheadCents).toBe(now0!.aheadCents);
-    const [, nowFree, laterFree] = strategyRows({ ...base, taxableRate: 0 }, 100_000, 2046);
-    expect(laterFree!.aheadCents - nowFree!.aheadCents).toBeCloseTo(0, -1);
+    expect(strategyRows({ ...base, years: 0 }, 100_000, 2026)[1]!.aheadCents).toBe(0);
+    expect(strategyRows({ ...base, taxableRate: 0 }, 100_000, 2046)[1]!.aheadCents).toBeCloseTo(0, -1);
   });
 
   it("makes waiting a loss when the growth isn't covered and comes out at more than the taxable rate", () => {
-    const [, nowU, laterU] = strategyRows({ ...base, growthCovered: false }, 100_000, 2046);
-    expect(laterU!.aheadCents - nowU!.aheadCents).toBeCloseTo((0.2 - 0.3) * (grown - 1) * 100_000, -1); // ≈ −$287
-  });
-
-  it("adds payroll tax to what a contribution saves and to the pay a bank-paid bill takes", () => {
-    const [noneP, nowP] = strategyRows({ ...base, payrollRate: 0.0145 }, 100_000, 2046);
-    expect(nowP!.taxSavedCents).toBe(31_450);
-    expect(noneP!.payNowCents).toBe(Math.round(100_000 / (1 - 0.3145)));
-  });
-});
-
-describe("strategyRows with an employer funding part of the HSA", () => {
-  const F = grown - 0.2 * (grown - 1);
-  // A made-up 20% you / 80% employer split at 30% tax.
-  const [none, now, later] = strategyRows(base, 100_000, 2046, 0.2);
-
-  it("saves tax only on your part, and costs you only its take-home", () => {
-    expect(none).toMatchObject({ employerCents: 0, costNowCents: 100_000 });
-    expect(now).toMatchObject({ payNowCents: 20_000, costNowCents: 14_000, employerCents: 80_000, taxSavedCents: 6_000 });
-    expect(later).toMatchObject({ payNowCents: 20_000 + 142_857, costNowCents: 114_000, employerCents: 80_000, taxSavedCents: 6_000 });
-  });
-
-  it("invests the whole bill the HSA paid, less your share's take-home, when paying now", () => {
-    expect(now!.aheadCents).toBe(Math.round(86_000 * F));
-  });
-
-  it("keeps the whole $1,000 growing in the HSA when waiting, less what your share would have grown to", () => {
-    expect(later!.aheadCents).toBe(Math.round(100_000 * grown - 14_000 * F));
-  });
-
-  it("never changes waiting's edge over paying now, whoever funds it", () => {
-    const edge = (e: number) => {
-      const [, n, l] = strategyRows(base, 100_000, 2046, e);
-      return l!.aheadCents - n!.aheadCents;
-    };
-    expect(edge(0)).toBeCloseTo(edge(1), -1);
-    expect(edge(0.2)).toBeCloseTo(edge(1), -1);
-  });
-
-  it("is the whole bill invested when the employer funds it all", () => {
-    const [, n0, l0] = strategyRows(base, 100_000, 2046, 0);
-    expect(n0).toMatchObject({ payNowCents: 0, costNowCents: 0, taxSavedCents: 0, employerCents: 100_000, aheadCents: Math.round(100_000 * F) });
-    expect(l0!.aheadCents).toBe(Math.round(100_000 * grown));
+    const [, laterU] = strategyRows({ ...base, growthCovered: false }, 100_000, 2046);
+    expect(laterU!.aheadCents).toBeCloseTo((0.2 - 0.3) * (grown - 1) * 100_000, -1); // ≈ −$287
   });
 });

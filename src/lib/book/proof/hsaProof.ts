@@ -224,7 +224,7 @@ function contributionsProof(book: Book, r: HsaReport, part: "employee" | "employ
       { label: "From your pay", value: { cents: f.employeeCents }, link: link("your contributions", { report: "hsa", metric: "contributions", part: "employee" }) },
       { label: "From your employer", value: { cents: f.employerCents }, link: link("your employer's contributions", { report: "hsa", metric: "contributions", part: "employer" }) },
     ],
-    note: `Your share: ${formatPercentRatio(f.employeeShare, 0)}. It's the default for the split slider on Growth & strategy.`,
+    note: `Your share: ${formatPercentRatio(f.employeeShare, 0)}.`,
   });
 
   if (f.source === "STATEMENTS") {

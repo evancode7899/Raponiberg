@@ -167,13 +167,11 @@ describe("the HSA report", () => {
     expect(r.years.find((y) => y.year === 2026)).toMatchObject({ count: 2, reimbursedInYearCents: 21_475 });
     // Defaults fill the rest: 1.5% dividends, 20% on taxable gains, 1.45% payroll tax, growth covered by bills.
     expect(r.growth.assumptions).toMatchObject({ rate: 0.07, dividendYield: 0.015, taxableRate: 0.2, marginalRate: 0.35, payrollRate: 0.0145, growthCovered: true, exitRate: 0.35, years: 20 });
-    // Both HSA rows save the same tax; waiting beats paying now by exactly the HSA-vs-taxable gap on the $1,000.
-    const [none, now, later] = r.growth.strategy;
-    expect(none!.aheadCents).toBe(0);
-    expect(now!.taxSavedCents).toBe(36_450);
-    expect(later!.taxSavedCents).toBe(36_450);
+    // The HSA is maxed either way; waiting beats paying now by exactly the HSA-vs-taxable gap on the $1,000.
+    const [now, later] = r.growth.strategy;
+    expect(now!.aheadCents).toBe(0);
     const perDollarEdge = (r.growth.futureValueCents - r.growth.taxableValueCents) / r.totals.unreimbursedCents;
-    expect(later!.aheadCents - now!.aheadCents).toBeCloseTo(100_000 * perDollarEdge, -1);
+    expect(later!.aheadCents).toBeCloseTo(100_000 * perDollarEdge, -1);
     expect(r.growth.futureValueCents).toBeGreaterThan(r.growth.taxableValueCents);
   });
 
@@ -315,11 +313,11 @@ describe("who funded the HSA", () => {
     expect(hsaFunding([], hsaOnly, null)).toMatchObject({ source: "NONE", employeeShare: 1 });
   });
 
-  it("prices the strategy table at the measured split", () => {
+  it("reads the split, and leaves the strategy table alone: the HSA is maxed either way", () => {
     const rows = [row("2026-05-01", 20_000, "Employee Contribution", "hsa", t), row("2026-05-01", 80_000, "Employer Contribution", "hsa", t)];
     const r = buildHsaReport(input(file([]), rows));
     expect(r.growth.funding.employeeShare).toBe(0.2);
-    expect(r.growth.strategy[1]).toMatchObject({ employerCents: 80_000, taxSavedCents: Math.round(20_000 * 0.3645) });
+    expect(r.growth.strategy).toEqual(buildHsaReport(input(file([]), [])).growth.strategy);
   });
 });
 
