@@ -3,6 +3,9 @@
 import { BlockedValue } from "@/components/ledger/Blocked";
 import { QualityBadge } from "@/components/ledger/LedgerBits";
 import { Card, StatementTable, type TableRow } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 as usd } from "@/lib/formatMoney";
 import type { AccountRollforward, RollforwardReport, RollYear } from "@/lib/profile/rollforwards";
@@ -12,6 +15,11 @@ const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : f
 const blockedCell = (blockers: BlockerRef[]): Cell => ({ text: <BlockedValue blockers={blockers} /> });
 const uniq = (bs: BlockerRef[]) => [...new Map(bs.map((b) => [b.id, b])).values()];
 const yearLabel = (y: number, currentYear: number) => (y === currentYear ? `${y} YTD` : String(y));
+/** One roll-forward line of one account-year, opening its proof. */
+const rollP = (a: AccountRollforward, x: RollYear, line: RollLine): ProofTarget => ({
+  descriptor: { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line },
+  ...(line === "return" ? {} : { shownCents: rollValue(x, line) }),
+});
 
 /**
  * Each investment account, one column per year: opening → contributions → withdrawals →
@@ -68,18 +76,19 @@ function Summary({ accounts, years, currentYear }: { accounts: AccountRollforwar
       cells: shown.map((y) => {
         const x = at(a, y);
         if (!x) return null;
-        return x.blockers.length ? blockedCell(x.blockers) : { text: usd(x.closing), title: x.returnRatio != null ? `Return ${pct(x.returnRatio)}` : undefined };
+        return x.blockers.length ? blockedCell(x.blockers) : { text: usd(x.closing), title: x.returnRatio != null ? `Return ${pct(x.returnRatio)}` : undefined, proof: rollP(a, x, "closing") };
       }),
     }));
   // A total over a year with any blocked account isn't provable.
-  const sum = (f: (x: RollYear) => number) =>
+  const sum = (line: RollTotalLine) =>
     shown.map((y): Cell => {
       const blockers = uniq(accounts.flatMap((a) => at(a, y)?.blockers ?? []));
-      return blockers.length ? blockedCell(blockers) : { text: usd(accounts.reduce((s, a) => s + (at(a, y) ? f(at(a, y)!) : 0), 0)) };
+      const cents = accounts.reduce((s, a) => s + (at(a, y) ? rollTotalValue(at(a, y)!, line) : 0), 0);
+      return blockers.length ? blockedCell(blockers) : { text: usd(cents), proof: { descriptor: { report: "annual", figure: "rollforward-total", year: y, line }, shownCents: cents } };
     });
-  rows.push({ label: "Total invested", total: true, cells: sum((x) => x.closing) });
-  rows.push({ label: "Contributions (you + employer)", muted: true, cells: sum((x) => x.employee + x.employer) });
-  rows.push({ label: "Income + market change", muted: true, cells: sum((x) => (x.income ?? 0) + x.marketChange + x.fees) });
+  rows.push({ label: "Total invested", total: true, cells: sum("closing") });
+  rows.push({ label: "Contributions (you + employer)", muted: true, cells: sum("contributions") });
+  rows.push({ label: "Income + market change", muted: true, cells: sum("growth") });
   return <StatementTable columns={shown.map((y) => yearLabel(y, currentYear))} rows={rows} />;
 }
 
@@ -87,11 +96,11 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
   const ys = a.years;
   const any = (f: (x: RollYear) => number | null) => ys.some((x) => !x.blockers.length && (f(x) ?? 0) !== 0);
   const cell = (x: RollYear, c: Cell): Cell => (x.blockers.length ? blockedCell(x.blockers) : c);
-  const row = (label: string, f: (x: RollYear) => number | null, opts: Partial<Extract<TableRow, { cells: Cell[] }>> = {}): TableRow => ({
+  const row = (label: string, line: Exclude<RollLine, "opening" | "closing" | "return">, f: (x: RollYear) => number | null, opts: Partial<Extract<TableRow, { cells: Cell[] }>> = {}): TableRow => ({
     label,
     indent: !opts.strong && !opts.total,
     ...opts,
-    cells: ys.map((x) => cell(x, { text: f(x) == null ? "—" : usd(f(x)) })),
+    cells: ys.map((x) => cell(x, f(x) == null ? { text: "—" } : { text: usd(f(x)), proof: rollP(a, x, line) })),
   });
   const rows: TableRow[] = [
     {
@@ -99,20 +108,21 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
       cells: ys.map((x) =>
         cell(x, {
           text: usd(x.opening),
+          proof: rollP(a, x, "opening"),
           title: x.firstOnFile && x.opening ? "Balance already in the account when its first statement on file begins" : undefined,
           dim: x.firstOnFile && x.opening !== 0,
         }),
       ),
     },
   ];
-  if (any((x) => x.employee)) rows.push(row("Your contributions", (x) => x.employee));
-  if (any((x) => x.employer)) rows.push(row("Employer contributions", (x) => x.employer));
-  if (any((x) => x.deposits)) rows.push(row("Deposits & transfers in", (x) => x.deposits));
-  if (any((x) => x.withdrawals)) rows.push(row("Withdrawals & transfers out", (x) => x.withdrawals));
-  rows.push(row("Balance after net contributions", (x) => x.opening + x.employee + x.employer + x.deposits + x.withdrawals, { strong: true }));
-  if (ys.some((x) => x.income != null)) rows.push(row("Dividends & interest", (x) => x.income));
-  rows.push(row("Net change in market value", (x) => x.marketChange));
-  if (any((x) => x.fees)) rows.push(row("Fees", (x) => x.fees));
+  if (any((x) => x.employee)) rows.push(row("Your contributions", "employee", (x) => x.employee));
+  if (any((x) => x.employer)) rows.push(row("Employer contributions", "employer", (x) => x.employer));
+  if (any((x) => x.deposits)) rows.push(row("Deposits & transfers in", "deposits", (x) => x.deposits));
+  if (any((x) => x.withdrawals)) rows.push(row("Withdrawals & transfers out", "withdrawals", (x) => x.withdrawals));
+  rows.push(row("Balance after net contributions", "after-contributions", (x) => rollValue(x, "after-contributions"), { strong: true }));
+  if (ys.some((x) => x.income != null)) rows.push(row("Dividends & interest", "income", (x) => x.income));
+  rows.push(row("Net change in market value", "market", (x) => x.marketChange));
+  if (any((x) => x.fees)) rows.push(row("Fees", "fees", (x) => x.fees));
   rows.push({
     label: "Closing balance",
     total: true,
@@ -120,14 +130,14 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
       cell(x, {
         text: (
           <>
-            {usd(x.closing)}
+            <ProofValue proof={rollP(a, x, "closing")}>{usd(x.closing)}</ProofValue>
             <QualityBadge quality={x.quality} />
           </>
         ),
       }),
     ),
   });
-  rows.push({ label: "Rate of return", muted: true, cells: ys.map((x) => cell(x, { text: pct(x.returnRatio) })) });
+  rows.push({ label: "Rate of return", muted: true, cells: ys.map((x) => cell(x, { text: pct(x.returnRatio), proof: rollP(a, x, "return") })) });
 
   return (
     <Card

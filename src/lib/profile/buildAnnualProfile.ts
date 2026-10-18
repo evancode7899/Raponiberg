@@ -26,7 +26,7 @@ import {
   type CashWaterfall,
   type NetWorthSummary,
 } from "./annualMath.ts";
-import { BUCKETS, type FinancialProfileSettings } from "./settings.ts";
+import { BUCKETS, type FinancialProfileSettings, type NetWorthBucket } from "./settings.ts";
 
 /**
  * The household's financial profile, one column per calendar year, entirely from the
@@ -80,6 +80,10 @@ export type YearCash = {
   otherIncomeDetail: { interest: number; dividends: number; other: number };
   reimbursements: number;
   spending: CategoryCents[];
+  /** The "other" income by category (income rows that aren't pay, interest or reimbursements). */
+  otherIncomeByCategory: CategoryCents[];
+  /** Tax-authority rows (taxes paid and refunds, not income or living) by the category and lane they're filed under. */
+  taxRowsByCategory: { income: CategoryCents[]; spending: CategoryCents[] };
   /** How the year's living cost adds up (the forecast's LAST_YEAR / THIS_YEAR seeds' proof). */
   livingTrail: LivingTrail;
 };
@@ -131,11 +135,53 @@ export type AnnualProfileReport = {
 };
 
 /** Income and spending rows booked in a window (buildAnnualProfile cashRows). */
-type CashRows = { interest: number; other: number; reimbursements: number; nonRecurring: number; taxSpending: number; spending: Map<string, number>; candidates: OneOffRow[] };
+type CashRows = {
+  interest: number;
+  other: number;
+  reimbursements: number;
+  nonRecurring: number;
+  taxSpending: number;
+  spending: Map<string, number>;
+  candidates: OneOffRow[];
+  otherByCategory: Map<string, number>;
+  taxByCategory: { income: Map<string, number>; spending: Map<string, number> };
+};
 
 const NOT_OTHER_INCOME = new Set(["Paycheck", "P2P & reimbursements", "Interest"]);
 const unique = (bs: BlockerRef[]) => [...new Map(bs.map((b) => [b.id, b])).values()];
 const minIso = (a: string, b: string) => (a < b ? a : b);
+const byCents = (m: Map<string, number>): CategoryCents[] =>
+  [...m].map(([category, cents]) => ({ category, cents })).filter((c) => c.cents !== 0).sort((a, b) => b.cents - a.cents);
+
+/** A matched transfer that had left one account but not reached the other at the end of a day. */
+export type InTransitTransfer = {
+  matchId: string;
+  /** The legs booked by then (their sum, negated, is what's in flight). */
+  left: { accountId: string; date: string; amountCents: number }[];
+  /** The first leg still to come, and the bucket of its account (where the money counts). */
+  lands: { accountId: string; date: string };
+  bucket: NetWorthBucket;
+  cents: number;
+};
+
+/** Matched transfers in flight at the end of `end`, each counted in the bucket of the account it hadn't reached. */
+export function transfersInTransit(book: Book, end: string): InTransitTransfer[] {
+  const groupOf = new Map(book.ledger.accounts.map((a) => [a.id, a.group]));
+  const out: InTransitTransfer[] = [];
+  for (const m of book.matches) {
+    const done = m.legs.filter((l) => l.date <= end);
+    const pending = m.legs.filter((l) => l.date > end);
+    if (!done.length || !pending.length) continue;
+    out.push({
+      matchId: m.id,
+      left: done.map(({ accountId, date, amountCents }) => ({ accountId, date, amountCents })),
+      lands: { accountId: pending[0]!.accountId, date: pending[0]!.date },
+      bucket: bucketForGroup(groupOf.get(pending[0]!.accountId) ?? "Other"),
+      cents: -done.reduce((s, l) => s + l.amountCents, 0),
+    });
+  }
+  return out;
+}
 
 /** `dependents` (from the tax profile) only feed the outlook's tax on base pay. */
 export function buildAnnualProfile(book: Book, settings: FinancialProfileSettings, dependents: TaxDependent[] = []): AnnualProfileReport {
@@ -148,19 +194,13 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
   for (let y = firstYear; y <= currentYear; y++) years.push(y);
   const nonRecurringCats = new Set(settings.nonRecurringCategories);
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
-  const groupOf = new Map(book.ledger.accounts.map((a) => [a.id, a.group]));
   // Rent is a big charge every month, never a one-off: left out of the candidates (as on Cash flow).
   const rentIds = new Set(rentPayments(book.rows, [], book.household.merchantRules).map((p) => p.rowId));
 
   // Matched transfers in flight at a date count in the bucket of the account they hadn't reached.
   const inTransitAt = (end: string) => {
     const signed: BucketTotals = { ...ZERO_BUCKETS };
-    for (const m of book.matches) {
-      const done = m.legs.filter((l) => l.date <= end);
-      const pending = m.legs.filter((l) => l.date > end);
-      if (!done.length || !pending.length) continue;
-      signed[bucketForGroup(groupOf.get(pending[0]!.accountId) ?? "Other")] -= done.reduce((s, l) => s + l.amountCents, 0);
-    }
+    for (const t of transfersInTransit(book, end)) signed[t.bucket] += t.cents;
     return signed;
   };
 
@@ -175,16 +215,26 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     let taxSpending = 0;
     const spending = new Map<string, number>();
     const candidates: OneOffRow[] = [];
+    // The same, by category (the proof of each line).
+    const otherByCategory = new Map<string, number>();
+    const taxByCategory = { income: new Map<string, number>(), spending: new Map<string, number>() };
+    const bump = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
     for (const r of book.rows) {
       if (r.bookedOn < from || r.bookedOn > to) continue;
       if (taxIds.has(r.id)) {
-        if (r.lane === "EXPENSE") taxSpending -= r.amountCents;
+        if (r.lane === "EXPENSE") {
+          taxSpending -= r.amountCents;
+          bump(taxByCategory.spending, r.category, -r.amountCents);
+        } else if (r.lane === "INCOME") bump(taxByCategory.income, r.category, r.amountCents);
         continue;
       }
       if (r.lane === "INCOME") {
         if (r.category === "P2P & reimbursements") reimbursements += r.amountCents;
         else if (r.category === "Interest") interest += r.amountCents;
-        else if (!NOT_OTHER_INCOME.has(r.category)) other += r.amountCents;
+        else if (!NOT_OTHER_INCOME.has(r.category)) {
+          other += r.amountCents;
+          bump(otherByCategory, r.category, r.amountCents);
+        }
         continue;
       }
       if (r.lane !== "EXPENSE") continue;
@@ -198,7 +248,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       }
     }
     candidates.sort((a, b) => Number(b.tagged) - Number(a.tagged) || b.cents - a.cents);
-    return { interest, other, reimbursements, nonRecurring, taxSpending, spending, candidates };
+    return { interest, other, reimbursements, nonRecurring, taxSpending, spending, candidates, otherByCategory, taxByCategory };
   };
 
   /** A living-cost figure's parts, as the forecast's proof lists them. */
@@ -321,7 +371,9 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
             waterfall,
             otherIncomeDetail: { interest, dividends, other },
             reimbursements,
-            spending: [...spending].map(([category, cents]) => ({ category, cents })).filter((c) => c.cents !== 0).sort((a, b) => b.cents - a.cents),
+            spending: byCents(spending),
+            otherIncomeByCategory: byCents(rows.otherByCategory),
+            taxRowsByCategory: { income: byCents(rows.taxByCategory.income), spending: byCents(rows.taxByCategory.spending) },
             livingTrail: livingTrail(start, cashEnd, rows, sumPeople((p) => p.reimbursements)),
           }
         : null;

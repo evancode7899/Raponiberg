@@ -31,6 +31,10 @@ export type RollYear = {
   fees: number;
   closing: number;
   returnRatio: number | null;
+  /** The Modified Dietz parts behind returnRatio: gain ÷ time-weighted capital. */
+  dietz: { gainCents: number; capitalCents: number };
+  /** Change no statement explains (coverage missing inside the year); 0 when every day is covered. */
+  unexplained: number;
   quality: Quality;
 };
 
@@ -106,6 +110,8 @@ export function buildAccountRollforwards(book: Book): RollforwardReport {
           fees: d.feesCents,
           closing: d.closingCents,
           returnRatio: ret,
+          dietz: parts,
+          unexplained: d.unexplainedCents,
           quality: d.quality,
         });
       }
