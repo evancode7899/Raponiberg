@@ -259,8 +259,6 @@ export type ReturnResult = {
     /** Federal income tax (incl. NIIT, additional Medicare) ÷ AGI. */
     federalOfAgi: number;
     ctOfCtAgi: number;
-    /** Everything ÷ gross pay plus investment income. */
-    allInOfGross: number;
   };
 };
 
@@ -281,7 +279,6 @@ export function computeReturn(input: ReturnInput): ReturnResult {
   const fica = computeFica(params, people);
   const otherStateTax = total(people, (p) => p.otherStateTax);
   const grossPay = total(people, (p) => sum(p.w2s.map((w) => w.grossPay)));
-  const investment = federal.interest + federal.ordinaryDividends + Math.max(0, federal.capitalGainAllowed) + federal.retirementTaxable + federal.otherIncome;
   const all = federal.totalTax + ct.totalTax + (ny?.totalTax ?? 0) + fica.socialSecurity + fica.medicare + otherStateTax;
   return {
     filingStatus: fs,
@@ -297,7 +294,6 @@ export function computeReturn(input: ReturnInput): ReturnResult {
     effective: {
       federalOfAgi: federal.agi > 0 ? federal.totalTax / federal.agi : 0,
       ctOfCtAgi: ct.ctAgi > 0 ? ct.totalTax / ct.ctAgi : 0,
-      allInOfGross: grossPay + investment > 0 ? all / (grossPay + investment) : 0,
     },
   };
 }

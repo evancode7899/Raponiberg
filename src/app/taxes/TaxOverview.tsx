@@ -2,30 +2,39 @@
 
 import { buttonSecondary, Card } from "@/components/ledger/LedgerBits";
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
-import type { ReturnResult, SafeHarbor } from "@/lib/tax/computeReturn";
+import type { SafeHarbor } from "@/lib/tax/computeReturn";
 import type { TruePlan } from "@/lib/tax/buildTaxReport";
-import type { ReactNode } from "react";
+import { estimateColumns, lineValue, type EstimateColumn } from "@/lib/tax/estimateLines";
+import { useMemo, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { BalanceBadge, Callout, EstimateValue, formatDate, NumberTable, pct, usd } from "./taxUi";
 
 type Tab = "compare" | "inputs" | "income" | "payments" | "filed" | "worksheet";
 
-/** Every tax the joint return owes, by who collects it. PFML is payroll, so it sits with Social Security and Medicare. */
-export function taxBuckets(x: ReturnResult) {
+/**
+ * Every tax the joint return owes, by who collects it (PFML is payroll, so it sits with Social
+ * Security and Medicare). The income, total and take-home are the Worksheet's own lines
+ * (Earned + investment income, Total taxes, Take-home), so the Overview's headline reconciles
+ * to the Worksheet and opens the same proofs; the buckets split that total.
+ */
+export function taxBuckets(c: EstimateColumn) {
+  const x = c.r;
   const federal = x.federal.totalTax - x.federal.refundableChildCredit;
   const payroll = x.fica.socialSecurity + x.fica.medicare + x.fica.ctPfml;
   const ny = x.ny?.totalTax ?? 0;
-  const gross =
-    x.grossPay + x.federal.interest + x.federal.ordinaryDividends + Math.max(0, x.federal.capitalGainAllowed) + x.federal.retirementTaxable + x.federal.otherIncome;
-  const total = federal + x.ct.totalTax + ny + x.otherStateTax + payroll;
-  return { federal, ct: x.ct.totalTax, ny, other: x.otherStateTax, payroll, total, gross, kept: gross - total };
+  const gross = lineValue("all.earnedPlusInvestment", c) ?? 0;
+  const total = lineValue("all.totalTaxes", c) ?? 0;
+  return { federal, ct: x.ct.totalTax, ny, other: x.otherStateTax, payroll, total, gross, kept: lineValue("all.takeHome", c) ?? 0 };
 }
+
+/** The joint return as the Worksheet's projected column has it: the column the Overview's figures and their proofs read. */
+const useJointColumn = (r: TaxResponse) => useMemo(() => estimateColumns(r, "projected").cols.find((c) => c.id === "joint")!, [r]);
 
 const daysUntil = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 
 export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
   const mfj = r.scenarios.mfj;
-  const b = taxBuckets(mfj);
+  const b = taxBuckets(useJointColumn(r));
   const separate = r.scenarios.mfs.totalTax + Object.values(r.scenarios.mfs.returns).reduce((s, x) => s + x.fica.ctPfml, 0);
   const joint = b.total;
   const depFed = r.scenarios.mfjNoDependents.federal.totalTax - r.scenarios.mfjNoDependents.federal.refundableChildCredit - b.federal;
@@ -165,7 +174,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
 /** The year in one picture: total tax, and where every dollar of income goes. */
 function Hero({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
   const mfj = r.scenarios.mfj;
-  const b = taxBuckets(mfj);
+  const b = taxBuckets(useJointColumn(r));
   const past = !r.isCurrentYear && Number(r.today.slice(0, 4)) > r.year;
   const segments: (ShareSegment & { short: string })[] = [
     { id: "kept", label: "Take-home + savings", short: "you keep", cents: b.kept, color: "var(--chart-series-2)" },
@@ -194,12 +203,27 @@ function Hero({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
             <span>{r.year} taxes</span>
             <span className="rounded-full bg-surface-3 px-2 py-0.5 text-[10px] tracking-wide text-fg-2">{word}</span>
           </div>
-          <div className="num mt-1 text-4xl font-semibold tracking-tight text-fg">{usd(b.total)}</div>
+          <div className="num mt-1 text-4xl font-semibold tracking-tight text-fg">
+            <EstimateValue year={r.year} k="all.totalTaxes" cents={b.total}>
+              {usd(b.total)}
+            </EstimateValue>
+          </div>
           <div className="text-sm text-fg-2">
-            on {usd(b.gross)} of income — <b className="text-fg">{pct(b.gross > 0 ? b.total / b.gross : 0)}</b> all in
+            on{" "}
+            <EstimateValue year={r.year} k="all.earnedPlusInvestment" cents={b.gross}>
+              {usd(b.gross)}
+            </EstimateValue>{" "}
+            of earned + investment income — <b className="text-fg">{pct(b.gross > 0 ? b.total / b.gross : 0)}</b> all in
           </div>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs">
-            <Mini label="You keep" value={usd(b.kept)} />
+            <Mini
+              label="You keep"
+              value={
+                <EstimateValue year={r.year} k="all.takeHome" cents={b.kept}>
+                  {usd(b.kept)}
+                </EstimateValue>
+              }
+            />
             <Mini label="Federal of AGI" value={pct(mfj.effective.federalOfAgi)} />
             <Mini label="Next $1,000" value={pct(r.marginal.federal + r.marginal.ct + r.marginal.ny + r.marginal.payroll)} />
           </div>
@@ -328,8 +352,9 @@ function NextThousand({ r }: { r: TaxResponse }) {
     ...(m.payroll ? [{ id: "payroll", label: "Payroll", cents: Math.round(m.payroll * 100_000), color: "var(--chart-series-3)" }] : []),
   ];
   const mfj = r.scenarios.mfj;
+  const b = taxBuckets(useJointColumn(r));
   return (
-    <Card title="The next $1,000 of pay" subtitle={`Marginal rate ${pct(m.federal + m.ct + m.ny + m.payroll)}, against ${pct(mfj.effective.allInOfGross)} on average. A pre-tax 401(k) or HSA dollar skips the income-tax part.`}>
+    <Card title="The next $1,000 of pay" subtitle={`Marginal rate ${pct(m.federal + m.ct + m.ny + m.payroll)}, against ${pct(b.gross > 0 ? b.total / b.gross : 0)} on average. A pre-tax 401(k) or HSA dollar skips the income-tax part.`}>
       <div className="flex items-baseline gap-3">
         <span className="num text-3xl font-semibold tracking-tight text-fg">{usd(parts[0]!.cents)}</span>
         <span className="text-sm text-muted">of every extra $1,000 reaches you</span>
