@@ -121,12 +121,14 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     ...(hasNy ? [line("ny.incomeTax", "New York State income tax")] : []),
     ...(nyCity.some((x) => x) ? [line("ny.cityTax", "New York City income tax")] : []),
     ...(other.some((x) => x) ? [line("all.otherStateTax", "Other state tax")] : []),
-    line("all.totalTaxes", "Total taxes", { strong: true }),
+    line("all.totalTaxes", "Total taxes", { strong: true, help: "The Overview's headline tax (joint, projected)." }),
     line("all.jointValue", "Value of filing jointly", { only: "joint", help: "Both spouses' separate-return taxes minus the joint return's taxes." }),
 
     { label: "Rates and take-home", values: [], heading: true },
-    line("all.earnedPlusInvestment", "Earned + investment income"),
-    line("all.takeHome", "Take-home income (after all taxes)", { strong: true }),
+    line("all.earnedPlusInvestment", "Earned + investment income", {
+      help: "Gross salary + bonus + taxable benefits + investment income. The Overview's headline income (joint, projected), net of any capital loss deducted.",
+    }),
+    line("all.takeHome", "Take-home income (after all taxes)", { strong: true, help: "The Overview's “You keep”." }),
     { label: "Effective tax rate", values: ratio(totalTaxes, earnedPlusInvestment), strong: true },
     { label: "Federal income tax", values: ratio(fedIncomeTax.map((v, i) => v + niit[i]!), earnedPlusInvestment), indent: true },
     { label: "Medicare", values: ratio(medicare, earnedPlusInvestment), indent: true },
