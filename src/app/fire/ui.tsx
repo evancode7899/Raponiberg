@@ -2,6 +2,8 @@
 
 import { Segmented } from "@/components/ui/kit";
 import type { FireAnalysis } from "@/lib/fire/fire";
+import type { FireFigure, FireSettings } from "@/lib/book/proof/planningProof";
+import type { ProofTarget } from "@/components/ui/proof/context";
 import { formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import type { OutlookPlan } from "@/lib/profile/outlook";
 
@@ -51,3 +53,9 @@ export const yearsFrom = (year: number | null | undefined, plan: OutlookPlan) =>
 };
 
 export type FireProps = { f: FireAnalysis; dollars: Dollars; setDollars: (d: Dollars) => void };
+
+/** A FIRE figure's proof ("planning" kind), on the settings as the page has them. */
+export type FireProof = (figure: FireFigure, shownCents?: number, milestone?: string) => ProofTarget;
+export const fireProof =
+  (fire: FireSettings): FireProof =>
+  (figure, shownCents, milestone) => ({ descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, ...(shownCents != null ? { shownCents } : {}) });

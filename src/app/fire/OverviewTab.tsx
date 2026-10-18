@@ -3,7 +3,9 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Callout, Card, StatCell, StatGrid } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { FAT_SHARE, fireNumber, fiYear, LEAN_SHARE, livingIn, type FireRow } from "@/lib/fire/fire";
+import type { FireFigure } from "@/lib/book/proof/planningProof";
 import { axisUsd } from "@/lib/formatMoney";
 import type { OutlookSeeds } from "@/lib/profile/basePay";
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
@@ -12,12 +14,13 @@ import type { FireTab } from "./FireClient";
 import Link from "next/link";
 import { Fragment, useMemo, type ReactNode } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { deflator, DollarsToggle, pct, short, tipUsd, usd, yearAge, yearsFrom, type FireProps } from "./ui";
+import { deflator, DollarsToggle, pct, short, tipUsd, usd, yearAge, yearsFrom, type FireProof, type FireProps } from "./ui";
 
 type Tab = FireTab;
 
 export function OverviewTab({
   f,
+  pf,
   dollars,
   setDollars,
   r,
@@ -25,44 +28,46 @@ export function OverviewTab({
   livingLabel,
   livingTyped,
   onGo,
-}: FireProps & { r: AnnualProfileReport; s: OutlookSeeds; livingLabel: string; livingTyped: boolean; onGo: (t: Tab) => void }) {
+}: FireProps & { pf: FireProof; r: AnnualProfileReport; s: OutlookSeeds; livingLabel: string; livingTyped: boolean; onGo: (t: Tab) => void }) {
   const { plan, now } = f;
   const fiIn = f.fi ? f.fi.year - plan.start.year : null;
   return (
     <>
-      <Progress f={f} />
+      <Progress f={f} pf={pf} />
       <StatGrid cols={3}>
-        <StatCell label="FIRE number" value={short(now.fireNumber)} sub={`${now.multiple.toFixed(1)}× living cost of ${short(now.livingCost)}`} />
+        <StatCell label="FIRE number" value={short(now.fireNumber)} proof={pf("fire-number", now.fireNumber)} sub={`${now.multiple.toFixed(1)}× living cost of ${short(now.livingCost)}`} />
         <StatCell
           label="Financially independent"
           value={f.fi ? String(f.fi.year) : "Not in 60 yrs"}
+          proof={pf("fi-year")}
           tone={f.fi ? "pos" : "warn"}
           sub={
             <>
               {f.fi ? `${f.fi.age != null ? `age ${f.fi.age} · ` : ""}${fiIn! <= 0 ? "already there" : `${fiIn} yr${fiIn === 1 ? "" : "s"} to go`}` : "walk-away income stays short"}
-              {f.fiBase?.year !== f.fi?.year && <> · with no bonuses: {f.fiBase ? f.fiBase.year : "not in 60 yrs"}</>}
+              {f.fiBase?.year !== f.fi?.year && <> · with no bonuses: <ProofValue proof={pf("fi-year-base")}>{f.fiBase ? f.fiBase.year : "not in 60 yrs"}</ProofValue></>}
             </>
           }
         />
-        <StatCell label="Savings rate" value={pct(f.savingsRate, 0)} sub="of take-home + employer money, this year's plan" />
-        <StatCell label="Years of spending saved" value={now.yearsOfSpending.toFixed(1)} sub={`net worth ÷ ${short(now.livingCost)} a year`} />
-        <StatCell label="Runway (liquid)" value={`${now.liquidYears.toFixed(1)} yrs`} sub="taxable money ÷ a year's living cost" />
+        <StatCell label="Savings rate" value={pct(f.savingsRate, 0)} proof={pf("savings-rate")} sub="of take-home + employer money, this year's plan" />
+        <StatCell label="Years of spending saved" value={now.yearsOfSpending.toFixed(1)} proof={pf("years-saved")} sub={`net worth ÷ ${short(now.livingCost)} a year`} />
+        <StatCell label="Runway (liquid)" value={`${now.liquidYears.toFixed(1)} yrs`} proof={pf("runway")} sub="taxable money ÷ a year's living cost" />
         <StatCell
           label="Coast FIRE"
           value={now.coastNumber != null && now.netWorth >= now.coastNumber ? "Reached" : f.coast ? String(f.coast.year) : plan.birthYear == null ? "Needs age" : "—"}
+          proof={pf("coast-year")}
           sub={f.retireYear ? `stop saving, still FI at ${f.retireYear - plan.birthYear!}` : "add birth years in Settings"}
         />
       </StatGrid>
       <Insights f={f} onGo={onGo} />
       <TargetChart f={f} r={r} dollars={dollars} setDollars={setDollars} />
-      <Flavors f={f} />
-      <Milestones f={f} />
+      <Flavors f={f} pf={pf} />
+      <Milestones f={f} pf={pf} />
       <OneOffsNote f={f} r={r} s={s} livingLabel={livingLabel} livingTyped={livingTyped} />
     </>
   );
 }
 
-function Progress({ f }: { f: FireProps["f"] }) {
+function Progress({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
   const { now } = f;
   const max = Math.max(now.fatNumber, now.netWorth) * 1.04;
   const at = (v: number) => `${Math.min(100, (v / max) * 100)}%`;
@@ -76,10 +81,16 @@ function Progress({ f }: { f: FireProps["f"] }) {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Progress to financial independence</div>
-          <div className="num text-3xl font-semibold text-fg">{pct(now.progress, 0)}</div>
+          <div className="num text-3xl font-semibold text-fg">
+            <ProofValue proof={pf("progress")}>{pct(now.progress, 0)}</ProofValue>
+          </div>
         </div>
         <div className="text-right text-xs text-muted">
-          <span className="num font-medium text-fg">{usd(now.netWorth)}</span> net worth ({now.asOf}) of a <span className="num font-medium text-fg">{usd(now.fireNumber)}</span> FIRE number
+          <span className="num font-medium text-fg">{usd(now.netWorth)}</span> net worth ({now.asOf}) of a{" "}
+          <span className="num font-medium text-fg">
+            <ProofValue proof={pf("fire-number", now.fireNumber)}>{usd(now.fireNumber)}</ProofValue>
+          </span>{" "}
+          FIRE number
           <br />
           {now.netWorth >= now.fireNumber ? "You're there — your money can cover your living cost." : `${usd(now.fireNumber - now.netWorth)} to go in today's terms`}
         </div>
@@ -252,24 +263,27 @@ function TargetChart({ f, r, dollars, setDollars }: FireProps & { r: AnnualProfi
   );
 }
 
-function Flavors({ f }: { f: FireProps["f"] }) {
+function Flavors({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
   const { plan, now } = f;
-  const card = (title: string, target: string, row: FireRow | null, what: ReactNode, reached: boolean) => (
+  const card = (title: string, target: string, row: FireRow | null, what: ReactNode, reached: boolean, proofs: Proofs) => (
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-line bg-surface p-3">
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-fg">{title}</span>
         {reached && <span className="rounded-full bg-pos-soft px-1.5 text-[10px] font-semibold uppercase text-pos">reached</span>}
       </div>
-      <div className="num text-lg font-semibold text-fg">{reached ? "Now" : row ? yearAge(row.year, plan) : "Not in 60 yrs"}</div>
+      <div className="num text-lg font-semibold text-fg">
+        <ProofValue proof={pf(proofs.year)}>{reached ? "Now" : row ? yearAge(row.year, plan) : "Not in 60 yrs"}</ProofValue>
+      </div>
       <div className="text-[11px] text-muted">{reached || !row ? "" : yearsFrom(row.year, plan)}</div>
-      <div className="text-[11px] font-medium text-fg-2">{target}</div>
+      <div className="text-[11px] font-medium text-fg-2">{proofs.cents != null ? <ProofValue proof={pf(proofs.number, proofs.cents)}>{target}</ProofValue> : target}</div>
       <p className="text-[11px] leading-snug text-muted">{what}</p>
     </div>
   );
-  const flavors: { title: string; target: string; row: FireRow | null; what: ReactNode; reached: boolean }[] = [
-    { title: "Lean FIRE", target: `${short(now.leanNumber)} today`, row: f.lean, what: `Retire on a leaner budget: ${LEAN_SHARE * 100}% of today's living cost (${short(now.livingCost * LEAN_SHARE)}/yr).`, reached: now.netWorth >= now.leanNumber },
+  const flavors: { title: string; target: string; row: FireRow | null; what: ReactNode; reached: boolean; proofs: Proofs }[] = [
+    { title: "Lean FIRE", proofs: { year: "lean-year", number: "lean-number", cents: now.leanNumber }, target: `${short(now.leanNumber)} today`, row: f.lean, what: `Retire on a leaner budget: ${LEAN_SHARE * 100}% of today's living cost (${short(now.livingCost * LEAN_SHARE)}/yr).`, reached: now.netWorth >= now.leanNumber },
     {
       title: "Coast FIRE",
+      proofs: { year: "coast-year", number: "coast-number", cents: now.coastNumber },
       target: now.coastNumber != null ? `${short(now.coastNumber)} invested today` : "needs a birth year",
       row: f.coast,
       what: f.retireYear
@@ -277,8 +291,8 @@ function Flavors({ f }: { f: FireProps["f"] }) {
         : "Stop saving and let returns finish the job by retirement age.",
       reached: now.coastNumber != null && now.netWorth >= now.coastNumber,
     },
-    { title: "FIRE", target: `${short(now.fireNumber)} today`, row: f.fi, what: "Walk-away income covers your full living cost, after tax. Work becomes optional.", reached: now.netWorth >= now.fireNumber },
-    { title: "Fat FIRE", target: `${short(now.fatNumber)} today`, row: f.fat, what: `Room to spare: walk-away income covers ${FAT_SHARE * 100}% of living cost — upgrades, travel, a buffer for bad markets.`, reached: now.netWorth >= now.fatNumber },
+    { title: "FIRE", proofs: { year: "fi-year", number: "fire-number", cents: now.fireNumber }, target: `${short(now.fireNumber)} today`, row: f.fi, what: "Walk-away income covers your full living cost, after tax. Work becomes optional.", reached: now.netWorth >= now.fireNumber },
+    { title: "Fat FIRE", proofs: { year: "fat-year", number: "fat-number", cents: now.fatNumber }, target: `${short(now.fatNumber)} today`, row: f.fat, what: `Room to spare: walk-away income covers ${FAT_SHARE * 100}% of living cost — upgrades, travel, a buffer for bad markets.`, reached: now.netWorth >= now.fatNumber },
   ];
   // Soonest first: reached now, then by year, never-reached last (ties keep the order above).
   const when = (x: (typeof flavors)[number]) => (x.reached ? -Infinity : (x.row?.year ?? Infinity));
@@ -287,14 +301,20 @@ function Flavors({ f }: { f: FireProps["f"] }) {
     <Card title="The flavors of FIRE" subtitle="The community's names for different finish lines, soonest first. Each is a first year you could make the switch, keeping the rest of the plan as set.">
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
         {flavors.map((x) => (
-          <Fragment key={x.title}>{card(x.title, x.target, x.row, x.what, x.reached)}</Fragment>
+          <Fragment key={x.title}>{card(x.title, x.target, x.row, x.what, x.reached, x.proofs)}</Fragment>
         ))}
       </div>
     </Card>
   );
 }
 
-function Milestones({ f }: { f: FireProps["f"] }) {
+/** Each flavor card's proofs: its year and its number today. */
+type Proofs = { year: FireFigure; number: FireFigure; cents: number | null };
+
+/** A milestone's proof: net worth and FI-share marks by id, the flavors by their year figure. */
+const MILESTONE_FIGURE: Record<string, FireFigure> = { coast: "coast-year", lean: "lean-year", fi: "fi-year", fat: "fat-year" };
+
+function Milestones({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
   const { plan } = f;
   return (
     <Card
@@ -307,7 +327,11 @@ function Milestones({ f }: { f: FireProps["f"] }) {
             <span className={`absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 ${m.reached ? "border-pos bg-pos" : m.year ? "border-accent bg-surface" : "border-line-strong bg-surface"}`} aria-hidden />
             <div className="flex flex-wrap items-baseline gap-x-3">
               <span className={`text-sm font-medium ${m.reached ? "text-fg" : "text-fg-2"}`}>{m.label}</span>
-              <span className={`num text-xs ${m.reached ? "text-pos" : "text-muted"}`}>{m.reached ? "✓ reached" : m.key ? `${monthLabel(m.year!, Number(m.key.slice(5)))}${m.age != null ? ` (age ${m.age})` : ""} · ${yearsFrom(m.year, plan)}` : m.year ? `Jan 1, ${yearAge(m.year, plan)} · ${yearsFrom(m.year, plan)}` : "not within 60 years"}</span>
+              <span className={`num text-xs ${m.reached ? "text-pos" : "text-muted"}`}>
+                <ProofValue proof={MILESTONE_FIGURE[m.id] ? pf(MILESTONE_FIGURE[m.id]!) : pf("milestone", undefined, m.id)}>
+                  {m.reached ? "✓ reached" : m.key ? `${monthLabel(m.year!, Number(m.key.slice(5)))}${m.age != null ? ` (age ${m.age})` : ""} · ${yearsFrom(m.year, plan)}` : m.year ? `Jan 1, ${yearAge(m.year, plan)} · ${yearsFrom(m.year, plan)}` : "not within 60 years"}
+                </ProofValue>
+              </span>
             </div>
             {m.hint && <div className="text-[11px] text-muted">{m.hint}</div>}
           </li>

@@ -4,6 +4,9 @@ import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { Badge, btn, Callout, Card, Drawer, EmptyState, ErrorNote, Field, inputCls, Loading, MoneyInput, PageBody, type Tone } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { GoalFigure } from "@/lib/book/proof/planningProof";
 import type { GoalProgress, GoalsReport } from "@/lib/book/reports/goals";
 import { formatPercentRatio, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import type { Goal, GoalSettings } from "@/lib/goals/settings";
@@ -59,6 +62,12 @@ const typeOf = (g: Goal): GoalType => (g.funding === "TRACK" ? "MILESTONE" : g.k
 const fmtMonth = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—");
 const monthIndex = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** A goal figure's proof ("planning" kind). */
+const goalProof = (g: GoalProgress, figure: GoalFigure, shownCents?: number | null): ProofTarget => ({
+  descriptor: { report: "planning", page: "goals", figure, goalId: g.goal.id },
+  ...(shownCents != null ? { shownCents } : {}),
+});
 
 /** One sentence on where the goal stands: when it lands against its date, or why it doesn't. */
 function verdict(g: GoalProgress, r: GoalsReport): string {
@@ -280,7 +289,7 @@ function Roadmap({ r }: { r: GoalsReport }) {
                           title={verdict(g, r)}
                         />
                         <span className={`num absolute top-0 whitespace-nowrap text-[11px] font-medium ${s.ink}`} style={labelX}>
-                          {fmtMonth(g.projectedDate)}
+                          <ProofValue proof={goalProof(g, "lands")}>{fmtMonth(g.projectedDate)}</ProofValue>
                         </span>
                       </>
                     ) : (
@@ -340,26 +349,34 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
       <BlockedNote what="this goal's balance" blockers={g.blockers} />
       <div className="flex items-baseline justify-between gap-3">
         <span className="num text-2xl font-semibold tracking-tight text-fg">
-          {blocked ? <BlockedValue blockers={g.blockers} /> : usd0(g.currentCents)}
-          <span className="ml-1.5 text-sm font-normal text-muted">of {g.targetCents == null ? "—" : usd0(g.targetCents)}</span>
+          {blocked ? <BlockedValue blockers={g.blockers} /> : <ProofValue proof={goalProof(g, "current", g.currentCents)}>{usd0(g.currentCents)}</ProofValue>}
+          <span className="ml-1.5 text-sm font-normal text-muted">
+            of {g.targetCents == null ? "—" : <ProofValue proof={goalProof(g, "target", g.targetCents)}>{usd0(g.targetCents)}</ProofValue>}
+          </span>
         </span>
         {g.targetCents != null && <span className={`num text-sm font-semibold ${s.ink}`}>{formatPercentRatio(share, 0)}</span>}
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-3" role="meter" aria-valuenow={g.currentCents} aria-valuemax={g.targetCents ?? undefined} aria-label={`${g.goal.name} progress`}>
         <div className={`h-full rounded-full ${s.bg}`} style={{ width: `${share * 100}%` }} />
       </div>
-      <p className={`mt-3 text-sm font-medium ${s.ink}`}>{verdict(g, r)}</p>
+      <p className={`mt-3 text-sm font-medium ${s.ink}`}>
+        <ProofValue proof={goalProof(g, "lands")}>{verdict(g, r)}</ProofValue>
+      </p>
       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
         {left != null && left > 0 && (
           <div>
             <dt className="inline">To go </dt>
-            <dd className="num inline text-fg-2">{usd0(left)}</dd>
+            <dd className="num inline text-fg-2">
+              <ProofValue proof={goalProof(g, "to-go", left)}>{usd0(left)}</ProofValue>
+            </dd>
           </div>
         )}
         {g.status === "BEHIND" && g.neededMonthlyCents != null && (
           <div title={`Saving this much a month from now fills it by ${fmtMonth(g.goal.targetDate)}`}>
             <dt className="inline">Needs </dt>
-            <dd className="num inline text-fg-2">{usdCompact(g.neededMonthlyCents)}/mo</dd>
+            <dd className="num inline text-fg-2">
+              <ProofValue proof={goalProof(g, "needed", g.neededMonthlyCents)}>{usdCompact(g.neededMonthlyCents)}</ProofValue>/mo
+            </dd>
           </div>
         )}
         {/* The forecast decides when a goal lands; last year's pace only stands in without one. */}
@@ -376,7 +393,9 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
         {g.goal.kind === "EMERGENCY_FUND" && r.monthlySpending && (
           <div title={`Average of the last ${r.monthlySpending.months} proven months`}>
             <dt className="inline">Spending </dt>
-            <dd className="num inline text-fg-2">{usdCompact(r.monthlySpending.cents)}/mo</dd>
+            <dd className="num inline text-fg-2">
+              <ProofValue proof={{ descriptor: { report: "planning", page: "goals", figure: "spending" }, shownCents: r.monthlySpending.cents }}>{usdCompact(r.monthlySpending.cents)}</ProofValue>/mo
+            </dd>
           </div>
         )}
       </dl>

@@ -145,7 +145,7 @@ export type PersonReport = {
    * shared forecast (lib/forecast): `bonus` is what it pays after the latest stub counted
    * here, on top of any extra typed under Inputs. Null for other years.
    */
-  fromForecast: { paycheck: "LATEST" | "TYPICAL"; bonus: number; items: { label: string; gross: number }[] } | null;
+  fromForecast: { paycheck: "LATEST" | "TYPICAL"; bonus: number; items: ({ label: string; gross: number } & Partial<Pick<TaxForecastLink["bonuses"][number], "key" | "date" | "source" | "window">>)[] } | null;
   payrollSource: "STUBS" | "W2" | "NONE";
   /** Pay taken from year-to-date totals only (earlier stubs not available). */
   partial: string[];
@@ -417,7 +417,7 @@ export function buildTaxReport(
     const link = isCurrentYear && opts.forecast ? opts.forecast : null;
     const items = (link?.bonuses ?? []).filter((b) => b.personId === person.id && b.key.startsWith(`${year}-`) && (b.date ? b.date > lastStub : b.key >= lastStub.slice(0, 7)));
     const fromForecast: PersonReport["fromForecast"] = link
-      ? { paycheck: link.paycheck[person.id] ?? typedPay.paycheck, bonus: items.reduce((t, b) => t + b.gross, 0), items: items.map((b) => ({ label: b.label, gross: b.gross })) }
+      ? { paycheck: link.paycheck[person.id] ?? typedPay.paycheck, bonus: items.reduce((t, b) => t + b.gross, 0), items: items.map((b) => ({ label: b.label, gross: b.gross, key: b.key, date: b.date, source: b.source, ...(b.window ? { window: b.window } : {}) })) }
       : null;
     const pay = fromForecast ? { ...typedPay, paycheck: fromForecast.paycheck } : typedPay;
     if (!stubs.length && isForecast) warnings.push(`No ${year} pay stubs for ${person.name}, so the forecast counts no wages for them. Upload their latest stub.`);

@@ -129,13 +129,13 @@ export function balancesAt(f: Pick<Forecast, "months" | "plan" | "startKey">, ke
 /** What the tax estimate takes from the forecast for the year in progress: each person's paycheck basis and the bonuses it pays. */
 export type TaxForecastLink = {
   paycheck: Record<string, "LATEST" | "TYPICAL">;
-  bonuses: Pick<ScheduledBonus, "personId" | "key" | "date" | "gross" | "label" | "source">[];
+  bonuses: Pick<ScheduledBonus, "personId" | "key" | "date" | "gross" | "label" | "source" | "window">[];
 };
 
 export function taxLink(f: Forecast): TaxForecastLink {
   return {
     paycheck: Object.fromEntries(f.pay.people.map((p) => [p.personId, p.basis])),
-    bonuses: f.schedule.filter((b) => b.counted).map(({ personId, key, date, gross, label, source }) => ({ personId, key, date, gross, label, source })),
+    bonuses: f.schedule.filter((b) => b.counted).map(({ personId, key, date, gross, label, source, window }) => ({ personId, key, date, gross, label, source, ...(window ? { window } : {}) })),
   };
 }
 
