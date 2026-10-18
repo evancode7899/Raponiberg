@@ -4,6 +4,7 @@ import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, btn, EmptyState, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { FiledJurisdiction } from "@/lib/book/proof/filedReturnProof";
+import type { EstimateKey } from "@/lib/tax/estimateLines";
 import type { CheckLine, CheckStatus, SourceCheck, Suggestion } from "@/lib/tax/filedCheck";
 import type { TaxProfile } from "@/lib/tax/profile";
 import { TAX_DOC_KIND_LABEL } from "@/lib/taxdocs/types";
@@ -167,7 +168,12 @@ function fileOf(docs: NonNullable<TaxResponse["documents"]>, kind: string): stri
 
 const show = (l: CheckLine, v: number | null) => (v == null ? "—" : l.percent ? `${(v / 100).toFixed(2)}%` : usd(v));
 
-/** Each filed amount opens its proof: the document, form, page and line it was read from, and the app's figure against it. */
+const ESTIMATE_PREFIX: Record<FiledJurisdiction, string> = { FEDERAL: "fed", CT: "ct", NY: "ny" };
+
+/**
+ * Each filed amount opens its proof: the document, form, page and line it was read from, and
+ * the app's figure against it; each "This app" figure opens the tax estimate's proof of it.
+ */
 function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year: number; jurisdiction: FiledJurisdiction; title: string; lines: CheckLine[]; file: string | null; subtitle?: string }) {
   return (
     <Card title={title} subtitle={[subtitle, file && `Filed copy: ${file}`].filter(Boolean).join(" ")}>
@@ -193,7 +199,13 @@ function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year:
                 <td className={table.tdR}>
                   <ProofValue proof={{ descriptor: { report: "filed-return", year, jurisdiction, key: l.key }, ...(l.percent || l.filed == null ? {} : { shownCents: l.filed }) }}>{show(l, l.filed)}</ProofValue>
                 </td>
-                <td className={table.tdR}>{show(l, l.model)}</td>
+                <td className={table.tdR}>
+                  {l.model == null ? (
+                    show(l, l.model)
+                  ) : (
+                    <ProofValue proof={{ descriptor: { report: "tax-estimate", year, basis: "filed", key: `${ESTIMATE_PREFIX[jurisdiction]}.${l.key}` as EstimateKey }, ...(l.percent ? {} : { shownCents: l.model }) }}>{show(l, l.model)}</ProofValue>
+                  )}
+                </td>
                 <td className={table.td}>
                   <Badge tone={STATUS[l.status].tone}>{STATUS[l.status].label}</Badge>
                 </td>

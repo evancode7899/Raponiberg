@@ -170,7 +170,7 @@ export const CHECKS: CheckDef[] = [
     id: "ledger.freshness",
     title: "Everything was read by the current code",
     description:
-      "Every document was read by the current version of its parser, pay stub and tax figures by the current extractor, and every transaction filed by the current classification rules — so no figure comes from code the app has since corrected.",
+      "Every document was read by the current version of its parser, pay stub and tax figures by the current extractor, the tax documents folder (W-2s, 1099s, K-1s, filed returns) by the current tax documents reader, and every transaction filed by the current classification rules — so no figure comes from code the app has since corrected.",
   },
   {
     id: "statement.held",

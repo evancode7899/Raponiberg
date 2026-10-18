@@ -464,7 +464,11 @@ function paymentChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[], su
  * (no Schedule E — it came after filing) is left out, so every other line can be checked
  * to the dollar; what amending for it would change is reported separately.
  */
-function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResult; amendment: FiledCheck["amendment"] } {
+/**
+ * The joint return as the Filed return tab compares it: in whole dollars, and without a K-1
+ * the filed return left off. `exact` is the same return in cents, before the rounding.
+ */
+export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResult; exact: ReturnResult; amendment: FiledCheck["amendment"] } {
   const full = report.scenarios.mfj;
   const params = taxYearParams(report.year);
   // Returns are filed in whole dollars, each W-2 box and 1099 amount rounded before it's added.
@@ -472,7 +476,7 @@ function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResult; ame
   const filedWay = (people: PersonIncome[]) => computeReturn({ params, filingStatus: "MFJ", people: people.map(wholeDollars), dependents: report.dependents, ny });
   const k1s = report.people.flatMap((p) => p.k1s.filter((k) => !k.estimate));
   if (!k1s.length || !docs.federal || docs.federal.lines.some((l) => l.form === "SE" || l.form === "8582")) {
-    return { result: filedWay(report.people.map((p) => p.income)), amendment: null };
+    return { result: filedWay(report.people.map((p) => p.income)), exact: full, amendment: null };
   }
   const without: PersonIncome[] = report.people.map((p) => {
     const mine = p.k1s.filter((k) => !k.estimate);
@@ -507,6 +511,7 @@ function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResult; ame
   const names = [...new Set(k1s.map((k) => k.partnership))].join(", ");
   return {
     result: filedWay(without),
+    exact: before,
     amendment: {
       reason: `The K-1 from ${names} isn't on the filed return (it has no Schedule E), so the lines here are checked without it. Amending (Form 1040-X, and the state returns) would add its income.`,
       federal: full.federal.totalTax - before.federal.totalTax,

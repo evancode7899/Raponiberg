@@ -237,6 +237,12 @@ export type TaxReport = {
    * the open findings that would block the year once it's over.
    */
   unverified: BlockerRef[];
+  /**
+   * Bank interest as counted (1099-INT): each account's ledger interest from January 1
+   * through `through`, or its 1099-INT (a finished year), with its owner ("JOINT" splits
+   * evenly); a year in progress runs it to December 31 by `factor` (365 ÷ days so far).
+   */
+  bankInterest: { through: string; factor: number; parts: { accountId: string | null; name: string; ownerId: string; cents: number; doc: DocRef | null; rowIds: string[] }[] };
   /** How far each source goes: the forecast fills in everything after these dates. */
   dataThrough: { payStubs: { person: string; employer: string; date: string }[]; statements: string | null; bank: string };
   plan: {
@@ -342,13 +348,20 @@ export function buildTaxReport(
   // finished year's 1099-INT replaces the ledger's interest for its account.
   const interestThrough = minIso(`${year}-12-31`, book.horizon.cashFlow);
   const interestByAccount = new Map<string, number>();
+  const interestRows = new Map<string, string[]>();
   for (const r of book.rows) {
     if (r.lane !== "INCOME" || r.category !== "Interest" || !bankIds.includes(r.accountId) || r.date < `${year}-01-01` || r.date > interestThrough) continue;
     interestByAccount.set(r.accountId, (interestByAccount.get(r.accountId) ?? 0) + r.amountCents);
+    interestRows.set(r.accountId, [...(interestRows.get(r.accountId) ?? []), r.id]);
   }
+  // Each part as counted, for the estimate's proof (book/proof/taxEstimateProof).
+  const interestParts: TaxReport["bankInterest"]["parts"] = [];
   const interestYtd = new Map<string, number>();
   const interestForms = new Set<string>();
-  const add = (owner: string, cents: number) => interestYtd.set(owner, (interestYtd.get(owner) ?? 0) + cents);
+  const add = (owner: string, cents: number, part: Omit<TaxReport["bankInterest"]["parts"][number], "ownerId" | "cents">) => {
+    interestYtd.set(owner, (interestYtd.get(owner) ?? 0) + cents);
+    interestParts.push({ ...part, ownerId: owner, cents });
+  };
   const ownerOfAccount = (id: string) => {
     const name = book.accounts.find((a) => a.id === id)?.name.toUpperCase() ?? "";
     return profile.persons.find((p) => p.match.some((m) => name.includes(m)))?.id ?? "JOINT";
@@ -359,11 +372,11 @@ export function buildTaxReport(
     const form = intForms.find((f) => f.form.account && acct.identifiers.some((i) => i.endsWith(f.form.account!)));
     if (form) {
       interestForms.add(form.doc.id);
-      add(form.personId ?? ownerOfAccount(id), form.form.interest);
-    } else if (interestByAccount.has(id)) add(ownerOfAccount(id), interestByAccount.get(id)!);
+      add(form.personId ?? ownerOfAccount(id), form.form.interest, { accountId: id, name: acct.name, doc: form.doc, rowIds: [] });
+    } else if (interestByAccount.has(id)) add(ownerOfAccount(id), interestByAccount.get(id)!, { accountId: id, name: acct.name, doc: null, rowIds: interestRows.get(id)! });
   }
   // A 1099-INT for an account the ledger doesn't track still counts.
-  for (const f of intForms.filter((f) => !interestForms.has(f.doc.id))) add(f.personId ?? "JOINT", f.form.interest);
+  for (const f of intForms.filter((f) => !interestForms.has(f.doc.id))) add(f.personId ?? "JOINT", f.form.interest, { accountId: null, name: `${f.form.payer} ••${f.form.account ?? "?"}`, doc: f.doc, rowIds: [] });
   const daysIn = (Date.parse(interestThrough) - Date.parse(`${year}-01-01`)) / 86_400_000 + 1;
   const interestFactor = isCurrentYear && daysIn > 0 ? 365 / daysIn : 1;
   const bankInterest = (personId: string, pick: "ytd" | "projected") => {
@@ -800,6 +813,7 @@ export function buildTaxReport(
     ny,
     documents: null,
     unverified: blockers,
+    bankInterest: { through: interestThrough, factor: interestFactor, parts: interestParts },
     dataThrough: {
       payStubs: people.flatMap((p) => p.payroll.filter((x) => x.active).map((x) => ({ person: p.name, employer: x.employer, date: x.latestPayDate }))),
       statements: accounts.filter((a) => a.kind === "TAXABLE").reduce<string | null>((m, a) => (m == null || a.latestStatement < m ? a.latestStatement : m), null),

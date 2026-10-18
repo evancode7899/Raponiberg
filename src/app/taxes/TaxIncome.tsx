@@ -4,7 +4,8 @@ import { Card } from "@/components/ledger/LedgerBits";
 import type { ChildIncome, PersonReport } from "@/lib/tax/buildTaxReport";
 import type { W2Boxes } from "@/lib/tax/facts/payroll";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
-import { formatDate, NumberTable, pct, usd, type Row } from "./taxUi";
+import type { EstimateKey } from "@/lib/tax/estimateLines";
+import { EstimateValue, formatDate, NumberTable, pct, usd, type Row } from "./taxUi";
 
 const FREQ: Record<string, string> = { WEEKLY: "weekly", BIWEEKLY: "every two weeks", SEMIMONTHLY: "twice a month", MONTHLY: "monthly" };
 
@@ -12,6 +13,12 @@ const FREQ: Record<string, string> = { WEEKLY: "weekly", BIWEEKLY: "every two we
 export function TaxIncome({ r }: { r: TaxResponse }) {
   const f = r.scenarios.mfj.federal;
   const ct = r.scenarios.mfj.ct;
+  // The joint return projected to Dec 31 (a finished year: the full year), each figure opening its proof.
+  const est = (k: EstimateKey, cents: number, neg = false) => (
+    <EstimateValue year={r.year} k={k} cents={cents}>
+      {usd(neg ? -cents : cents)}
+    </EstimateValue>
+  );
   return (
     <div className="flex flex-col gap-4">
       {r.people.map((p) => (
@@ -25,22 +32,22 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
           <NumberTable
             columns={[""]}
             rows={[
-              { label: "Wages (box 1, both spouses)", values: [usd(f.wages)] },
-              { label: "Taxable interest", values: [usd(f.interest)] },
-              { label: "Ordinary dividends", values: [usd(f.ordinaryDividends)] },
-              { label: "Capital gain/loss", values: [usd(f.capitalGainAllowed)], help: f.capitalLossCarryover ? `Net ${usd(f.capitalGainNet)}; ${usd(-f.capitalLossCarryover)} of loss carries to next year.` : undefined },
-              { label: "IRA / retirement distributions", values: [usd(f.retirementTaxable)] },
-              { label: "Other income", values: [usd(f.otherIncome)] },
-              { label: "Adjustments to income", values: [usd(-f.adjustments)] },
-              { label: "Adjusted gross income (AGI)", values: [usd(f.agi)], strong: true },
+              { label: "Wages (box 1, both spouses)", values: [est("fed.wages", f.wages)] },
+              { label: "Taxable interest", values: [est("fed.taxableInterest", f.interest)] },
+              { label: "Ordinary dividends", values: [est("fed.ordinaryDividends", f.ordinaryDividends)] },
+              { label: "Capital gain/loss", values: [est("fed.capitalGain", f.capitalGainAllowed)], help: f.capitalLossCarryover ? `Net ${usd(f.capitalGainNet)}; ${usd(-f.capitalLossCarryover)} of loss carries to next year.` : undefined },
+              { label: "IRA / retirement distributions", values: [est("fed.iraTaxable", f.retirementTaxable)] },
+              { label: "Other income", values: [est("fed.additionalIncome", f.otherIncome)] },
+              { label: "Adjustments to income", values: [est("fed.adjustments", f.adjustments, true)] },
+              { label: "Adjusted gross income (AGI)", values: [est("fed.agi", f.agi)], strong: true },
               {
                 label: f.itemizes ? "Itemized deductions" : "Standard deduction",
-                values: [usd(-f.deduction)],
+                values: [est("fed.deduction", f.deduction, true)],
                 help: `Itemized would be ${usd(f.itemized.total)} (SALT ${usd(f.itemized.salt)} of ${usd(f.itemized.saltPaid)} paid, cap ${usd(f.itemized.saltCap)}; mortgage interest ${usd(f.itemized.mortgageInterest)}; charity ${usd(f.itemized.charitable)}).`,
               },
-              { label: "QBI deduction", values: [usd(-f.qbiDeduction)] },
-              { label: "Taxable income", values: [usd(f.taxableIncome)], strong: true },
-              { label: "of which taxed at 0/15/20% (qualified dividends, LT gains)", values: [usd(f.preferentialIncome)], indent: true },
+              { label: "QBI deduction", values: [est("fed.qbiDeduction", f.qbiDeduction, true)] },
+              { label: "Taxable income", values: [est("fed.taxableIncome", f.taxableIncome)], strong: true },
+              { label: "of which taxed at 0/15/20% (qualified dividends, LT gains)", values: [est("fed.preferentialIncome", f.preferentialIncome)], indent: true },
             ]}
           />
         </Card>
@@ -48,19 +55,19 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
           <NumberTable
             columns={[""]}
             rows={[
-              { label: "Federal AGI", values: [usd(ct.federalAgi)] },
-              { label: "CHET 529 contributions", values: [usd(-ct.chetDeduction)], help: "Deductible up to $10,000 joint / $5,000 separate per year." },
-              { label: "US-obligation interest/dividends", values: [usd(-ct.usObligationSubtraction)] },
+              { label: "Federal AGI", values: [est("ct.federalAgi", ct.federalAgi)] },
+              { label: "CHET 529 contributions", values: [est("ct.chet", ct.chetDeduction, true)], help: "Deductible up to $10,000 joint / $5,000 separate per year." },
+              { label: "US-obligation interest/dividends", values: [est("ct.usObligationSubtraction", ct.usObligationSubtraction, true)] },
               { label: "Other modifications", values: [usd(ct.additions - (ct.subtractions - ct.chetDeduction - ct.usObligationSubtraction))] },
-              { label: "Connecticut AGI", values: [usd(ct.ctAgi)], strong: true },
-              { label: "Personal exemption", values: [usd(-ct.exemption)] },
-              { label: "Connecticut taxable income", values: [usd(ct.taxableIncome)], strong: true },
+              { label: "Connecticut AGI", values: [est("ct.stateAgi", ct.ctAgi)], strong: true },
+              { label: "Personal exemption", values: [est("ct.exemption", ct.exemption, true)] },
+              { label: "Connecticut taxable income", values: [est("ct.taxableIncome", ct.taxableIncome)], strong: true },
               { label: "Tax from brackets (2%–6.99%)", values: [usd(ct.initialTax)] },
               { label: "2% rate phase-out add-back", values: [usd(ct.addBack)] },
               { label: "Benefit recapture", values: [usd(ct.recapture)] },
               { label: `Personal tax credit (${pct(ct.personalCreditRate, 0)})`, values: [usd(-ct.personalCredit)] },
-              { label: "Child tax credit", values: [usd(-ct.childTaxCredit)] },
-              { label: "Connecticut income tax", values: [usd(ct.totalTax)], strong: true },
+              { label: "Child tax credit", values: [est("ct.childTaxCredit", ct.childTaxCredit, true)] },
+              { label: "Connecticut income tax", values: [est("ct.totalTax", ct.totalTax)], strong: true },
             ]}
           />
         </Card>

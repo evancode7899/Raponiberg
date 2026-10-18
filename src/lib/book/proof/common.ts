@@ -11,12 +11,16 @@ const SUBJECT_CAP = 200;
  * what it passed on), open (a finding withholds the figure), accepted (the owner
  * explained it), or nothing in scope, so a check with nothing to look at is never
  * presented as a pass. Blockers, exceptions and passes are all found by the same scope
- * test (blockers.ts scopeHits). `withheld`: some open finding covers the figure.
+ * test (blockers.ts scopeHits). `withheld`: some open finding covers the figure. Several
+ * queries take whatever any of them covers.
  */
-export function checksFor(book: Book, q: BlockerQuery, ids: CheckId[]): { checks: ProofCheck[]; withheld: boolean } {
-  const open = blockersFor(book, q);
-  const accepted = acceptedFor(book, q);
-  const passes = passesFor(book, q);
+export function checksFor(book: Book, q: BlockerQuery | BlockerQuery[], ids: CheckId[]): { checks: ProofCheck[]; withheld: boolean } {
+  // Several queries (a figure built from pay, taxes and bank accounts): each finding and pass once.
+  const qs = Array.isArray(q) ? q : [q];
+  const once = <T,>(xs: T[]) => [...new Set(xs)];
+  const open = once(qs.flatMap((x) => blockersFor(book, x)));
+  const accepted = once(qs.flatMap((x) => acceptedFor(book, x)));
+  const passes = once(qs.flatMap((x) => passesFor(book, x)));
   const checks = ids.map((id): ProofCheck => {
     const def = CHECKS.find((c) => c.id === id)!;
     const mine = passes.filter((p) => p.check === id);

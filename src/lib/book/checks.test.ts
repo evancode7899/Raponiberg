@@ -11,6 +11,8 @@ import { Collector } from "./checks/collector";
 import { staleEvidence } from "./exceptions";
 import { cashFlowThrough, type Book, type BookAccount, type BookRow, type BookStub } from "./load";
 import type { StandingException } from "./types";
+import { TAX_DOCS_VERSION } from "../taxdocs/store";
+import type { TaxDocsFile } from "../taxdocs/types";
 
 // A tiny synthetic household (all names and amounts invented).
 
@@ -23,6 +25,7 @@ function makeBook(opts: {
   exceptions?: StandingException[];
   horizon?: Book["horizon"];
   persons?: Book["persons"];
+  taxDocs?: TaxDocsFile | null;
 }): Book {
   const rows: BookRow[] = [];
   const accounts: BookAccount[] = [];
@@ -61,7 +64,7 @@ function makeBook(opts: {
     household: NO_HOUSEHOLD,
     classifiedWithHousehold: null,
     taxProfile: { version: 1, persons: opts.persons ?? [{ id: "pat", name: "Pat", match: ["PAT"] }], dependents: [], accountOwners: {}, accountKinds: {}, qualifiedDividendShare: 1, moneyMarketUsGovShare: 0, mfsDependentClaimant: "AUTO", years: {} },
-    taxDocs: null,
+    taxDocs: opts.taxDocs ?? null,
     persons: opts.persons ?? [{ id: "pat", name: "Pat", match: ["PAT"] }],
     idle: { proven: [], unproven: [] },
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
@@ -462,5 +465,57 @@ describe("check passes carry their evidence", () => {
     // Pay passes never vouch for cash flow; household-wide ones cover every account filter.
     expect(passesFor(b, { affects: "CASH_FLOW", from: "2025-01-01", to: "2025-12-31" }).some((p) => p.check === "paystub.arithmetic")).toBe(false);
     expect(passesFor(b, { affects: "CASH_FLOW", from: "2025-06-01", to: "2025-06-30", accountIds: ["card"] }).some((p) => p.check === "ledger.freshness")).toBe(true);
+  });
+});
+
+describe("tax documents were read by the current reader (ledger.freshness)", () => {
+  // An invented tax documents folder: Pat Example's 2024 W-2, and an older print a later one superseded.
+  const taxDocs = (version: number): TaxDocsFile => ({
+    version,
+    scannedAt: "2025-03-01T00:00:00.000Z",
+    folder: "Example tax folder",
+    errors: [],
+    docs: [
+      { id: "w2-a", file: "2024/pat-w2.pdf", duplicates: [], year: 2024, kind: "W2", superseded: null, names: ["PAT EXAMPLE"], parsed: { kind: "OTHER" }, warnings: [] },
+      { id: "w2-b", file: "2024/pat-w2-old.pdf", duplicates: [], year: 2024, kind: "W2", superseded: "An older print", names: ["PAT EXAMPLE"], parsed: { kind: "OTHER" }, warnings: [] },
+    ],
+  });
+  const quiet = (docs: TaxDocsFile | null) =>
+    makeBook({ accounts: [{ id: "chk", name: "Springfield Bank ••1234", subtype: "CHECKING", segs: [{ start: "2025-01-01", end: "2025-12-31", open: 0, close: 0 }] }], taxDocs: docs });
+  const fresh = (b: Book) => b.integrity.findings.filter((f) => f.check === "ledger.freshness");
+  const taxPasses = (b: Book) => b.passes.filter((p) => p.check === "ledger.freshness" && /tax documents reader/.test(p.subject));
+  const tallyIsEvidence = (b: Book) => expect(b.passes.filter((p) => p.check === "ledger.freshness").reduce((t, p) => t + p.n, 0)).toBe(b.integrity.checks.find((c) => c.id === "ledger.freshness")!.passed);
+
+  it("passes a folder read by the current reader, with what it covered", () => {
+    const b = quiet(taxDocs(TAX_DOCS_VERSION));
+    expect(fresh(b)).toEqual([]);
+    expect(taxPasses(b)).toEqual([
+      { check: "ledger.freshness", n: 1, subject: `1 tax document read by the current tax documents reader (version ${TAX_DOCS_VERSION})`, scope: { from: "2024-01-01", to: "2025-12-31", affects: ["TAX"] } },
+    ]);
+    // A tax figure's proof lists it; a cash-flow figure's doesn't.
+    expect(passesFor(b, { affects: "TAX", from: "2024-01-01", to: "2024-12-31" }).some((p) => /tax documents reader/.test(p.subject))).toBe(true);
+    expect(passesFor(b, { affects: "CASH_FLOW", from: "2024-01-01", to: "2024-12-31" }).some((p) => /tax documents reader/.test(p.subject))).toBe(false);
+    tallyIsEvidence(b);
+  });
+
+  it("withholds taxes (only) while the folder was read by an older reader, with how to read it again", () => {
+    const b = quiet(taxDocs(TAX_DOCS_VERSION - 1));
+    const f = fresh(b);
+    expect(f.map((x) => x.id)).toEqual([`ledger.freshness:taxdocs:v${TAX_DOCS_VERSION}`]);
+    expect(f[0]!.title).toBe("1 tax document was read by an older tax documents reader");
+    expect(f[0]!.detail).toMatch(/version 0 of the reader.*2024\/pat-w2\.pdf\.$/);
+    expect(f[0]!.fix).toMatch(/^Click Scan tax documents folder \(Statements → Import\)/);
+    expect(f[0]!.scope).toEqual({ from: "2024-01-01", to: "2025-12-31", affects: ["TAX"] });
+    expect(taxPasses(b)).toEqual([]);
+    expect(blockersFor(b, { affects: "TAX", from: "2024-01-01", to: "2024-12-31" }).map((x) => x.id)).toEqual([f[0]!.id]);
+    expect(blockersFor(b, { affects: "CASH_FLOW", from: "2024-01-01", to: "2025-12-31" }).filter((x) => x.check === "ledger.freshness")).toEqual([]);
+    tallyIsEvidence(b);
+  });
+
+  it("says nothing about tax documents before the folder is first scanned", () => {
+    const b = quiet(null);
+    expect(fresh(b)).toEqual([]);
+    expect(taxPasses(b)).toEqual([]);
+    tallyIsEvidence(b);
   });
 });

@@ -1,13 +1,13 @@
 "use client";
 
 import { buttonSecondary, Card, Segmented } from "@/components/ledger/LedgerBits";
-import type { PersonReport } from "@/lib/tax/buildTaxReport";
-import { computeReturn, type Dependent, type PersonIncome, type ReturnResult } from "@/lib/tax/computeReturn";
-import { ZERO_AMOUNTS, type PayrollAmounts } from "@/lib/tax/facts/payroll";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { computeReturn, type PersonIncome, type ReturnResult } from "@/lib/tax/computeReturn";
+import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateColumn, type EstimateKey } from "@/lib/tax/estimateLines";
 import { FILING_STATUS_LABEL, taxYearParams } from "@/lib/tax/params";
-import { applyWhatIf, bestSeparate, hasWhatIf, NO_WHAT_IF, type WhatIf } from "@/lib/tax/scenarios";
+import { applyWhatIf, hasWhatIf, NO_WHAT_IF, type WhatIf } from "@/lib/tax/scenarios";
 import { returnSchedules, type BracketRow, type Schedule } from "@/lib/tax/schedules";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { balanceText, Callout, MoneyField, NumberTable, pct, usd, type Row } from "./taxUi";
 
@@ -28,137 +28,105 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
 
   const people = r.people;
   const calc = useMemo(() => {
-    const base = people.map((p) => (basis === "ytd" ? p.incomeYtd : p.income));
-    const incomes = applyWhatIf(base, whatIf, params);
+    const { joint, mfs, cols: base } = estimateColumns(r, basis, whatIf);
     const ny = r.ny?.filing ?? null;
-    const joint = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents: r.dependents, ny });
-    const mfs = bestSeparate(params, incomes, r.dependents, r.profile.mfsDependentClaimant, ny);
     // Marginal rate: $1,000 more wages for that column's highest earner.
-    const marginal = (rs: ReturnResult, inc: PersonIncome[], fs: "MFJ" | "MFS", deps: Dependent[]) => {
-      const top = [...inc].sort((a, b) => wages(b) - wages(a))[0];
+    const marginal = (c: EstimateColumn, fs: "MFJ" | "MFS") => {
+      const top = [...c.incomes].sort((a, b) => wages(b) - wages(a))[0];
       if (!top || !top.w2s.length) return null;
-      const bumped = applyWhatIf(inc, { ...NO_WHAT_IF, people: { [top.id]: { extraWages: 100_000, extraPretax401k: 0 } } }, params);
-      const b = computeReturn({ params, filingStatus: fs, people: bumped, dependents: deps, ny, itemizeMode: rs.federal.itemizes ? "ITEMIZE" : "STANDARD" });
-      return (allTaxes(b) - allTaxes(rs)) / 100_000;
+      const bumped = applyWhatIf(c.incomes, { ...NO_WHAT_IF, people: { [top.id]: { extraWages: 100_000, extraPretax401k: 0 } } }, params);
+      const b = computeReturn({ params, filingStatus: fs, people: bumped, dependents: c.dependents, ny, itemizeMode: c.r.federal.itemizes ? "ITEMIZE" : "STANDARD" });
+      return (allTaxes(b) - allTaxes(c.r)) / 100_000;
     };
-    const cols = [
-      ...people.map((p, i) => {
-        const rs = mfs.returns[p.id]!;
-        return { id: p.id, name: p.name, sub: "separate", r: rs, incomes: [incomes[i]!], marginal: marginal(rs, [incomes[i]!], "MFS", mfs.claimant === p.id ? r.dependents : []) };
-      }),
-      { id: "joint", name: "Joint", sub: "filing jointly", r: joint, incomes, marginal: marginal(joint, incomes, "MFJ", r.dependents) },
-    ];
-    return { incomes, joint, mfs, cols };
-  }, [people, basis, whatIf, params, r.dependents, r.profile.mfsDependentClaimant, r.ny]);
+    const cols = base.map((c) => ({ ...c, marginal: marginal(c, c.id === "joint" ? "MFJ" : "MFS") }));
+    return { joint, mfs, cols };
+  }, [r, basis, whatIf, params]);
 
-  const pay = (p: PersonReport): PayrollAmounts => {
-    const a = basis === "ytd" ? p.payrollTotals.ytd : p.payrollTotals.projected;
-    const w = whatIf.people[p.id];
-    return w ? { ...a, bonus: a.bonus + w.extraWages, retirementPretax: a.retirementPretax + w.extraPretax401k } : a;
-  };
-  const payCols = [...people.map(pay), people.map(pay).reduce(addPay, { ...ZERO_AMOUNTS })];
   const cols = calc.cols;
-  const P = (f: (a: PayrollAmounts) => number) => payCols.map(f);
   const R = (f: (x: ReturnResult, i: number) => number) => cols.map((c, i) => f(c.r, i));
-  const money = (xs: number[]) => xs.map(usd);
   const ratio = (num: number[], den: number[]) => num.map((n, i) => (den[i]! > 0 ? pct(n / den[i]!) : "—"));
+  // Every figure comes from the estimate's line catalog (lib/tax/estimateLines), the one its proof re-derives; a what-if figure has no proof.
+  const proofs = !hasWhatIf(whatIf);
+  const V = (key: EstimateKey) => cols.map((c) => lineValue(key, c, cols) ?? 0);
+  const cell = (key: EstimateKey, i: number, v: number, text: ReactNode): ReactNode =>
+    proofs ? (
+      <ProofValue proof={{ descriptor: { report: "tax-estimate", year: r.year, basis, ...(cols[i]!.id === "joint" ? {} : { filer: cols[i]!.id }), key }, ...(ESTIMATE_LINES[key].ratio ? {} : { shownCents: v }) }}>{text}</ProofValue>
+    ) : (
+      text
+    );
+  /** A worksheet row for a line: deductions show negative; `show` formats a cell otherwise. */
+  const line = (key: EstimateKey, label: string, o: { neg?: boolean; show?: (v: number, i: number) => string; strong?: boolean; indent?: boolean; help?: string; only?: "joint" } = {}): Row => ({
+    label,
+    values: V(key).map((v, i) => (o.only && cols[i]!.id !== o.only ? "" : cell(key, i, v, o.show ? o.show(v, i) : usd(o.neg ? -v : v)))),
+    ...(o.strong ? { strong: true } : {}),
+    ...(o.indent ? { indent: true } : {}),
+    ...(o.help ? { help: o.help } : {}),
+  });
 
-  const salary = P((a) => a.regular);
-  const bonus = P((a) => a.bonus);
-  const imputed = P((a) => a.imputed);
-  const pretax = P((a) => a.section125 + a.hsa + a.dependentCareFsa);
-  const k401 = P((a) => a.retirementPretax);
-  const box5 = R((_x, i) => cols[i]!.incomes.reduce((s, p) => s + p.w2s.reduce((t, w) => t + w.box5MedicareWages, 0), 0));
-  const box1 = R((x) => x.federal.wages);
-  const investment = R((x) => x.federal.interest + x.federal.ordinaryDividends + x.federal.capitalGainAllowed + x.federal.retirementTaxable + x.federal.otherIncome);
-  const fedIncomeTax = R((x) => x.federal.incomeTaxAfterCredits - x.federal.refundableChildCredit);
-  const medicare = R((x) => x.fica.medicare + x.federal.additionalMedicareTax);
-  const niit = R((x) => x.federal.niit);
-  const ss = R((x) => x.fica.socialSecurity);
-  const ct = R((x) => x.ct.totalTax);
-  const pfml = R((x) => x.fica.ctPfml);
-  const other = R((x) => x.otherStateTax);
+  const fedIncomeTax = V("fed.incomeTax");
+  const medicare = V("fica.medicareTotal");
+  const niit = V("fed.niit");
+  const ss = V("fica.socialSecurity");
+  const ct = V("ct.totalTax");
+  const pfml = V("fica.pfml");
+  const other = V("all.otherStateTax");
   const hasNy = cols.some((c) => c.r.ny);
-  const nyState = R((x) => x.ny?.stateTax ?? 0);
-  const nyCity = R((x) => x.ny?.cityTax ?? 0);
-  const totalTaxes = cols.map((_, i) => fedIncomeTax[i]! + medicare[i]! + niit[i]! + ss[i]! + ct[i]! + pfml[i]! + other[i]! + nyState[i]! + nyCity[i]!);
-  const earnedPlusInvestment = cols.map((_, i) => salary[i]! + bonus[i]! + imputed[i]! + investment[i]!);
-  const separateSum = totalTaxes.slice(0, people.length).reduce((a, b) => a + b, 0);
-  const jointValue = separateSum - totalTaxes.at(-1)!;
-
-  const withheld = (f: (w: PersonIncome["w2s"][number]) => number) => cols.map((c) => c.incomes.reduce((s, p) => s + p.w2s.reduce((t, w) => t + f(w), 0), 0));
-  const fedWithheld = withheld((w) => w.federalWithheld);
-  const ssWithheld = withheld((w) => w.ssWithheld);
-  const medWithheld = withheld((w) => w.medicareWithheld);
-  const ctWithheld = withheld((w) => w.stateWithheld);
-  const nyWithheld = withheld((w) => (w.nyWithheld ?? 0) + (w.nycWithheld ?? 0));
-  const nyCredits = R((x) => (x.ny?.city ? x.ny.city.schoolCredit + x.ny.city.schoolRateReduction : 0) + (x.ny?.estimatedPayments ?? 0));
-  const fedEst = R((x) => x.federal.estimatedPayments);
-  const ctEst = R((x) => x.ct.estimatedPayments);
-  const paid = cols.map((_, i) => fedWithheld[i]! + ssWithheld[i]! + medWithheld[i]! + ctWithheld[i]! + fedEst[i]! + ctEst[i]! + pfml[i]! + nyWithheld[i]! + nyCredits[i]!);
+  const nyState = V("ny.incomeTax");
+  const nyCity = V("ny.cityTax");
+  const totalTaxes = V("all.totalTaxes");
+  const earnedPlusInvestment = V("all.earnedPlusInvestment");
   const fedBal = R((x) => x.federal.balanceDue);
   const ctBal = R((x) => x.ct.balanceDue);
-  const nyBal = R((x) => x.ny?.balanceDue ?? 0);
   const actual = r.inputs.actual;
   const showActual = basis === "projected" && !hasWhatIf(whatIf) && (actual.federalBalance != null || actual.ctBalance != null);
 
   const rows: Row[] = [
     { label: "Annual income and deductions", values: [], heading: true },
-    { label: "Gross salary", values: money(salary) },
-    { label: "Gross bonus", values: money(bonus) },
-    { label: "Earned income", values: money(cols.map((_, i) => salary[i]! + bonus[i]!)), strong: true },
-    { label: "Plus: taxable company-paid benefits", values: money(imputed), indent: true, help: "Imputed income such as group-term life over $50k: taxed but never paid out." },
-    { label: "Total income + taxable benefits", values: money(cols.map((_, i) => salary[i]! + bonus[i]! + imputed[i]!)), strong: true },
-    { label: "Less: pre-tax health, dental, vision, HSA, FSA", values: money(pretax.map((x) => -x)), indent: true },
-    { label: "Social Security / Medicare wages (W-2 box 5)", values: money(box5), strong: true },
-    { label: "Less: pre-tax 401(k)", values: money(k401.map((x) => -x)), indent: true },
-    { label: "Wages (W-2 box 1)", values: money(box1), strong: true },
-    { label: "Investment income (interest, dividends, gains, IRA)", values: money(investment), indent: true, help: "Capital losses count only up to $3,000 ($1,500 filing separately)." },
-    { label: "Adjustments", values: money(R((x) => -x.federal.adjustments)), indent: true },
-    { label: "Federal adjusted gross income", values: money(R((x) => x.federal.agi)), strong: true },
-    {
-      label: "Federal deduction",
-      values: R((x) => -x.federal.deduction).map((v, i) => `${usd(v)} ${cols[i]!.r.federal.itemizes ? "itemized" : "std"}`),
-      indent: true,
-    },
-    { label: "QBI deduction", values: money(R((x) => -x.federal.qbiDeduction)), indent: true },
-    { label: "Federal taxable income", values: money(R((x) => x.federal.taxableIncome)), strong: true },
-    { label: "of which qualified dividends & LT gains (0/15/20%)", values: money(R((x) => x.federal.preferentialIncome)), indent: true },
-    { label: "Connecticut AGI", values: money(R((x) => x.ct.ctAgi)), strong: true, help: "Federal AGI minus CHET 529 contributions and US-obligation interest." },
-    { label: "Personal exemption", values: money(R((x) => -x.ct.exemption)), indent: true },
-    { label: "Connecticut taxable income", values: money(R((x) => x.ct.taxableIncome)), strong: true },
+    line("pay.salary", "Gross salary"),
+    line("pay.bonus", "Gross bonus"),
+    line("pay.earned", "Earned income", { strong: true }),
+    line("pay.imputed", "Plus: taxable company-paid benefits", { indent: true, help: "Imputed income such as group-term life over $50k: taxed but never paid out." }),
+    line("pay.withBenefits", "Total income + taxable benefits", { strong: true }),
+    line("pay.pretax", "Less: pre-tax health, dental, vision, HSA, FSA", { neg: true, indent: true }),
+    line("pay.medicareWages", "Social Security / Medicare wages (W-2 box 5)", { strong: true }),
+    line("pay.k401", "Less: pre-tax 401(k)", { neg: true, indent: true }),
+    line("fed.wages", "Wages (W-2 box 1)", { strong: true }),
+    line("fed.investmentIncome", "Investment income (interest, dividends, gains, IRA)", { indent: true, help: "Capital losses count only up to $3,000 ($1,500 filing separately)." }),
+    line("fed.adjustments", "Adjustments", { neg: true, indent: true }),
+    line("fed.agi", "Federal adjusted gross income", { strong: true }),
+    line("fed.deduction", "Federal deduction", { show: (v, i) => `${usd(-v)} ${cols[i]!.r.federal.itemizes ? "itemized" : "std"}`, indent: true }),
+    line("fed.qbiDeduction", "QBI deduction", { neg: true, indent: true }),
+    line("fed.taxableIncome", "Federal taxable income", { strong: true }),
+    line("fed.preferentialIncome", "of which qualified dividends & LT gains (0/15/20%)", { indent: true }),
+    line("ct.stateAgi", "Connecticut AGI", { strong: true, help: "Federal AGI minus CHET 529 contributions and US-obligation interest." }),
+    line("ct.exemption", "Personal exemption", { neg: true, indent: true }),
+    line("ct.taxableIncome", "Connecticut taxable income", { strong: true }),
     ...(hasNy
       ? [
-          { label: "New York AGI", values: money(R((x) => x.ny?.nyAgi ?? 0)), strong: true, help: "Federal AGI minus US-government interest." },
-          { label: "Standard deduction and dependent exemptions", values: money(R((x) => -((x.ny?.standardDeduction ?? 0) + (x.ny?.dependentExemption ?? 0)))), indent: true },
-          { label: "New York taxable income", values: money(R((x) => x.ny?.taxableIncome ?? 0)), strong: true },
-          ...(cols.some((c) => c.r.ny?.incomePercentage != null)
-            ? [{ label: "New York share of income (part-year)", values: R((x) => x.ny?.incomePercentage ?? 0).map((v) => pct(v, 2)), indent: true }]
-            : []),
-          ...(cols.some((c) => c.r.ny?.city) ? [{ label: "New York City taxable income", values: money(R((x) => x.ny?.city?.taxableIncome ?? 0)), indent: true }] : []),
+          line("ny.stateAgi", "New York AGI", { strong: true, help: "Federal AGI minus US-government interest." }),
+          line("ny.deductions", "Standard deduction and dependent exemptions", { neg: true, indent: true }),
+          line("ny.taxableIncome", "New York taxable income", { strong: true }),
+          ...(cols.some((c) => c.r.ny?.incomePercentage != null) ? [line("ny.incomePercentage", "New York share of income (part-year)", { show: (v) => pct(v, 2), indent: true })] : []),
+          ...(cols.some((c) => c.r.ny?.city) ? [line("ny.cityTaxableIncome", "New York City taxable income", { indent: true })] : []),
         ]
       : []),
 
     { label: "Total taxes owed", values: [], heading: true },
-    { label: "Federal income tax", values: money(fedIncomeTax) },
-    { label: "Medicare (1.45% + 0.9% surtax)", values: money(medicare) },
-    { label: "Net investment income tax (3.8%)", values: money(niit) },
-    { label: "Social Security", values: money(ss) },
-    { label: "Connecticut income tax", values: money(ct) },
-    { label: "CT Paid Leave (PFML)", values: money(pfml) },
-    ...(hasNy ? [{ label: "New York State income tax", values: money(nyState) }] : []),
-    ...(nyCity.some((x) => x) ? [{ label: "New York City income tax", values: money(nyCity) }] : []),
-    ...(other.some((x) => x) ? [{ label: "Other state tax", values: money(other) }] : []),
-    { label: "Total taxes", values: money(totalTaxes), strong: true },
-    {
-      label: "Value of filing jointly",
-      values: [...people.map(() => ""), usd(jointValue)],
-      help: "Both spouses' separate-return taxes minus the joint return's taxes.",
-    },
+    line("fed.incomeTax", "Federal income tax"),
+    line("fica.medicareTotal", "Medicare (1.45% + 0.9% surtax)"),
+    line("fed.niit", "Net investment income tax (3.8%)"),
+    line("fica.socialSecurity", "Social Security"),
+    line("ct.totalTax", "Connecticut income tax"),
+    line("fica.pfml", "CT Paid Leave (PFML)"),
+    ...(hasNy ? [line("ny.incomeTax", "New York State income tax")] : []),
+    ...(nyCity.some((x) => x) ? [line("ny.cityTax", "New York City income tax")] : []),
+    ...(other.some((x) => x) ? [line("all.otherStateTax", "Other state tax")] : []),
+    line("all.totalTaxes", "Total taxes", { strong: true }),
+    line("all.jointValue", "Value of filing jointly", { only: "joint", help: "Both spouses' separate-return taxes minus the joint return's taxes." }),
 
     { label: "Rates and take-home", values: [], heading: true },
-    { label: "Earned + investment income", values: money(earnedPlusInvestment) },
-    { label: "Take-home income (after all taxes)", values: money(cols.map((_, i) => earnedPlusInvestment[i]! - totalTaxes[i]!)), strong: true },
+    line("all.earnedPlusInvestment", "Earned + investment income"),
+    line("all.takeHome", "Take-home income (after all taxes)", { strong: true }),
     { label: "Effective tax rate", values: ratio(totalTaxes, earnedPlusInvestment), strong: true },
     { label: "Federal income tax", values: ratio(fedIncomeTax.map((v, i) => v + niit[i]!), earnedPlusInvestment), indent: true },
     { label: "Medicare", values: ratio(medicare, earnedPlusInvestment), indent: true },
@@ -169,24 +137,19 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     { label: "Federal bracket", values: R((x) => x.federal.marginalBracket).map((b, i) => (cols[i]!.r.federal.taxableIncome > 0 ? pct(b, 0) : "—")) },
 
     { label: "Total taxes paid", values: [], heading: true },
-    { label: "Federal withholding (box 2)", values: money(fedWithheld) },
-    { label: "Federal estimated payments", values: money(fedEst) },
-    { label: "Medicare withheld (box 6)", values: money(medWithheld) },
-    { label: "Social Security withheld (box 4)", values: money(ssWithheld) },
-    { label: "Connecticut withholding (box 17)", values: money(ctWithheld) },
-    { label: "Connecticut estimated payments", values: money(ctEst) },
-    { label: "CT Paid Leave (PFML)", values: money(pfml) },
-    ...(hasNy
-      ? [
-          { label: "New York State + City withholding (box 17, 19)", values: money(nyWithheld) },
-          { label: "NYC school credits and NY estimates", values: money(nyCredits), indent: true },
-        ]
-      : []),
-    { label: "Total taxes paid", values: money(paid), strong: true },
-    { label: "Federal owed / (refund)", values: fedBal.map(balanceText) },
-    { label: "Connecticut owed / (refund)", values: ctBal.map(balanceText) },
-    ...(hasNy ? [{ label: "New York owed / (refund)", values: nyBal.map(balanceText) }] : []),
-    { label: "Total owed / (refund)", values: cols.map((_, i) => balanceText(fedBal[i]! + ctBal[i]! + nyBal[i]!)), strong: true },
+    line("fed.w2Withholding", "Federal withholding (box 2)"),
+    line("fed.estimatedPayments", "Federal estimated payments"),
+    line("fica.medicareWithheld", "Medicare withheld (box 6)"),
+    line("fica.ssWithheld", "Social Security withheld (box 4)"),
+    line("ct.withheld", "Connecticut withholding (box 17)"),
+    line("ct.estimatedPayments", "Connecticut estimated payments"),
+    line("fica.pfml", "CT Paid Leave (PFML)"),
+    ...(hasNy ? [line("ny.withheldAll", "New York State + City withholding (box 17, 19)"), line("ny.credits", "NYC school credits and NY estimates", { indent: true })] : []),
+    line("all.totalPaid", "Total taxes paid", { strong: true }),
+    line("fed.balance", "Federal owed / (refund)", { show: balanceText }),
+    line("ct.balance", "Connecticut owed / (refund)", { show: balanceText }),
+    ...(hasNy ? [line("ny.balance", "New York owed / (refund)", { show: balanceText })] : []),
+    line("all.balance", "Total owed / (refund)", { show: balanceText, strong: true }),
     ...(showActual
       ? [
           { label: "Actual return", values: [], heading: true },
@@ -273,12 +236,6 @@ function wages(p: PersonIncome): number {
 
 function allTaxes(x: ReturnResult): number {
   return x.totalTax - x.federal.refundableChildCredit + x.fica.ctPfml;
-}
-
-function addPay(a: PayrollAmounts, b: PayrollAmounts): PayrollAmounts {
-  const out = { ...a };
-  for (const k of Object.keys(out) as (keyof PayrollAmounts)[]) out[k] += b[k];
-  return out;
 }
 
 function WhatIfPanel({ r, whatIf, onChange, basis }: { r: TaxResponse; whatIf: WhatIf; onChange: (w: WhatIf) => void; basis: Basis }) {
