@@ -108,6 +108,8 @@ export type PayrollProjection = {
   /** The latest regular paycheck and the typical one (median gross of the last six), for comparison. */
   latestRegular: { payDate: string; amounts: PayrollAmounts } | null;
   typicalRegular: { payDate: string; amounts: PayrollAmounts } | null;
+  /** The last six regular paychecks (no bonus) by pay date: the typical one is their median gross. */
+  recentRegulars?: { payDate: string; amounts: PayrollAmounts }[];
   /** Pay stops after this date (the job ends), when set. */
   payThrough: string | null;
   extraBonus: number;
@@ -183,6 +185,7 @@ export function projectPayroll(
     basis,
     latestRegular: latestRegular && { payDate: latestRegular.stub.payDate, amounts: latestRegular.amounts },
     typicalRegular: typicalRegular && { payDate: typicalRegular.stub.payDate, amounts: typicalRegular.amounts },
+    recentRegulars: regulars.slice(-6).map((x) => ({ payDate: x.stub.payDate, amounts: x.amounts })),
     payThrough,
     extraBonus: bonus,
     ytd,
