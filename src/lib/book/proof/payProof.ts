@@ -327,7 +327,7 @@ function depositLink(r: BookRow): ProofLink | undefined {
   };
 }
 
-function groupRows(book: Book, rows: BookRow[]): ProofGroup[] {
+export function groupRows(book: Book, rows: BookRow[]): ProofGroup[] {
   const statementById = new Map(book.statements.map((s) => [s.id, s]));
   const groups = new Map<string, ProofGroup>();
   for (const r of rows) {

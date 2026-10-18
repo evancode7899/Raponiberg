@@ -1,6 +1,8 @@
 "use client";
 
 import { MoneyInput } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { EstimateBasis, EstimateKey } from "@/lib/tax/estimateLines";
 
 export { Callout } from "@/components/ui/kit";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
@@ -133,6 +135,15 @@ export function NullableMoneyField({
   );
 }
 
+
+/**
+ * A tax estimate figure that opens its proof (book/proof/taxEstimateProof): the line's key
+ * in lib/tax/estimateLines, for the joint return unless a filer is given. `cents` is the
+ * figure as the page computed it, before any sign flip for display.
+ */
+export function EstimateValue({ year, k, cents, basis = "projected", filer, children }: { year: number; k: EstimateKey | "found.FEDERAL" | "found.CT"; cents: number; basis?: EstimateBasis | "filed"; filer?: string; children: ReactNode }) {
+  return <ProofValue proof={{ descriptor: { report: "tax-estimate", year, basis, ...(filer ? { filer } : {}), key: k }, shownCents: cents }}>{children}</ProofValue>;
+}
 
 export function formatDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);

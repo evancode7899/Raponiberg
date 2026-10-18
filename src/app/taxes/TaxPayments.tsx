@@ -5,7 +5,8 @@ import type { PaymentAttribution, TaxProfile } from "@/lib/tax/profile";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { useState } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
-import { Callout, formatDate, NumberTable, usd } from "./taxUi";
+import { estimatesFound } from "@/lib/tax/estimateLines";
+import { Callout, EstimateValue, formatDate, NumberTable, usd } from "./taxUi";
 
 const AUTH: Record<string, string> = { FEDERAL: "IRS", CT: "Connecticut", OTHER_STATE: "Other state" };
 
@@ -47,8 +48,14 @@ export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProf
     ];
   };
 
-  const est = (a: string) =>
-    r.payments.filter((p) => p.authority === a && p.attribution.kind === "ESTIMATE" && p.attribution.taxYear === r.year).reduce((s, p) => s + p.amount, 0);
+  const est = (a: "FEDERAL" | "CT") => {
+    const cents = estimatesFound(r.payments, r.year, a);
+    return (
+      <EstimateValue year={r.year} k={`found.${a}`} cents={cents}>
+        {usd(cents)}
+      </EstimateValue>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -60,8 +67,8 @@ export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProf
         <NumberTable
           columns={["Found in ledger"]}
           rows={[
-            { label: "Federal (IRS)", values: [usd(est("FEDERAL"))] },
-            { label: "Connecticut (DRS)", values: [usd(est("CT"))] },
+            { label: "Federal (IRS)", values: [est("FEDERAL")] },
+            { label: "Connecticut (DRS)", values: [est("CT")] },
           ]}
         />
       </Card>

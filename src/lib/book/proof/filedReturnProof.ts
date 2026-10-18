@@ -2,6 +2,7 @@ import { loadProfileSettings } from "../../profile/settings.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
 import type { CheckLine, CheckStatus } from "../../tax/filedCheck.ts";
 import { yearDocs } from "../../tax/documents.ts";
+import type { EstimateKey } from "../../tax/estimateLines.ts";
 import { FEDERAL_KEYS, federalSources, sourceValue, STATE_KEYS, stateSources, type FiledSource } from "../../taxdocs/returns.ts";
 import type { FederalKey, FiledReturn, StateKey } from "../../taxdocs/types.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
@@ -29,11 +30,9 @@ export type FiledReturnDescriptor = {
   jurisdiction: FiledJurisdiction;
   /**
    * The line's key on the Filed return tab (lib/tax/filedCheck CheckLine.key): a federal
-   * or state summary key, "balance" (owed at filing), or NY's "taxableIncome".
-   *
-   * TODO(tax-estimate, approved item 10): the comparison's "This app" line is the tax
-   * engine's figure for the same key. Once a "tax-estimate" kind exists, that line links
-   * to it ({ report: "tax-estimate", year, jurisdiction, key }); until then it has no link.
+   * or state summary key, "balance" (owed at filing), or NY's "taxableIncome". The
+   * comparison's "This app" line opens the tax estimate's proof of the same line
+   * (tax-estimate, basis "filed": the joint return in whole dollars, as the tab compares it).
    */
   key: string;
 };
@@ -43,6 +42,9 @@ const JURISDICTION: Record<FiledJurisdiction, { name: string; doc: "federal" | "
   CT: { name: "Connecticut", doc: "ct" },
   NY: { name: "New York", doc: "ny" },
 };
+
+/** The tax estimate's line keys for a jurisdiction's return lines (lib/tax/estimateLines). */
+const ESTIMATE_PREFIX: Record<FiledJurisdiction, string> = { FEDERAL: "fed", CT: "ct", NY: "ny" };
 
 const FED_EXTRA = ["balance"];
 const STATE_EXTRA = ["balance"];
@@ -169,7 +171,7 @@ export async function buildFiledReturnProof(ctx: ProofContext, d: FiledReturnDes
       lines: read,
       note: [
         `${j.name} ${ret.form} for ${d.year}${ret.printedOn ? `, printed on ${ret.printedOn}` : ""}${ret.filingStatus ? `, filed ${ret.filingStatus}` : ""}.`,
-        "No integrity check covers how the return was read: the amount is what the reader took off the PDF, and the comparison with the app's own figure is the cross-check.",
+        "The amount is what the tax documents reader took off the PDF (ledger.freshness checks it was the current reader); the comparison with the app's own figure is the cross-check of what it read.",
       ].join(" "),
     },
   ];
@@ -186,8 +188,8 @@ export async function buildFiledReturnProof(ctx: ProofContext, d: FiledReturnDes
           label: "This app",
           value: line.model == null ? { text: "not computed" } : asValue(line.model),
           source: "estimate",
-          // No link yet: the tax-estimate kind (approved item 10) will prove this side.
           note: "Worked out by the app's tax engine from the year's W-2s, 1099s, K-1s, pay stubs and ledger, under the year's tax law.",
+          link: { label: `This app's ${label.toLowerCase()}`, descriptor: { report: "tax-estimate", year: d.year, basis: "filed", key: `${ESTIMATE_PREFIX[d.jurisdiction]}.${d.key}` as EstimateKey } },
         },
         ...(diff == null ? [] : [{ op: "=" as const, label: "Difference", value: asValue(diff), source: "derived" as const, note: [STATUS_WORDS[line.status], line.note].filter(Boolean).join(" ") }]),
       ],
