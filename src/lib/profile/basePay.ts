@@ -54,13 +54,80 @@ export type PersonSeed = {
   /** Bonuses paid after the outlook's starting point: real money, but left out of the near term. */
   bonusesSinceStart: { payDate: string; gross: number }[];
   note: string;
+  /** How the seed was read, for its proof (the forecast proof kind); absent with no pay on file. */
+  trail?: PayTrail;
 };
 
-export type LivingSeed = { cents: number; label: string; detail: string };
+/** 401(k) pre-tax, Roth and HSA deferrals (cents). */
+export type DeferralParts = { k401Pretax: number; k401Roth: number; hsa: number };
+
+export type PayTrail = {
+  /** The stub chain the paychecks were read from: its employer, and the year (this one, or last when none yet). */
+  employer: string;
+  employerKey: string;
+  payYear: number;
+  /** The last six regular checks (no bonus), by pay date: the typical check is their median by gross. */
+  recent: { payDate: string; regular: number; gross: number }[];
+  /** The stub the pay frequency was read from, and its pay period. */
+  frequencyFrom: { payDate: string; periodStart: string | null; periodEnd: string | null };
+  /** Each basis's deferrals as projectPayroll works them out: year to date + the check × the pay dates left, held to the annual limits, + other employers' year to date. */
+  deferrals: Record<
+    PaycheckBasis,
+    {
+      ytd: DeferralParts;
+      throughStub: string;
+      perCheck: DeferralParts;
+      checks: number;
+      /** Year to date + the rest, after the annual limits. */
+      projected: DeferralParts;
+      others: { employer: string; employerKey: string; through: string; d: DeferralParts }[];
+    }
+  >;
+};
+
+export type LivingSeed = {
+  cents: number;
+  label: string;
+  detail: string;
+  /** How the figure was added up, for its proof (the forecast proof kind). */
+  trail?: LivingTrail;
+};
+
+/**
+ * A living-cost seed's parts: every spending row booked in [from, to] (net of refunds),
+ * less tax payments (taxes, not living), less tagged one-offs, less reimbursements; the
+ * year in progress then × 365 ÷ `days`.
+ */
+export type LivingTrail = {
+  from: string;
+  to: string;
+  /** Spending left after tax payments and tagged one-offs (positive). */
+  spending: number;
+  taxPayments: number;
+  /** One-offs tagged one by one, and whole categories counted as one-offs (Settings › non-recurring categories). */
+  oneOffs: { date: string; payee: string; account: string; category: string; cents: number; label: string }[];
+  oneOffCategories: { category: string; cents: number; rows: number }[];
+  /** Reimbursements received (Zelle/Venmo rows), and paid inside paychecks. */
+  reimbursements: number;
+  payReimbursements: number;
+  /** The window's living cost before annualizing. */
+  windowCents: number;
+  /** THIS_YEAR: days from Jan 1, annualized × 365 ÷ days. */
+  days?: number;
+};
 
 export type OutlookSeeds = {
   /** The latest proven net worth the projection starts from (end of `month`). */
-  start: { asOf: string; year: number; month: number; liquid: number; illiquid: number; note: string };
+  start: {
+    asOf: string;
+    year: number;
+    month: number;
+    liquid: number;
+    illiquid: number;
+    note: string;
+    /** Matched transfers that had left one account but not reached the other on `asOf`, by the side they were going to. */
+    inTransit?: { liquid: number; illiquid: number };
+  };
   baseYear: number;
   currentYear: number;
   people: PersonSeed[];
