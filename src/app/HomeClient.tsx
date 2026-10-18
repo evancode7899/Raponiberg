@@ -6,45 +6,23 @@ import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Card, ErrorNote, Loading, PageBody, StatCell, StatGrid } from "@/components/ui/kit";
-import type { BlockerRef } from "@/lib/book/reports/blockerRef";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofDescriptor } from "@/lib/book/proof";
+import type { HomeSummary } from "@/lib/dashboard/homeSummary";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
-import type { Quality } from "@/lib/ledger/timeline";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis } from "recharts";
 
-type Change = { cents: number | null; blockers: BlockerRef[] };
+/** Every figure is null when it can't be proven; its blockers say why. Each figure shown carries its proof's descriptor. */
+type Summary = HomeSummary;
+type Change = Summary["netWorth"]["change"]["month"];
 
-/** Every figure is null when it can't be proven; its blockers say why. */
-type Summary = {
-  hasStatements: boolean;
-  netWorth: {
-    asOf: string;
-    blockers: BlockerRef[];
-    quality: Quality;
-    totalCents: number | null;
-    assetsCents: number | null;
-    debtsCents: number | null;
-    liquidCents: number | null;
-    change: { month: Change; year: Change; ytd: Change; ytdYear: string | null };
-    drivers: { principalCents: number; growthCents: number; otherCents: number } | null;
-    driversBlockers: BlockerRef[];
-    groups: { group: string; cents: number }[];
-    series: { end: string; label: string; cents: number | null; quality: Quality }[];
-  };
-  cashFlow: {
-    through: string;
-    blockers: BlockerRef[];
-    months: { label: string; start: string; end: string; blocked: boolean; incomeCents: number | null; spendingCents: number | null; netCents: number | null; savingsRate: number | null }[];
-    last12: { incomeCents: number; spendingCents: number; netCents: number; savingsRate: number | null } | null;
-    lastMonth: { label: string; start: string; end: string; incomeCents: number; spendingCents: number; netCents: number } | null;
-    categories: { category: string; lastMonthCents: number; avgCents: number }[];
-  };
-  integrity: { failing: number; missing: number; awaiting: number; edge: string; accepted: number; toReview: number; checksPassing: number; checksTotal: number };
-  attention: { needsReview: number };
-  encouragement: { headline: string; body: string };
-};
+/** A figure's proof, as the page shows it (cents before any per-month split). */
+const proofOf = (descriptor: ProofDescriptor | null | undefined, shownCents: number | null | undefined): ProofTarget | undefined =>
+  descriptor && shownCents != null ? { descriptor, shownCents } : undefined;
 
 const date = (iso: string | null | undefined) => (iso ? formatDisplayDateFromYmd(iso) : "—");
 const deltaTone = (c: number | null) => (c == null || c === 0 ? "text-muted" : c > 0 ? "text-pos" : "text-neg");
@@ -111,20 +89,22 @@ function Dashboard({ d }: { d: Summary }) {
       </div>
 
       <StatGrid cols={5}>
-        <StatCell label="Income · 12 mo" value={cf.last12 ? usdCompact(cf.last12.incomeCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.incomeCents / 12)} a month` : undefined} />
-        <StatCell label="Spending · 12 mo" value={cf.last12 ? usdCompact(cf.last12.spendingCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.spendingCents / 12)} a month` : undefined} />
+        <StatCell label="Income · 12 mo" proof={proofOf(cf.last12?.proofs.income, cf.last12?.incomeCents)} value={cf.last12 ? usdCompact(cf.last12.incomeCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.incomeCents / 12)} a month` : undefined} />
+        <StatCell label="Spending · 12 mo" proof={proofOf(cf.last12?.proofs.spending, cf.last12?.spendingCents)} value={cf.last12 ? usdCompact(cf.last12.spendingCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.spendingCents / 12)} a month` : undefined} />
         <StatCell
           label="Saved from cash flow"
+          proof={proofOf(cf.last12?.proofs.net, cf.last12?.netCents)}
           value={cf.last12 ? usdCompact(cf.last12.netCents) : <BlockedValue blockers={cf.blockers} />}
           tone={cf.last12 ? (cf.last12.netCents >= 0 ? "pos" : "neg") : undefined}
           sub={cf.last12?.savingsRate == null ? undefined : `${formatPercentRatio(cf.last12.savingsRate, 0)} savings rate`}
         />
         <StatCell
           label="From saving · 12 mo"
+          proof={proofOf(nw.drivers?.proofs.principal, nw.drivers?.principalCents)}
           value={nw.drivers ? usdDelta(nw.drivers.principalCents) : <BlockedValue blockers={nw.driversBlockers} />}
           sub="income − spending + retirement contributions"
         />
-        <StatCell label="From markets · 12 mo" value={nw.drivers ? usdDelta(nw.drivers.growthCents) : <BlockedValue blockers={nw.driversBlockers} />} sub="investment growth, net of fees" />
+        <StatCell label="From markets · 12 mo" proof={proofOf(nw.drivers?.proofs.growth, nw.drivers?.growthCents)} value={nw.drivers ? usdDelta(nw.drivers.growthCents) : <BlockedValue blockers={nw.driversBlockers} />} sub="investment growth, net of fees" />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -158,7 +138,7 @@ function NetWorthHero({ nw }: { nw: Summary["netWorth"] }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Net worth</div>
-          <div className="num mt-1 text-4xl font-semibold tracking-tight">{nw.totalCents == null ? <BlockedValue blockers={nw.blockers} className="!text-base" /> : usd0(nw.totalCents)}</div>
+          <div className="num mt-1 text-4xl font-semibold tracking-tight">{nw.totalCents == null ? <BlockedValue blockers={nw.blockers} className="!text-base" /> : <ProofValue proof={proofOf(nw.proofs?.total, nw.totalCents)}>{usd0(nw.totalCents)}</ProofValue>}</div>
           <div className="mt-1 text-xs text-muted">
             as of {date(nw.asOf)}
             {nw.totalCents != null && <QualityBadge quality={nw.quality} asOf={nw.asOf} />}
@@ -168,7 +148,7 @@ function NetWorthHero({ nw }: { nw: Summary["netWorth"] }) {
           {chips.map(([label, c]) => (
             <div key={label}>
               <dt className="text-[11px] uppercase tracking-wide text-muted">{label}</dt>
-              <dd className={`num text-base font-semibold ${deltaTone(c.cents)}`}>{c.cents == null ? <BlockedValue blockers={c.blockers} /> : usdDelta(c.cents)}</dd>
+              <dd className={`num text-base font-semibold ${deltaTone(c.cents)}`}>{c.cents == null ? <BlockedValue blockers={c.blockers} /> : <ProofValue proof={proofOf(c.proof, c.cents)}>{usdDelta(c.cents)}</ProofValue>}</dd>
             </div>
           ))}
         </dl>
@@ -213,7 +193,13 @@ function Composition({ nw }: { nw: Summary["netWorth"] }) {
   const total = assets.reduce((s, g) => s + g.cents, 0) || 1;
   const color = (g: string) => groupColor(chart, g);
   return (
-    <Card title="What it's made of" subtitle={`Liquid ${usd0(nw.liquidCents)} · assets ${usd0(nw.assetsCents)} · debts ${usd0(nw.debtsCents)}`}>
+    <Card title="What it's made of" subtitle={
+        <>
+          Liquid <ProofValue proof={proofOf(nw.proofs?.liquid, nw.liquidCents)}>{usd0(nw.liquidCents)}</ProofValue> · assets{" "}
+          <ProofValue proof={proofOf(nw.proofs?.assets, nw.assetsCents)}>{usd0(nw.assetsCents)}</ProofValue> · debts{" "}
+          <ProofValue proof={proofOf(nw.proofs?.debts, nw.debtsCents)}>{usd0(nw.debtsCents)}</ProofValue>
+        </>
+      }>
       <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full" aria-hidden>
         {assets.map((g) => (
           <div key={g.group} style={{ width: `${(g.cents / total) * 100}%`, background: color(g.group) }} />
@@ -225,14 +211,18 @@ function Composition({ nw }: { nw: Summary["netWorth"] }) {
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color(g.group) }} aria-hidden />
             <span className="min-w-0 flex-1 truncate text-fg-2">{g.group}</span>
             <span className="num text-muted">{formatPercentRatio(g.cents / total, 0)}</span>
-            <span className="num w-24 text-right font-medium">{usd0(g.cents)}</span>
+            <span className="num w-24 text-right font-medium">
+              <ProofValue proof={proofOf(g.proof, g.cents)}>{usd0(g.cents)}</ProofValue>
+            </span>
           </li>
         ))}
         {debts.map((g) => (
           <li key={g.group} className="flex items-center gap-2 border-t border-line pt-2 text-[13px]">
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm border border-neg" aria-hidden />
             <span className="min-w-0 flex-1 truncate text-fg-2">{g.group}</span>
-            <span className="num w-24 text-right font-medium text-neg">{usd0(g.cents)}</span>
+            <span className="num w-24 text-right font-medium text-neg">
+              <ProofValue proof={proofOf(g.proof, g.cents)}>{usd0(g.cents)}</ProofValue>
+            </span>
           </li>
         ))}
       </ul>
@@ -344,7 +334,7 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
       title={`Spending in ${lm.label} vs your 12-month average`}
       subtitle={
         <>
-          {usd0(lm.spendingCents)} spent, {diff >= 0 ? "above" : "below"} the {usd0(avgTotal)} monthly average by{" "}
+          <ProofValue proof={proofOf(lm.proof, lm.spendingCents)}>{usd0(lm.spendingCents)}</ProofValue> spent, {diff >= 0 ? "above" : "below"} the {usd0(avgTotal)} monthly average by{" "}
           <span className={diff > 0 ? "text-neg" : "text-pos"}>{usd0(Math.abs(diff))}</span>. Click a category for its transactions.
         </>
       }
@@ -363,21 +353,27 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
         {cf.categories.map((c) => {
           const over = c.lastMonthCents - c.avgCents;
           return (
-            <li key={c.category}>
+            <li
+              key={c.category}
+              className="group grid grid-cols-[minmax(0,1fr)_5rem_4.5rem] items-center gap-3 rounded px-1 text-[13px] focus-within:ring-2 focus-within:ring-focus hover:bg-surface-2"
+            >
+              {/* The row opens the month's transactions; its amount opens the amount's proof. */}
               <Link
                 href={`/transactions?category=${encodeURIComponent(c.category)}&from=${lm.start}&to=${lm.end}`}
-                className="group grid grid-cols-[minmax(0,11.5rem)_1fr_5rem_4.5rem] items-center gap-3 rounded px-1 py-1.5 text-[13px] outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-focus"
+                className="grid grid-cols-[minmax(0,11.5rem)_1fr] items-center gap-3 py-1.5 outline-none"
               >
                 <span className="truncate text-fg-2 group-hover:text-fg">{c.category}</span>
                 <span className="relative h-2.5 rounded-sm bg-surface-3">
                   <span className="absolute inset-y-0 left-0 rounded-sm" style={{ width: `${(c.lastMonthCents / max) * 100}%`, background: chart.spending }} />
                   <span className="absolute -inset-y-1 w-0.5 bg-fg" style={{ left: `${(c.avgCents / max) * 100}%` }} title={`Average ${usd0(c.avgCents)}`} />
                 </span>
-                <span className="num text-right font-medium">{usd0(c.lastMonthCents)}</span>
-                <span className={`num text-right text-xs ${Math.abs(over) < 2500 ? "text-muted" : over > 0 ? "text-neg" : "text-pos"}`}>
-                  {Math.abs(over) < 100 ? "—" : usdDelta(over)}
-                </span>
               </Link>
+              <span className="num text-right font-medium">
+                <ProofValue proof={c.lastMonthCents ? proofOf(c.proof, c.lastMonthCents) : undefined}>{usd0(c.lastMonthCents)}</ProofValue>
+              </span>
+              <span className={`num text-right text-xs ${Math.abs(over) < 2500 ? "text-muted" : over > 0 ? "text-neg" : "text-pos"}`}>
+                {Math.abs(over) < 100 ? "—" : usdDelta(over)}
+              </span>
             </li>
           );
         })}
