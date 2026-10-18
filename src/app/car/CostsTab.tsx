@@ -10,7 +10,7 @@ import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { carProof, fmtDate, miles, perMile, usd2 } from "./parts";
+import { carProof, fmtDate, miles, perMile, throughText, usd2 } from "./parts";
 
 export function CostsTab({ ctx }: { ctx: CarCtx }) {
   const { report: r, car: s, chart } = ctx;
@@ -56,7 +56,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
 
   return (
     <>
-      <Card title="By calendar year" subtitle="Accrued costs in each year you've owned the car (partial years included).">
+      <Card title="By calendar year" subtitle={`Accrued costs in each year you've owned the car (partial years included), through ${throughText(r, s.sale?.date ?? null)}.`}>
         <StatementTable columns={[...years.map(([y]) => y), "To date"]} rows={rows} highlight={[years.length]} minWidth="30rem" />
       </Card>
 
