@@ -2,6 +2,7 @@
 
 import { BlockedValue } from "@/components/ledger/Blocked";
 import { StatementTable } from "@/components/ui/kit";
+import type { ProofTarget } from "@/components/ui/proof/context";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 
@@ -12,7 +13,7 @@ export { axisUsd } from "@/lib/formatMoney";
 export const usd = usd0;
 export const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
 
-export type Cell = { text: React.ReactNode; title?: string; dim?: boolean } | null;
+export type Cell = { text: React.ReactNode; title?: string; dim?: boolean; proof?: ProofTarget } | null;
 
 /** Year-per-column statement table (shared with Taxes). */
 export const YearTable = StatementTable;
