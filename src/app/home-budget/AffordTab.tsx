@@ -1,12 +1,13 @@
 "use client";
 
 import { useChartPalette } from "@/components/shell/chartPalette";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, btn, Callout, Card, Segmented } from "@/components/ui/kit";
 import type { HomeSpending } from "@/lib/book/reports/homeFunds";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { computeBudgetScenario, computeMaxApproval, defaultHomeBudgetInputs, type HomeBudgetInputs, type MaxApprovalResult } from "@/lib/home-budget/homeBudgetModel";
 import { useMemo } from "react";
-import type { LenderState, Patch } from "./HomeBudgetClient";
+import type { HomeProof, LenderState, Patch } from "./HomeBudgetClient";
 import { spendingFit, StackBar, tiersFor, type TierKey } from "./parts";
 import { RangeSlider } from "./RangeSlider";
 import { spec } from "./specs";
@@ -37,6 +38,7 @@ const LEVERS: { label: string; apply: (i: HomeBudgetInputs) => Partial<HomeBudge
 export function AffordTab({
   ins,
   patch,
+  proof,
   testPrice,
   lender,
   lenderMax,
@@ -44,6 +46,7 @@ export function AffordTab({
 }: {
   ins: HomeBudgetInputs;
   patch: Patch;
+  proof: HomeProof;
   testPrice: (price: number, downPct: number) => void;
   lender: LenderState;
   lenderMax: MaxApprovalResult;
@@ -98,7 +101,9 @@ export function AffordTab({
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <div className="text-xs font-medium uppercase tracking-wide text-muted">You can afford up to</div>
-            <div className="num mt-1 text-4xl font-semibold tracking-tight text-fg sm:text-5xl">{formatUsd(price)}</div>
+            <div className="num mt-1 text-4xl font-semibold tracking-tight text-fg sm:text-5xl">
+              <ProofValue proof={proof("max-price", max.impliedMaxHomeValue)}>{formatUsd(price)}</ProofValue>
+            </div>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg-2">
               <span className="num font-semibold text-fg">{formatUsd(at.monthlyTotalHousing)}</span>/mo all-in — {formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross,{" "}
               {formatPercentRatio(takeHome > 0 ? at.monthlyTotalHousing / takeHome : 0, 0)} of take-home. Every dollar of the{" "}
@@ -156,7 +161,7 @@ export function AffordTab({
           </div>
         </Card>
 
-        <LenderCard ins={ins} patch={patch} lender={lender} max={lenderMax} comfortMax={maxValue} testPrice={testPrice} />
+        <LenderCard ins={ins} patch={patch} proof={proof} lender={lender} max={lenderMax} comfortMax={maxValue} testPrice={testPrice} />
 
         <Card title="What moves the number" subtitle="Change in the most you can afford from one step on each input.">
           <ul className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
@@ -262,6 +267,7 @@ const DEF = defaultHomeBudgetInputs();
 function LenderCard({
   ins,
   patch,
+  proof,
   lender,
   max,
   comfortMax,
@@ -269,6 +275,7 @@ function LenderCard({
 }: {
   ins: HomeBudgetInputs;
   patch: Patch;
+  proof: HomeProof;
   lender: LenderState;
   max: MaxApprovalResult;
   comfortMax: number;
@@ -289,10 +296,15 @@ function LenderCard({
     >
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <div className="num text-3xl font-semibold tracking-tight text-fg">{formatUsd(price)}</div>
+          <div className="num text-3xl font-semibold tracking-tight text-fg">
+            <ProofValue proof={proof("lender-max", max.impliedMaxHomeValue)}>{formatUsd(price)}</ProofValue>
+          </div>
           <p className="mt-1 text-xs text-fg-2">
             <span className="num font-semibold text-fg">{formatUsd(counted)}</span>/mo counted against{" "}
-            <span className="num font-semibold text-fg">{formatUsd(lender.income)}</span>/yr of income ({formatPercentRatio(ins.lenderMaxDti, 1)}) ·{" "}
+            <span className="num font-semibold text-fg">
+              <ProofValue proof={proof("lender-income", lender.income)}>{formatUsd(lender.income)}</ProofValue>
+            </span>
+            /yr of income ({formatPercentRatio(ins.lenderMaxDti, 1)}) ·{" "}
             <span className="num">{signed(round1k(max.impliedMaxHomeValue - comfortMax))}</span> vs your limit
           </p>
         </div>

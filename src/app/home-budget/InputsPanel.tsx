@@ -2,6 +2,8 @@
 
 import { BlockedNote } from "@/components/ledger/Blocked";
 import { btn, Loading, Segmented, usePersistentState } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import Link from "next/link";
@@ -124,7 +126,9 @@ export function InputsPanel({
           <div className="py-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-xs font-medium text-fg-2">{LABELS.annualHouseholdSalary}</span>
-              <span className="num text-sm font-semibold text-fg">{formatUsd(ins.annualHouseholdSalary)}</span>
+              <span className="num text-sm font-semibold text-fg">
+                <ProofValue proof={funds.proof("salary", ins.annualHouseholdSalary)}>{formatUsd(ins.annualHouseholdSalary)}</ProofValue>
+              </span>
             </div>
             <p className="text-[11px] leading-snug text-faint">
               Base pay in {funds.buy.year}, from the{" "}
@@ -145,6 +149,7 @@ export function InputsPanel({
           <EngineRate
             label={LABELS.incomeTaxRate!}
             value={ins.incomeTaxRate}
+            proof={funds.proof("income-tax")}
             note={`Federal + Connecticut income tax and payroll on ${formatUsd(ins.annualHouseholdSalary)} of wages, ${funds.tax.year} law, from the tax engine.`}
             onManual={() => {
               patch("incomeTaxRate", Math.round(ins.incomeTaxRate * 200) / 200);
@@ -364,19 +369,23 @@ function FundsSection({ ins, patch, funds }: { ins: HomeBudgetInputs; patch: Pat
       )}
       <div className="mt-1.5 flex items-baseline justify-between rounded-md bg-accent-soft px-3 py-1.5">
         <span className="text-xs font-semibold text-accent">Cash for the home</span>
-        <span className="num text-base font-semibold text-fg">{formatUsd(ins.cashForHome)}</span>
+        <span className="num text-base font-semibold text-fg">
+          <ProofValue proof={funds.proof("cash", ins.cashForHome)}>{formatUsd(ins.cashForHome)}</ProofValue>
+        </span>
       </div>
     </>
   );
 }
 
 /** A rate the tax engine works out, shown read-only with a way to type your own. */
-function EngineRate({ label, value, note, onManual }: { label: string; value: number; note: string; onManual: () => void }) {
+function EngineRate({ label, value, note, onManual, proof }: { label: string; value: number; note: string; onManual: () => void; proof?: ProofTarget }) {
   return (
     <div className="py-1.5">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium text-fg-2">{label}</span>
-        <span className="num text-sm font-semibold text-fg">{formatPercentRatio(value, 1)}</span>
+        <span className="num text-sm font-semibold text-fg">
+          <ProofValue proof={proof}>{formatPercentRatio(value, 1)}</ProofValue>
+        </span>
       </div>
       <p className="text-[11px] leading-snug text-faint">
         {note}{" "}
@@ -397,13 +406,14 @@ function EngineLink({ rate, onClick }: { rate: number; onClick: () => void }) {
 }
 
 /** Capital-gains tax: from the engine (federal, NIIT, Connecticut) unless typed. Shared with Rent vs buy. */
-export function GainsTaxControl({ ins, patch, funds, full }: { ins: HomeBudgetInputs; patch: Patch; funds: Pick<FundsState, "tax" | "config" | "setConfig">; full?: boolean }) {
+export function GainsTaxControl({ ins, patch, funds, full }: { ins: HomeBudgetInputs; patch: Patch; funds: Pick<FundsState, "tax" | "config" | "setConfig" | "proof">; full?: boolean }) {
   const { gains, year } = funds.tax;
   if (gains.linked)
     return (
       <EngineRate
         label={LABELS.capitalGainsTaxRate!}
         value={ins.capitalGainsTaxRate}
+        proof={funds.proof("gains-tax")}
         note={`Federal 15/20% + 3.8% NIIT + Connecticut on ${formatUsd(Math.max(50_000, gains.gain))} of long-term gains on top of the salary, ${year} law.`}
         onManual={() => {
           patch("capitalGainsTaxRate", Math.round(ins.capitalGainsTaxRate * 1000) / 1000);

@@ -1,6 +1,7 @@
 "use client";
 
 import { buttonPrimary, buttonSecondary, Card } from "@/components/ledger/LedgerBits";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { ACCOUNT_KIND_LABEL, ACCOUNT_TAX_KINDS, type AccountTaxKind } from "@/lib/tax/facts/investments";
 import {
   DEFAULT_PAY_FORECAST,
@@ -164,7 +165,15 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
                     <span className="text-fg">
                       Rest of year paid at the {fc.paycheck === "TYPICAL" ? "typical recent" : "latest"} paycheck
                       {fc.paycheck === "TYPICAL" ? (job?.typicalRegular ? ` (${usd(job.typicalRegular.amounts.gross)} gross)` : "") : job?.latestRegular ? ` (${usd(job.latestRegular.amounts.gross)} gross)` : ""}
-                      {fc.bonus > 0 ? `, plus ${usd(fc.bonus)} of bonus still expected` : ", no more bonus expected"}.
+                      {fc.bonus > 0 ? (
+                        <>
+                          , plus{" "}
+                          <ProofValue proof={{ descriptor: { report: "planning", page: "taxes", figure: "bonus-expected", year: r.year, personId: p.id }, shownCents: fc.bonus }}>{usd(fc.bonus)}</ProofValue> of bonus still expected
+                        </>
+                      ) : (
+                        ", no more bonus expected"
+                      )}
+                      .
                     </span>
                     {fc.items.length > 0 && <span className="text-faint">{fc.items.map((b) => `${b.label}: ${usd(b.gross)}`).join("; ")}</span>}
                     <Link href="/forecast" className="text-accent hover:underline">

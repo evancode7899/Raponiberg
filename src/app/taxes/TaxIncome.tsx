@@ -1,6 +1,8 @@
 "use client";
 
 import { Card } from "@/components/ledger/LedgerBits";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
 import type { ChildIncome, PersonReport } from "@/lib/tax/buildTaxReport";
 import type { W2Boxes } from "@/lib/tax/facts/payroll";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
@@ -117,7 +119,9 @@ function PersonIncome({ p, year, isCurrentYear }: { p: PersonReport; year: numbe
                 {e.federalFilingStatus ? ` · W-4: ${e.federalFilingStatus}` : ""}
               </span>
             </div>
-            <W2Table ytd={e.w2Ytd} projected={e.w2Projected} gross={{ ytd: e.ytd.gross, projected: e.projected.gross }} nonTaxable={{ ytd: e.ytd.nonTaxable, projected: e.projected.nonTaxable }} pretax={{ ytd: e.ytd.section125 + e.ytd.hsa + e.ytd.dependentCareFsa, projected: e.projected.section125 + e.projected.hsa + e.projected.dependentCareFsa }} showProjected={e.active && e.remainingPayDates.length > 0} />
+            <W2Table
+              grossProof={isCurrentYear && e.active ? { descriptor: { report: "planning", page: "taxes", figure: "projected-gross", year, personId: p.id }, shownCents: e.projected.gross } : undefined}
+              ytd={e.w2Ytd} projected={e.w2Projected} gross={{ ytd: e.ytd.gross, projected: e.projected.gross }} nonTaxable={{ ytd: e.ytd.nonTaxable, projected: e.projected.nonTaxable }} pretax={{ ytd: e.ytd.section125 + e.ytd.hsa + e.ytd.dependentCareFsa, projected: e.projected.section125 + e.projected.hsa + e.projected.dependentCareFsa }} showProjected={e.active && e.remainingPayDates.length > 0} />
             <details className="mt-2">
               <summary className="cursor-pointer text-xs font-medium text-fg-2">Pay stub lines and how each is treated</summary>
               <NumberTable
@@ -159,6 +163,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 function W2Table({
+  grossProof,
   ytd,
   projected,
   gross,
@@ -172,10 +177,12 @@ function W2Table({
   nonTaxable: { ytd: number; projected: number };
   pretax: { ytd: number; projected: number };
   showProjected: boolean;
+  /** The projected gross pay's proof (the year in progress: the stubs plus the forecast's paychecks and bonuses). */
+  grossProof?: ProofTarget;
 }) {
   const both = (a: number, b: number) => (showProjected ? [usd(a), usd(b)] : [usd(a)]);
   const rows: Row[] = [
-    { label: "Gross pay (incl. imputed income)", values: both(gross.ytd, gross.projected) },
+    { label: "Gross pay (incl. imputed income)", values: showProjected ? [usd(gross.ytd), <ProofValue key="p" proof={grossProof}>{usd(gross.projected)}</ProofValue>] : [usd(gross.ytd)] },
     { label: "Non-taxable reimbursements", values: both(-nonTaxable.ytd, -nonTaxable.projected), indent: true },
     { label: "Pre-tax health, HSA, FSA (§125)", values: both(-pretax.ytd, -pretax.projected), indent: true },
     { label: "Box 5 · Medicare wages", values: both(ytd.box5MedicareWages, projected.box5MedicareWages), strong: true },
