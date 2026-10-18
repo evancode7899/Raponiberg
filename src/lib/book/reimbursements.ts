@@ -1,5 +1,5 @@
 import { addDays } from "../dates/isoDate.ts";
-import { normPayee, sameRow, type RowFingerprint } from "../review/rowDecisions.ts";
+import { normPayee, sameRow, type RowFingerprint } from "../review/rowFingerprint.ts";
 import type { ReimbursementLink, ReimbursementLinksFile, ReimbursementSource, StubLineRef } from "../reimbursements/store.ts";
 import type { Book, BookAccount, BookRow, BookStub } from "./load.ts";
 

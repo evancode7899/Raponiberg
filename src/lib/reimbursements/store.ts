@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
-import type { RowFingerprint } from "../review/rowDecisions.ts";
+import type { RowFingerprint } from "../review/rowFingerprint.ts";
 
 /**
  * The owner's reimbursement links: "this charge was paid back by that money". A link ties
