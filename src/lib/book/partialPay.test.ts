@@ -12,7 +12,7 @@ import { personPayYear } from "./pay";
 // A household with one checking account and weekly stubs (names and amounts invented).
 
 function book(stubs: BookStub[], deposits: { id: string; date: string; cents: number }[], unavailableAccounts: { last4: string; note: string }[] = []): Book {
-  const rows: BookRow[] = deposits.map((d) => ({ id: d.id, date: d.date, precision: "EXACT", statement: { start: "2023-01-01", end: "2023-12-31" }, bookedOn: d.date, amountCents: d.cents, lane: "INCOME", accountId: "chk", payee: "ACME DIRECT DEP", merchantKey: "ACME", category: "Paycheck", categoryGroup: null, counterpartyKind: null, counterpartyInstitution: null, counterpartyAccountHint: null, classifiedBy: null, transferMatchId: null }));
+  const rows: BookRow[] = deposits.map((d) => ({ id: d.id, date: d.date, precision: "EXACT", statement: { start: "2023-01-01", end: "2023-12-31" }, bookedOn: d.date, amountCents: d.cents, lane: "INCOME", accountId: "chk", payee: "ACME DIRECT DEP", merchantKey: "ACME", category: "Paycheck", categoryGroup: null, counterpartyKind: null, counterpartyInstitution: null, counterpartyAccountHint: null, classifiedBy: null, transferMatchId: null, statementImportId: "st", documentId: "doc" }));
   const timeline = buildTimeline("chk", [
     { accountId: "chk", periodStart: "2023-01-01", periodEnd: "2023-12-31", openingCents: 0, closingCents: deposits.reduce((s, d) => s + d.cents, 0), growthCents: 0, feesCents: 0, flows: deposits.map((d) => ({ date: d.date, precision: "EXACT" as const, amountCents: d.cents, lane: "INCOME" as const })) },
   ]);

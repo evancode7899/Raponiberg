@@ -75,7 +75,7 @@ export function checkNetWorth(book: Book, c: Collector) {
         `transfers between your accounts net to ${money(h.transferResidualCents)}, but only ${money(Math.round(expected))} was in flight at the month's edges or came from accounts with no statements`,
       );
     if (problems.length === 0) {
-      c.pass("networth.reconciles");
+      c.pass("networth.reconciles", { subject: `${p.label}: every dollar of change explained`, from: p.start, to: end, affects: ["NET_WORTH", "CASH_FLOW"] });
       continue;
     }
     c.add({

@@ -2,6 +2,8 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { Card, inputCls, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
 import { Treemap, type TreemapNode } from "recharts";
 import { useMemo, useState } from "react";
@@ -105,7 +107,9 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
                   <td className={table.td}>
                     <Sparkline values={m.series} color={categoryColor(chart, m.category)} width={72} height={18} />
                   </td>
-                  <td className={`${table.tdR} font-medium`}>{usd0(m.cents)}</td>
+                  <td className={`${table.tdR} font-medium`}>
+                    <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })}>{usd0(m.cents)}</ProofValue>
+                  </td>
                   <td className={`${table.td} w-28`}>
                     <span className="block h-1.5 rounded-sm bg-surface-3">
                       <span className="block h-full rounded-sm" style={{ width: `${(m.cents / max) * 100}%`, background: categoryColor(chart, m.category) }} />
@@ -203,27 +207,28 @@ function NewAndQuiet({ ctx }: { ctx: Ctx }) {
   const quiet = mergeMerchants(recent)
     .filter((m) => m.months >= 3 && !sliceKeys.has(m.key))
     .sort((a, b) => b.cents - a.cents);
-  const list = (rows: MerchantTotal[], perMonth: number, empty: string) =>
+  // Each figure is the merchant's total over the months it was summed over, per month.
+  const list = (rows: MerchantTotal[], months: SpendingMonth[], empty: string) =>
     rows.length === 0 ? (
       <p className="text-xs text-muted">{empty}</p>
     ) : (
       <ul className="flex flex-col divide-y divide-line text-[13px]">
         {rows.slice(0, 10).map((m) => (
-          <li key={m.key}>
-            <button type="button" className="flex w-full items-center justify-between gap-3 py-1.5 text-left hover:text-accent" onClick={() => ctx.open({ kind: "merchant", key: m.key, name: m.name, lane: "EXPENSE" })}>
-              <span className="flex min-w-0 items-center gap-2">
-                <Dot color={categoryColor(chart, m.category)} className="!h-2 !w-2" />
-                <span className="truncate">{m.name}</span>
-              </span>
-              <span className="num shrink-0 text-xs text-muted">
-                <span className="text-fg">{usd0(m.cents / perMonth)}</span>/mo · {m.count}× · last {m.lastMonth}
-              </span>
+          <li key={m.key} className="flex items-center justify-between gap-3 py-1.5">
+            <button type="button" className="flex min-w-0 items-center gap-2 text-left hover:text-accent" onClick={() => ctx.open({ kind: "merchant", key: m.key, name: m.name, lane: "EXPENSE" })}>
+              <Dot color={categoryColor(chart, m.category)} className="!h-2 !w-2" />
+              <span className="truncate">{m.name}</span>
             </button>
+            <span className="num shrink-0 text-xs text-muted">
+              <ProofValue proof={ctx.proof("spending", months, { merchantKey: m.key, perMonth: true, shownCents: m.cents })} className="text-fg">
+                {usd0(m.cents / Math.max(1, months.length))}
+              </ProofValue>
+              /mo · {m.count}× · last {m.lastMonth}
+            </span>
           </li>
         ))}
       </ul>
     );
-  const n = Math.max(1, slice.months.length);
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
       <Card
@@ -234,7 +239,7 @@ function NewAndQuiet({ ctx }: { ctx: Ctx }) {
             : "Needs six proven months before the range starts. Pick a shorter range."
         }
       >
-        {earlier.length >= 6 && list(fresh, n, "No new merchants.")}
+        {earlier.length >= 6 && list(fresh, slice.months, "No new merchants.")}
       </Card>
       <Card
         title="Gone quiet"
@@ -244,7 +249,7 @@ function NewAndQuiet({ ctx }: { ctx: Ctx }) {
             : "Needs proven months before the range starts. Pick a shorter range."
         }
       >
-        {recent.length >= 3 && list(quiet, Math.max(1, recent.length), "Nothing went quiet.")}
+        {recent.length >= 3 && list(quiet, recent, "Nothing went quiet.")}
       </Card>
     </div>
   );

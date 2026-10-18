@@ -6,7 +6,7 @@ import type { ReturnResult, SafeHarbor } from "@/lib/tax/computeReturn";
 import type { TruePlan } from "@/lib/tax/buildTaxReport";
 import type { ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
-import { BalanceBadge, Callout, formatDate, NumberTable, pct, usd } from "./taxUi";
+import { BalanceBadge, Callout, EstimateValue, formatDate, NumberTable, pct, usd } from "./taxUi";
 
 type Tab = "compare" | "inputs" | "income" | "payments" | "filed" | "worksheet";
 
@@ -244,32 +244,35 @@ function Mini({ label, value }: { label: string; value: ReactNode }) {
 /** One card per return: refund or balance due, and how much of the tax is already paid. */
 function AtFiling({ r }: { r: TaxResponse }) {
   const mfj = r.scenarios.mfj;
-  const rows: { name: string; sub: string; tax: number; paid: number; balance: number }[] = [
-    { name: "Federal", sub: "Form 1040", tax: mfj.federal.totalTax, paid: mfj.federal.totalPayments, balance: mfj.federal.balanceDue },
+  const rows: { name: string; sub: string; tax: number; paid: number; balance: number; prefix: "fed" | "ct" | "ny" }[] = [
+    { name: "Federal", sub: "Form 1040", tax: mfj.federal.totalTax, paid: mfj.federal.totalPayments, balance: mfj.federal.balanceDue, prefix: "fed" },
   ];
   if (mfj.ct.totalTax || mfj.ct.totalPayments || r.residency.ct !== "NONRESIDENT")
-    rows.push({ name: "Connecticut", sub: mfj.ct.sourceIncome != null ? "CT-1040NR/PY" : "CT-1040", tax: mfj.ct.totalTax, paid: mfj.ct.totalPayments, balance: mfj.ct.balanceDue });
+    rows.push({ name: "Connecticut", sub: mfj.ct.sourceIncome != null ? "CT-1040NR/PY" : "CT-1040", tax: mfj.ct.totalTax, paid: mfj.ct.totalPayments, balance: mfj.ct.balanceDue, prefix: "ct" });
   if (mfj.ny)
-    rows.push({ name: mfj.ny.city ? "New York + NYC" : "New York", sub: mfj.ny.filing.state === "RESIDENT" ? "IT-201" : "IT-203", tax: mfj.ny.totalTax, paid: mfj.ny.totalPayments, balance: mfj.ny.balanceDue });
+    rows.push({ name: mfj.ny.city ? "New York + NYC" : "New York", sub: mfj.ny.filing.state === "RESIDENT" ? "IT-201" : "IT-203", tax: mfj.ny.totalTax, paid: mfj.ny.totalPayments, balance: mfj.ny.balanceDue, prefix: "ny" });
   const net = rows.reduce((s, x) => s + x.balance, 0);
   return (
     <section className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
         <h2 className="text-[13px] font-semibold text-fg">At filing · {formatDate(r.plan.filingDate)}</h2>
         <span className="text-xs text-muted">
-          All returns together: <BalanceBadge cents={net} />
+          All returns together:{" "}
+          <EstimateValue year={r.year} k="all.balance" cents={net}>
+            <BalanceBadge cents={net} />
+          </EstimateValue>
         </span>
       </div>
       <div className={`grid gap-3 ${rows.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         {rows.map((x) => (
-          <BalanceCard key={x.name} {...x} />
+          <BalanceCard key={x.name} year={r.year} {...x} />
         ))}
       </div>
     </section>
   );
 }
 
-function BalanceCard({ name, sub, tax, paid, balance }: { name: string; sub: string; tax: number; paid: number; balance: number }) {
+function BalanceCard({ year, prefix, name, sub, tax, paid, balance }: { year: number; prefix: "fed" | "ct" | "ny"; name: string; sub: string; tax: number; paid: number; balance: number }) {
   const even = Math.abs(balance) < 100;
   const refund = balance < 0 && !even;
   const covered = tax > 0 ? paid / tax : paid > 0 ? 1 : 0;
@@ -282,7 +285,9 @@ function BalanceCard({ name, sub, tax, paid, balance }: { name: string; sub: str
         <span className="text-[10px] uppercase tracking-wide text-muted">{sub}</span>
       </div>
       <div className={`num mt-2 text-2xl font-semibold tracking-tight ${tone}`}>
-        {even ? "About even" : `${refund ? "Refund" : "Owe"} ${usd(Math.abs(balance))}`}
+        <EstimateValue year={year} k={`${prefix}.balance`} cents={balance}>
+          {even ? "About even" : `${refund ? "Refund" : "Owe"} ${usd(Math.abs(balance))}`}
+        </EstimateValue>
       </div>
       {/* Paid against the tax: the track is the tax; past 100% the overflow is the refund. */}
       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-3" role="img" aria-label={`${pct(covered, 0)} of the tax paid`}>
@@ -290,10 +295,21 @@ function BalanceCard({ name, sub, tax, paid, balance }: { name: string; sub: str
       </div>
       <div className="mt-1.5 flex justify-between text-xs text-muted">
         <span>
-          Paid <span className="num text-fg-2">{usd(paid)}</span>
+          Paid{" "}
+          <span className="num text-fg-2">
+            <EstimateValue year={year} k={`${prefix}.totalPayments`} cents={paid}>
+              {usd(paid)}
+            </EstimateValue>
+          </span>
         </span>
         <span>
-          of <span className="num text-fg-2">{usd(tax)}</span> tax · {pct(covered, 0)}
+          of{" "}
+          <span className="num text-fg-2">
+            <EstimateValue year={year} k={`${prefix}.totalTax`} cents={tax}>
+              {usd(tax)}
+            </EstimateValue>
+          </span>{" "}
+          tax · {pct(covered, 0)}
         </span>
       </div>
     </div>

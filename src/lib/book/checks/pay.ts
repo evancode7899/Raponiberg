@@ -24,6 +24,7 @@ export function checkPay(book: Book, c: Collector) {
     affects: ["PAY" as const, "TAX" as const],
   });
   const label = (s: BookStub) => `${s.employer} stub ${s.payDate}`;
+  const stubPass = (s: BookStub, what: string) => ({ subject: `${label(s)} ${what}`, personId: s.personId ?? undefined, employerKey: s.employerKey, from: s.payDate, to: s.payDate, affects: ["PAY" as const, "TAX" as const] });
   // Accounts whose statements can't be obtained (household settings): pay deposited there
   // is taken from the stubs and labelled partial instead of blocking.
   const unavailable = new Map((book.taxProfile.unavailableAccounts ?? []).map((a) => [a.last4, a.note]));
@@ -32,7 +33,7 @@ export function checkPay(book: Book, c: Collector) {
   for (const s of book.stubs) {
     // Arithmetic.
     const bad = stubChecks(s).filter((x) => !x.ok);
-    if (bad.length === 0 && s.warnings.length === 0) c.pass("paystub.arithmetic");
+    if (bad.length === 0 && s.warnings.length === 0) c.pass("paystub.arithmetic", stubPass(s, "adds up"));
     else
       c.add({
         id: `paystub.arithmetic:${stubRef(s)}`,
@@ -45,7 +46,7 @@ export function checkPay(book: Book, c: Collector) {
       });
 
     // Person.
-    if (s.personId) c.pass("paystub.person");
+    if (s.personId) c.pass("paystub.person", stubPass(s, `belongs to ${personName(s.personId)}`));
     else
       c.add({
         id: `paystub.person:${stubRef(s)}`,
@@ -59,7 +60,7 @@ export function checkPay(book: Book, c: Collector) {
 
     // Deposit.
     if (s.depositTransactionId || toUnavailable(s)) {
-      c.pass("paystub.deposit");
+      c.pass("paystub.deposit", stubPass(s, s.depositTransactionId ? "reached the bank" : "was paid to an account with no statements available"));
       continue;
     }
     const accounts = s.deposits.flatMap((d) => (d.last4 ? accountsByLast4(book, d.last4) : []));
@@ -90,6 +91,9 @@ export function checkPay(book: Book, c: Collector) {
 
   // Year chains, per person | employer | year.
   const inferredIds = new Set<string>();
+  /** Whose pay each paycheck deposit is (from its stub, or the chain that infers it), so its pass is scoped to them. */
+  const depositOwner = new Map<string, { personId?: string; employerKey: string }>();
+  for (const s of book.stubs) if (s.depositTransactionId) depositOwner.set(s.depositTransactionId, { personId: s.personId ?? undefined, employerKey: s.employerKey });
   const employerKeys = new Map<string, string>();
   for (const [key, stubs] of stubGroups(book)) {
     const [personId, employerKey, yearStr] = key.split("|") as [string, string, string];
@@ -136,7 +140,10 @@ export function checkPay(book: Book, c: Collector) {
             scope: { personId: scope.personId, employerKey, from: `${year}-01-01`, to: addDays(s.payDate, -1) },
           });
         } else if (jump > 0 && explained === jump) {
-          for (const r of between) inferredIds.add(r.id);
+          for (const r of between) {
+            inferredIds.add(r.id);
+            depositOwner.set(r.id, { personId: scope.personId, employerKey });
+          }
           c.infer({
             id: `pay.continuity:${stubRef(s)}`,
             check: "pay.continuity",
@@ -162,11 +169,11 @@ export function checkPay(book: Book, c: Collector) {
       prevNet = netYtd(s);
       prevDate = s.payDate;
     }
-    if (!broken) c.pass("pay.continuity");
+    if (!broken) c.pass("pay.continuity", { subject: `${who}: year-to-date totals carry from stub to stub`, ...scope });
 
     // Nothing paid after the year's last stub.
     const after = unlinked.filter((r) => r.date > addDays(last.payDate, 3) && r.date <= yearEnd);
-    if (after.length === 0) c.pass("pay.after-last-stub");
+    if (after.length === 0) c.pass("pay.after-last-stub", { subject: `${who}: nothing paid after the ${last.payDate} stub`, ...scope });
     else
       c.add({
         id: `pay.after-last-stub:${groupRef}`,
@@ -204,7 +211,7 @@ export function checkPay(book: Book, c: Collector) {
     const received =
       linkedHere.reduce((t, r) => t + r!.amountCents, 0) + unlinked.filter((r) => r.date >= `${year}-01-01` && r.date <= addDays(last.payDate, 3)).reduce((t, r) => t + r.amountCents, 0);
     if (tracked.length === 0 && expected === 0) {
-      c.pass("pay.deposits-tie");
+      c.pass("pay.deposits-tie", { subject: `${who}: no paychecks to tracked accounts`, ...scope });
     } else if (depositAccounts.length === 0 || holes.length > 0) {
       c.add({
         id: `pay.deposits-tie:${groupRef}`,
@@ -216,7 +223,7 @@ export function checkPay(book: Book, c: Collector) {
         // Pay is unprovable from the first uncovered date, not before it.
         scope: holes.length ? { ...scope, from: holes.map((h) => h.from).sort()[0]! } : scope,
       });
-    } else if (received === expected) c.pass("pay.deposits-tie");
+    } else if (received === expected) c.pass("pay.deposits-tie", { subject: `${who}: year-to-date net pay ${money(expected)} = what the bank received`, ...scope });
     else if (received < expected)
       c.add({
         id: `pay.deposits-tie:${groupRef}`,
@@ -265,7 +272,8 @@ export function checkPay(book: Book, c: Collector) {
         scope: { personId: personId === UNKNOWN_PERSON ? undefined : personId, employerKey, from: `${y}-01-01`, to: `${y}-12-31`, affects: ["PAY", "TAX"] },
       });
     }
-    if (gaps === 0) c.pass("pay.year-gap");
+    if (gaps === 0)
+      c.pass("pay.year-gap", { subject: `${personName(personId)} · ${employer}: stubs every year ${lo} – ${hi}`, personId: personId === UNKNOWN_PERSON ? undefined : personId, employerKey, from: `${lo}-01-01`, to: `${hi}-12-31`, affects: ["PAY", "TAX"] });
   }
 
   // Paycheck deposits no stub explains (an employer with no stubs on file at all, or
@@ -281,9 +289,17 @@ export function checkPay(book: Book, c: Collector) {
     const k = `${r.merchantKey ?? r.payee}|${r.date.slice(0, 4)}`;
     orphans.set(k, [...(orphans.get(k) ?? []), r]);
   }
-  let paychecks = 0;
-  for (const r of book.rows) if (r.lane === "INCOME" && r.category === "Paycheck" && (linked.has(r.id) || inferredIds.has(r.id))) paychecks++;
-  c.pass("pay.unexplained-deposits", paychecks);
+  for (const r of book.rows) {
+    if (r.lane !== "INCOME" || r.category !== "Paycheck" || !(linked.has(r.id) || inferredIds.has(r.id))) continue;
+    c.pass("pay.unexplained-deposits", {
+      subject: `${r.payee} ${r.date} ${money(r.amountCents)} ${linked.has(r.id) ? "has its stub" : "is explained by the stubs around it"}`,
+      accountId: r.accountId,
+      ...depositOwner.get(r.id),
+      from: r.date,
+      to: r.date,
+      affects: ["PAY", "TAX"],
+    });
+  }
   for (const [k, rows] of orphans) {
     const year = k.split("|").at(-1)!;
     c.add({

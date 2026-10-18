@@ -3,6 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Stat } from "@/components/ui/kit";
+import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
@@ -16,6 +17,8 @@ function laneOf(category: string): string {
   if (def?.group === "Money movement") return "EXTERNAL_TRANSFER";
   return def?.kind === "INCOME" ? "INCOME" : "EXPENSE";
 }
+
+const metricOf: Record<string, CashFlowMetric> = { EXPENSE: "spending", INCOME: "income", EXTERNAL_TRANSFER: "external" };
 
 function MonthBars({ ctx, values, color, name }: { ctx: Ctx; values: number[]; color: string; name: string }) {
   const ui = chartChrome(ctx.chart);
@@ -53,11 +56,15 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Total" value={usd0(total)} />
-        <Stat label="Per month" value={usd0(total / Math.max(1, values.length))} />
+        <Stat label="Total" value={usd0(total)} proof={ctx.proof(metricOf[lane]!, slice.months, { category, shownCents: total })} />
+        <Stat label="Per month" value={usd0(total / Math.max(1, values.length))} proof={ctx.proof(metricOf[lane]!, slice.months, { category, perMonth: true, shownCents: total })} />
         <Stat label="Typical month" value={usd0(median(values))} />
         <Stat label={lane === "EXPENSE" ? "Share of spending" : "Months"} value={lane === "EXPENSE" ? (spending > 0 ? formatPercentRatio(total / spending, 0) : "—") : values.filter(Boolean).length} />
       </div>
+      <p className="-mt-2 text-xs text-muted">
+        Click the total for the rows behind it, statement by statement, with every check over them. The transactions below are listed by posting date for editing, so a row near a month&apos;s edge or a rent
+        payment may sit in a different month here.
+      </p>
       <MonthBars ctx={ctx} values={values} color={color} name={category} />
       {category === "Housing & utilities" && <RentTiming ctx={ctx} />}
       {merchants.length > 0 && (

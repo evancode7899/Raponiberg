@@ -4,6 +4,13 @@ import { dataDir } from "../dataDir.ts";
 import type { TaxDocsFile } from "./types.ts";
 
 /**
+ * The tax documents reader's version: bump when a parser changes what it reads, and every
+ * PDF is read again on the next scan. Kept here (not in scan.ts) so the integrity checks
+ * can compare a stored scan against it without loading the PDF libraries.
+ */
+export const TAX_DOCS_VERSION = 1;
+
+/**
  * data/tax-documents.json: what the tax documents folder held when last scanned (the
  * parsed figures, never the PDFs). Gitignored and backed up with the rest of data/. Kept
  * apart from the scanner so the Book can read it without loading the PDF libraries.

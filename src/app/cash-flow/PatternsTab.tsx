@@ -3,6 +3,8 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, Segmented } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
 import { CHARGE_BUCKETS, type SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import { useState, type ReactNode } from "react";
@@ -84,6 +86,9 @@ function Pace({ ctx }: { ctx: Ctx }) {
   const typEnd = typical[30] ?? null;
   const mid = Math.min(14, cur.length - 1);
   const firstHalf = typEnd ? (typical[mid] ?? 0) / typEnd : null;
+  // A running total is a month's spending only when it counts all of it: every charge, and
+  // no quarter-total line spread across months (those count whole on the day here).
+  const whole = (m: SpendingMonth, cents: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : undefined);
 
   return (
     <Card
@@ -105,14 +110,15 @@ function Pace({ ctx }: { ctx: Ctx }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-1 xl:content-start">
           {partial ? (
-            <Stat label={`Spent through day ${throughDay}`} value={usd0(nowAt)} sub={typAt != null ? <><Delta now={nowAt} before={typAt} goodWhenDown /> vs typical {usd0(typAt)} by day {throughDay}</> : undefined} />
+            <Stat label={`Spent through day ${throughDay}`} value={usd0(nowAt)} proof={whole(month, nowAt)} sub={typAt != null ? <><Delta now={nowAt} before={typAt} goodWhenDown /> vs typical {usd0(typAt)} by day {throughDay}</> : undefined} />
           ) : (
-            <Stat label="Spent in the month" value={usd0(nowAt)} sub={typEnd != null ? <><Delta now={nowAt} before={typEnd} goodWhenDown /> vs a typical month</> : undefined} />
+            <Stat label="Spent in the month" value={usd0(nowAt)} proof={whole(month, nowAt)} sub={typEnd != null ? <><Delta now={nowAt} before={typEnd} goodWhenDown /> vs a typical month</> : undefined} />
           )}
           {prev && (
             <Stat
               label={partial ? `${prev.label} by day ${throughDay}` : prev.label}
               value={usd0(partial ? prevCum[Math.min(throughDay, prevCum.length) - 1] ?? 0 : prevCum.at(-1) ?? 0)}
+              proof={partial ? undefined : whole(prev, prevCum.at(-1) ?? 0)}
               sub={partial ? `${usd0(prevCum.at(-1) ?? 0)} for the whole month` : "the month before"}
             />
           )}
@@ -137,11 +143,13 @@ function Pace({ ctx }: { ctx: Ctx }) {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: ReactNode }) {
+function Stat({ label, value, sub, proof }: { label: string; value: string; sub?: ReactNode; proof?: ProofTarget }) {
   return (
     <div className="min-w-0">
       <div className="truncate text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="num mt-0.5 text-lg font-semibold tracking-tight text-fg">{value}</div>
+      <div className="num mt-0.5 text-lg font-semibold tracking-tight text-fg">
+        <ProofValue proof={proof}>{value}</ProofValue>
+      </div>
       {sub && <div className="mt-0.5 text-xs leading-snug text-muted">{sub}</div>}
     </div>
   );

@@ -7,7 +7,8 @@ import { CAR_KINDS, carName, KIND_INFO, SHARED, type CarKind } from "@/lib/car/s
 import { useMemo, useState } from "react";
 import type { CarCtx } from "./CarClient";
 import { blankEntry, isReading } from "./EntryEditor";
-import { fmtDate, miles, usd2 } from "./parts";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { fmtDate, logProof, miles, usd2 } from "./parts";
 
 type CarFilter = "ALL" | "THIS" | typeof SHARED;
 type Show = "ALL" | "COUNTED" | "NOT_COUNTED";
@@ -145,7 +146,7 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
                         {sub.length > 0 && <div className="max-w-[26rem] truncate text-[11px] text-muted">{sub.join(" · ")}</div>}
                       </td>
                       <td className={`${table.td} text-xs text-fg-2`}>{reading ? "Odometer reading" : KIND_INFO[i.kind].label}</td>
-                      <td className={`${table.tdR} ${i.counted ? "" : "line-through decoration-muted"}`}>{reading ? "" : usd2(i.cents)}</td>
+                      <td className={`${table.tdR} ${i.counted ? "" : "line-through decoration-muted"}`}>{reading ? "" : i.counted ? <ProofValue proof={logProof(i.id, i.cents)}>{usd2(i.cents)}</ProofValue> : usd2(i.cents)}</td>
                       <td className={table.tdR}>{i.gallons != null ? i.gallons.toFixed(3) : ""}</td>
                       <td className={table.tdR}>{i.odometer != null ? miles(i.odometer) : ""}</td>
                       <td className={table.td}>

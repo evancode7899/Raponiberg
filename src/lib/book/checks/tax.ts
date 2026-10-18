@@ -13,7 +13,7 @@ export function checkTaxParams(book: Book, c: Collector) {
   const year = Number(book.today.slice(0, 4));
   for (const y of [year - 1, year]) {
     if (TAX_YEARS[y]) {
-      c.pass("tax.params");
+      c.pass("tax.params", { subject: `${y} tax law`, from: `${y}-01-01`, to: `${y}-12-31`, affects: ["TAX"] });
       continue;
     }
     c.add({
@@ -43,7 +43,7 @@ export function checkTaxCoverage(book: Book, c: Collector) {
     const lastYear = Math.min(currentYear, Number((a.closed ? a.timeline.lastDay! : book.today).slice(0, 4)));
     for (let y = firstYear; y <= lastYear; y++) {
       if (facts.some((b) => b.periodEnd.startsWith(String(y)) && b.income)) {
-        c.pass("tax.brokerage-coverage");
+        c.pass("tax.brokerage-coverage", { subject: `${a.name}: ${y} investment income figures`, accountId: a.id, from: `${y}-01-01`, to: `${y}-12-31`, affects: ["TAX"] });
         continue;
       }
       c.add({

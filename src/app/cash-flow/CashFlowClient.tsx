@@ -10,7 +10,10 @@ import { BudgetTab } from "./BudgetTab";
 import { CategoryDrill, MerchantDrill } from "./Drills";
 import { IncomeTab } from "./IncomeTab";
 import { MerchantsTab } from "./MerchantsTab";
-import { monthKey, sliceRange, type RangeId, type Report, type Slice } from "./model";
+import { monthKey, proofTarget, sliceRange, type ProofOptions, type RangeId, type Report, type Slice } from "./model";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
+import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { OverviewTab } from "./OverviewTab";
 import { PatternsTab } from "./PatternsTab";
 import { WithheldStrip } from "./parts";
@@ -36,6 +39,8 @@ export type Ctx = {
   /** Category the Spending tab should focus (set from an insight). */
   focus: string | null;
   setFocus: (c: string | null) => void;
+  /** The proof target for a figure over some of the selected months (see model.proofTarget), with the page's account filter. */
+  proof: (metric: CashFlowMetric, months: SpendingMonth[], o?: ProofOptions) => ProofTarget | undefined;
 };
 
 type View = { range: RangeId; from: string; to: string };
@@ -81,10 +86,12 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
     window.scrollTo({ top: 0 });
   };
 
+  // The accounts the report was asked for (none: every account), so a proof covers the same ones.
+  const accountIds = excluded.size && allAccounts.length ? allAccounts.filter((a) => !excluded.has(a.id)).map((a) => a.id) : undefined;
   const monthOptions = data?.months.map((m) => ({ value: monthKey(m.start), label: m.label })) ?? [];
   const ctx: Ctx | null =
     data && slice && slice.months.length
-      ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus }
+      ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o) }
       : null;
 
   return (

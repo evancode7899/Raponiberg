@@ -1,6 +1,9 @@
 "use client";
 
 import { btn, MoneyInput, PercentInput, Segmented, selectCls } from "@/components/ui/kit";
+import { useProof, type ProofTarget } from "@/components/ui/proof/context";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ForecastDescriptor } from "@/lib/book/proof/forecastProof";
 import type { Forecast } from "@/lib/forecast/forecast";
 import type { OutlookSeeds, ResolvedPerson } from "@/lib/profile/basePay";
 import { DEFAULT_PERSON_OUTLOOK, type BonusEstimates, type LivingBasis, type OutlookAssumptions, type PersonOutlook } from "@/lib/profile/settings";
@@ -9,6 +12,9 @@ import { useState, type ReactNode } from "react";
 import { monthName, pct, usd, YearInput } from "./forecastUi";
 
 export type SetAssumption = <K extends keyof OutlookAssumptions>(k: K, v: OutlookAssumptions[K]) => void;
+
+/** A forecast seed's proof recipe, less the parts every one shares. */
+type SeedRecipe = ForecastDescriptor extends infer D ? (D extends ForecastDescriptor ? Omit<D, "report" | "figure"> : never) : never;
 
 const TYPED = "!border-info/60 !bg-info-soft";
 const LIVING: LivingBasis[] = ["TRAILING_12", "LAST_YEAR", "THIS_YEAR"];
@@ -23,6 +29,9 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
   const setPerson = (id: string, patch: Partial<PersonOutlook>) => set("people", { ...a.people, [id]: { ...DEFAULT_PERSON_OUTLOOK, ...a.people[id], ...patch } });
   const { pay, nearTermThrough } = f;
   const t = pay.tax;
+  // Each person's paycheck choice as the page has it, for the household figures' proofs.
+  const paycheck = Object.fromEntries(pay.people.map((p) => [p.personId, p.basis]));
+  const seed = (x: SeedRecipe, shownCents?: number): ProofTarget => ({ descriptor: { report: "forecast", figure: "seed", ...x } as ForecastDescriptor, ...(shownCents != null ? { shownCents } : {}) });
   const estimates: { value: BonusEstimates; label: string }[] = [
     { value: "NEXT_PAYOUT", label: "From the next payout" },
     { value: "AFTER_NEAR_TERM", label: `From ${nearTermThrough + 1} (after the near term)` },
@@ -34,8 +43,10 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
       {header}
       <div className="px-3 pb-2 text-xs">
         <Group title="Start" />
-        <Line label={`Proven · ${shortDate(s.start.asOf)}`} help={`${s.start.note}. Liquid ${usd(s.start.liquid)} (cash, brokerage, less card balances) · illiquid ${usd(s.start.illiquid)} (retirement, HSA, other).`}>
-          <span className="num font-medium text-fg">{usd(s.start.liquid + s.start.illiquid)}</span>
+        <Line label={`Proven · ${shortDate(s.start.asOf)}`} proof={seed({ which: "start" }, s.start.liquid + s.start.illiquid)} help={`${s.start.note}. Liquid ${usd(s.start.liquid)} (cash, brokerage, less card balances) · illiquid ${usd(s.start.illiquid)} (retirement, HSA, other).`}>
+          <ProofValue proof={seed({ which: "start" }, s.start.liquid + s.start.illiquid)}>
+            <span className="num font-medium text-fg">{usd(s.start.liquid + s.start.illiquid)}</span>
+          </ProofValue>
         </Line>
 
         <Group title="Pay" note="regular paychecks; bonuses below" />
@@ -47,6 +58,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         </Line>
         <Line
           label="Kept after tax"
+          proof={seed({ which: "take-home", paycheck })}
           help={[
             `Share of base salary left after tax and payroll deductions (${s.taxYear} law, filing jointly, standard deduction${s.dependents.length ? `, ${s.dependents.length} dependent(s)` : ""}). 401(k)/HSA deferrals stay in: they're savings.`,
             `Base salary ${usd(pay.salary)}`,
@@ -58,15 +70,15 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         >
           <PercentInput size="xs" ariaLabel="Take-home rate" value={pay.takeHomeRate} onChange={(v) => set("takeHomeRate", v)} className={pay.rateTyped ? TYPED : ""} />
         </Line>
-        <Line label="Your 401(k)/HSA" help={`This year's deferrals to Dec 31, from the stubs. Inside take-home, but they land in retirement accounts.`} reset={pay.deferralsTyped ? { label: "from stubs", onClick: () => set("deferrals", null) } : undefined}>
+        <Line label="Your 401(k)/HSA" proof={seed({ which: "deferrals", paycheck }, pay.people.reduce((x, p) => x + p.deferrals, 0))} help={`This year's deferrals to Dec 31, from the stubs. Inside take-home, but they land in retirement accounts.`} reset={pay.deferralsTyped ? { label: "from stubs", onClick: () => set("deferrals", null) } : undefined}>
           <MoneyInput nullable size="xs" ariaLabel="Your 401(k)/HSA per year" cents={a.deferrals} placeholderCents={pay.people.reduce((x, p) => x + p.deferrals, 0)} onChange={(v) => set("deferrals", v)} />
         </Line>
-        <Line label="Employer 401(k)/HSA" help="Employer money on base paychecks, from the stubs." reset={pay.employerTyped ? { label: "from stubs", onClick: () => set("employerMatch", null) } : undefined}>
+        <Line label="Employer 401(k)/HSA" proof={seed({ which: "employer", paycheck }, pay.people.reduce((x, p) => x + p.employer, 0))} help="Employer money on base paychecks, from the stubs." reset={pay.employerTyped ? { label: "from stubs", onClick: () => set("employerMatch", null) } : undefined}>
           <MoneyInput nullable size="xs" ariaLabel="Employer 401(k)/HSA per year" cents={a.employerMatch} placeholderCents={pay.people.reduce((x, p) => x + p.employer, 0)} onChange={(v) => set("employerMatch", v)} />
         </Line>
 
         <Group title="Spending" />
-        <Line label="Living cost from" help={pay.living.seed ? `${pay.living.seed.detail}.` : undefined}>
+        <Line label="Living cost from" proof={s.living[a.livingBasis] ? seed({ which: "living", basis: a.livingBasis }, s.living[a.livingBasis]!.cents) : undefined} help={pay.living.seed ? `${pay.living.seed.detail}.` : undefined}>
           <select
             className={`${selectCls} w-full !py-1`}
             aria-label="Living cost basis"
@@ -85,6 +97,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         </Line>
         <Line
           label="Living cost / yr"
+          proof={pay.living.seed && s.living[a.livingBasis] ? seed({ which: "living", basis: a.livingBasis }, s.living[a.livingBasis]!.cents) : undefined}
           help="Everything spent except tagged one-offs, in the first year. Type a figure to override the basis above."
           reset={pay.living.typed ? { label: "use the basis", onClick: () => set("livingCost", null) } : undefined}
         >
@@ -96,7 +109,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         <OneOffs a={a} set={set} startYear={s.start.year} />
 
         <Group title="Bonuses" note="stub + letter payments always count" />
-        <Line label="Estimate awards" help="Bonuses already on a stub after the start, and payments an award letter still schedules, always count on their dates. This sets when awards no letter shows yet are estimated.">
+        <Line label="Estimate awards" proof={seed({ which: "bonus" })} help="Bonuses already on a stub after the start, and payments an award letter still schedules, always count on their dates. This sets when awards no letter shows yet are estimated.">
           <select className={`${selectCls} w-full !py-1`} aria-label="Estimated bonuses" value={a.bonus.estimates} onChange={(e) => set("bonus", { ...a.bonus, estimates: e.target.value as BonusEstimates })}>
             {estimates.map((o) => (
               <option key={o.value} value={o.value}>
@@ -140,7 +153,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         </Line>
 
         <Group title="Markets" />
-        <Line label="Return / yr" help={`Nominal return on everything invested, compounded monthly.${s.realizedReturn != null ? ` Your realized return: ${pct(s.realizedReturn)}.` : ""}`}>
+        <Line label="Return / yr" proof={seed({ which: "return" })} help={`Nominal return on everything invested, compounded monthly.${s.realizedReturn != null ? ` Your realized return: ${pct(s.realizedReturn)}.` : ""}`}>
           <PercentInput size="xs" ariaLabel="Investment return per year" value={a.returnRate} onChange={(v) => set("returnRate", v)} />
         </Line>
         <Line label="Inflation / yr" help="Indexes tax brackets in retirement; FIRE's today's-dollar figures.">
@@ -178,7 +191,9 @@ function PersonSalary({ p, seed, onChange }: { p: ResolvedPerson; seed: OutlookS
     <Line
       label={
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate">{p.name}</span>
+          <ProofLabel help={help} proof={{ descriptor: { report: "forecast", figure: "seed", which: "pay", personId: p.personId, paycheck: p.basis }, shownCents: check ? check.regular * p.perYear : 0 }}>
+            {p.name}
+          </ProofLabel>
           {!same && (
             <Segmented
               size="xs"
@@ -284,13 +299,23 @@ function Group({ title, note }: { title: string; note?: string }) {
   );
 }
 
-/** One driver: label (hover for where it comes from), its input, and ↺ when it's been typed over. */
-function Line({ label, help, reset, children }: { label: ReactNode; help?: string; reset?: { label: string; onClick: () => void }; children: ReactNode }) {
+/**
+ * One driver: label (hover for where it comes from), its input, and ↺ when it's been typed
+ * over. A driver that starts from the stubs and statements (`proof`): click the label for
+ * the proof of the figure it starts from.
+ */
+function Line({ label, help, proof, reset, children }: { label: ReactNode; help?: string; proof?: ProofTarget; reset?: { label: string; onClick: () => void }; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_0.875rem_6.5rem] items-center gap-1 py-[3px]">
-      <span className={`min-w-0 truncate text-fg-2 ${help ? "cursor-help decoration-line-strong decoration-dotted underline-offset-2 hover:underline" : ""}`} title={help}>
-        {label}
-      </span>
+      {proof ? (
+        <ProofLabel help={help} proof={proof}>
+          {label}
+        </ProofLabel>
+      ) : (
+        <span className={`min-w-0 truncate text-fg-2 ${help ? "cursor-help decoration-line-strong decoration-dotted underline-offset-2 hover:underline" : ""}`} title={help}>
+          {label}
+        </span>
+      )}
       {reset ? (
         <button type="button" className="text-center text-accent hover:text-fg" title={`Typed over — back to ${reset.label}`} onClick={reset.onClick}>
           ↺
@@ -303,4 +328,25 @@ function Line({ label, help, reset, children }: { label: ReactNode; help?: strin
   );
 }
 
-const shortDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+/** A driver's label that opens the proof of the figure it starts from; its hover help stays. Plain text outside the app shell. */
+function ProofLabel({ help, proof, children }: { help?: string; proof: ProofTarget; children: ReactNode }) {
+  const open = useProof();
+  if (!open)
+    return (
+      <span className="min-w-0 truncate text-fg-2" title={help}>
+        {children}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      className="min-w-0 cursor-pointer truncate rounded-sm text-left text-fg-2 underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      title={[help, "Click for the proof of the figure it starts from."].filter(Boolean).join("\n")}
+      onClick={() => open(proof)}
+    >
+      {children}
+    </button>
+  );
+}
+
+const shortDate =(iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });

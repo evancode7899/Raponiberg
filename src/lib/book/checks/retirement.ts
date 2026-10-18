@@ -76,7 +76,8 @@ export function checkRetirement(book: Book, c: Collector) {
           }
         }
         const stubTotal = amounts.filter((a) => a.date >= st.periodStart && a.date <= st.periodEnd).reduce((t, a) => t + a.v, 0);
-        if (ok) c.pass("retirement.contributions");
+        if (ok)
+          c.pass("retirement.contributions", { subject: `${account.name} ${st.periodStart} – ${st.periodEnd}: ${kind} money ties to the stubs`, personId, employerKey, accountId: account.id, from: st.periodStart, to: st.periodEnd, affects: ["PAY"] });
         else
           c.add({
             id: `retirement.contributions:${ref}:${st.periodStart}:${st.periodEnd}:${kind}`,

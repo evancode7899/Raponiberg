@@ -59,10 +59,14 @@ export type FlowInput = {
   precision: "EXACT" | "PERIOD";
   amountCents: number;
   lane: Lane;
+  /** The ledger row it was read from, so a balance can list what made it. */
+  id?: string;
 };
 
 export type SegmentInput = {
   accountId: string;
+  /** The statement (StatementImport) it was read from. */
+  importId?: string;
   periodStart: string;
   periodEnd: string;
   openingCents: number;
@@ -72,7 +76,9 @@ export type SegmentInput = {
   flows: FlowInput[];
 };
 
-type Segment = {
+export type Segment = {
+  /** The statement behind it: its own, the summary a derived segment came from, or null for an idle window. */
+  importId: string | null;
   start: number;
   end: number;
   days: number;
@@ -88,9 +94,9 @@ type Segment = {
    */
   idle: boolean;
   /** Exact flows sorted by (clamped) day. */
-  exact: { day: number; amount: number; lane: Lane }[];
+  exact: { day: number; amount: number; lane: Lane; id?: string }[];
   /** Undated flows spread over the segment. */
-  spread: { amount: number; lane: Lane }[];
+  spread: { amount: number; lane: Lane; id?: string }[];
 };
 
 export type AccountTimeline = {
@@ -126,11 +132,13 @@ function toSegment(s: SegmentInput, derived: boolean): Segment {
   const exact: Segment["exact"] = [];
   const spread: Segment["spread"] = [];
   for (const f of s.flows) {
-    if (f.precision === "PERIOD") spread.push({ amount: f.amountCents, lane: f.lane });
-    else exact.push({ day: Math.min(end, Math.max(start, dayNumber(f.date))), amount: f.amountCents, lane: f.lane });
+    const id = f.id ? { id: f.id } : {};
+    if (f.precision === "PERIOD") spread.push({ amount: f.amountCents, lane: f.lane, ...id });
+    else exact.push({ day: Math.min(end, Math.max(start, dayNumber(f.date))), amount: f.amountCents, lane: f.lane, ...id });
   }
   exact.sort((a, b) => a.day - b.day);
   return {
+    importId: s.importId ?? null,
     start,
     end,
     days: end - start + 1,
@@ -185,6 +193,7 @@ export function buildTimeline(accountId: string, statements: SegmentInput[], sum
     // Whatever the summary's own figures leave unexplained is market change.
     const adjustedGrowth = growth + (closing - opening - flows - growth - fees);
     derived.push({
+      importId: S.importId,
       start: hs,
       end: he,
       days: he - hs + 1,
@@ -229,7 +238,7 @@ export function withIdleWindows(
       .sort((a, b) => a.day - b.day);
     const opening = w.openingCents ?? 0;
     const closing = opening + exact.reduce((s, f) => s + f.amount, 0);
-    segs.push({ start, end, days: end - start + 1, opening, closing, growth: 0, fees: 0, derived: false, idle: true, exact, spread: [] });
+    segs.push({ importId: null, start, end, days: end - start + 1, opening, closing, growth: 0, fees: 0, derived: false, idle: true, exact, spread: [] });
   }
   segs.sort((a, b) => a.start - b.start);
   return {

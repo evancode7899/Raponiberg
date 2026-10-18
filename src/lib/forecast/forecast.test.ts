@@ -92,14 +92,17 @@ describe("bonusFacts", () => {
   const report = {
     letters: [{ id: "acme", title: "ACME", employer: "ACME", terms: null, notes: [], employment: { personId: "a", personName: "A", employer: "ACME", employerKey: "acme", first: "2025-01-01", last: "2026-09-15", nextEmployer: null } }],
     windows: [
-      { letterId: "acme", label: "Feb/Mar 2027", from: "2027-02-01", to: "2027-03-31", status: "UPCOMING", scheduledCents: 30_000_00 },
+      { key: "acme|2027-02", letterId: "acme", label: "Feb/Mar 2027", from: "2027-02-01", to: "2027-03-31", status: "UPCOMING", scheduledCents: 30_000_00 },
       { letterId: "acme", label: "Jan/Feb 2026", from: "2026-01-01", to: "2026-02-28", status: "PAID", scheduledCents: 60_000_00 },
     ],
   } as unknown as BonusesReport;
 
   it("reads still-vesting windows and the latest award's payout pattern", () => {
     const f = bonusFacts(report, [letter]);
-    expect(f.scheduled).toEqual([{ personId: "a", employer: "ACME", key: "2027-03", gross: 30_000_00, label: "ACME: Feb/Mar 2027 (letter)" }]);
+    expect(f.scheduled).toEqual([{ personId: "a", employer: "ACME", key: "2027-03", gross: 30_000_00, label: "ACME: Feb/Mar 2027 (letter)", window: "acme|2027-02" }]);
+    // The forecast keeps the window, so its proof can open the Bonuses proof of that payment.
+    const out = bonusSchedule({ ...base, facts: f, throughYear: 2027 });
+    expect(out.find((b) => b.source === "LETTER")?.window).toBe("acme|2027-02");
     expect(f.patterns[0]!.parts.map((p) => [p.offset, p.share, p.plan])).toEqual([
       [2, 0.6, false],
       [15, 0.3, false],

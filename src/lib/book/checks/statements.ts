@@ -20,7 +20,13 @@ export function checkStatements(book: Book, c: Collector) {
 
   for (const s of book.statements) {
     if (s.status === "COMMITTED") {
-      c.pass("statement.held");
+      c.pass("statement.held", {
+        subject: `${nameOf(s.accountId)} ${s.periodStart} – ${s.periodEnd}${s.isSummary ? " (summary)" : ""}`,
+        accountId: s.accountId,
+        from: s.periodStart,
+        to: s.periodEnd,
+        affects: ["CASH_FLOW", "NET_WORTH"],
+      });
       continue;
     }
     const { ref, accounts } = accountRef(book, s.accountId);
@@ -43,10 +49,12 @@ export function checkStatements(book: Book, c: Collector) {
     const t = a.timeline;
     const affects = BANKING.has(a.group) ? (["CASH_FLOW", "NET_WORTH"] as const) : (["NET_WORTH"] as const);
     const { ref, accounts } = accountRef(book, a.id);
+    // What a pass over the whole account vouches for.
+    const whole = (subject: string) => ({ subject: `${a.name}: ${subject}`, accountId: a.id, from: t.firstDay ?? book.today, to: t.lastDay ?? book.today, affects: [...affects] });
 
     // Chain: opening = prior closing.
     const breaks = chainBreaks(t);
-    if (breaks.length === 0) c.pass("statement.chain");
+    if (breaks.length === 0) c.pass("statement.chain", whole(`${t.firstDay} – ${t.lastDay}, every opening = the previous closing`));
     for (const b of breaks) {
       c.add({
         id: `statement.chain:${ref}:${b.at}`,
@@ -117,7 +125,7 @@ export function checkStatements(book: Book, c: Collector) {
         needs: { accountIds: [a.id], from, to },
       });
     }
-    if (gaps === 0) c.pass("statement.gap");
+    if (gaps === 0) c.pass("statement.gap", whole(`no gaps ${t.firstDay} – ${t.lastDay}`));
     for (const w of book.idle.proven.filter((x) => x.accountId === a.id)) {
       const payers = w.payerIds.map(nameOf).join(" and ");
       const paidOff = w.payoff.length
@@ -153,7 +161,7 @@ export function checkStatements(book: Book, c: Collector) {
           scope: { accountId: a.id, from: addDays(t.lastDay!, 1), to: book.today, affects: [...affects] },
           needs: { accountIds: [a.id], from: addDays(t.lastDay!, 1), to: addDays(t.lastDay!, cadence) },
         });
-      } else c.pass("statement.overdue");
+      } else c.pass("statement.overdue", whole(`latest statement through ${t.lastDay}, next due by ${due}`));
     }
 
     // History: a first statement that already holds money. A partner's own account only
@@ -188,6 +196,6 @@ export function checkStatements(book: Book, c: Collector) {
         title: `${a.name}: joins the household at its first statement (${t.firstDay})`,
         detail: `It's ${owner}'s own account, and its first statement on file predates the ${book.ledger.mergeDate} merge. The ${money(first.opening)} it opened with was ${owner}'s money from before the merge, so it counts as newly tracked when the account joins, not as savings, and no earlier statements are needed.`,
       });
-    } else c.pass("statement.history");
+    } else c.pass("statement.history", whole(first && first.opening !== 0 ? `first statement (${t.firstDay}) is where the records start` : `opens at $0 on ${t.firstDay}`));
   }
 }

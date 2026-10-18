@@ -4,8 +4,10 @@ import { Badge, btn, Callout, Card, Drawer, EmptyState, Field, inputCls, MoneyIn
 import { sortRows, SortTh, useSort, type SortGetters } from "@/components/ui/sort";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useMemo, useState } from "react";
 import type { Send } from "./HsaClient";
+import { hsaProof } from "./proof";
 import { waitLabel } from "./ReceiptsTab";
 
 /** Unreimbursed, reimbursable expenses, oldest first: the order to pay them back in. */
@@ -47,6 +49,8 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
     directSort.sort,
     byWithdrawal,
   );
+  const distCents = distributions.reduce((s, w) => s + w.amountCents, 0);
+  const directCents = direct.reduce((s, w) => s + w.amountCents, 0);
 
   return (
     <>
@@ -97,7 +101,18 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
 
       <Card
         title="Distributions to you"
-        subtitle="Money the HSA sent to your bank: these are what reimburse receipts. Tie each one to the receipts it paid back; if the IRS ever asks about a distribution, that's your answer."
+        subtitle={
+          <>
+            Money the HSA sent to your bank
+            {distributions.length > 0 && (
+              <>
+                {" "}
+                (<ProofValue proof={hsaProof("distributions", distCents, "distribution")}>{usd0(distCents)}</ProofValue> in all)
+              </>
+            )}
+            : these are what reimburse receipts. Tie each one to the receipts it paid back; if the IRS ever asks about a distribution, that&apos;s your answer.
+          </>
+        }
       >
         {distributions.length === 0 ? (
           <EmptyState title="No distributions in the statements">
@@ -160,7 +175,12 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
       {direct.length > 0 && (
         <Card
           title="Paid straight from the HSA"
-          subtitle={`The HSA's card or bill pay paid these providers directly (${usd0(direct.reduce((s, w) => s + w.amountCents, 0))} in all). The HSA already covered them, so nothing comes back to you and they never reimburse a receipt in the log.`}
+          subtitle={
+            <>
+              The HSA&apos;s card or bill pay paid these providers directly (<ProofValue proof={hsaProof("distributions", directCents, "direct")}>{usd0(directCents)}</ProofValue> in all). The HSA
+              already covered them, so nothing comes back to you and they never reimburse a receipt in the log.
+            </>
+          }
         >
           <div className={table.wrap}>
             <table className={table.table}>

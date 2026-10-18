@@ -82,6 +82,8 @@ export type AccountHoldings = {
   asOf: string;
   status: HoldingsStatus;
   holdingsAsOf: string | null;
+  /** The holdings snapshot (BookHoldings.id) holdingsAsOf names. */
+  holdingsId: string | null;
   /** Snapshot total − balance on the snapshot's date, when they disagree. */
   differenceCents: number | null;
   /** Fees the statements deducted over the last 12 months (≤ 0), and the window. */
@@ -139,8 +141,12 @@ function allocate(rows: PositionRow[]): ClassAmount[] {
   return order.filter((c) => by.get(c)).map((cls) => ({ cls, cents: by.get(cls)!, share: share(by.get(cls)!, total) }));
 }
 
-export function buildInvestments(book: Book, settings: InvestmentSettings): InvestmentsReport {
-  const asOf = book.horizon.netWorth;
+/**
+ * Each included account valued at its latest statement, and the positions that make up
+ * that value (with a balancing line for whatever the holdings on file don't explain).
+ * The report and its proofs (book/proof/investmentsProof.ts) both start here.
+ */
+export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
   const accounts: AccountHoldings[] = [];
   const positions: PositionRow[] = [];
   const byAccount = new Map<string, BookHoldings[]>();
@@ -209,13 +215,19 @@ export function buildInvestments(book: Book, settings: InvestmentSettings): Inve
       asOf: lastDay,
       status,
       holdingsAsOf: usable?.asOf ?? latest?.asOf ?? null,
+      holdingsId: usable?.id ?? latest?.id ?? null,
       differenceCents: !usable && latest ? latest.totalCents - valueAt(a.timeline, latest.asOf).cents : null,
       feesLast12Cents: fees,
       feesWindow: { from: feesFrom, to: lastDay },
       blockers: refs(netWorthAtBlockers(book, lastDay, [a.id])),
     });
   }
+  return { accounts, positions, included };
+}
 
+export function buildInvestments(book: Book, settings: InvestmentSettings): InvestmentsReport {
+  const asOf = book.horizon.netWorth;
+  const { accounts, positions, included } = holdingsByAccount(book, settings);
   const totalCents = positions.reduce((s, p) => s + p.valueCents, 0);
   const allocation = allocate(positions);
   const byTreatment = TREATMENT_ORDER.map((treatment) => {

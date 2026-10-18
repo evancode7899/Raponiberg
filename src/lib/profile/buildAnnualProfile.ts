@@ -13,7 +13,7 @@ import { usd0 } from "../formatMoney.ts";
 import { amountsFromLines, projectPayroll, type PayFrequency } from "../tax/facts/payroll.ts";
 import { TAX_YEARS } from "../tax/params.ts";
 import type { Dependent as TaxDependent } from "../tax/profile.ts";
-import type { BonusYear, OutlookSeeds, PaycheckSeed, PersonSeed } from "./basePay.ts";
+import type { BonusYear, DeferralParts, LivingTrail, OutlookSeeds, PaycheckSeed, PayTrail, PersonSeed } from "./basePay.ts";
 import {
   bucketForGroup,
   cashWaterfall,
@@ -26,7 +26,7 @@ import {
   type CashWaterfall,
   type NetWorthSummary,
 } from "./annualMath.ts";
-import { BUCKETS, type FinancialProfileSettings } from "./settings.ts";
+import { BUCKETS, type FinancialProfileSettings, type NetWorthBucket } from "./settings.ts";
 
 /**
  * The household's financial profile, one column per calendar year, entirely from the
@@ -80,12 +80,20 @@ export type YearCash = {
   otherIncomeDetail: { interest: number; dividends: number; other: number };
   reimbursements: number;
   spending: CategoryCents[];
+  /** The "other" income by category (income rows that aren't pay, interest or reimbursements). */
+  otherIncomeByCategory: CategoryCents[];
+  /** Tax-authority rows (taxes paid and refunds, not income or living) by the category and lane they're filed under. */
+  taxRowsByCategory: { income: CategoryCents[]; spending: CategoryCents[] };
+  /** How the year's living cost adds up (the forecast's LAST_YEAR / THIS_YEAR seeds' proof). */
+  livingTrail: LivingTrail;
 };
 
 export type YearNetWorth = NetWorthSummary & {
   quality: Quality;
   /** Matched transfers that had left one account but not reached the other at year end. */
   inTransit: number;
+  /** The same, by the side of the liquid / illiquid split they were going to. */
+  inTransitSplit: { liquid: number; illiquid: number };
 };
 
 export type YearProfile = {
@@ -126,9 +134,54 @@ export type AnnualProfileReport = {
   settings: FinancialProfileSettings;
 };
 
+/** Income and spending rows booked in a window (buildAnnualProfile cashRows). */
+type CashRows = {
+  interest: number;
+  other: number;
+  reimbursements: number;
+  nonRecurring: number;
+  taxSpending: number;
+  spending: Map<string, number>;
+  candidates: OneOffRow[];
+  otherByCategory: Map<string, number>;
+  taxByCategory: { income: Map<string, number>; spending: Map<string, number> };
+};
+
 const NOT_OTHER_INCOME = new Set(["Paycheck", "P2P & reimbursements", "Interest"]);
 const unique = (bs: BlockerRef[]) => [...new Map(bs.map((b) => [b.id, b])).values()];
 const minIso = (a: string, b: string) => (a < b ? a : b);
+const byCents = (m: Map<string, number>): CategoryCents[] =>
+  [...m].map(([category, cents]) => ({ category, cents })).filter((c) => c.cents !== 0).sort((a, b) => b.cents - a.cents);
+
+/** A matched transfer that had left one account but not reached the other at the end of a day. */
+export type InTransitTransfer = {
+  matchId: string;
+  /** The legs booked by then (their sum, negated, is what's in flight). */
+  left: { accountId: string; date: string; amountCents: number }[];
+  /** The first leg still to come, and the bucket of its account (where the money counts). */
+  lands: { accountId: string; date: string };
+  bucket: NetWorthBucket;
+  cents: number;
+};
+
+/** Matched transfers in flight at the end of `end`, each counted in the bucket of the account it hadn't reached. */
+export function transfersInTransit(book: Book, end: string): InTransitTransfer[] {
+  const groupOf = new Map(book.ledger.accounts.map((a) => [a.id, a.group]));
+  const out: InTransitTransfer[] = [];
+  for (const m of book.matches) {
+    const done = m.legs.filter((l) => l.date <= end);
+    const pending = m.legs.filter((l) => l.date > end);
+    if (!done.length || !pending.length) continue;
+    out.push({
+      matchId: m.id,
+      left: done.map(({ accountId, date, amountCents }) => ({ accountId, date, amountCents })),
+      lands: { accountId: pending[0]!.accountId, date: pending[0]!.date },
+      bucket: bucketForGroup(groupOf.get(pending[0]!.accountId) ?? "Other"),
+      cents: -done.reduce((s, l) => s + l.amountCents, 0),
+    });
+  }
+  return out;
+}
 
 /** `dependents` (from the tax profile) only feed the outlook's tax on base pay. */
 export function buildAnnualProfile(book: Book, settings: FinancialProfileSettings, dependents: TaxDependent[] = []): AnnualProfileReport {
@@ -141,19 +194,13 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
   for (let y = firstYear; y <= currentYear; y++) years.push(y);
   const nonRecurringCats = new Set(settings.nonRecurringCategories);
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
-  const groupOf = new Map(book.ledger.accounts.map((a) => [a.id, a.group]));
   // Rent is a big charge every month, never a one-off: left out of the candidates (as on Cash flow).
   const rentIds = new Set(rentPayments(book.rows, [], book.household.merchantRules).map((p) => p.rowId));
 
   // Matched transfers in flight at a date count in the bucket of the account they hadn't reached.
   const inTransitAt = (end: string) => {
     const signed: BucketTotals = { ...ZERO_BUCKETS };
-    for (const m of book.matches) {
-      const done = m.legs.filter((l) => l.date <= end);
-      const pending = m.legs.filter((l) => l.date > end);
-      if (!done.length || !pending.length) continue;
-      signed[bucketForGroup(groupOf.get(pending[0]!.accountId) ?? "Other")] -= done.reduce((s, l) => s + l.amountCents, 0);
-    }
+    for (const t of transfersInTransit(book, end)) signed[t.bucket] += t.cents;
     return signed;
   };
 
@@ -164,14 +211,30 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     let other = 0;
     let reimbursements = 0;
     let nonRecurring = 0;
+    // Tax payments filed as spending: taxes, not living (Cash flow counts them as spending).
+    let taxSpending = 0;
     const spending = new Map<string, number>();
     const candidates: OneOffRow[] = [];
+    // The same, by category (the proof of each line).
+    const otherByCategory = new Map<string, number>();
+    const taxByCategory = { income: new Map<string, number>(), spending: new Map<string, number>() };
+    const bump = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
     for (const r of book.rows) {
-      if (r.bookedOn < from || r.bookedOn > to || taxIds.has(r.id)) continue;
+      if (r.bookedOn < from || r.bookedOn > to) continue;
+      if (taxIds.has(r.id)) {
+        if (r.lane === "EXPENSE") {
+          taxSpending -= r.amountCents;
+          bump(taxByCategory.spending, r.category, -r.amountCents);
+        } else if (r.lane === "INCOME") bump(taxByCategory.income, r.category, r.amountCents);
+        continue;
+      }
       if (r.lane === "INCOME") {
         if (r.category === "P2P & reimbursements") reimbursements += r.amountCents;
         else if (r.category === "Interest") interest += r.amountCents;
-        else if (!NOT_OTHER_INCOME.has(r.category)) other += r.amountCents;
+        else if (!NOT_OTHER_INCOME.has(r.category)) {
+          other += r.amountCents;
+          bump(otherByCategory, r.category, r.amountCents);
+        }
         continue;
       }
       if (r.lane !== "EXPENSE") continue;
@@ -185,7 +248,32 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       }
     }
     candidates.sort((a, b) => Number(b.tagged) - Number(a.tagged) || b.cents - a.cents);
-    return { interest, other, reimbursements, nonRecurring, spending, candidates };
+    return { interest, other, reimbursements, nonRecurring, taxSpending, spending, candidates, otherByCategory, taxByCategory };
+  };
+
+  /** A living-cost figure's parts, as the forecast's proof lists them. */
+  const livingTrail = (from: string, to: string, rows: CashRows, payReimbursements: number): LivingTrail => {
+    const tagged = rows.candidates.filter((c) => c.tagged);
+    const byCategory = new Map<string, { cents: number; rows: number }>();
+    for (const c of tagged.filter((x) => x.viaCategory)) {
+      const cur = byCategory.get(c.category) ?? { cents: 0, rows: 0 };
+      byCategory.set(c.category, { cents: cur.cents + c.cents, rows: cur.rows + 1 });
+    }
+    const spending = [...rows.spending.values()].reduce((s, v) => s + v, 0);
+    return {
+      from,
+      to,
+      spending,
+      taxPayments: rows.taxSpending,
+      oneOffs: tagged
+        .filter((c) => !c.viaCategory)
+        .map(({ date, payee, account, category, cents, label }) => ({ date, payee, account, category, cents, label }))
+        .sort((a, b) => a.date.localeCompare(b.date) || b.cents - a.cents),
+      oneOffCategories: [...byCategory].map(([category, v]) => ({ category, ...v })).sort((a, b) => b.cents - a.cents),
+      reimbursements: rows.reimbursements,
+      payReimbursements,
+      windowCents: spending - rows.reimbursements - payReimbursements,
+    };
   };
 
   const pays = new Map<string, PersonPayYear>();
@@ -230,7 +318,8 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       ...refs(blockersFor(book, { affects: "TAX", from: start, to: cashEnd })).filter((b) => b.id.startsWith("tax.brokerage-coverage")),
     ]);
     const taxes = taxRows(book, start, cashEnd);
-    const { interest, other, nonRecurring, spending, candidates, reimbursements: rowReimbursements } = cashRows(start, cashEnd, new Set(taxes.map((r) => r.id)));
+    const rows = cashRows(start, cashEnd, new Set(taxes.map((r) => r.id)));
+    const { interest, other, nonRecurring, spending, candidates, reimbursements: rowReimbursements } = rows;
     let reimbursements = rowReimbursements;
     let taxesPaid = 0;
     let refunds = 0;
@@ -268,7 +357,9 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       for (const g of period.byGroup) signed[bucketForGroup(g.group)] += g.closingCents;
       const transit = inTransitAt(nwAsOf);
       for (const b of BUCKETS) signed[b.id] += transit[b.id];
-      netWorth = { ...summarizeBuckets(signed), quality: period.household.quality, inTransit: Object.values(transit).reduce((s, v) => s + v, 0) };
+      const allTransit = Object.values(transit).reduce((s, v) => s + v, 0);
+      const liquidTransit = BUCKETS.filter((b) => b.liquid).reduce((s, b) => s + transit[b.id], 0);
+      netWorth = { ...summarizeBuckets(signed), quality: period.household.quality, inTransit: allTransit, inTransitSplit: { liquid: liquidTransit, illiquid: allTransit - liquidTransit } };
     }
     const change =
       netWorth && prev?.netWorth && changeBlockers.length === 0
@@ -280,7 +371,10 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
             waterfall,
             otherIncomeDetail: { interest, dividends, other },
             reimbursements,
-            spending: [...spending].map(([category, cents]) => ({ category, cents })).filter((c) => c.cents !== 0).sort((a, b) => b.cents - a.cents),
+            spending: byCents(spending),
+            otherIncomeByCategory: byCents(rows.otherByCategory),
+            taxRowsByCategory: { income: byCents(rows.taxByCategory.income), spending: byCents(rows.taxByCategory.spending) },
+            livingTrail: livingTrail(start, cashEnd, rows, sumPeople((p) => p.reimbursements)),
           }
         : null;
     const h = period?.household;
@@ -329,7 +423,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     ...refs(persons.flatMap((p) => pays.get(`${p.id}|${currentYear}`)?.blockers ?? [])),
   ]);
   const seeds =
-    seedBlockers.length === 0 && base ? outlookSeeds({ book, out, base, currentYear, settings, pays, cashRows, nwReturn: nw.returns.portfolio?.annualized ?? null, dependents }) : null;
+    seedBlockers.length === 0 && base ? outlookSeeds({ book, out, base, currentYear, settings, pays, cashRows, livingTrail, nwReturn: nw.returns.portfolio?.annualized ?? null, dependents }) : null;
 
   // The year in progress cut where the forecast starts, so actual to date + the forecast's rest of the year = the whole year.
   let ytd: YearProfile | null = null;
@@ -378,7 +472,8 @@ function outlookSeeds(x: {
   currentYear: number;
   settings: FinancialProfileSettings;
   pays: Map<string, PersonPayYear>;
-  cashRows: (from: string, to: string, taxIds: Set<string>) => { reimbursements: number; spending: Map<string, number> };
+  cashRows: (from: string, to: string, taxIds: Set<string>) => CashRows;
+  livingTrail: (from: string, to: string, rows: CashRows, payReimbursements: number) => LivingTrail;
   nwReturn: number | null;
   dependents: TaxDependent[];
 }): OutlookSeeds {
@@ -397,6 +492,7 @@ function outlookSeeds(x: {
         liquid: cur.netWorth.liquid,
         illiquid: cur.netWorth.illiquid,
         note: `Latest proven net worth (statements through ${cur.netWorthAsOf})`,
+        inTransit: cur.netWorth.inTransitSplit,
       }
     : {
         asOf: `${base.year}-12-31`,
@@ -405,6 +501,7 @@ function outlookSeeds(x: {
         liquid: base.netWorth!.liquid,
         illiquid: base.netWorth!.illiquid,
         note: `Net worth on Dec 31, ${base.year} (this year's statements aren't proven yet)`,
+        inTransit: base.netWorth!.inTransitSplit,
       };
 
   // ------------------------------------------------------------ base pay, per person
@@ -438,20 +535,41 @@ function outlookSeeds(x: {
     const others = payYear.employers.filter((e) => e !== active);
     const stubByDate = new Map(active.stubs.map((s) => [s.payDate, s] as const));
     let frequency: PayFrequency = "SEMIMONTHLY";
+    const parts = (a: { retirementPretax: number; retirementRoth: number; hsa: number }): DeferralParts => ({ k401Pretax: a.retirementPretax, k401Roth: a.retirementRoth, hsa: a.hsa });
+    const trailDeferrals = {} as PayTrail["deferrals"];
+    let proj: ReturnType<typeof projectPayroll> | null = null;
     for (const basis of ["LATEST", "TYPICAL"] as const) {
-      const proj = projectPayroll(active.stubs, fp, { basis });
+      proj = projectPayroll(active.stubs, fp, { basis });
       // Only the year in progress continues to Dec 31; a finished year is already whole.
-      const a = payYear.year === currentYear ? proj.projected : proj.ytd;
+      const continues = payYear.year === currentYear;
+      const a = continues ? proj.projected : proj.ytd;
       seed.deferrals[basis] = {
         k401Pretax: a.retirementPretax + others.reduce((s, e) => s + e.ytd.retirementPretax, 0),
         k401Roth: a.retirementRoth + others.reduce((s, e) => s + e.ytd.retirementRoth, 0),
         hsa: a.hsa + others.reduce((s, e) => s + e.ytd.hsa, 0),
+      };
+      trailDeferrals[basis] = {
+        ytd: parts(proj.ytd),
+        throughStub: proj.latestPayDate,
+        perCheck: continues && proj.regularPaycheck ? parts(proj.regularPaycheck) : { k401Pretax: 0, k401Roth: 0, hsa: 0 },
+        checks: continues ? proj.remainingPayDates.length : 0,
+        projected: parts(a),
+        others: others.map((e) => ({ employer: e.employer, employerKey: e.employerKey, through: e.lastPayDate, d: parts(e.ytd) })),
       };
       frequency = proj.frequency;
       const pick = basis === "LATEST" ? proj.latestRegular : proj.typicalRegular;
       const stub = pick && stubByDate.get(pick.payDate);
       if (stub) seed[basis === "LATEST" ? "latest" : "typical"] = paycheckSeed(stub);
     }
+    const freqStub = stubByDate.get(proj!.latestRegular?.payDate ?? "") ?? active.stubs.at(-1)!;
+    seed.trail = {
+      employer: active.employer,
+      employerKey: active.employerKey,
+      payYear: payYear.year,
+      recent: (proj!.recentRegulars ?? []).map((r) => ({ payDate: r.payDate, regular: r.amounts.regular, gross: r.amounts.gross })),
+      frequencyFrom: { payDate: freqStub.payDate, periodStart: freqStub.periodStart, periodEnd: freqStub.periodEnd },
+      deferrals: trailDeferrals,
+    };
     seed.employer = active.employer;
     seed.frequency = frequency;
     seed.perYear = PER_YEAR[frequency];
@@ -486,7 +604,7 @@ function outlookSeeds(x: {
 
   // ------------------------------------------------------------ living cost
   const living: OutlookSeeds["living"] = {
-    LAST_YEAR: { cents: base.cash!.waterfall.living, label: `${base.year} actual`, detail: `Living expenses in ${base.year}, excluding tagged one-offs` },
+    LAST_YEAR: { cents: base.cash!.waterfall.living, label: `${base.year} actual`, detail: `Living expenses in ${base.year}, excluding tagged one-offs`, trail: base.cash!.livingTrail },
   };
   if (cur?.cash) {
     const days = daysBetween(`${currentYear}-01-01`, cur.asOf) + 1;
@@ -495,6 +613,7 @@ function outlookSeeds(x: {
         cents: Math.round((cur.cash.waterfall.living * 365) / days),
         label: `${currentYear} so far, annualized`,
         detail: `${usd0(cur.cash.waterfall.living)} from Jan 1 to ${cur.asOf} (${days} days) × 365, excluding tagged one-offs`,
+        trail: { ...cur.cash.livingTrail, days },
       };
     }
     // The twelve months ending at the cash data edge.
@@ -505,7 +624,7 @@ function outlookSeeds(x: {
       // Reimbursements paid inside a paycheck offset spending, as in each year's figures.
       const inPay = book.stubs.filter((s) => s.personId && s.payDate >= from && s.payDate <= to).reduce((t, s) => t + amountsFromLines(s.lines, "current").nonTaxable, 0);
       const cents = [...rows.spending.values()].reduce((t, v) => t + v, 0) - rows.reimbursements - inPay;
-      living.TRAILING_12 = { cents, label: "Last 12 months", detail: `Living expenses ${from} to ${to}, excluding tagged one-offs` };
+      living.TRAILING_12 = { cents, label: "Last 12 months", detail: `Living expenses ${from} to ${to}, excluding tagged one-offs`, trail: x.livingTrail(from, to, rows, inPay) };
     }
   }
 

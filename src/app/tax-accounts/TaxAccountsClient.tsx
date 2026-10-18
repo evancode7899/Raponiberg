@@ -4,13 +4,21 @@ import { BlockedNote } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { Badge, btn, Callout, Card, ErrorNote, Field, Loading, PageBody, PercentInput, Segmented, selectCls, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { AccountLimitsDescriptor } from "@/lib/book/proof/accountLimitsProof";
 import type { Amount, PersonAccounts, TaxAccountsReport } from "@/lib/book/reports/taxAccounts";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 import { EMPTY_PERSON, type HsaCoverage, type RetirementSettings } from "@/lib/taxAccounts/settings";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 const TABS = ["people", "inputs"] as const;
+
+/** The proof behind one of the page's figures (lib/book/proof/accountLimitsProof.ts). */
+const lim = (r: TaxAccountsReport, d: Omit<AccountLimitsDescriptor, "report" | "year">, cents: number): ProofTarget => ({ descriptor: { report: "account-limits", year: r.year, ...d }, shownCents: cents });
+/** A dollar figure that opens its proof. */
+const Fig = ({ proof, cents }: { proof: ProofTarget; cents: number }) => <ProofValue proof={proof}>{usd0(cents)}</ProofValue>;
 type Data = { report: TaxAccountsReport; settings: RetirementSettings; years: number[]; persons: { id: string; name: string }[] };
 
 export function TaxAccountsClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
@@ -101,19 +109,22 @@ export function TaxAccountsClient({ requiresApiSecret }: { requiresApiSecret: bo
 
 function Accounts({ r }: { r: TaxAccountsReport }) {
   const open = r.steps.filter((s) => !s.done);
-  const pretaxRoom = open.filter((s) => s.taxSavedCents != null).reduce((s, x) => s + x.roomCents, 0);
-  const saved = open.reduce((s, x) => s + (x.taxSavedCents ?? 0), 0);
+  const { roomCents: pretaxRoom, taxSavedCents: saved } = r.pretax;
   const chet = r.steps.find((s) => s.id === "chet");
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell label="Pre-tax room left" value={usd0(pretaxRoom)} sub={r.isCurrentYear ? "401(k) and HSA, through December 31" : `${r.year}: the year is over`} />
+        <StatCell label="Pre-tax room left" value={usd0(pretaxRoom)} proof={lim(r, { account: "steps", figure: "room" }, pretaxRoom)} sub={r.isCurrentYear ? "401(k) and HSA, through December 31" : `${r.year}: the year is over`} />
         <StatCell
           label="Tax it would save"
-          value={r.marginalRate.rate == null ? "—" : usd0(saved)}
+          value={saved == null ? "Unknown" : usd0(saved)}
+          proof={saved == null ? { descriptor: { report: "account-limits", year: r.year, account: "steps", figure: "tax-saved" } } : lim(r, { account: "steps", figure: "tax-saved" }, saved)}
           sub={r.marginalRate.rate == null ? "set a marginal rate on Inputs" : `at ${formatPercentRatio(r.marginalRate.rate, 1)} federal + state${r.marginalRate.source === "PRIOR_YEAR" ? ` (${r.year - 1}'s rate)` : ""}`}
         />
-        <StatCell label="Household MAGI" value={usd0(r.magi.cents)} sub={r.magi.source === "TAX_REPORT" ? "from the tax estimate" : "wages from pay stubs only (the tax estimate isn't provable yet)"} />
+        <StatCell
+          label="Household MAGI"
+          value={usd0(r.magi.cents)}
+          proof={r.magi.source === "TAX_REPORT" ? { descriptor: { report: "tax-estimate", year: r.year, basis: "projected", key: "fed.agi" }, shownCents: r.magi.cents } : undefined} sub={r.magi.source === "TAX_REPORT" ? "from the tax estimate" : "wages from pay stubs only (the tax estimate isn't provable yet)"} />
         <StatCell label="Still open" value={String(open.length)} sub={`of ${r.steps.length} yearly limits`} />
       </StatGrid>
       {r.people.map((p) => (
@@ -121,7 +132,13 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
       ))}
       {chet && (
         <Card title="Household" subtitle={chet.benefit}>
-          <Meter label={chet.title} used={r.household.chet.contributed} limit={r.household.chet.deductionLimit} sub={chet.done ? "Deduction filled." : `${usd0(chet.roomCents)} of room.`} />
+          <Meter
+            label={chet.title}
+            used={r.household.chet.contributed}
+            limit={r.household.chet.deductionLimit}
+            proofs={{ used: lim(r, { account: "chet", figure: "used" }, r.household.chet.contributed), limit: lim(r, { account: "chet", figure: "limit" }, r.household.chet.deductionLimit) }}
+            sub={chet.done ? "Deduction filled." : <><Fig proof={lim(r, { account: "chet", figure: "room" }, chet.roomCents)} cents={chet.roomCents} /> of room.</>}
+          />
         </Card>
       )}
     </>
@@ -136,7 +153,7 @@ const savesNote = (r: TaxAccountsReport, id: string) => {
 
 // ---------------------------------------------------------------------------- per person
 
-function Meter({ label, used, limit, projected, sub, overSettled }: { label: string; used: number; limit: number; projected?: number; sub?: string; overSettled?: boolean }) {
+function Meter({ label, used, limit, projected, sub, overSettled, proofs }: { label: string; used: number; limit: number; projected?: number; sub?: ReactNode; overSettled?: boolean; proofs?: { used?: ProofTarget; limit?: ProofTarget; projected?: ProofTarget } }) {
   const pct = (c: number) => `${Math.min(100, limit ? (c / limit) * 100 : 0)}%`;
   // Over the limit is an alarm unless the excess has been dealt with (returned and taxed).
   const over = used > limit && !overSettled;
@@ -145,8 +162,16 @@ function Meter({ label, used, limit, projected, sub, overSettled }: { label: str
       <div className="mb-1 flex items-baseline justify-between gap-3 text-xs">
         <span className="font-medium text-fg">{label}</span>
         <span className="num text-muted">
-          <span className={over ? "font-semibold text-neg" : "text-fg"}>{usd0(used)}</span> of {usd0(limit)}
-          {projected != null && projected !== used && <> · {usd0(projected)} by Dec 31</>}
+          <span className={over ? "font-semibold text-neg" : "text-fg"}>
+            <ProofValue proof={proofs?.used}>{usd0(used)}</ProofValue>
+          </span>{" "}
+          of <ProofValue proof={proofs?.limit}>{usd0(limit)}</ProofValue>
+          {projected != null && projected !== used && (
+            <>
+              {" "}
+              · <ProofValue proof={proofs?.projected}>{usd0(projected)}</ProofValue> by Dec 31
+            </>
+          )}
         </span>
       </div>
       <div className="relative h-2 overflow-hidden rounded-full bg-surface-3" role="meter" aria-valuenow={used} aria-valuemax={limit} aria-label={label}>
@@ -158,9 +183,21 @@ function Meter({ label, used, limit, projected, sub, overSettled }: { label: str
   );
 }
 
-const amt = (a: Amount) => (a.ytd === a.projected ? usd0(a.ytd) : `${usd0(a.ytd)} → ${usd0(a.projected)}`);
+/** Year to date, and projected to Dec 31 when that differs, each opening its proof. */
+const amt = (a: Amount, proof?: (figure: "used" | "projected", cents: number) => ProofTarget) =>
+  a.ytd === a.projected ? (
+    <ProofValue proof={proof?.("used", a.ytd)}>{usd0(a.ytd)}</ProofValue>
+  ) : (
+    <>
+      <ProofValue proof={proof?.("used", a.ytd)}>{usd0(a.ytd)}</ProofValue> → <ProofValue proof={proof?.("projected", a.projected)}>{usd0(a.projected)}</ProofValue>
+    </>
+  );
 
 function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
+  const k = (d: Omit<AccountLimitsDescriptor, "report" | "year" | "account" | "personId">, cents: number) => lim(r, { account: "k401", personId: p.id, ...d }, cents);
+  const h = (d: Omit<AccountLimitsDescriptor, "report" | "year" | "account" | "personId">, cents: number) => lim(r, { account: "hsa", personId: p.id, ...d }, cents);
+  const i = (d: Omit<AccountLimitsDescriptor, "report" | "year" | "account" | "personId">, cents: number) => lim(r, { account: "ira", personId: p.id, ...d }, cents);
+  const room = <Fig proof={k({ figure: "room" }, p.k401.room)} cents={p.k401.room} />;
   return (
     <Card
       title={
@@ -179,22 +216,51 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
             projected={p.k401.total.projected}
             limit={p.k401.limit}
             overSettled={p.k401.excessDeferral?.status === "RETURNED"}
+            proofs={{ used: k({ figure: "used" }, p.k401.total.ytd), projected: k({ figure: "projected" }, p.k401.total.projected), limit: k({ figure: "limit" }, p.k401.limit) }}
             sub={
-              p.k401.excess
-                ? p.k401.excessDeferral?.status === "RETURNED"
-                  ? `${usd0(p.k401.excess)} over the limit — returned in time and taxed as ${r.year} income (see above).`
-                  : `${usd0(p.k401.excess)} over the limit — see the warning above.`
-                : (p.k401.room && p.k401.perPaycheckToMax
-                    ? `${usd0(p.k401.room)} short of the limit: about ${usd0(p.k401.perPaycheckToMax)} more per paycheck fills it.`
-                    : p.k401.room
-                      ? `${usd0(p.k401.room)} of room.`
-                      : "On track to max.") +
-                  savesNote(r, `k401-${p.id}`) +
-                  (p.k401.rothCatchUpRequired ? " Catch-up contributions must go in as Roth (prior-year wages over the threshold)." : "")
+              p.k401.excess ? (
+                <>
+                  <Fig proof={k({ figure: "excess" }, p.k401.excess)} cents={p.k401.excess} /> over the limit —{" "}
+                  {p.k401.excessDeferral?.status === "RETURNED" ? `returned in time and taxed as ${r.year} income (see above).` : "see the warning above."}
+                </>
+              ) : (
+                <>
+                  {p.k401.room && p.k401.perPaycheckToMax ? (
+                    <>
+                      {room} short of the limit: about {usd0(p.k401.perPaycheckToMax)} more per paycheck fills it.
+                    </>
+                  ) : p.k401.room ? (
+                    <>{room} of room.</>
+                  ) : (
+                    "On track to max."
+                  )}
+                  {savesNote(r, `k401-${p.id}`)}
+                  {p.k401.rothCatchUpRequired ? " Catch-up contributions must go in as Roth (prior-year wages over the threshold)." : ""}
+                </>
+              )
             }
           />
-          <Meter label={`HSA (${p.hsa.coverage === "NONE" ? "not eligible" : `${p.hsa.coverage.toLowerCase()} coverage${p.hsa.assumed ? ", assumed" : ""}`})`} used={p.hsa.total.ytd} projected={p.hsa.total.projected} limit={p.hsa.limit} sub={`You ${amt(p.hsa.employee)} · employer ${amt(p.hsa.employer)}${p.hsa.outsidePayroll ? ` · outside payroll ${usd0(p.hsa.outsidePayroll)}` : ""}.${savesNote(r, `hsa-${p.id}`)}`} />
-          <Meter label="IRA contributions (traditional + Roth)" used={p.ira.total} limit={p.ira.limit} sub={p.ira.contributions.map((c) => `${c.account}: ${usd0(c.cents)}`).join(" · ") || "None this year."} />
+          <Meter label={`HSA (${p.hsa.coverage === "NONE" ? "not eligible" : `${p.hsa.coverage.toLowerCase()} coverage${p.hsa.assumed ? ", assumed" : ""}`})`} used={p.hsa.total.ytd} projected={p.hsa.total.projected} limit={p.hsa.limit}
+            proofs={{ used: h({ figure: "used" }, p.hsa.total.ytd), projected: h({ figure: "projected" }, p.hsa.total.projected), limit: h({ figure: "limit" }, p.hsa.limit) }}
+            sub={
+              <>
+                You {amt(p.hsa.employee, (figure, c) => h({ figure, part: "employee" }, c))} · employer {amt(p.hsa.employer, (figure, c) => h({ figure, part: "employer" }, c))}
+                {p.hsa.outsidePayroll ? ` · outside payroll ${usd0(p.hsa.outsidePayroll)}` : ""}. {p.hsa.coverage !== "NONE" && <><Fig proof={h({ figure: "room" }, p.hsa.room)} cents={p.hsa.room} /> of room.</>}
+                {savesNote(r, `hsa-${p.id}`)}
+              </>
+            }
+          />
+          <Meter
+            label="IRA contributions (traditional + Roth)"
+            used={p.ira.total}
+            limit={p.ira.limit}
+            proofs={{ used: i({ figure: "used" }, p.ira.total), limit: i({ figure: "limit" }, p.ira.limit) }}
+            sub={
+              <>
+                {p.ira.contributions.map((c) => `${c.account}: ${usd0(c.cents)}`).join(" · ") || "None this year."} <Fig proof={i({ figure: "room" }, p.ira.room)} cents={p.ira.room} /> of room.
+              </>
+            }
+          />
         </div>
         <div className="flex flex-col gap-3 text-xs">
           <div className={table.wrap}>
@@ -212,8 +278,8 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
                     <td className={table.td}>
                       {e.employer} {!e.active && <Badge tone="neutral">former</Badge>}
                     </td>
-                    <td className={table.tdR}>{amt(e.employee)}</td>
-                    <td className={table.tdR}>{amt(e.employer$)}</td>
+                    <td className={table.tdR}>{amt(e.employee, (figure, c) => k({ figure, employer: e.employer, part: "employee" }, c))}</td>
+                    <td className={table.tdR}>{amt(e.employer$, (figure, c) => k({ figure, employer: e.employer, part: "employer" }, c))}</td>
                   </tr>
                 ))}
               </tbody>

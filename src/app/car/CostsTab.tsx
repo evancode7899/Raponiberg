@@ -9,7 +9,8 @@ import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
-import { fmtDate, miles, perMile, usd2 } from "./parts";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { carProof, fmtDate, miles, perMile, throughText, usd2 } from "./parts";
 
 export function CostsTab({ ctx }: { ctx: CarCtx }) {
   const { report: r, car: s, chart } = ctx;
@@ -35,17 +36,17 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
       if (!ls.length) return [];
       return [
         { kind: "heading", label: g === "OPERATING" ? "Driving (per mile)" : g === "FIXED" ? "Owning (fixed)" : "Depreciation", sub: g === "DEPRECIATION" ? (r.depreciation.method === "MARKET" ? "market value" : r.depreciation.method === "SOLD" ? "price less what it sold for" : "planned, per mile") : undefined },
-        ...ls.map((l): TableRow => ({ label: LINE_INFO[l].label, indent: true, cells: [...years.map(([, y]) => ({ text: usd0(y.lines[l]) })), { text: usd0(r.accrued[l]) }] })),
+        ...ls.map((l): TableRow => ({ label: LINE_INFO[l].label, indent: true, cells: [...years.map(([yr, y]) => ({ text: usd0(y.lines[l]), proof: carProof(s.id, { span: yr, line: l }, y.lines[l]) })), { text: usd0(r.accrued[l]), proof: carProof(s.id, { span: "toDate", line: l }, r.accrued[l]) }] })),
       ];
     }),
-    { label: "Total", total: true, cells: [...years.map(([, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0)) })), { text: usd0(r.totals.tco) }] },
+    { label: "Total", total: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0)), proof: carProof(s.id, { span: yr }, Object.values(y.lines).reduce((a, b) => a + b, 0)) })), { text: usd0(r.totals.tco), proof: carProof(s.id, { span: "toDate" }, r.totals.tco) }] },
     { label: "Miles", muted: true, cells: [...years.map(([, y]) => ({ text: miles(y.miles) })), { text: miles(r.odometer.driven) }] },
     {
       label: "Per mile",
       strong: true,
-      cells: [...years.map(([, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—" })), { text: perMile(r.totals.perMile) }],
+      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—", proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }) : undefined })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }) : undefined }],
     },
-    { label: "Per month", muted: true, cells: [...years.map(([, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months) })), { text: usd0(r.totals.perMonth) }] },
+    { label: "Per month", muted: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months), proof: carProof(s.id, { span: yr, per: "month" }) })), { text: usd0(r.totals.perMonth), proof: r.totals.perMonth != null ? carProof(s.id, { span: "toDate", per: "month" }) : undefined }] },
   ];
 
   const kinds = (Object.keys(KIND_INFO) as CarKind[]).filter((k) => r.cash[k] !== 0);
@@ -55,7 +56,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
 
   return (
     <>
-      <Card title="By calendar year" subtitle="Accrued costs in each year you've owned the car (partial years included).">
+      <Card title="By calendar year" subtitle={`Accrued costs in each year you've owned the car (partial years included), through ${throughText(r, s.sale?.date ?? null)}.`}>
         <StatementTable columns={[...years.map(([y]) => y), "To date"]} rows={rows} highlight={[years.length]} minWidth="30rem" />
       </Card>
 
@@ -79,8 +80,10 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                       <td className={table.td}>
                         {KIND_INFO[k].label} {k === "PAYMENT" && <Badge tone="neutral">not a cost</Badge>}
                       </td>
-                      <td className={table.tdR}>{usd0(r.cash[k])}</td>
-                      <td className={table.tdR}>{usedC == null ? "—" : usd0(usedC)}</td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={carProof(s.id, { span: "toDate", basis: "cash", line: k }, r.cash[k])}>{usd0(r.cash[k])}</ProofValue>
+                      </td>
+                      <td className={table.tdR}>{usedC == null ? "—" : <ProofValue proof={carProof(s.id, { span: "toDate", line: k as CostLine }, usedC)}>{usd0(usedC)}</ProofValue>}</td>
                       <td className={`${table.tdR} text-muted`}>{usedC == null ? "—" : usd0(r.cash[k] - usedC)}</td>
                     </tr>
                   );
@@ -88,8 +91,12 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                 {r.cash.INTEREST > 0 && (
                   <tr className={table.tr}>
                     <td className={table.td}>Financing interest</td>
-                    <td className={table.tdR}>{usd0(r.cash.INTEREST)}</td>
-                    <td className={table.tdR}>{usd0(r.accrued.INTEREST)}</td>
+                    <td className={table.tdR}>
+                      <ProofValue proof={carProof(s.id, { span: "toDate", basis: "cash", line: "INTEREST" }, r.cash.INTEREST)}>{usd0(r.cash.INTEREST)}</ProofValue>
+                    </td>
+                    <td className={table.tdR}>
+                      <ProofValue proof={carProof(s.id, { span: "toDate", line: "INTEREST" }, r.accrued.INTEREST)}>{usd0(r.accrued.INTEREST)}</ProofValue>
+                    </td>
                     <td className={`${table.tdR} text-muted`}>—</td>
                   </tr>
                 )}

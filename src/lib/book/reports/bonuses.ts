@@ -95,6 +95,8 @@ export type BonusYear = {
   personId: string;
   personName: string;
   employer: string;
+  /** The stub employer keys behind the name (one per payroll code), for the figure's proof. */
+  employerKeys: string[];
   cents: number;
   payments: number;
   /** The part a letter explains (paid as one of its scheduled payments). */
@@ -284,7 +286,8 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string, review
   for (const p of payments) {
     const year = Number(p.date.slice(0, 4));
     const k = `${year}|${p.personId}|${p.employer}`;
-    const cur = byYearMap.get(k) ?? { year, personId: p.personId, personName: p.personName, employer: p.employer, cents: 0, payments: 0, explainedCents: 0 };
+    const cur = byYearMap.get(k) ?? { year, personId: p.personId, personName: p.personName, employer: p.employer, employerKeys: [], cents: 0, payments: 0, explainedCents: 0 };
+    if (!cur.employerKeys.includes(p.employerKey)) cur.employerKeys.push(p.employerKey);
     cur.cents += p.amountCents;
     cur.payments += 1;
     if (p.explains) cur.explainedCents += p.amountCents;

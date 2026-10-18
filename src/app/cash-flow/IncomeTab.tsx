@@ -3,6 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
@@ -35,10 +36,10 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={5}>
-        <StatCell label="Income" value={usd0(t.income)} sub={`${usd0(t.avgIncome)}/mo average`} />
+        <StatCell label="Income" value={usd0(t.income)} proof={ctx.proof("income", slice.months, { shownCents: t.income })} sub={`${usd0(t.avgIncome)}/mo average`} />
         <StatCell label="Typical month" value={usd0(t.typicalIncome)} sub="median — what to budget against" />
         <StatCell label="Above typical" value={usd0(Math.max(0, bonus))} sub="bonuses and one-time deposits" />
-        <StatCell label="Saved" value={usd0(t.net)} tone={t.net >= 0 ? "pos" : "neg"} sub={t.savingsRate == null ? undefined : `${formatPercentRatio(t.savingsRate, 1)} of income`} />
+        <StatCell label="Saved" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={t.savingsRate == null ? undefined : `${formatPercentRatio(t.savingsRate, 1)} of income`} />
         <StatCell label="Retirement via payroll" value={usd0(t.employee + t.employer)} sub={`you ${usd0(t.employee)} · employers ${usd0(t.employer)}`} />
       </StatGrid>
 
@@ -115,15 +116,13 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
           ) : (
             <ul className="flex flex-col">
               {external.map((c) => (
-                <li key={c.category}>
-                  <button
-                    type="button"
-                    onClick={() => ctx.open({ kind: "category", category: c.category })}
-                    className="flex w-full items-center justify-between gap-3 rounded px-1 py-1.5 text-left text-[13px] hover:bg-surface-2"
-                  >
-                    <span className="text-fg-2">{c.category}</span>
-                    <span className={`num font-medium ${c.cents < 0 ? "text-neg" : "text-pos"}`}>{usd0(c.cents)}</span>
+                <li key={c.category} className="flex items-center justify-between gap-3 rounded px-1 py-1.5 text-[13px] hover:bg-surface-2">
+                  <button type="button" onClick={() => ctx.open({ kind: "category", category: c.category })} className="min-w-0 flex-1 text-left text-fg-2 hover:underline">
+                    {c.category}
                   </button>
+                  <span className={`num font-medium ${c.cents < 0 ? "text-neg" : "text-pos"}`}>
+                    <ProofValue proof={ctx.proof("external", slice.months, { category: c.category, shownCents: c.cents })}>{usd0(c.cents)}</ProofValue>
+                  </span>
                 </li>
               ))}
             </ul>

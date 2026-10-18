@@ -5,6 +5,10 @@ import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { Card, QualityBadge } from "@/components/ledger/LedgerBits";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Badge, btn, Callout, StatCell, StatGrid } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { AnnualBridgeLine, AnnualCashLine, AnnualDescriptor, AnnualNetWorthLine } from "@/lib/book/proof/annualProof";
+import type { PayLine } from "@/lib/book/proof/payProof";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatUsd } from "@/lib/formatMoney";
 import type { AnnualProfileReport, PersonYear, YearCash, YearNetWorth, YearProfile } from "@/lib/profile/buildAnnualProfile";
@@ -14,22 +18,31 @@ import { axisUsd, blockedCell, pct, usd, YearTable, type Cell, type TableRow } f
 
 const m = (cents: number | null | undefined, title?: string): Cell => ({ text: usd(cents), title });
 
+/** A figure that opens its annual proof (shown: the proof's own figure, for the drawer's stale-data warning). */
+const proofOf = (descriptor: AnnualDescriptor, shown?: number): ProofTarget => ({ descriptor, ...(shown != null ? { shownCents: shown } : {}) });
+const cashP = (y: YearProfile, line: AnnualCashLine, shown?: number) => proofOf({ report: "annual", figure: "cash", year: y.year, line }, shown);
+const nwP = (y: YearProfile, line: AnnualNetWorthLine, shown?: number) => proofOf({ report: "annual", figure: "net-worth", year: y.year, line }, shown);
+/** A money cell as the page shows it (negated on a "Less:" line), opening its proof. */
+const fig = (cents: number, proof: ProofTarget, title?: string): Cell => ({ text: usd(cents), proof, title });
+
 /** Cells from one section of each year: the figure when proven, else why not. */
 const payCell = (y: YearProfile, fn: (people: PersonYear[]) => Cell) => (y.people ? fn(y.people) : blockedCell(y.blockers.pay));
 const cashCell = (y: YearProfile, fn: (c: YearCash) => Cell) => (y.cash ? fn(y.cash) : blockedCell(y.blockers.cash));
 const nwCell = (y: YearProfile, fn: (n: YearNetWorth) => Cell) => (y.netWorth ? fn(y.netWorth) : blockedCell(y.blockers.netWorth));
-/** A pay figure, tagged partial when part of the year is known only from year-to-date totals. */
-const payFig = (p: PersonYear, cents: number, title?: string): Cell =>
-  p.partial.length
+/** A pay figure (it opens the stubs behind it), tagged partial when part of the year is known only from year-to-date totals. */
+const payFig = (y: YearProfile, p: PersonYear, line: PayLine, cents: number, title?: string): Cell => {
+  const fig = <ProofValue proof={{ descriptor: { report: "pay", basis: "ytd", personId: p.personId, year: y.year, through: y.asOf, lines: [line] }, shownCents: cents }}>{usd(cents)}</ProofValue>;
+  return p.partial.length
     ? {
         text: (
           <>
-            {usd(cents)} <Badge tone="warn">partial</Badge>
+            {fig} <Badge tone="warn">partial</Badge>
           </>
         ),
         title: [title, ...p.partial].filter(Boolean).join("\n"),
       }
-    : m(cents, title || undefined);
+    : { text: fig, title: title || undefined };
+};
 
 export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () => void }) {
   const ys = r.years;
@@ -57,6 +70,7 @@ export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () 
         <StatCell
           label="Net worth"
           value={value(latest?.netWorth?.netWorth, latest?.blockers.netWorth)}
+          proof={latest?.netWorth ? nwP(latest, "net-worth", latest.netWorth.netWorth) : undefined}
           sub={
             <>
               {latest ? `as of ${latest.netWorthAsOf}` : ""}
@@ -64,13 +78,20 @@ export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () 
             </>
           }
         />
-        <StatCell label="Liquid net worth" value={value(latest?.netWorth?.liquid, latest?.blockers.netWorth)} sub="cash + taxable investments − card debt" />
-        <StatCell label={`Change ${cur ? `${cur.year} YTD` : ""}`} value={value(cur?.change?.cents, cur?.blockers.change)} sub={cur?.change?.pct != null ? `${pct(cur.change.pct)} since Dec 31` : undefined} />
-        <StatCell label={`Cash saved ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.saved, full?.blockers.cash)} sub={full?.cash ? `${pct(full.cash.waterfall.savingsOfGross)} of gross pay` : undefined} />
-        <StatCell label={`Cash tax rate ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.cashTaxRate, full?.blockers.cash, (n) => pct(n))} sub="withheld + paid − refunds, ÷ gross" />
+        <StatCell
+          label="Liquid net worth"
+          value={value(latest?.netWorth?.liquid, latest?.blockers.netWorth)}
+          proof={latest?.netWorth ? nwP(latest, "liquid", latest.netWorth.liquid) : undefined} sub="cash + taxable investments − card debt" />
+        <StatCell label={`Change ${cur ? `${cur.year} YTD` : ""}`} value={value(cur?.change?.cents, cur?.blockers.change)}
+          proof={cur?.change ? nwP(cur, "change", cur.change.cents) : undefined} sub={cur?.change?.pct != null ? `${pct(cur.change.pct)} since Dec 31` : undefined} />
+        <StatCell label={`Cash saved ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.saved, full?.blockers.cash)}
+          proof={full?.cash ? cashP(full, "saved", full.cash.waterfall.saved) : undefined} sub={full?.cash ? `${pct(full.cash.waterfall.savingsOfGross)} of gross pay` : undefined} />
+        <StatCell label={`Cash tax rate ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.cashTaxRate, full?.blockers.cash, (n) => pct(n))}
+          proof={full?.cash ? cashP(full, "tax-rate") : undefined} sub="withheld + paid − refunds, ÷ gross" />
         <StatCell
           label={`Living cost ${full?.year ?? ""}`}
           value={value(full?.cash?.waterfall.living, full?.blockers.cash)}
+          proof={full?.cash ? cashP(full, "living", full.cash.waterfall.living) : undefined}
           sub={cur?.cash ? `${usd(cur.cash.waterfall.living)} so far in ${cur.year}` : undefined}
         />
       </StatGrid>
@@ -127,8 +148,8 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
   // ------------------------------------------------------------ cash
   rows.push({ kind: "heading", label: "Cash flow (tax basis)", sub: "paid during the calendar year" });
   for (const p of persons) {
-    rows.push({ label: `${p.name} — salary`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(person(ps, p.id), person(ps, p.id).salary, person(ps, p.id).employers.join(" + ")))) });
-    rows.push({ label: `${p.name} — bonus`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(person(ps, p.id), person(ps, p.id).bonus))) });
+    rows.push({ label: `${p.name} — salary`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(y, person(ps, p.id), "base", person(ps, p.id).salary, person(ps, p.id).employers.join(" + ")))) });
+    rows.push({ label: `${p.name} — bonus`, indent: true, cells: per((y) => payCell(y, (ps) => payFig(y, person(ps, p.id), "bonus", person(ps, p.id).bonus))) });
   }
   rows.push({
     label: "Investment & other income",
@@ -136,48 +157,49 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
     cells: per((y) =>
       cashCell(y, (c) => ({
         text: usd(c.waterfall.otherIncome),
+        proof: cashP(y, "other-income", c.waterfall.otherIncome),
         title: `Bank interest ${usd(c.otherIncomeDetail.interest)} · brokerage dividends & distributions ${usd(c.otherIncomeDetail.dividends)} · other ${usd(c.otherIncomeDetail.other)}`,
       })),
     ),
   });
-  rows.push({ label: "Total gross cash paid", strong: true, cells: per((y) => cashCell(y, (c) => m(c.waterfall.grossCash))) });
+  rows.push({ label: "Total gross cash paid", strong: true, cells: per((y) => cashCell(y, (c) => fig(c.waterfall.grossCash, cashP(y, "gross", c.waterfall.grossCash)))) });
   rows.push({
     label: "Less: taxes withheld",
     indent: true,
     help: "Federal, Social Security, Medicare, state and local income tax and state payroll programs, from pay stubs.",
-    cells: per((y) => cashCell(y, (c) => m(-c.waterfall.withholding))),
+    cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.withholding, cashP(y, "withholding", c.waterfall.withholding)))),
   });
-  rows.push({ label: "Less: additional taxes paid", indent: true, help: "Estimated and balance-due payments in the bank ledger (IRS, CT DRS, NYS).", cells: per((y) => cashCell(y, (c) => m(-c.waterfall.additionalTaxes))) });
-  rows.push({ label: "Plus: tax refunds", indent: true, cells: per((y) => cashCell(y, (c) => m(c.waterfall.refunds))) });
+  rows.push({ label: "Less: additional taxes paid", indent: true, help: "Estimated and balance-due payments in the bank ledger (IRS, CT DRS, NYS).", cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.additionalTaxes, cashP(y, "taxes-paid", c.waterfall.additionalTaxes)))) });
+  rows.push({ label: "Plus: tax refunds", indent: true, cells: per((y) => cashCell(y, (c) => fig(c.waterfall.refunds, cashP(y, "refunds", c.waterfall.refunds)))) });
   rows.push({
     label: "Less: benefits & other deductions",
     indent: true,
     help: "Medical/dental/vision premiums, FSA and after-tax deductions on pay stubs. 401(k) and HSA deferrals are not subtracted: they're savings.",
-    cells: per((y) => cashCell(y, (c) => m(-c.waterfall.otherDeductions))),
+    cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.otherDeductions, cashP(y, "deductions", c.waterfall.otherDeductions)))),
   });
-  rows.push({ label: "Plus: employer retirement & HSA money", indent: true, help: "Employer 401(k) and HSA contributions on pay stubs.", cells: per((y) => cashCell(y, (c) => m(c.waterfall.employer))) });
-  rows.push({ label: "Total net cash", strong: true, cells: per((y) => cashCell(y, (c) => m(c.waterfall.netCash))) });
+  rows.push({ label: "Plus: employer retirement & HSA money", indent: true, help: "Employer 401(k) and HSA contributions on pay stubs.", cells: per((y) => cashCell(y, (c) => fig(c.waterfall.employer, cashP(y, "employer", c.waterfall.employer)))) });
+  rows.push({ label: "Total net cash", strong: true, cells: per((y) => cashCell(y, (c) => fig(c.waterfall.netCash, cashP(y, "net-cash", c.waterfall.netCash)))) });
   rows.push({
     label: "Less: living expenses",
     indent: true,
     help: "Every expense on bank and card statements except income-tax payments and one-offs, net of reimbursements received (Zelle/Venmo and on pay stubs). The FIRE plan starts from the latest full year of this line.",
-    cells: per((y) => cashCell(y, (c) => m(-c.waterfall.living))),
+    cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.living, cashP(y, "living", c.waterfall.living)))),
   });
-  rows.push({ label: "Less: one-off expenses", indent: true, help: "Expenses marked one-off (a wedding, a move, a car) on the One-off expenses tab or Cash flow › Spending. They still count toward cash saved; they're only kept out of living expenses.", cells: per((y) => cashCell(y, (c) => m(-c.waterfall.nonRecurring))) });
-  rows.push({ label: "Total cash saved", total: true, cells: per((y) => cashCell(y, (c) => m(c.waterfall.saved))) });
-  rows.push({ label: "Cash tax rate", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.cashTaxRate) }))) });
-  rows.push({ label: "Savings % of gross pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfGross) }))) });
-  rows.push({ label: "Savings % of net pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfNet) }))) });
+  rows.push({ label: "Less: one-off expenses", indent: true, help: "Expenses marked one-off (a wedding, a move, a car) on the One-off expenses tab or Cash flow › Spending. They still count toward cash saved; they're only kept out of living expenses.", cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.nonRecurring, cashP(y, "one-offs", c.waterfall.nonRecurring)))) });
+  rows.push({ label: "Total cash saved", total: true, cells: per((y) => cashCell(y, (c) => fig(c.waterfall.saved, cashP(y, "saved", c.waterfall.saved)))) });
+  rows.push({ label: "Cash tax rate", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.cashTaxRate), proof: cashP(y, "tax-rate") }))) });
+  rows.push({ label: "Savings % of gross pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfGross), proof: cashP(y, "savings-of-gross") }))) });
+  rows.push({ label: "Savings % of net pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfNet), proof: cashP(y, "savings-of-net") }))) });
 
   // ------------------------------------------------------------ net worth
   rows.push({ kind: "heading", label: "Net worth", sub: "financial position at year end, from statements" });
-  const b = (k: keyof YearNetWorth["buckets"], label: string, sign = 1, help?: string) => rows.push({ label, indent: true, help, cells: per((y) => nwCell(y, (n) => m(sign * n.buckets[k]))) });
+  const b = (k: keyof YearNetWorth["buckets"], label: string, sign = 1, help?: string) => rows.push({ label, indent: true, help, cells: per((y) => nwCell(y, (n) => fig(sign * n.buckets[k], proofOf({ report: "annual", figure: "bucket", year: y.year, bucket: k }, sign * n.buckets[k])))) });
   b("CASH", "Cash & cash equivalents");
   b("LIQUID", "Liquid investments", 1, "Taxable brokerage accounts.");
   b("ILLIQUID", "Illiquid investments", 1, "401(k)s, IRAs, 529, HSA, private funds.");
-  rows.push({ label: "Gross assets", strong: true, cells: per((y) => nwCell(y, (n) => m(n.grossAssets))) });
+  rows.push({ label: "Gross assets", strong: true, cells: per((y) => nwCell(y, (n) => fig(n.grossAssets, nwP(y, "assets", n.grossAssets)))) });
   b("SHORT_DEBT", "Credit card balances", -1, "Card balances on statements.");
-  rows.push({ label: "Gross debt", strong: true, cells: per((y) => nwCell(y, (n) => m(-n.grossDebt))) });
+  rows.push({ label: "Gross debt", strong: true, cells: per((y) => nwCell(y, (n) => fig(-n.grossDebt, nwP(y, "debt", -n.grossDebt)))) });
   rows.push({
     label: "Net worth",
     total: true,
@@ -185,31 +207,32 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
       nwCell(y, (n) => ({
         text: (
           <>
-            {usd(n.netWorth)}
+            <ProofValue proof={nwP(y, "net-worth", n.netWorth)}>{usd(n.netWorth)}</ProofValue>
             <QualityBadge quality={n.quality} />
           </>
         ),
       })),
     ),
   });
-  rows.push({ label: "Liquid net worth", muted: true, cells: per((y) => nwCell(y, (n) => m(n.liquid))) });
-  rows.push({ label: "Illiquid net worth", muted: true, cells: per((y) => nwCell(y, (n) => m(n.illiquid))) });
+  rows.push({ label: "Liquid net worth", muted: true, cells: per((y) => nwCell(y, (n) => fig(n.liquid, nwP(y, "liquid", n.liquid)))) });
+  rows.push({ label: "Illiquid net worth", muted: true, cells: per((y) => nwCell(y, (n) => fig(n.illiquid, nwP(y, "illiquid", n.illiquid)))) });
   if (ys.some((y) => y.netWorth && y.netWorth.inTransit !== 0)) {
     rows.push({
       label: "Includes transfers in transit",
       muted: true,
       help: "Money between two of your accounts on Dec 31 (e.g. a rollover that left Dec 31 and landed in January), counted in the bucket it was headed for.",
-      cells: per((y) => nwCell(y, (n) => m(n.inTransit))),
+      cells: per((y) => nwCell(y, (n) => fig(n.inTransit, nwP(y, "in-transit", n.inTransit)))),
     });
   }
-  rows.push({ label: "Change in net worth ($)", muted: true, cells: per((y) => (y.change ? m(y.change.cents) : blockedCell(y.blockers.change))) });
-  rows.push({ label: "Change in net worth (%)", muted: true, cells: per((y) => (y.change ? { text: pct(y.change.pct, 0) } : blockedCell(y.blockers.change))) });
+  rows.push({ label: "Change in net worth ($)", muted: true, cells: per((y) => (y.change ? fig(y.change.cents, nwP(y, "change", y.change.cents)) : blockedCell(y.blockers.change))) });
+  rows.push({ label: "Change in net worth (%)", muted: true, cells: per((y) => (y.change ? { text: pct(y.change.pct, 0), proof: nwP(y, "change-pct") } : blockedCell(y.blockers.change))) });
 
   // ------------------------------------------------------------ bridge
   rows.push({ kind: "heading", label: "What changed net worth", sub: "from the cash saved above to the change in net worth" });
   const bridgeBlockers = (y: YearProfile) => [...new Map([...y.blockers.cash, ...y.blockers.change].map((x) => [x.id, x])).values()];
-  const br = (k: keyof NonNullable<YearProfile["bridge"]>, label: string, help: string) =>
-    rows.push({ label, indent: true, help, cells: per((y) => (y.bridge ? m(y.bridge[k]) : blockedCell(bridgeBlockers(y)))) });
+  const bridgeP = (y: YearProfile, line: AnnualBridgeLine, shown: number) => proofOf({ report: "annual", figure: "bridge", year: y.year, line }, shown);
+  const br = (k: Exclude<AnnualBridgeLine, "total">, label: string, help: string) =>
+    rows.push({ label, indent: true, help, cells: per((y) => (y.bridge ? fig(y.bridge[k], bridgeP(y, k, y.bridge[k])) : blockedCell(bridgeBlockers(y)))) });
   br("cashSaved", "Cash saved", "Total cash saved, from the paycheck math above.");
   br("investmentGrowth", "Investment growth, net of fees", "Market change in every account (dividends already counted as income above are taken out).");
   br("outsideMoney", "Money from outside the tracked accounts", "Partner money before finances merged, international transfers.");
@@ -220,7 +243,7 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
     "Statements vs. paycheck math (timing)",
     "Saved according to statements (income − spending + retirement money) minus the cash saved above. With every check passing this is timing: a 401(k) or HSA contribution posted after the year's last paycheck.",
   );
-  rows.push({ label: "Change in net worth", total: true, cells: per((y) => (y.bridge ? m(y.bridge.total) : blockedCell(bridgeBlockers(y)))) });
+  rows.push({ label: "Change in net worth", total: true, cells: per((y) => (y.bridge ? fig(y.bridge.total, bridgeP(y, "total", y.bridge.total)) : blockedCell(bridgeBlockers(y)))) });
   return rows;
 }
 
@@ -271,11 +294,20 @@ function LivingBreakdown({ years, highlight }: { years: YearProfile[]; highlight
   const cats = [...new Set(years.flatMap((y) => spendingOf(y).map((s) => s.category)))];
   const total = (c: string) => years.reduce((s, y) => s + (spendingOf(y).find((x) => x.category === c)?.cents ?? 0), 0);
   cats.sort((a, b) => total(b) - total(a));
-  const cell = (y: YearProfile, fn: (c: YearCash) => number): Cell => (y.cash ? { text: usd(fn(y.cash)) } : blockedCell(y.blockers.cash));
+  const cell = (y: YearProfile, fn: (c: YearCash) => Cell): Cell => (y.cash ? fn(y.cash) : blockedCell(y.blockers.cash));
   const rows: TableRow[] = [
-    ...cats.map((c) => ({ label: c, indent: true, cells: years.map((y) => cell(y, (x) => x.spending.find((s) => s.category === c)?.cents ?? 0)) })),
-    { label: "Less: reimbursements received", indent: true, cells: years.map((y) => cell(y, (x) => -x.reimbursements)) },
-    { label: "Living expenses (from statements)", total: true, cells: years.map((y) => cell(y, (x) => x.waterfall.living)) },
+    ...cats.map((c) => ({
+      label: c,
+      indent: true,
+      cells: years.map((y) =>
+        cell(y, (x) => {
+          const cents = x.spending.find((s) => s.category === c)?.cents;
+          return cents == null ? m(0) : fig(cents, proofOf({ report: "annual", figure: "category", year: y.year, category: c }, cents));
+        }),
+      ),
+    })),
+    { label: "Less: reimbursements received", indent: true, cells: years.map((y) => cell(y, (x) => fig(-x.reimbursements, cashP(y, "reimbursements", x.reimbursements)))) },
+    { label: "Living expenses (from statements)", total: true, cells: years.map((y) => cell(y, (x) => fig(x.waterfall.living, cashP(y, "living", x.waterfall.living)))) },
   ];
   return (
     <Card title="Living expenses by category" subtitle="What's behind the living-expense line (one-offs and income-tax payments excluded).">

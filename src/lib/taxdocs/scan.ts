@@ -4,7 +4,7 @@ import path from "node:path";
 import { parseBrokerage1099, parseInt1099, parseK1, parseR1099, parseSa5498 } from "./forms.ts";
 import { readPdf } from "./pdf.ts";
 import { parseReturns } from "./returns.ts";
-import { readTaxDocs, taxDocsDir, writeTaxDocs } from "./store.ts";
+import { readTaxDocs, TAX_DOCS_VERSION, taxDocsDir, writeTaxDocs } from "./store.ts";
 import type { TaxDoc, TaxDocKind, TaxDocParsed, TaxDocsFile } from "./types.ts";
 import { parseW2 } from "./w2.ts";
 
@@ -14,8 +14,8 @@ import { parseW2 } from "./w2.ts";
  * copied out of it. A PDF already read with this parser version is not read again.
  */
 
-/** Bump when a parser changes what it reads: every PDF is then read again on the next scan. */
-export const TAX_DOCS_VERSION = 1;
+/** Bump (in store.ts) when a parser changes what it reads: every PDF is then read again on the next scan. */
+export { TAX_DOCS_VERSION };
 
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {

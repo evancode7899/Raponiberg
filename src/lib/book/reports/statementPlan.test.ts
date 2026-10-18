@@ -48,6 +48,7 @@ function makeBook(accts: Acct[], today: string): Book {
     persons: [{ id: "pat", name: "Pat", match: ["PAT"] }],
     idle: { proven: [], unproven: [] },
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
+    passes: [],
   };
   book.integrity = runChecks(book);
   return book;

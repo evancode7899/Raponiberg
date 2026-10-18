@@ -3,6 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
@@ -31,14 +32,14 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={6}>
-        <StatCell label="Income / month" value={usd0(t.avgIncome)} sub={<>typical {usd0(t.typicalIncome)} · <Delta now={t.avgIncome} before={p?.avgIncome ?? null} /></>} />
-        <StatCell label="Spending / month" value={usd0(t.avgSpending)} sub={<>typical {usd0(t.typicalSpending)} · <Delta now={t.avgSpending} before={p?.avgSpending ?? null} goodWhenDown /></>} />
+        <StatCell label="Income / month" value={usd0(t.avgIncome)} proof={ctx.proof("income", slice.months, { perMonth: true, shownCents: t.income })} sub={<>typical {usd0(t.typicalIncome)} · <Delta now={t.avgIncome} before={p?.avgIncome ?? null} /></>} />
+        <StatCell label="Spending / month" value={usd0(t.avgSpending)} proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })} sub={<>typical {usd0(t.typicalSpending)} · <Delta now={t.avgSpending} before={p?.avgSpending ?? null} goodWhenDown /></>} />
         <StatCell
           label="Excluding one-offs"
           value={usd0(t.avgCore)}
           sub={t.oneOff ? `${usd0(t.oneOff)} marked one-off` : "none marked yet"}
         />
-        <StatCell label="Net saved" value={usd0(t.net)} tone={t.net >= 0 ? "pos" : "neg"} sub={`over ${t.n} month${t.n === 1 ? "" : "s"}`} />
+        <StatCell label="Net saved" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={`over ${t.n} month${t.n === 1 ? "" : "s"}`} />
         <StatCell
           label="Savings rate"
           value={t.savingsRate == null ? "—" : formatPercentRatio(t.savingsRate, 1)}
@@ -142,7 +143,9 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                           {c.category}
                         </span>
                       </td>
-                      <td className={table.tdR}>{usd0(now)}</td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={ctx.proof("spending", [last], { category: c.category, shownCents: now })}>{usd0(now)}</ProofValue>
+                      </td>
                       <td className={`${table.tdR} text-muted`}>{usd0(typ)}</td>
                       <td className={table.tdR}>
                         <Delta now={now} before={typ} goodWhenDown asPercent={false} />
@@ -152,7 +155,9 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                 })}
                 <tr className={`${table.tr} font-semibold`}>
                   <td className={table.td}>Total</td>
-                  <td className={table.tdR}>{usd0(last.spendingCents)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={ctx.proof("spending", [last], { shownCents: last.spendingCents })}>{usd0(last.spendingCents)}</ProofValue>
+                  </td>
                   <td className={`${table.tdR} text-muted`}>{usd0(median(rest.map((m) => m.spendingCents)))}</td>
                   <td className={table.tdR}>
                     <Delta now={last.spendingCents} before={median(rest.map((m) => m.spendingCents))} goodWhenDown asPercent={false} />
@@ -182,10 +187,16 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
               {[...slice.months].reverse().map((m) => (
                 <tr key={m.start} className={table.trHover}>
                   <td className={`${table.td} whitespace-nowrap font-medium`}>{m.label}</td>
-                  <td className={table.tdR}>{usd0(m.incomeCents)}</td>
-                  <td className={table.tdR}>{usd0(m.spendingCents)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={ctx.proof("income", [m], { shownCents: m.incomeCents })}>{usd0(m.incomeCents)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={ctx.proof("spending", [m], { shownCents: m.spendingCents })}>{usd0(m.spendingCents)}</ProofValue>
+                  </td>
                   <td className={`${table.tdR} text-muted`}>{usd0(m.oneOffCents)}</td>
-                  <td className={`${table.tdR} font-medium ${m.netCents < 0 ? "text-neg" : "text-pos"}`}>{usd0(m.netCents)}</td>
+                  <td className={`${table.tdR} font-medium ${m.netCents < 0 ? "text-neg" : "text-pos"}`}>
+                    <ProofValue proof={ctx.proof("net", [m], { shownCents: m.netCents })}>{usd0(m.netCents)}</ProofValue>
+                  </td>
                   <td className={table.tdR}>{m.savingsRate == null ? "—" : formatPercentRatio(m.savingsRate, 0)}</td>
                   <td className={table.tdR}>{usd0(m.retirementEmployeeCents + m.retirementEmployerCents)}</td>
                 </tr>

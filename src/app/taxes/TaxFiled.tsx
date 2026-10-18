@@ -2,6 +2,9 @@
 
 import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, btn, EmptyState, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { FiledJurisdiction } from "@/lib/book/proof/filedReturnProof";
+import type { EstimateKey } from "@/lib/tax/estimateLines";
 import type { CheckLine, CheckStatus, SourceCheck, Suggestion } from "@/lib/tax/filedCheck";
 import type { TaxProfile } from "@/lib/tax/profile";
 import { TAX_DOC_KIND_LABEL } from "@/lib/taxdocs/types";
@@ -109,10 +112,12 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
         </Callout>
       )}
 
-      {check && check.federal.length > 0 && <LineTable title={`Federal ${docs.filed.federal?.form ?? "1040"}`} lines={check.federal} file={docs.filed.federal ? fileOf(docs, "RETURN_FEDERAL") : null} />}
-      {check && check.ct.length > 0 && <LineTable title={`Connecticut ${docs.filed.ct?.form}`} lines={check.ct} file={fileOf(docs, "RETURN_CT")} />}
+      {check && check.federal.length > 0 && <LineTable year={r.year} jurisdiction="FEDERAL" title={`Federal ${docs.filed.federal?.form ?? "1040"}`} lines={check.federal} file={docs.filed.federal ? fileOf(docs, "RETURN_FEDERAL") : null} />}
+      {check && check.ct.length > 0 && <LineTable year={r.year} jurisdiction="CT" title={`Connecticut ${docs.filed.ct?.form}`} lines={check.ct} file={fileOf(docs, "RETURN_CT")} />}
       {check && check.ny.length > 0 && (
         <LineTable
+          year={r.year}
+          jurisdiction="NY"
           title={`New York ${docs.filed.ny?.form}`}
           lines={check.ny}
           file={fileOf(docs, "RETURN_NY")}
@@ -163,7 +168,13 @@ function fileOf(docs: NonNullable<TaxResponse["documents"]>, kind: string): stri
 
 const show = (l: CheckLine, v: number | null) => (v == null ? "—" : l.percent ? `${(v / 100).toFixed(2)}%` : usd(v));
 
-function LineTable({ title, lines, file, subtitle }: { title: string; lines: CheckLine[]; file: string | null; subtitle?: string }) {
+const ESTIMATE_PREFIX: Record<FiledJurisdiction, string> = { FEDERAL: "fed", CT: "ct", NY: "ny" };
+
+/**
+ * Each filed amount opens its proof: the document, form, page and line it was read from, and
+ * the app's figure against it; each "This app" figure opens the tax estimate's proof of it.
+ */
+function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year: number; jurisdiction: FiledJurisdiction; title: string; lines: CheckLine[]; file: string | null; subtitle?: string }) {
   return (
     <Card title={title} subtitle={[subtitle, file && `Filed copy: ${file}`].filter(Boolean).join(" ")}>
       <div className={table.wrap}>
@@ -185,8 +196,16 @@ function LineTable({ title, lines, file, subtitle }: { title: string; lines: Che
                   <div>{l.label}</div>
                   {l.note && <div className="mt-0.5 text-xs text-muted">{l.note}</div>}
                 </td>
-                <td className={table.tdR}>{show(l, l.filed)}</td>
-                <td className={table.tdR}>{show(l, l.model)}</td>
+                <td className={table.tdR}>
+                  <ProofValue proof={{ descriptor: { report: "filed-return", year, jurisdiction, key: l.key }, ...(l.percent || l.filed == null ? {} : { shownCents: l.filed }) }}>{show(l, l.filed)}</ProofValue>
+                </td>
+                <td className={table.tdR}>
+                  {l.model == null ? (
+                    show(l, l.model)
+                  ) : (
+                    <ProofValue proof={{ descriptor: { report: "tax-estimate", year, basis: "filed", key: `${ESTIMATE_PREFIX[jurisdiction]}.${l.key}` as EstimateKey }, ...(l.percent ? {} : { shownCents: l.model }) }}>{show(l, l.model)}</ProofValue>
+                  )}
+                </td>
                 <td className={table.td}>
                   <Badge tone={STATUS[l.status].tone}>{STATUS[l.status].label}</Badge>
                 </td>

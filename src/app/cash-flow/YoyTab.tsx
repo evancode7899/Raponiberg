@@ -3,6 +3,9 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState } from "react";
@@ -97,9 +100,20 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell label="Spending" value={usd0(a.spending)} sub={<Change now={a.spending} then={b.spending} goodWhenDown />} />
-        <StatCell label="Income" value={usd0(a.income)} sub={<Change now={a.income} then={b.income} />} />
-        <StatCell label="Saved" value={usd0(a.net)} tone={a.net < 0 ? "neg" : "neutral"} sub={<Change now={a.net} then={b.net} />} />
+        <StatCell
+          label="Spending"
+          value={usd0(a.spending)}
+          proof={ctx.proof("spending", now, { shownCents: a.spending })}
+          sub={<Change now={a.spending} then={b.spending} proof={ctx.proof("spending", then, { shownCents: b.spending })} goodWhenDown />}
+        />
+        <StatCell label="Income" value={usd0(a.income)} proof={ctx.proof("income", now, { shownCents: a.income })} sub={<Change now={a.income} then={b.income} proof={ctx.proof("income", then, { shownCents: b.income })} />} />
+        <StatCell
+          label="Saved"
+          value={usd0(a.net)}
+          proof={ctx.proof("net", now, { shownCents: a.net })}
+          tone={a.net < 0 ? "neg" : "neutral"}
+          sub={<Change now={a.net} then={b.net} proof={ctx.proof("net", then, { shownCents: b.net })} />}
+        />
         <StatCell
           label="Savings rate"
           value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
@@ -128,8 +142,12 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
                       {c.category}
                     </span>
                   </td>
-                  <td className={`${table.tdR} text-muted`}>{usd0(c.then)}</td>
-                  <td className={table.tdR}>{usd0(c.now)}</td>
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={ctx.proof("spending", then, { category: c.category, shownCents: c.then })}>{usd0(c.then)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={ctx.proof("spending", now, { category: c.category, shownCents: c.now })}>{usd0(c.now)}</ProofValue>
+                  </td>
                   <td className={table.td}>
                     <DivergingBar value={c.now - c.then} max={maxChange} />
                   </td>
@@ -142,23 +160,25 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
         </div>
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
-        <MoverCard title="Spending more at" rows={up} ctx={ctx} />
-        <MoverCard title="Spending less at" rows={down} ctx={ctx} />
+        <MoverCard title="Spending more at" rows={up} ctx={ctx} now={now} then={then} />
+        <MoverCard title="Spending less at" rows={down} ctx={ctx} now={now} then={then} />
       </div>
     </>
   );
 }
 
-function Change({ now, then, goodWhenDown = false }: { now: number; then: number; goodWhenDown?: boolean }) {
+function Change({ now, then, proof, goodWhenDown = false }: { now: number; then: number; proof?: ProofTarget; goodWhenDown?: boolean }) {
   return (
     <span className="flex items-center gap-1.5">
       <Delta now={now} before={then} goodWhenDown={goodWhenDown} />
-      <span>from {usd0(then)}</span>
+      <span>
+        from <ProofValue proof={proof}>{usd0(then)}</ProofValue>
+      </span>
     </span>
   );
 }
 
-function MoverCard({ title, rows, ctx }: { title: string; rows: { key: string; name: string; now: number; then: number }[]; ctx: Ctx }) {
+function MoverCard({ title, rows, ctx, now, then }: { title: string; rows: { key: string; name: string; now: number; then: number }[]; ctx: Ctx; now: SpendingMonth[]; then: SpendingMonth[] }) {
   return (
     <Card title={title} subtitle="Merchants, by dollar change.">
       {rows.length === 0 ? (
@@ -166,15 +186,18 @@ function MoverCard({ title, rows, ctx }: { title: string; rows: { key: string; n
       ) : (
         <ul className="flex flex-col divide-y divide-line text-[13px]">
           {rows.map((m) => (
-            <li key={m.key}>
-              <button type="button" className="flex w-full items-center justify-between gap-3 py-1.5 text-left hover:text-accent" onClick={() => ctx.open({ kind: "merchant", key: m.key, name: m.name, lane: "EXPENSE" })}>
-                <span className="min-w-0 truncate">{m.name}</span>
-                <span className="num shrink-0 text-xs text-muted">
-                  {usd0(m.then)} → <span className="text-fg">{usd0(m.now)}</span>
-                  {!m.then && <span className="ml-1.5 text-info">new</span>}
-                  {!m.now && <span className="ml-1.5">stopped</span>}
-                </span>
+            <li key={m.key} className="flex items-center justify-between gap-3 py-1.5">
+              <button type="button" className="min-w-0 truncate text-left hover:text-accent" onClick={() => ctx.open({ kind: "merchant", key: m.key, name: m.name, lane: "EXPENSE" })}>
+                {m.name}
               </button>
+              <span className="num shrink-0 text-xs text-muted">
+                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : undefined}>{usd0(m.then)}</ProofValue> →{" "}
+                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : undefined} className="text-fg">
+                  {usd0(m.now)}
+                </ProofValue>
+                {!m.then && <span className="ml-1.5 text-info">new</span>}
+                {!m.now && <span className="ml-1.5">stopped</span>}
+              </span>
             </li>
           ))}
         </ul>
@@ -332,7 +355,8 @@ function AllYears({ ctx }: { ctx: Ctx }) {
   );
 }
 
-type YearRow = { label: string; f: (m: SpendingMonth) => number; goodWhenDown?: boolean; strong?: boolean; color?: string; indent?: boolean };
+/** `proof`: the figure the row sums, when it's one the Book proves (the kinds of spending are a split the page makes). */
+type YearRow = { label: string; f: (m: SpendingMonth) => number; proof?: { metric: CashFlowMetric; category?: string }; goodWhenDown?: boolean; strong?: boolean; color?: string; indent?: boolean };
 
 /**
  * Each calendar year side by side, as an average month so a partial year compares fairly
@@ -345,14 +369,15 @@ function YearTable({ ctx }: { ctx: Ctx }) {
   const val = (ms: SpendingMonth[], f: (m: SpendingMonth) => number) => (as === "avg" ? sum(ms, f) / Math.max(1, ms.length) : sum(ms, f));
   const comparable = (i: number) => i > 0 && (as === "avg" || (years[i]!.months.length === 12 && years[i - 1]!.months.length === 12));
   const cashRows: YearRow[] = [
-    { label: "Income", f: (m) => m.incomeCents, strong: true },
-    { label: "Spending", f: (m) => m.spendingCents, goodWhenDown: true, strong: true },
+    { label: "Income", f: (m) => m.incomeCents, proof: { metric: "income" }, strong: true },
+    { label: "Spending", f: (m) => m.spendingCents, proof: { metric: "spending" }, goodWhenDown: true, strong: true },
     ...KINDS.map((k) => ({ label: k.label, f: (m: SpendingMonth) => m.kinds[k.id], goodWhenDown: true, indent: true })),
-    { label: "Saved", f: (m) => m.netCents, strong: true },
+    { label: "Saved", f: (m) => m.netCents, proof: { metric: "net" }, strong: true },
   ];
   const categoryRows: YearRow[] = SPEND_CATEGORIES.filter((c) => report.months.some((m) => m.spendingByCategory.some((x) => x.category === c && x.cents))).map((c) => ({
     label: c,
     f: (m: SpendingMonth) => m.spendingByCategory.find((x) => x.category === c)?.cents ?? 0,
+    proof: { metric: "spending" as const, category: c },
     goodWhenDown: true,
     color: categoryColor(chart, c),
   }));
@@ -377,9 +402,11 @@ function YearTable({ ctx }: { ctx: Ctx }) {
       </td>
       {years.map((y, i) => {
         const v = val(y.months, r.f);
+        // A year's months are one unbroken run (the report's months are), so one range covers them.
+        const proof = r.proof ? ctx.proof(r.proof.metric, y.months, { category: r.proof.category, perMonth: as === "avg", shownCents: sum(y.months, r.f) }) : undefined;
         return (
           <td key={y.y} className={`${table.tdR} ${r.strong ? "font-semibold" : ""}`}>
-            {usd0(v)}
+            <ProofValue proof={proof}>{usd0(v)}</ProofValue>
             <div className="leading-none">{comparable(i) ? <YearDelta now={v} before={val(years[i - 1]!.months, r.f)} goodWhenDown={r.goodWhenDown} /> : <span className="text-xs">&nbsp;</span>}</div>
           </td>
         );

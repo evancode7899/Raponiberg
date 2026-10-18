@@ -7,6 +7,8 @@ import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
 import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Field, Loading, PageBody, PercentInput, selectCls, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ClassAmount, ClassId, InvestmentsReport, PositionRow } from "@/lib/book/reports/investments";
 import { axisUsd, formatPercentRatio, usd0, usdDelta } from "@/lib/formatMoney";
 import { ASSET_CLASSES, classLabel, type AssetClass, type Weights } from "@/lib/investments/securities";
@@ -27,6 +29,12 @@ export function classColor(p: ChartPalette, c: ClassId) {
 const segmentsOf = (p: ChartPalette, xs: ClassAmount[]): ShareSegment[] => xs.map((x) => ({ id: x.cls, label: classLabel(x.cls), cents: x.cents, color: classColor(p, x.cls) }));
 const pct = (r: number | null | undefined, d = 1) => (r == null ? "—" : formatPercentRatio(r, d));
 const ratio = (r: number | null) => (r == null ? "—" : `${(r * 100).toFixed(r < 0.001 ? 3 : 2)}%`);
+
+/** The proof behind an account's value, or the household total (no account). */
+const accountTarget = (accountId: string | null, shownCents: number): ProofTarget => ({ descriptor: { report: "investments", ...(accountId ? { accountId } : {}) }, shownCents });
+/** A position's proof; the balancing line ("whole account", "change since holdings") opens its account's. */
+const positionTarget = (p: PositionRow): ProofTarget =>
+  p.kind === "ACCOUNT" ? { descriptor: { report: "investments", accountId: p.accountId } } : { descriptor: { report: "investments", accountId: p.accountId, position: p.key }, shownCents: p.valueCents };
 
 export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
@@ -112,7 +120,7 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell label="Invested" value={usd0(r.totalCents)} sub={dates.length > 1 ? `each account at its latest statement (${dates[0]} – ${dates.at(-1)})` : `as of ${dates[0]}`} />
+        <StatCell label="Invested" value={usd0(r.totalCents)} proof={accountTarget(null, r.totalCents)}sub={dates.length > 1 ? `each account at its latest statement (${dates[0]} – ${dates.at(-1)})` : `as of ${dates[0]}`} />
         <StatCell label="Stocks" value={pct(stocks)} sub="US + international, of all holdings" />
         <StatCell label="Fund costs" value={usd0(r.fees.annualCents)} sub={`a year · ${ratio(r.fees.weightedRatio)} weighted expense ratio`} />
         <StatCell label="Unrealized gain (taxable)" value={usdDelta(r.gains.taxable.unrealizedCents)} tone={r.gains.taxable.unrealizedCents < 0 ? "neg" : "pos"} sub="where cost basis is on the statement" />
@@ -279,7 +287,12 @@ function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                 </Badge>
               </span>
             }
-            subtitle={`${usd0(a.valueCents)} at the statement ending ${a.asOf}${a.holdingsAsOf && a.holdingsAsOf !== a.asOf ? ` · holdings as of ${a.holdingsAsOf}` : ""}${a.differenceCents ? ` · positions off by ${usdDelta(a.differenceCents)}` : ""}`}
+            subtitle={
+              <>
+                <ProofValue proof={accountTarget(a.accountId, a.valueCents)}>{usd0(a.valueCents)}</ProofValue>
+                {` at the statement ending ${a.asOf}${a.holdingsAsOf && a.holdingsAsOf !== a.asOf ? ` · holdings as of ${a.holdingsAsOf}` : ""}${a.differenceCents ? ` · positions off by ${usdDelta(a.differenceCents)}` : ""}`}
+              </>
+            }
           >
             <div className={table.wrap}>
               <table className={`${table.table} min-w-[44rem]`}>
@@ -313,7 +326,7 @@ function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                       </td>
                       <td className={table.tdR}>{p.quantity == null ? "—" : p.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })}</td>
                       <td className={table.tdR}>{p.price == null ? "—" : `$${p.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}</td>
-                      <td className={`${table.tdR} font-medium`}>{usd0(p.valueCents)}</td>
+                      <td className={`${table.tdR} font-medium`}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                       <td className={`${table.tdR} text-muted`}>{p.costBasisCents == null ? "—" : usd0(p.costBasisCents)}</td>
                       <td className={`${table.tdR} ${p.unrealizedCents == null ? "" : p.unrealizedCents < 0 ? "text-neg" : "text-pos"}`}>{p.unrealizedCents == null ? "—" : usdDelta(p.unrealizedCents)}</td>
                       <td className={`${table.tdR} text-muted`}>{ratio(p.expenseRatio)}</td>
@@ -430,7 +443,7 @@ function Fees({ r }: { r: InvestmentsReport }) {
                 <tr key={i} className={table.trHover}>
                   <td className={`${table.td} font-medium`}>{p.symbol ?? p.name}</td>
                   <td className={`${table.td} text-xs text-muted`}>{p.account}</td>
-                  <td className={table.tdR}>{usd0(p.valueCents)}</td>
+                  <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                   <td className={table.tdR}>{ratio(p.expenseRatio)}</td>
                   <td className={table.tdR}>{usd0(p.annualFeeCents)}</td>
                   <td className={`${table.tdR} text-muted`}>{usd0(costOver(p.valueCents, p.expenseRatio!, 20))}</td>
@@ -449,7 +462,7 @@ function Fees({ r }: { r: InvestmentsReport }) {
                 <span>
                   <span className="font-medium">{p.symbol ?? p.name}</span> <span className="text-muted">· {p.account}</span>
                 </span>
-                <span className="num">{usd0(p.valueCents)}</span>
+                <span className="num"><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></span>
               </li>
             ))}
           </ul>
@@ -517,7 +530,7 @@ function Gains({ r }: { r: InvestmentsReport }) {
                       {p.kind === "OPTION" && <Badge tone="neutral">option</Badge>}
                     </td>
                     <td className={`${table.td} text-xs text-muted`}>{p.account}</td>
-                    <td className={table.tdR}>{usd0(p.valueCents)}</td>
+                    <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                     <td className={`${table.tdR} text-muted`}>{usd0(p.costBasisCents)}</td>
                     <td className={`${table.tdR} text-neg`}>{usdDelta(p.unrealizedCents)}</td>
                     <td className={table.tdR}>{p.costBasisCents ? pct(p.unrealizedCents! / Math.abs(p.costBasisCents)) : "—"}</td>
@@ -549,7 +562,7 @@ function Gains({ r }: { r: InvestmentsReport }) {
                     <td className={`${table.td} text-xs text-muted`}>
                       {p.account} · {p.treatment}
                     </td>
-                    <td className={table.tdR}>{usd0(p.valueCents)}</td>
+                    <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                     <td className={`${table.tdR} ${p.unrealizedCents! < 0 ? "text-neg" : "text-pos"}`}>{usdDelta(p.unrealizedCents)}</td>
                   </tr>
                 ))}

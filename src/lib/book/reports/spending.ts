@@ -14,6 +14,9 @@ import { buildCashFlowReport, type CashFlowPeriod } from "./cashFlow.ts";
  * a month still waiting on a statement never withholds the rest.
  */
 
+/** The key the spending views group a row's merchant (or payer) by. */
+export const merchantKeyOf = (r: Pick<BookRow, "merchantKey" | "payee">) => r.merchantKey ?? r.payee;
+
 /** A merchant's (or payer's) net money in one month. Spending is positive. */
 export type MerchantMonth = { key: string; name: string; category: string; cents: number; count: number };
 
@@ -138,7 +141,7 @@ export function detectRecurring(rows: BookRow[], windowEnd: string, last12From: 
   const byKey = new Map<string, BookRow[]>();
   for (const r of rows) {
     if (r.lane !== "EXPENSE" || r.amountCents >= 0) continue;
-    const k = r.merchantKey ?? r.payee;
+    const k = merchantKeyOf(r);
     const list = byKey.get(k) ?? [];
     list.push(r);
     byKey.set(k, list);
@@ -231,46 +234,71 @@ export function provenMonths(book: Book, accountIds?: string[]) {
   };
 }
 
-export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
-  const { report, window, current, withheldAfter, withheldBefore } = provenMonths(book, opts.accountIds);
-  const accountFilter = opts.accountIds?.length ? new Set(opts.accountIds) : null;
-  const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
-  const nonRecurring = new Set(settings.nonRecurringCategories);
-  const from = window[0]?.start;
-  const to = (current ?? window.at(-1))?.end;
-  const windowEnd = window.at(-1)?.end;
-
-  // Charges reversed in full (a charge and its exact credit on the same account within a
-  // week) net to nothing: left out of merchant views so neither side shows on its own.
-  // Rows count in the month the period totals count them: where the ledger books them
-  // (booking.ts), or for rent, the month it pays for (rent.ts).
+/**
+ * The rows the spending views read, and the day each counts on: every row counted in the
+ * window (and the current month) on the accounts asked for, less charges reversed in full
+ * (a charge and its exact credit on the same account within a week net to nothing: left
+ * out so neither side shows on its own). Rows count in the month the period totals count
+ * them: where the ledger books them (booking.ts), or for rent, the month it pays for
+ * (rent.ts). The merchant proof reads these same rows (proof/cashFlowProof.ts).
+ */
+export function spendingRows(book: Book, accountIds?: string[]) {
+  const proven = provenMonths(book, accountIds);
+  const accountFilter = accountIds?.length ? new Set(accountIds) : null;
+  const from = proven.window[0]?.start;
+  const to = (proven.current ?? proven.window.at(-1))?.end;
+  const windowEnd = proven.window.at(-1)?.end;
   const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
   const inRange = book.rows.filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
   const reversed = reversals(inRange);
   const inScope = inRange.filter((r) => !reversed.has(r.id));
-  const last12From = windowEnd ? monthsBack(startOfMonth(windowEnd), 11) : "";
-  const windowRows = windowEnd ? inScope.filter((r) => dayOf(r) <= windowEnd) : [];
+  return {
+    ...proven,
+    from,
+    to,
+    windowEnd,
+    dayOf,
+    /** The reversed pairs left out, for a proof to name. */
+    reversed: inRange.filter((r) => reversed.has(r.id)),
+    inScope,
+    /** What recurring charges are found in: the window's rows, without the current month. */
+    windowRows: windowEnd ? inScope.filter((r) => dayOf(r) <= windowEnd) : [],
+    /** Where a recurring charge's "last twelve months" start. */
+    last12From: windowEnd ? monthsBack(startOfMonth(windowEnd), 11) : "",
+  };
+}
+
+/** Each merchant's (and payer's) net money over the rows counted in a period, largest first. */
+export function merchantsIn(rows: BookRow[], p: { start: string; end: string }, dayOf: (r: BookRow) => string): { merchants: MerchantMonth[]; payers: MerchantMonth[] } {
+  const merchants = new Map<string, MerchantMonth>();
+  const payers = new Map<string, MerchantMonth>();
+  for (const r of rows) {
+    if (dayOf(r) < p.start || dayOf(r) > p.end) continue;
+    if (r.lane !== "EXPENSE" && r.lane !== "INCOME") continue;
+    const key = merchantKeyOf(r);
+    const m = r.lane === "EXPENSE" ? merchants : payers;
+    const cur = m.get(key) ?? { key, name: merchantName(key), category: r.category, cents: 0, count: 0 };
+    cur.cents += r.lane === "EXPENSE" ? -r.amountCents : r.amountCents;
+    cur.count++;
+    m.set(key, cur);
+  }
+  const sorted = (m: Map<string, MerchantMonth>) => [...m.values()].filter((x) => x.cents !== 0).sort((a, b) => b.cents - a.cents);
+  return { merchants: sorted(merchants), payers: sorted(payers) };
+}
+
+export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
+  const { report, window, current, withheldAfter, withheldBefore, from, to, windowEnd, dayOf, inScope, windowRows, last12From } = spendingRows(book, opts.accountIds);
+  const accountFilter = opts.accountIds?.length ? new Set(opts.accountIds) : null;
+  const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
+  const nonRecurring = new Set(settings.nonRecurringCategories);
   const recurring = windowEnd ? detectRecurring(windowRows, windowEnd, last12From) : [];
   const bills = new Set(recurring.filter((c) => c.kind === "bill").map((c) => c.key));
   const isOneOff = (r: BookRow) => nonRecurring.has(r.category) || expenseFingerprint(r) in settings.oneOffs;
 
   const enrich = (p: CashFlowPeriod): SpendingMonth => {
-    const merchants = new Map<string, MerchantMonth>();
-    const payers = new Map<string, MerchantMonth>();
     let oneOffCents = 0;
-    for (const r of inScope) {
-      if (dayOf(r) < p.start || dayOf(r) > p.end) continue;
-      if (r.lane !== "EXPENSE" && r.lane !== "INCOME") continue;
-      const key = r.merchantKey ?? r.payee;
-      const m = r.lane === "EXPENSE" ? merchants : payers;
-      const cur = m.get(key) ?? { key, name: merchantName(key), category: r.category, cents: 0, count: 0 };
-      cur.cents += r.lane === "EXPENSE" ? -r.amountCents : r.amountCents;
-      cur.count++;
-      m.set(key, cur);
-      if (r.lane === "EXPENSE" && isOneOff(r)) oneOffCents -= r.amountCents;
-    }
-    const sorted = (m: Map<string, MerchantMonth>) => [...m.values()].filter((x) => x.cents !== 0).sort((a, b) => b.cents - a.cents);
-    return { ...p, merchants: sorted(merchants), payers: sorted(payers), oneOffCents, ...spendingShape(inScope, p, bills, isOneOff, dayOf) };
+    for (const r of inScope) if (r.lane === "EXPENSE" && dayOf(r) >= p.start && dayOf(r) <= p.end && isOneOff(r)) oneOffCents -= r.amountCents;
+    return { ...p, ...merchantsIn(inScope, p, dayOf), oneOffCents, ...spendingShape(inScope, p, bills, isOneOff, dayOf) };
   };
 
   const months = window.map(enrich);
@@ -281,12 +309,12 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
     const fp = expenseFingerprint(r);
     const viaCategory = nonRecurring.has(r.category);
     const tagged = viaCategory || fp in settings.oneOffs;
-    if (!tagged && (-r.amountCents < ONE_OFF_MIN_CENTS || bills.has(r.merchantKey ?? r.payee))) continue;
+    if (!tagged && (-r.amountCents < ONE_OFF_MIN_CENTS || bills.has(merchantKeyOf(r)))) continue;
     oneOffs.push({
       fingerprint: fp,
       date: r.date,
       payee: r.payee,
-      merchant: merchantName(r.merchantKey ?? r.payee),
+      merchant: merchantName(merchantKeyOf(r)),
       account: accountName.get(r.accountId) ?? "",
       category: r.category,
       cents: -r.amountCents,
@@ -336,7 +364,7 @@ export function spendingShape(
     const cents = -r.amountCents;
     const d = Number(day.slice(8, 10)) - 1;
     daily.allCents[d]! += cents;
-    if (bills.has(r.merchantKey ?? r.payee)) {
+    if (bills.has(merchantKeyOf(r))) {
       billCents += cents;
       daily.billCents[d]! += cents;
     } else if (Math.abs(cents) >= ONE_OFF_MIN_CENTS || isOneOff(r)) bigCents += cents;

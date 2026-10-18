@@ -1,5 +1,5 @@
 import type { LayoutRow } from "../statements/pdfLayout.ts";
-import { labelValue, lineValue, readReturnLines, type ReturnLine } from "./lines.ts";
+import { readReturnLines, type ReturnLine } from "./lines.ts";
 import type { FederalKey, FederalReturnSummary, FiledReturn, StateKey, StateReturnSummary } from "./types.ts";
 
 /**
@@ -56,19 +56,36 @@ const FEDERAL: Record<FederalKey, [string, string[]]> = {
   section199aDividends: ["8995", ["28", "6"]],
 };
 
+/**
+ * Where a filed figure was printed: the line, which of its amounts (NY's IT-203 prints a
+ * federal and a New York column), and its sign in the figure. The summaries below and the
+ * filed-return proof (book/proof/filedReturnProof.ts) read figures through these, so both
+ * name the same lines.
+ */
+export type FiledSource = { line: ReturnLine; column: "first" | "last"; sign: 1 | -1 };
+
+/** A source's amount as printed (dollars, or the decimal a percentage line prints), signed. */
+export const sourceValue = (s: FiledSource) => s.sign * (s.column === "first" ? s.line.values[0]! : s.line.values.at(-1)!);
+
+const sumCents = (sources: FiledSource[]) => (sources.length ? sources.reduce((t, s) => t + cents(sourceValue(s))!, 0) : null);
+const findLine = (lines: ReturnLine[], form: string, line: string) => lines.find((x) => x.form === form && x.line === line);
+const findLabel = (lines: ReturnLine[], forms: string[], label: RegExp) => lines.find((x) => forms.includes(x.form) && label.test(x.label));
+const one = (line: ReturnLine | undefined, column: FiledSource["column"]): FiledSource[] => (line ? [{ line, column, sign: 1 }] : []);
+
+export const FEDERAL_KEYS = Object.keys(FEDERAL) as FederalKey[];
+
+/** The line(s) a federal figure is read from: the first of its line numbers printed on its form. */
+export function federalSources(lines: ReturnLine[], key: FederalKey): FiledSource[] {
+  const [form, nums] = FEDERAL[key];
+  const out = one(nums.map((n) => findLine(lines, form, n)).find(Boolean), "last");
+  // Line 25b (1099 withholding) is summed into "other" withholding with 25c.
+  if (key === "otherWithholding") out.push(...one(findLine(lines, "1040", "25b"), "last"));
+  return out;
+}
+
 export function federalSummary(lines: ReturnLine[]): FederalReturnSummary {
   const out = {} as FederalReturnSummary;
-  for (const [key, [form, nums]] of Object.entries(FEDERAL) as [FederalKey, [string, string[]]][]) {
-    let v: number | null = null;
-    for (const n of nums) {
-      v = lineValue(lines, form, n);
-      if (v != null) break;
-    }
-    out[key] = cents(v);
-  }
-  // Line 25b (1099 withholding) is summed into "other" withholding with 25c.
-  const b = lineValue(lines, "1040", "25b");
-  if (b != null) out.otherWithholding = (out.otherWithholding ?? 0) + cents(b)!;
+  for (const key of FEDERAL_KEYS) out[key] = sumCents(federalSources(lines, key));
   return out;
 }
 
@@ -112,26 +129,34 @@ const NY: Record<StateKey, RegExp | null> = {
   chet: null,
 };
 
-export function stateSummary(lines: ReturnLine[], jurisdiction: "CT" | "NY"): StateReturnSummary {
-  const forms = jurisdiction === "CT" ? ["CT-1040", "CT-1040NR/PY"] : ["IT-201", "IT-203"];
-  const map = jurisdiction === "CT" ? CT : NY;
-  const out = {} as StateReturnSummary;
-  for (const [key, re] of Object.entries(map) as [StateKey, RegExp | null][]) {
-    out[key] = re ? cents(labelValue(lines, key === "usObligationSubtraction" || key === "chet" ? [...forms] : forms, re, "first")) : null;
-  }
+export const STATE_KEYS = Object.keys(CT) as StateKey[];
+
+/** The line a state figure is read from: found by its printed words, which hold across each state's forms; IT-203's two columns by line number. */
+export function stateSources(lines: ReturnLine[], jurisdiction: "CT" | "NY", key: StateKey): FiledSource[] {
   if (jurisdiction === "CT") {
-    out.incomePercentage = labelValue(lines, forms, CT.incomePercentage!) == null ? null : Math.round(labelValue(lines, forms, CT.incomePercentage!)! * 10_000);
-  } else {
+    const re = CT[key];
+    return re ? one(findLabel(lines, ["CT-1040", "CT-1040NR/PY"], re), key === "incomePercentage" ? "last" : "first") : [];
+  }
+  const it203 = lines.some((l) => l.form === "IT-203");
+  if (it203) {
     // IT-203 prints a federal and a New York column; the NY column is the NY-source income.
-    const it203 = lines.some((l) => l.form === "IT-203");
-    if (out.federalAgi == null) out.federalAgi = cents(lineValue(lines, it203 ? "IT-203" : "IT-201", "19", "first"));
-    if (it203) {
-      out.sourceIncome = cents(lineValue(lines, "IT-203", "31", "last"));
-      out.stateAgi = cents(lineValue(lines, "IT-203", "31", "first"));
-      const pct = lineValue(lines, "IT-203", "45");
-      out.incomePercentage = pct == null ? null : Math.round(pct * 10_000);
-      out.taxBeforeAllocation = cents(lineValue(lines, "IT-203", "44")) ?? out.taxBeforeAllocation;
-    }
+    if (key === "sourceIncome") return one(findLine(lines, "IT-203", "31"), "last");
+    if (key === "stateAgi") return one(findLine(lines, "IT-203", "31"), "first");
+    if (key === "incomePercentage") return one(findLine(lines, "IT-203", "45"), "last");
+    if (key === "taxBeforeAllocation" && findLine(lines, "IT-203", "44")) return one(findLine(lines, "IT-203", "44"), "last");
+  }
+  const re = NY[key];
+  const hit = re ? one(findLabel(lines, ["IT-201", "IT-203"], re), "first") : [];
+  if (key === "federalAgi" && !hit.length) return one(findLine(lines, it203 ? "IT-203" : "IT-201", "19"), "first");
+  return hit;
+}
+
+export function stateSummary(lines: ReturnLine[], jurisdiction: "CT" | "NY"): StateReturnSummary {
+  const out = {} as StateReturnSummary;
+  for (const key of STATE_KEYS) {
+    const sources = stateSources(lines, jurisdiction, key);
+    // A percentage is kept in ten-thousandths, everything else in cents.
+    out[key] = key !== "incomePercentage" ? sumCents(sources) : sources.length ? Math.round(sourceValue(sources[0]!) * 10_000) : null;
   }
   return out;
 }

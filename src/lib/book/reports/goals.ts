@@ -4,6 +4,7 @@ import { GROUP_ORDER, type AccountGroup } from "../../ledger/loadLedger.ts";
 import { valueAt } from "../../ledger/timeline.ts";
 import { netWorthAtBlockers, netWorthBlockers } from "../blockers.ts";
 import type { Book } from "../load.ts";
+import type { Forecast } from "../../forecast/forecast.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import { buildCashFlowReport } from "./cashFlow.ts";
 
@@ -23,6 +24,13 @@ import { buildCashFlowReport } from "./cashFlow.ts";
 
 /** The forecast's liquid and illiquid balances by month (cents), from the start. */
 export type GoalForecast = { startKey: string; start: { liquid: number; illiquid: number }; months: { key: string; liquid: number; illiquid: number }[] };
+
+/** The shared forecast as goals read it (what /api/goals passes buildGoals). */
+export const goalForecastOf = (f: Pick<Forecast, "startKey" | "plan" | "months">): GoalForecast => ({
+  startKey: f.startKey,
+  start: f.plan.start,
+  months: f.months.map(({ key, liquid, illiquid }) => ({ key, liquid, illiquid })),
+});
 
 /** Groups whose money the forecast counts as liquid. */
 const LIQUID_GROUPS: AccountGroup[] = ["Cash", "Taxable investments"];
@@ -48,6 +56,8 @@ export type GoalProgress = {
   projectedDate: string | null;
   /** What `projectedDate` and the status come from: the shared forecast, or (without one) the last year's pace. */
   projectedFrom: "FORECAST" | "PACE";
+  /** FORECAST: what the forecast's new money had to cover when this goal's turn came (its own need plus earlier goals' on the same kind of account), and from which kinds. */
+  filled: FillTrace | null;
   status: "REACHED" | "ON_TRACK" | "BEHIND" | "IN_PROGRESS" | "NO_PACE" | "NO_TARGET";
   sharedWith: string[];
   blockers: BlockerRef[];
@@ -74,7 +84,7 @@ export type GoalsReport = {
   /** Every account at least one goal draws on, with who claimed what. */
   funding: FundingRow[];
   /** Typical monthly spending for emergency funds: average of the last 12 proven months. */
-  monthlySpending: { cents: number; months: number; from: string | null; to: string | null } | null;
+  monthlySpending: { cents: number; months: number; from: string | null; to: string | null; periods: { start: string; end: string; cents: number }[] } | null;
   goals: GoalProgress[];
   accounts: { id: string; name: string; group: AccountGroup; cents: number }[];
   /** Account groups that can fund a goal, in display order. */
@@ -89,7 +99,13 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
   const cf = buildCashFlowReport(book, { granularity: "month" });
   const proven = cf.periods.filter((p) => !p.blockers.length && !p.through).slice(-12);
   const monthlySpending = proven.length
-    ? { cents: Math.round(proven.reduce((s, p) => s + p.spendingCents, 0) / proven.length), months: proven.length, from: proven[0]!.start, to: proven.at(-1)!.end }
+    ? {
+        cents: Math.round(proven.reduce((s, p) => s + p.spendingCents, 0) / proven.length),
+        months: proven.length,
+        from: proven[0]!.start,
+        to: proven.at(-1)!.end,
+        periods: proven.map((p) => ({ start: p.start, end: p.end, cents: p.spendingCents })),
+      }
     : null;
 
   const fundersOf = (g: Goal) => open.filter((a) => g.groups.includes(a.group) || g.accountIds.includes(a.id));
@@ -123,9 +139,10 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
     const monthsLeft = goal.targetDate ? Math.max(0, daysBetween(asOf, goal.targetDate) / MONTH_DAYS) : null;
     const neededMonthlyCents = remaining == null || monthsLeft == null ? null : monthsLeft < 1 ? remaining : Math.ceil(remaining / monthsLeft);
     let projectedDate: string | null;
+    let filled: FillTrace | null = null;
     if (remaining === 0) projectedDate = asOf;
     else if (reach && remaining != null && funders.length) {
-      const key = reach(remaining, funders.some((a) => LIQUID_GROUPS.includes(a.group)), funders.some((a) => !LIQUID_GROUPS.includes(a.group)), track);
+      const key = reach(remaining, funders.some((a) => LIQUID_GROUPS.includes(a.group)), funders.some((a) => !LIQUID_GROUPS.includes(a.group)), track, (t) => (filled = t));
       projectedDate = key ? endOfMonthIso(key) : null;
     } else projectedDate = remaining != null && pace && pace.monthlyCents > 0 ? addDays(asOf, Math.ceil((remaining / pace.monthlyCents) * MONTH_DAYS)) : null;
     const status: GoalProgress["status"] =
@@ -160,6 +177,7 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
       neededMonthlyCents,
       projectedDate,
       projectedFrom: forecast ? "FORECAST" : "PACE",
+      filled,
       status,
       sharedWith: settings.goals.filter((o) => o.id !== goal.id && fundersOf(o).some((a) => ids.includes(a.id))).map((o) => o.name),
       blockers: refs(netWorthAtBlockers(book, asOf, ids)),
@@ -236,18 +254,26 @@ const endOfMonthIso = (key: string) => {
  * A tracking goal (a milestone) waits behind nobody and holds nobody up: it's reached when
  * the new money alone covers what it still needs.
  */
-export function forecastFiller(f: GoalForecast): (remaining: number, liquid: boolean, illiquid: boolean, track?: boolean) => string | null {
+export function forecastFiller(f: GoalForecast): (remaining: number, liquid: boolean, illiquid: boolean, track?: boolean, trace?: (t: FillTrace) => void) => string | null {
   const filled = { liquid: 0, illiquid: 0 };
   const added = (m: GoalForecast["months"][number], s: "liquid" | "illiquid") => m[s] - f.start[s];
-  return (remaining, liquid, illiquid, track = false) => {
-    if (track) return f.months.find((m) => (liquid ? added(m, "liquid") : 0) + (illiquid ? added(m, "illiquid") : 0) >= remaining)?.key ?? null;
+  return (remaining, liquid, illiquid, track = false, trace) => {
+    const sides: FillTrace["sides"] = [...(liquid ? (["liquid"] as const) : []), ...(illiquid ? (["illiquid"] as const) : [])];
+    const fill = (need: number, over: FillTrace["sides"]) => {
+      trace?.({ need, own: remaining, sides: over });
+      return f.months.find((m) => over.reduce((t, s) => t + added(m, s), 0) >= need)?.key ?? null;
+    };
+    if (track) return fill(remaining, sides);
     if (liquid && illiquid) {
       const need = filled.liquid + filled.illiquid + remaining;
       filled.liquid += remaining;
-      return f.months.find((m) => added(m, "liquid") + added(m, "illiquid") >= need)?.key ?? null;
+      return fill(need, sides);
     }
     const s = liquid ? "liquid" : "illiquid";
     filled[s] += remaining;
-    return f.months.find((m) => added(m, s) >= filled[s])?.key ?? null;
+    return fill(filled[s], [s]);
   };
 }
+
+/** What a goal's turn asked of the forecast: `need` (its own `own` plus earlier goals' on the same kinds) from the money added to `sides` since the start. */
+export type FillTrace = { need: number; own: number; sides: ("liquid" | "illiquid")[] };

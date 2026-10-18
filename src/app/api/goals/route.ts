@@ -1,7 +1,7 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { cachedReport, jsonBody } from "@/lib/book/cache";
-import { buildGoals } from "@/lib/book/reports/goals";
+import { buildGoals, goalForecastOf } from "@/lib/book/reports/goals";
 import { prisma } from "@/lib/db";
 import { loadForecast } from "@/lib/forecast/load";
 import { GOALS_KEY, normalizeGoals } from "@/lib/goals/settings";
@@ -18,8 +18,7 @@ export async function GET(request: NextRequest) {
   return jsonBody(
     await cachedReport(prisma, "goals", async (book) => {
       const [settings, { forecast: f }] = await Promise.all([loadJsonSetting(prisma, GOALS_KEY, normalizeGoals), loadForecast(prisma, book)]);
-      const forecast = f ? { startKey: f.startKey, start: f.plan.start, months: f.months.map(({ key, liquid, illiquid }) => ({ key, liquid, illiquid })) } : null;
-      return { report: buildGoals(book, settings, forecast), settings };
+      return { report: buildGoals(book, settings, f ? goalForecastOf(f) : null), settings };
     }),
   );
 }

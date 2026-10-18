@@ -89,6 +89,17 @@ export type Finding = {
   atEdge?: boolean;
 };
 
+/**
+ * What one passing check covered, so a figure can show the checks behind it (book/proof)
+ * rather than only that nothing failed. `subject` names the thing in plain words (a
+ * statement period, a pay stub, a month), never by database id; `scope` is what its
+ * failure would have blocked, so passes are looked up exactly like blockers.
+ */
+export type CheckPass = { check: CheckId; n: number; subject: string; scope: FindingScope };
+
+/** The evidence a check passes with: what it covered and the scope it vouches for. */
+export type PassEvidence = FindingScope & { subject: string };
+
 /** A figure that was inferred rather than read directly, and from what. */
 export type Inference = {
   /** Stable across runs and database rebuilds, like a finding's id (see findingKeys.ts). */
@@ -159,7 +170,7 @@ export const CHECKS: CheckDef[] = [
     id: "ledger.freshness",
     title: "Everything was read by the current code",
     description:
-      "Every document was read by the current version of its parser, pay stub and tax figures by the current extractor, and every transaction filed by the current classification rules — so no figure comes from code the app has since corrected.",
+      "Every document was read by the current version of its parser, pay stub and tax figures by the current extractor, the tax documents folder (W-2s, 1099s, K-1s, filed returns) by the current tax documents reader, and every transaction filed by the current classification rules — so no figure comes from code the app has since corrected.",
   },
   {
     id: "statement.held",

@@ -1,16 +1,8 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { localToday } from "@/lib/dates/isoDate";
-import { cachedReport } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
-import { taxLink } from "@/lib/forecast/forecast";
-import { loadForecast } from "@/lib/forecast/load";
-import { hsaLedger, hsaTaxMarginal, type HsaLedger } from "@/lib/hsa/load";
-import { buildHsaReport, type TaxMarginalIn } from "@/lib/hsa/report";
-import { loadProfileSettings } from "@/lib/profile/settings";
-import { applyHsaOp, readHsaFile, type HsaOp } from "@/lib/hsa/store";
-import { loadJsonSetting } from "@/lib/settingsStore";
-import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "@/lib/taxAccounts/settings";
+import { loadHsaReport } from "@/lib/hsa/loadReport";
+import { applyHsaOp, type HsaOp } from "@/lib/hsa/store";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -21,17 +13,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const file = readHsaFile();
-    const [ledger, retirement] = await Promise.all([
-      cachedReport(prisma, "hsa-ledger", async (book) => {
-        // The Taxes page's marginal rates, on the same forecast and birth years it uses.
-        const [{ forecast }, profile] = await Promise.all([loadForecast(prisma, book), loadProfileSettings(prisma)]);
-        return { ...hsaLedger(book), taxMarginal: hsaTaxMarginal(book, Number(localToday().slice(0, 4)), forecast ? taxLink(forecast) : null, profile.birthYears) };
-      }).then((t) => JSON.parse(t) as HsaLedger & { taxMarginal: TaxMarginalIn | null }),
-      loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings),
-    ]);
-    const report = buildHsaReport({ today: localToday(), file, ...ledger, marginalRate: retirement.marginalRate });
-    return NextResponse.json(report);
+    return NextResponse.json(await loadHsaReport(prisma));
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not read the HSA log" }, { status: 500 });
   }

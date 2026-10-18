@@ -145,7 +145,7 @@ export type PersonReport = {
    * shared forecast (lib/forecast): `bonus` is what it pays after the latest stub counted
    * here, on top of any extra typed under Inputs. Null for other years.
    */
-  fromForecast: { paycheck: "LATEST" | "TYPICAL"; bonus: number; items: { label: string; gross: number }[] } | null;
+  fromForecast: { paycheck: "LATEST" | "TYPICAL"; bonus: number; items: ({ label: string; gross: number } & Partial<Pick<TaxForecastLink["bonuses"][number], "key" | "date" | "source" | "window">>)[] } | null;
   payrollSource: "STUBS" | "W2" | "NONE";
   /** Pay taken from year-to-date totals only (earlier stubs not available). */
   partial: string[];
@@ -237,6 +237,12 @@ export type TaxReport = {
    * the open findings that would block the year once it's over.
    */
   unverified: BlockerRef[];
+  /**
+   * Bank interest as counted (1099-INT): each account's ledger interest from January 1
+   * through `through`, or its 1099-INT (a finished year), with its owner ("JOINT" splits
+   * evenly); a year in progress runs it to December 31 by `factor` (365 ÷ days so far).
+   */
+  bankInterest: { through: string; factor: number; parts: { accountId: string | null; name: string; ownerId: string; cents: number; doc: DocRef | null; rowIds: string[] }[] };
   /** How far each source goes: the forecast fills in everything after these dates. */
   dataThrough: { payStubs: { person: string; employer: string; date: string }[]; statements: string | null; bank: string };
   plan: {
@@ -342,13 +348,20 @@ export function buildTaxReport(
   // finished year's 1099-INT replaces the ledger's interest for its account.
   const interestThrough = minIso(`${year}-12-31`, book.horizon.cashFlow);
   const interestByAccount = new Map<string, number>();
+  const interestRows = new Map<string, string[]>();
   for (const r of book.rows) {
     if (r.lane !== "INCOME" || r.category !== "Interest" || !bankIds.includes(r.accountId) || r.date < `${year}-01-01` || r.date > interestThrough) continue;
     interestByAccount.set(r.accountId, (interestByAccount.get(r.accountId) ?? 0) + r.amountCents);
+    interestRows.set(r.accountId, [...(interestRows.get(r.accountId) ?? []), r.id]);
   }
+  // Each part as counted, for the estimate's proof (book/proof/taxEstimateProof).
+  const interestParts: TaxReport["bankInterest"]["parts"] = [];
   const interestYtd = new Map<string, number>();
   const interestForms = new Set<string>();
-  const add = (owner: string, cents: number) => interestYtd.set(owner, (interestYtd.get(owner) ?? 0) + cents);
+  const add = (owner: string, cents: number, part: Omit<TaxReport["bankInterest"]["parts"][number], "ownerId" | "cents">) => {
+    interestYtd.set(owner, (interestYtd.get(owner) ?? 0) + cents);
+    interestParts.push({ ...part, ownerId: owner, cents });
+  };
   const ownerOfAccount = (id: string) => {
     const name = book.accounts.find((a) => a.id === id)?.name.toUpperCase() ?? "";
     return profile.persons.find((p) => p.match.some((m) => name.includes(m)))?.id ?? "JOINT";
@@ -359,11 +372,11 @@ export function buildTaxReport(
     const form = intForms.find((f) => f.form.account && acct.identifiers.some((i) => i.endsWith(f.form.account!)));
     if (form) {
       interestForms.add(form.doc.id);
-      add(form.personId ?? ownerOfAccount(id), form.form.interest);
-    } else if (interestByAccount.has(id)) add(ownerOfAccount(id), interestByAccount.get(id)!);
+      add(form.personId ?? ownerOfAccount(id), form.form.interest, { accountId: id, name: acct.name, doc: form.doc, rowIds: [] });
+    } else if (interestByAccount.has(id)) add(ownerOfAccount(id), interestByAccount.get(id)!, { accountId: id, name: acct.name, doc: null, rowIds: interestRows.get(id)! });
   }
   // A 1099-INT for an account the ledger doesn't track still counts.
-  for (const f of intForms.filter((f) => !interestForms.has(f.doc.id))) add(f.personId ?? "JOINT", f.form.interest);
+  for (const f of intForms.filter((f) => !interestForms.has(f.doc.id))) add(f.personId ?? "JOINT", f.form.interest, { accountId: null, name: `${f.form.payer} ••${f.form.account ?? "?"}`, doc: f.doc, rowIds: [] });
   const daysIn = (Date.parse(interestThrough) - Date.parse(`${year}-01-01`)) / 86_400_000 + 1;
   const interestFactor = isCurrentYear && daysIn > 0 ? 365 / daysIn : 1;
   const bankInterest = (personId: string, pick: "ytd" | "projected") => {
@@ -404,7 +417,7 @@ export function buildTaxReport(
     const link = isCurrentYear && opts.forecast ? opts.forecast : null;
     const items = (link?.bonuses ?? []).filter((b) => b.personId === person.id && b.key.startsWith(`${year}-`) && (b.date ? b.date > lastStub : b.key >= lastStub.slice(0, 7)));
     const fromForecast: PersonReport["fromForecast"] = link
-      ? { paycheck: link.paycheck[person.id] ?? typedPay.paycheck, bonus: items.reduce((t, b) => t + b.gross, 0), items: items.map((b) => ({ label: b.label, gross: b.gross })) }
+      ? { paycheck: link.paycheck[person.id] ?? typedPay.paycheck, bonus: items.reduce((t, b) => t + b.gross, 0), items: items.map((b) => ({ label: b.label, gross: b.gross, key: b.key, date: b.date, source: b.source, ...(b.window ? { window: b.window } : {}) })) }
       : null;
     const pay = fromForecast ? { ...typedPay, paycheck: fromForecast.paycheck } : typedPay;
     if (!stubs.length && isForecast) warnings.push(`No ${year} pay stubs for ${person.name}, so the forecast counts no wages for them. Upload their latest stub.`);
@@ -800,6 +813,7 @@ export function buildTaxReport(
     ny,
     documents: null,
     unverified: blockers,
+    bankInterest: { through: interestThrough, factor: interestFactor, parts: interestParts },
     dataThrough: {
       payStubs: people.flatMap((p) => p.payroll.filter((x) => x.active).map((x) => ({ person: p.name, employer: x.employer, date: x.latestPayDate }))),
       statements: accounts.filter((a) => a.kind === "TAXABLE").reduce<string | null>((m, a) => (m == null || a.latestStatement < m ? a.latestStatement : m), null),

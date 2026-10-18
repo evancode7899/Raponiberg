@@ -16,8 +16,8 @@ import { readExceptions } from "./exceptionStore.ts";
 import { applyIdleWindows, type IdleReport } from "./idleCards.ts";
 import { addDays, localToday, startOfMonth } from "../dates/isoDate.ts";
 import { findingStart } from "./checks/collector.ts";
-import { runChecks } from "./checks/index.ts";
-import type { IntegrityReport } from "./types.ts";
+import { runChecksWithPasses } from "./checks/index.ts";
+import type { CheckPass, IntegrityReport } from "./types.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -85,6 +85,13 @@ export type BookRow = {
   /** Which classifier rule decided ("untracked-card:...", USER, MATCH...). */
   classifiedBy: string | null;
   transferMatchId: string | null;
+  /**
+   * The statement (BookStatement.id) and source document the row was read from. A row the
+   * Book derives from another (a bill payment's further piece, a bill correction) keeps
+   * the ids of the row it comes from.
+   */
+  statementImportId: string;
+  documentId: string;
 };
 
 export type BookStub = PayStubFacts & {
@@ -166,6 +173,11 @@ export type Book = {
   /** Card cycles with no statement because nothing happened, proven from the bank side (filled into the ledger at $0). */
   idle: IdleReport;
   integrity: IntegrityReport;
+  /**
+   * What every passing check covered (types.ts CheckPass), for the proof behind a figure
+   * (book/proof). Kept off `integrity` so the Statements page's payload doesn't carry it.
+   */
+  passes: CheckPass[];
 };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -190,6 +202,8 @@ type RawRow = {
   categoryName: string | null;
   categoryGroup: string | null;
   matchId: string | null;
+  statementImportId: string;
+  documentId: string;
 };
 
 /**
@@ -229,7 +243,8 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     db.$queryRaw<RawRow[]>`
       SELECT t.id, t.date, t.datePrecision, s.periodStart, s.periodEnd, t.amountCents, t.lane, t.accountId, t.payee, t.detail,
              t.merchantKey, t.counterpartyKind, t.counterpartyInstitution, t.counterpartyAccountHint, t.classifiedBy,
-             c.name AS categoryName, c.groupName AS categoryGroup, l.matchId
+             c.name AS categoryName, c.groupName AS categoryGroup, l.matchId,
+             s.id AS statementImportId, s.documentId
       FROM "Transaction" t
       JOIN "StatementImport" s ON s.id = t.statementImportId
       JOIN "Account" a ON a.id = t.accountId
@@ -287,6 +302,8 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       counterpartyAccountHint: r.counterpartyAccountHint,
       classifiedBy: r.classifiedBy,
       transferMatchId: r.matchId ?? null,
+      statementImportId: r.statementImportId,
+      documentId: r.documentId,
     };
     // A landlord's bill row books where the ledger does (billBooking.ts).
     const bill = ledger.billRows?.get(r.id);
@@ -449,8 +466,11 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     persons,
     idle,
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
+    passes: [],
   };
-  book.integrity = { ...runChecks(book, exceptions.exceptions), retired: exceptions.retired };
+  const checked = runChecksWithPasses(book, exceptions.exceptions);
+  book.integrity = { ...checked.report, retired: exceptions.retired };
+  book.passes = checked.passes;
   book.horizon.cashFlow = cashFlowThrough(book);
   return book;
 }

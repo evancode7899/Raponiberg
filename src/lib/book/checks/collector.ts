@@ -1,5 +1,16 @@
 import { exceptionMatches } from "../exceptions.ts";
-import { CHECKS, type AcceptedFinding, type CheckId, type CheckResult, type Finding, type Inference, type IntegrityReport, type StandingException } from "../types.ts";
+import {
+  CHECKS,
+  type AcceptedFinding,
+  type CheckId,
+  type CheckPass,
+  type CheckResult,
+  type Finding,
+  type Inference,
+  type IntegrityReport,
+  type PassEvidence,
+  type StandingException,
+} from "../types.ts";
 
 type Tally = { passed: number; failed: number; missing: number; awaiting: number; inferred: number; accepted: number };
 
@@ -12,6 +23,8 @@ export class Collector {
   findings: Finding[] = [];
   inferences: Inference[] = [];
   accepted: AcceptedFinding[] = [];
+  /** Kept off the report (`report()`): the Statements page's payload doesn't carry them. */
+  passes: CheckPass[] = [];
 
   private exceptions: StandingException[];
   private matched = new Set<string>();
@@ -28,8 +41,11 @@ export class Collector {
     if (!c) this.counts.set(id, (c = { passed: 0, failed: 0, missing: 0, awaiting: 0, inferred: 0, accepted: 0 }));
     return c;
   }
-  pass(id: CheckId, n = 1) {
+  /** Records `n` passes of a check, with what they covered (see CheckPass). */
+  pass(id: CheckId, ev: PassEvidence, n = 1) {
     this.tally(id).passed += n;
+    const { subject, ...scope } = ev;
+    this.passes.push({ check: id, n, subject, scope });
   }
   add(f: Finding) {
     if (this.findings.some((x) => x.id === f.id) || this.accepted.some((x) => x.id === f.id)) return;

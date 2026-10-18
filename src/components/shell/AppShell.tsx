@@ -4,6 +4,7 @@ import { apiSecretHeaders, clearCachedResponses } from "@/components/ledger/useA
 import { commandForPath, NAV_GROUPS, TERMINAL_COMMANDS, type TerminalCommand } from "@/components/shell/terminalCommands";
 import { isUnlocked, LockScreen, setUnlocked } from "@/components/shell/LockScreen";
 import { TerminalCommandBar } from "@/components/shell/TerminalCommandBar";
+import { ProofProvider } from "@/components/ui/proof/ProofProvider";
 import { applyTheme, isAppTheme, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -251,7 +252,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main id="main" className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
           {page && pathname !== "/" && <PageHeader page={page} />}
-          {children}
+          <ProofProvider>{children}</ProofProvider>
         </main>
       </div>
     </div>

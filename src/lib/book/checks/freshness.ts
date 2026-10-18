@@ -1,6 +1,7 @@
 import { CLASSIFIER_VERSION } from "../../classifier/version.ts";
 import { FACT_PARSERS, FACTS_VERSION, PAYSTUB_PARSERS, TAX_FACT_PARSERS } from "../../ingest/factsVersion.ts";
 import { PARSER_VERSIONS } from "../../ingest/parsers/index.ts";
+import { TAX_DOCS_VERSION } from "../../taxdocs/store.ts";
 import type { Book, BookDocument } from "../load.ts";
 import type { FindingScope } from "../types.ts";
 import type { Collector } from "./collector.ts";
@@ -14,6 +15,8 @@ import type { Collector } from "./collector.ts";
  *  - documents read by an older version of their parser (re-import them);
  *  - pay stub and brokerage tax facts read by an older extractor (re-read on the next
  *    refresh, automatically);
+ *  - tax documents (W-2s, 1099s, K-1s, filed returns) read by an older version of the
+ *    tax documents reader (scan the tax documents folder again);
  *  - rows filed by older classification rules (re-run on the next refresh).
  */
 export function checkFreshness(book: Book, c: Collector) {
@@ -48,11 +51,11 @@ export function checkFreshness(book: Book, c: Collector) {
       scope: { ...span(docs), affects: affects(parserId) },
     });
   }
-  if (outdated.size === 0) c.pass("ledger.freshness");
+  if (outdated.size === 0) c.pass("ledger.freshness", { subject: `Every document read by its current parser`, from: firstDay, to: book.today, affects: ["CASH_FLOW", "NET_WORTH", "PAY", "TAX"] });
 
   // Facts read by an older extractor.
   const staleFacts = book.documents.filter((d) => FACT_PARSERS.includes(d.parserId) && d.factsVersion < FACTS_VERSION && !outdated.has(d.parserId));
-  if (staleFacts.length === 0) c.pass("ledger.freshness");
+  if (staleFacts.length === 0) c.pass("ledger.freshness", { subject: `Pay stub, tax and holdings figures from the current extractor`, from: firstDay, to: book.today, affects: ["CASH_FLOW", "PAY", "TAX"] });
   else
     c.add({
       id: `ledger.freshness:facts:v${FACTS_VERSION}`,
@@ -73,11 +76,36 @@ export function checkFreshness(book: Book, c: Collector) {
       },
     });
 
+  // Tax documents (W-2s, 1099s, K-1s, filed returns) read by an older version of their
+  // reader: the stored scan records the version that read it, as a statement records its parser's.
+  const taxDocs = book.taxDocs;
+  if (taxDocs?.docs.length) {
+    const years = taxDocs.docs.map((d) => d.year).filter((y): y is number => y != null).sort();
+    const scope = { from: years.length ? `${years[0]}-01-01` : firstDay, to: book.today, affects: ["TAX"] as FindingScope["affects"] };
+    const files = taxDocs.docs.filter((d) => !d.superseded);
+    if (taxDocs.version >= TAX_DOCS_VERSION)
+      c.pass("ledger.freshness", { subject: `${files.length} tax document${files.length === 1 ? "" : "s"} read by the current tax documents reader (version ${TAX_DOCS_VERSION})`, ...scope });
+    else
+      c.add({
+        id: `ledger.freshness:taxdocs:v${TAX_DOCS_VERSION}`,
+        check: "ledger.freshness",
+        status: "FAIL",
+        title: `${files.length} tax document${files.length === 1 ? " was" : "s were"} read by an older tax documents reader`,
+        detail: `The tax documents folder was last read by version ${taxDocs.version} of the reader; the app now has version ${TAX_DOCS_VERSION}, which reads W-2s, 1099s, K-1s and returns differently: ${files
+          .slice(0, 3)
+          .map((d) => d.file)
+          .join(", ")}${files.length > 3 ? ` and ${files.length - 3} more` : ""}.`,
+        fix: "Click Scan tax documents folder (Statements → Import): every PDF in the folder is read again by the current reader.",
+        scope,
+      });
+  }
+
   // Rows filed by older classification rules. Lanes and categories decide cash flow, pay
   // and taxes; balances (net worth) don't depend on them.
   const rulesCurrent = (book.classifiedWith ?? 0) >= CLASSIFIER_VERSION;
   const householdCurrent = (book.classifiedWithHousehold ?? "") === book.household.fingerprint;
-  if ((rulesCurrent && householdCurrent) || book.rows.length === 0) c.pass("ledger.freshness");
+  if ((rulesCurrent && householdCurrent) || book.rows.length === 0)
+    c.pass("ledger.freshness", { subject: `Transactions filed by the current classification rules and household file`, from: firstDay, to: book.today, affects: ["CASH_FLOW", "PAY", "TAX"] });
   else if (rulesCurrent)
     c.add({
       id: `ledger.freshness:household:${book.household.fingerprint || "none"}`,
