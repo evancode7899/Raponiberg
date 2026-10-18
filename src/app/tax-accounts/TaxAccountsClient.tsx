@@ -109,8 +109,7 @@ export function TaxAccountsClient({ requiresApiSecret }: { requiresApiSecret: bo
 
 function Accounts({ r }: { r: TaxAccountsReport }) {
   const open = r.steps.filter((s) => !s.done);
-  const pretaxRoom = open.filter((s) => s.taxSavedCents != null).reduce((s, x) => s + x.roomCents, 0);
-  const saved = open.reduce((s, x) => s + (x.taxSavedCents ?? 0), 0);
+  const { roomCents: pretaxRoom, taxSavedCents: saved } = r.pretax;
   const chet = r.steps.find((s) => s.id === "chet");
   return (
     <>
@@ -118,8 +117,8 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
         <StatCell label="Pre-tax room left" value={usd0(pretaxRoom)} proof={lim(r, { account: "steps", figure: "room" }, pretaxRoom)} sub={r.isCurrentYear ? "401(k) and HSA, through December 31" : `${r.year}: the year is over`} />
         <StatCell
           label="Tax it would save"
-          value={r.marginalRate.rate == null ? "—" : usd0(saved)}
-          proof={r.marginalRate.rate == null ? undefined : lim(r, { account: "steps", figure: "tax-saved" }, saved)}
+          value={saved == null ? "Unknown" : usd0(saved)}
+          proof={saved == null ? { descriptor: { report: "account-limits", year: r.year, account: "steps", figure: "tax-saved" } } : lim(r, { account: "steps", figure: "tax-saved" }, saved)}
           sub={r.marginalRate.rate == null ? "set a marginal rate on Inputs" : `at ${formatPercentRatio(r.marginalRate.rate, 1)} federal + state${r.marginalRate.source === "PRIOR_YEAR" ? ` (${r.year - 1}'s rate)` : ""}`}
         />
         <StatCell

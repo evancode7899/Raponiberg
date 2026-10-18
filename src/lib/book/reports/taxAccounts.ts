@@ -102,7 +102,9 @@ export type Step = {
   roomCents: number;
   /** What a dollar here gets you. */
   benefit: string;
-  /** Rough tax saved this year if the room is filled (pre-tax steps only). */
+  /** A pre-tax step (employer match, HSA, 401(k)): filling it cuts this year's tax. */
+  pretax: boolean;
+  /** Rough tax saved this year if the room is filled (pre-tax steps only; null when no marginal rate is known). */
   taxSavedCents: number | null;
   done: boolean;
   /** Something to do first or to check (pro-rata, plan rules). */
@@ -123,6 +125,11 @@ export type TaxAccountsReport = {
     chet: { deductionLimit: number; contributed: number };
   };
   steps: Step[];
+  /**
+   * The open pre-tax steps together: their room, whether or not a marginal rate is known,
+   * and the tax filling them would save (null when the rate isn't known).
+   */
+  pretax: { roomCents: number; taxSavedCents: number | null };
   warnings: string[];
   /** Settled items worth knowing (an excess deferral returned in time), word for word as the Taxes page says them. */
   notices: string[];
@@ -335,6 +342,7 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
     chet: { deductionLimit: params.ct.chetDeduction[filingStatus], contributed: chet.total },
   };
 
+  const steps = orderSteps(buildSteps(people, household, marginalRate.rate), { marginalRate: marginalRate.rate });
   return {
     year,
     today,
@@ -344,7 +352,8 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
     marginalRate,
     people,
     household,
-    steps: orderSteps(buildSteps(people, household, marginalRate.rate),{ marginalRate: marginalRate.rate }),
+    steps,
+    pretax: pretaxTotals(steps, marginalRate.rate),
     warnings,
     notices,
     paramsNotes: params.notes,
@@ -362,6 +371,12 @@ const TAX_YEAR_EXISTS = (year: number) => {
 
 const dollars = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
 
+/** The open pre-tax steps' room, and the tax filling it saves when a marginal rate is known. */
+export function pretaxTotals(steps: Step[], rate: number | null): TaxAccountsReport["pretax"] {
+  const open = steps.filter((s) => s.pretax && !s.done);
+  return { roomCents: open.reduce((t, s) => t + s.roomCents, 0), taxSavedCents: rate == null ? null : open.reduce((t, s) => t + (s.taxSavedCents ?? 0), 0) };
+}
+
 /** Every account with a yearly limit to fill, with the room left and why it's worth it. */
 function buildSteps(people: PersonAccounts[], h: TaxAccountsReport["household"], rate: number | null): Step[] {
   const saved = (cents: number | null) => (rate == null || cents == null ? null : Math.round(cents * rate));
@@ -371,6 +386,7 @@ function buildSteps(people: PersonAccounts[], h: TaxAccountsReport["household"],
       steps.push({
         id: `match-${p.id}`,
         personId: p.id,
+        pretax: true,
         title: `${p.name}: defer enough to get the full employer match`,
         roomCents: p.k401.match.shortfall,
         benefit: `Free money: the employer adds ${Math.round(p.k401.match.rate * 100)}¢ per dollar up to ${Math.round(p.k401.match.upTo * 100)}% of pay.`,
@@ -383,6 +399,7 @@ function buildSteps(people: PersonAccounts[], h: TaxAccountsReport["household"],
       steps.push({
         id: `hsa-${p.id}`,
         personId: p.id,
+        pretax: true,
         title: `${p.name}: fill the HSA`,
         roomCents: p.hsa.room,
         benefit: "Deductible going in, grows tax-free, tax-free out for medical costs. Through payroll it also skips Social Security and Medicare tax.",
@@ -395,6 +412,7 @@ function buildSteps(people: PersonAccounts[], h: TaxAccountsReport["household"],
     steps.push({
       id: `ira-${p.id}`,
       personId: p.id,
+      pretax: false,
       title: backdoor ? `${p.name}: backdoor Roth IRA` : `${p.name}: Roth IRA`,
       roomCents: p.ira.room,
       benefit: backdoor
@@ -410,6 +428,7 @@ function buildSteps(people: PersonAccounts[], h: TaxAccountsReport["household"],
     steps.push({
       id: `k401-${p.id}`,
       personId: p.id,
+      pretax: true,
       title: `${p.name}: max the 401(k)`,
       roomCents: p.k401.room,
       benefit: `Pre-tax deferrals cut this year's tax at your top rate${p.remainingPaychecks ? `; ${dollars(p.k401.perPaycheckToMax ?? 0)} more per paycheck over ${p.remainingPaychecks} paychecks fills it` : ""}.`,
@@ -422,6 +441,7 @@ function buildSteps(people: PersonAccounts[], h: TaxAccountsReport["household"],
   steps.push({
     id: "chet",
     personId: null,
+    pretax: false,
     title: "CHET 529 up to Connecticut's deduction",
     roomCents: chetRoom,
     benefit: "Deductible on the Connecticut return; grows tax-free for education.",

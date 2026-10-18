@@ -408,8 +408,8 @@ function excessProof(r: TaxAccountsReport, d: AccountLimitsDescriptor, p: Person
 
 // ------------------------------------------------------------------- the headline figures
 
-/** The steps the page's "Pre-tax room left" adds: open ones with a tax saving (the page's own filter). */
-const pretaxSteps = (r: TaxAccountsReport) => r.steps.filter((s) => !s.done && s.taxSavedCents != null);
+/** The steps the page's "Pre-tax room left" adds: every open pre-tax step (match, HSA, 401(k)), whether or not a rate is known. */
+const pretaxSteps = (r: TaxAccountsReport) => r.steps.filter((s) => s.pretax && !s.done);
 
 function stepLink(r: TaxAccountsReport, id: string): ProofLink | undefined {
   const [kind, personId] = [id.split("-")[0], id.slice(id.indexOf("-") + 1)];
@@ -419,44 +419,58 @@ function stepLink(r: TaxAccountsReport, id: string): ProofLink | undefined {
   return undefined;
 }
 
+const MATCH_NOTE = "The deferral that earns the whole match (projected gross × the match's share of pay you typed on Inputs) less your projected deferrals.";
+
 function stepsProof(r: TaxAccountsReport, d: AccountLimitsDescriptor): Built {
   const steps = pretaxSteps(r);
-  const saved = d.figure === "tax-saved";
   const rate = r.marginalRate.rate;
+  // With no rate known the tax saved is unknown: the room is listed, the rate says what's missing.
+  const saved = d.figure === "tax-saved" && rate != null;
+  const unknown = d.figure === "tax-saved" && rate == null;
   const lines: ChainLine[] = steps.map((s, i) => {
     const l = stepLink(r, s.id);
     const match = s.id.startsWith("match-");
     return {
       op: i ? ("+" as const) : undefined,
       label: saved ? `${s.title}: ${money(s.roomCents)} × the rate` : s.title,
-      value: { cents: saved ? s.taxSavedCents! : s.roomCents },
+      value: { cents: saved ? (s.taxSavedCents ?? 0) : s.roomCents },
       source: match ? ("assumption" as const) : ("derived" as const),
-      ...(match ? { note: "The deferral that earns the whole match (projected gross × the match's share of pay you typed on Inputs) less your projected deferrals." } : {}),
+      ...(match ? { note: MATCH_NOTE } : {}),
       ...(l ? { link: l } : {}),
     };
   });
-  const figure = steps.reduce((t, s) => t + (saved ? s.taxSavedCents! : s.roomCents), 0);
   const parts = total(lines);
-  if (lines.length) lines.push({ op: "=", label: saved ? "Tax it would save" : "Pre-tax room left", value: { cents: figure }, source: saved ? "estimate" : "derived" });
-  else lines.push({ label: rate == null ? "No marginal rate is known, so no pre-tax step is counted" : "Every pre-tax limit is filled", value: { cents: 0 }, source: "derived" });
-  const blocks: ProofBlock[] = [{ kind: "chain", title: saved ? "Each open pre-tax limit" : "Open pre-tax limits", lines, note: saved ? undefined : "The employer-match step and the 401(k) step both count the 401(k)'s shortfall, as the page lists them." }];
-  if (rate != null)
+  const figure = saved ? (r.pretax.taxSavedCents ?? 0) : r.pretax.roomCents;
+  if (lines.length) lines.push({ op: "=", label: saved ? "Tax it would save" : "Pre-tax room left", value: { cents: saved ? figure : parts }, source: saved ? "estimate" : "derived" });
+  else lines.push({ label: "Every pre-tax limit is filled", value: { cents: 0 }, source: "derived" });
+  const blocks: ProofBlock[] = [
+    {
+      kind: "chain",
+      title: saved ? "Each open pre-tax limit" : "Open pre-tax limits",
+      lines,
+      note: saved ? undefined : "The employer-match step and the 401(k) step both count the 401(k)'s shortfall, as the page lists them.",
+    },
+  ];
+  if (d.figure === "tax-saved")
     blocks.push({
       kind: "chain",
       title: "The rate",
       lines: [
-        {
-          label: "Federal + state on the next pre-tax dollar",
-          value: { ratio: rate },
-          source: r.marginalRate.source === "SETTING" ? "assumption" : "derived",
-          note: r.marginalRate.source === "SETTING" ? "Typed on Inputs." : r.marginalRate.source === "PRIOR_YEAR" ? `${r.year - 1}'s tax estimate (this year's isn't provable yet).` : "The tax estimate's marginal rates.",
-        },
+        rate == null
+          ? { label: "Federal + state on the next pre-tax dollar", value: { text: "unknown" }, source: "assumption", note: "No rate typed on Inputs and no provable tax estimate for this year or last, so the tax saved can't be worked out." }
+          : {
+              label: "Federal + state on the next pre-tax dollar",
+              value: { ratio: rate },
+              source: r.marginalRate.source === "SETTING" ? "assumption" : "derived",
+              note: r.marginalRate.source === "SETTING" ? "Typed on Inputs." : r.marginalRate.source === "PRIOR_YEAR" ? `${r.year - 1}'s tax estimate (this year's isn't provable yet).` : "The tax estimate's marginal rates.",
+            },
       ],
     });
+  const n = `${steps.length} open limit${steps.length === 1 ? "" : "s"}`;
   return {
-    describes: saved ? `Tax the open pre-tax limits would save, ${r.year} (at ${rate == null ? "no known rate" : formatPercentRatio(rate, 1)})` : `Pre-tax room left, ${r.year}`,
-    figure: { cents: figure },
-    selfCheck: sumCheck(figure, parts, `The ${steps.length} open limit${steps.length === 1 ? "" : "s"} below add up to ${money(parts)}`),
+    describes: d.figure === "tax-saved" ? `Tax the open pre-tax limits would save, ${r.year} (${rate == null ? "no marginal rate known" : `at ${formatPercentRatio(rate, 1)}`})` : `Pre-tax room left, ${r.year}`,
+    figure: unknown ? { text: "Unknown" } : { cents: figure },
+    selfCheck: unknown ? null : sumCheck(figure, parts, `The ${n} below add up to ${money(parts)}`),
     blocks,
     estimates: saved && steps.length ? [{ id: "account-limits:tax-saved", title: "Tax saved at one marginal rate", detail: "Each dollar of room times the rate on the next dollar; a large amount could cross a bracket." }] : [],
   };

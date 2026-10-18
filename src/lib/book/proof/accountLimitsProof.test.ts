@@ -6,6 +6,7 @@ import { taxYearParams } from "../../tax/params";
 import type { TaxProfile } from "../../tax/profile";
 import { normalizeRetirementSettings } from "../../taxAccounts/settings";
 import type { Book, BookAccount, BookBrokerage, BookRow, BookStub } from "../load";
+import type { Finding } from "../types";
 import { buildTaxAccounts, type TaxAccountsReport } from "../reports/taxAccounts";
 import { buildAccountLimitsProof, parseAccountLimitsDescriptor, type AccountLimitsDescriptor } from "./accountLimitsProof";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
@@ -85,7 +86,18 @@ const chetSnap = (periodEnd: string, contributionsYtd: number | null): BookBroke
     isYearEnd: false, endingValue: 1_000_000, income: null, realized: null, incomeRows: [], distributions: [], contributionsYtd, isChet: true,
   }) as unknown as BookBrokerage;
 
-function makeBook(): Book {
+/** An open tax finding over 2024–2025: no provable tax estimate for 2025 or the year before, so no marginal rate. */
+const NO_TAX: Finding = {
+  id: "tax.params:example",
+  check: "tax.params",
+  status: "FAIL",
+  title: "Example: tax law missing",
+  detail: "Invented for the test.",
+  fix: "None.",
+  scope: { from: "2024-01-01", to: "2025-12-31", affects: ["TAX"] },
+} as Finding;
+
+function makeBook(findings: Finding[] = []): Book {
   const rows = [
     row("ira-1", "ira", "2025-04-10", 300_000, "IRA CONTRIBUTION"),
     row("ira-2", "ira", "2025-11-03", 200_000, "IRA CONTRIBUTION"),
@@ -115,7 +127,7 @@ function makeBook(): Book {
     taxDocs: null,
     persons: PROFILE.persons,
     idle: { proven: [], unproven: [] },
-    integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
+    integrity: { checks: [], findings, inferences: [], accepted: [], stale: [], retired: [] },
     passes: [],
   } as Book;
 }
@@ -133,9 +145,8 @@ const links = (p: Proof): ProofLink[] =>
 /** Every figure the page makes clickable, with the value the page shows. */
 function pageFigures(r: TaxAccountsReport): { d: AccountLimitsDescriptor; cents: number }[] {
   const f = (x: Omit<AccountLimitsDescriptor, "report" | "year">, c: number) => ({ d: { report: "account-limits" as const, year: r.year, ...x }, cents: c });
-  const open = r.steps.filter((s) => !s.done && s.taxSavedCents != null);
-  const out = [f({ account: "steps", figure: "room" }, open.reduce((t, s) => t + s.roomCents, 0)), f({ account: "chet", figure: "used" }, r.household.chet.contributed), f({ account: "chet", figure: "limit" }, r.household.chet.deductionLimit), f({ account: "chet", figure: "room" }, r.steps.find((s) => s.id === "chet")!.roomCents)];
-  if (r.marginalRate.rate != null) out.push(f({ account: "steps", figure: "tax-saved" }, open.reduce((t, s) => t + (s.taxSavedCents ?? 0), 0)));
+  const out = [f({ account: "steps", figure: "room" }, r.pretax.roomCents), f({ account: "chet", figure: "used" }, r.household.chet.contributed), f({ account: "chet", figure: "limit" }, r.household.chet.deductionLimit), f({ account: "chet", figure: "room" }, r.steps.find((s) => s.id === "chet")!.roomCents)];
+  if (r.pretax.taxSavedCents != null) out.push(f({ account: "steps", figure: "tax-saved" }, r.pretax.taxSavedCents));
   for (const p of r.people) {
     const personId = p.id;
     out.push(
@@ -255,6 +266,27 @@ describe("account-limits proofs", () => {
         }
       }
     expect(n).toBeGreaterThan(20);
+  });
+
+  it("counts every open pre-tax step's room with no marginal rate known, and calls the tax saved unknown", async () => {
+    const book = makeBook([NO_TAX]);
+    const r = buildTaxAccounts(book, 2025, settings, {});
+    expect(r.marginalRate).toEqual({ rate: null, source: "NONE" });
+    const open = r.steps.filter((s) => s.pretax && !s.done);
+    // Pat has HSA and 401(k) room; Sam deferred past the limit. Before the fix, no rate meant no step counted.
+    expect(open.map((s) => s.id).sort()).toEqual(["hsa-pat", "k401-pat"]);
+    expect(r.pretax.roomCents).toBe(open.reduce((t, s) => t + s.roomCents, 0));
+    expect(r.pretax.roomCents).toBeGreaterThan(0);
+    expect(r.pretax.taxSavedCents).toBeNull();
+    const c = { book, db };
+    const room = await buildProof(c, { report: "account-limits", year: 2025, account: "steps", figure: "room" });
+    expect(cents(room)).toBe(r.pretax.roomCents);
+    expect(room.selfCheck?.ok).toBe(true);
+    const saved = await buildProof(c, { report: "account-limits", year: 2025, account: "steps", figure: "tax-saved" });
+    expect(saved.figure).toEqual({ text: "Unknown" });
+    expect(saved.selfCheck).toBeNull();
+    const rate = saved.blocks.find((b) => b.title === "The rate");
+    expect(rate?.kind === "chain" && rate.lines[0]!.value).toEqual({ text: "unknown" });
   });
 
   it("rejects descriptors the page never makes", () => {
