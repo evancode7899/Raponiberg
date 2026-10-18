@@ -138,7 +138,7 @@ function employerLines(r: TaxAccountsReport, p: PersonAccounts, e: EmployerPlan,
       value: { cents: repeated },
       source: "estimate",
       note: `The ${proj!.basis === "TYPICAL" ? "typical recent" : "latest"} regular check's ${f.label}, repeated for each pay date after the ${e.through} stub.`,
-      // TODO(proof forecast month): the months these paychecks land in, once the forecast's month cells are provable.
+      // No forecast ledger cell: its lines are household-wide (toRetirement also holds employer money), so none holds one person's deferrals; the pay seed is the source.
       ...(proj!.fromForecast ? { link: { label: `${p.name}'s pay in the forecast`, descriptor: { report: "forecast", figure: "seed", which: "pay", personId: p.id, paycheck: proj!.basis } } } : {}),
     });
     estimates.push({ id: `account-limits:${p.id}:${e.employer}:${f.line}`, title: `${p.name}'s ${f.label} from ${name} for the ${proj!.checks} pay dates left in ${r.year}`, detail: "The regular paycheck repeated; a raise, a change of election or a bonus deferral would move it." });
