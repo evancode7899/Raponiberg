@@ -12,9 +12,11 @@ import { ownedOn, SHARED, type Car, type CarEntry, type CarKind, type GarageSett
  * store, a car loan, the town, a merchant seen on a logged entry) are only suggested until
  * the owner says. The issuers' and the classifier's categories are never trusted (a gas
  * station is filed under Dining often enough), but a category the owner set by hand on
- * the Transactions page is their word: a row they filed under anything but Transportation
- * is not the car, unless they placed it here (a decision on the row, or a log entry tied
- * to it), which wins.
+ * one row on the Transactions page is their word: that row, filed under anything but
+ * Transportation, is not the car, unless they placed it here (a decision on the row, or a
+ * log entry tied to it), which wins. A merchant rule is not: a gas station sells snacks
+ * and fuel alike, so a rule filing the whole store under Dining says nothing about which
+ * of its charges were the car.
  *
  * A log entry is a note on the charge it matches (what it was, gallons, the odometer). It
  * never adds money of its own: an entry with no charge is listed as not found, or as
@@ -65,8 +67,8 @@ const NOT_CAR = /UBER|LYFT|\bTAXI|AMTRAK|METRO-?NORTH|\bMTA\b|NJ ?TRANSIT|GAS (&
 const NOT_CAR_CATEGORIES = new Set(["Housing & utilities", "Groceries", "Dining"]);
 /** The category the cars' costs are filed under. */
 const CAR_CATEGORY = "Transportation";
-/** The owner set the category by hand (on this row, or for every row of its merchant). */
-const ownerFiled = (r: Pick<MatchRow, "classifiedBy">) => r.classifiedBy === "USER" || r.classifiedBy === "user-merchant-rule";
+/** The owner set this one row's category by hand (not a rule for every row of its merchant). */
+const ownerFiled = (r: Pick<MatchRow, "classifiedBy">) => r.classifiedBy === "USER";
 /** Kinds of the same family: a log entry for a car wash can be the charge the rules read as a repair shop. */
 const SERVICE = new Set<CarKind>(["MAINTENANCE", "REPAIR", "CARE", "EQUIPMENT", "OTHER"]);
 /** Bills that buy time: one payment, many months. */
