@@ -3,6 +3,7 @@ import { analyzeFire, drawFor, extended, FAT_SHARE, fireNumber, firePlans, LEAN_
 import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
 import { balancesAt, buildForecast, homeForecast, milestones as netWorthMilestones, taxLink, type Forecast } from "../../forecast/forecast.ts";
 import { forecastInputs, loadForecastData, type ForecastData } from "../../forecast/load.ts";
+import { monthPeriods, yearPeriods } from "../../forecast/periods.ts";
 import { GOALS_KEY, normalizeGoals } from "../../goals/settings.ts";
 import { computeLenderMax, computeMaxApproval, defaultHomeBudgetInputs, monthlyPaymentOnLoan, type HomeBudgetInputs, type MaxApprovalResult } from "../../home-budget/homeBudgetModel.ts";
 import { defaultFunds, linkHome, type FundsBook, type FundsConfig, type HomeLinked } from "../../home-budget/homeLinked.ts";
@@ -19,7 +20,7 @@ import { buildHomeFunds, buildHomeSpending } from "../reports/homeFunds.ts";
 import type { BonusesDescriptor } from "./bonusesProof.ts";
 import { CASH_FLOW_CHECKS, type CashFlowDescriptor } from "./cashFlowProof.ts";
 import { checksFor, sumCheck } from "./common.ts";
-import type { ForecastDescriptor } from "./forecastProof.ts";
+import { ledgerValue, type ForecastDescriptor, type LedgerLine } from "./forecastProof.ts";
 import { NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { PAY_CHECKS, type PayDescriptor } from "./payProof.ts";
 import type { TaxEstimateDescriptor } from "./taxEstimateProof.ts";
@@ -37,9 +38,10 @@ import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstim
  *    "forecast" seed proofs, which open the net-worth, cash-flow and pay proofs;
  *  - real balances, spending and pay open the net-worth / cash-flow / pay proofs directly;
  *  - a projected value (a balance or a salary in a future month) is an "estimate" line
- *    with its value. TODO(proof forecast month): each such line is built by `projected`
- *    with the month and the forecast line it would open; link them once the forecast
- *    kind proves a month's cell (figure "month").
+ *    with its value, built by `projected` with the forecast ledger cell it is (a month,
+ *    or a forecast year Jan–Dec). It opens that cell's proof (forecast figure "month")
+ *    only when the cell, re-read from the saved forecast, holds exactly the line's value;
+ *    lines no cell matches carry none (each call site says why).
  *  - what the owner typed (FIRE settings, goal targets and shares, home inputs) is an
  *    "assumption"; brackets and rates set by law are "law".
  *
@@ -151,16 +153,53 @@ const LIVING: LivingBasis[] = ["TRAILING_12", "LAST_YEAR", "THIS_YEAR"];
 /** A signed adjustment as a chain line: "+" or "−" by its sign, the value shown positive. */
 const signed = (c: number, line: Omit<ChainLine, "op" | "value">): ChainLine => ({ ...line, op: c < 0 ? "−" : "+", value: { cents: Math.abs(c) } });
 
-/** A forecast month's cell, by its month and its OutlookMonth line. */
-type MonthCell = { key: string; line: string };
+/** A forecast ledger cell: a line over the months `month` through `through` (one month when omitted). */
+type MonthCell = { month: string; through?: string; line: LedgerLine };
+type CellDescriptor = Extract<ForecastDescriptor, { figure: "month" }>;
+const cellDescriptor = (c: MonthCell): CellDescriptor => ({ report: "forecast", figure: "month", month: c.month, ...(c.through && c.through !== c.month ? { through: c.through } : {}), line: c.line });
+/** A forecast year's column, Jan–Dec. */
+const yearCell = (year: number, line: LedgerLine): MonthCell => ({ month: `${year}-01`, through: `${year}-12`, line });
+
+/** A projected line waiting for its cell's link (see `linkCells`). */
+type Projected = ChainLine & { cell?: MonthCell };
 
 /**
- * A projected value: the forecast's figure for a future month, an estimate. The one place
- * that will open the forecast's month proof (TODO(proof forecast month): add
- * `link: { label, descriptor: { report: "forecast", figure: "month", key: cell.key, line: cell.line } }`).
+ * A projected value: the forecast's figure for a future month (or year), an estimate.
+ * `cell` is the forecast ledger cell it is, or null when no ledger line holds it (the
+ * caller says why); `linkCells` links it once the cell is checked to hold this value.
  */
-function projected(op: ChainLine["op"], label: string, value: number, cell: MonthCell, note?: string): ChainLine {
-  return { ...(op ? { op } : {}), label, value: { cents: value }, source: "estimate", note: note ?? `The forecast's ${cell.line} for ${monthWord(cell.key)}.` };
+function projected(op: ChainLine["op"], label: string, value: number, cell: MonthCell | null, note: string): Projected {
+  return { ...(op ? { op } : {}), label, value: { cents: value }, source: "estimate", note, ...(cell ? { cell } : {}) };
+}
+
+/**
+ * Each projected line's link to its forecast ledger cell, read the way the forecast proof
+ * reads it (the saved forecast's year and month columns, periods.ts, as forecastProof's
+ * columnsOf): only a cell holding exactly the line's value is linked, so a link never opens
+ * a different number (a year past the forecast's horizon, a plan the forecast doesn't run).
+ */
+function linkCells(b: Base | null, blocks: ProofBlock[]): ProofBlock[] {
+  const cols = new Map<number, ReturnType<typeof yearPeriods>>();
+  const valueOf = (c: MonthCell): number | null => {
+    if (!b) return null;
+    const year = Number(c.month.slice(0, 4));
+    if (!cols.has(year)) cols.set(year, [...yearPeriods(b.saved, b.data.profile, { actualYears: b.data.profile.years.length, throughYear: year }), ...monthPeriods(b.saved, b.data.profile, year)]);
+    const col = cols.get(year)!.find((p) => p.from === c.month && p.through.slice(0, 7) === (c.through ?? c.month));
+    return col ? ledgerValue(col.flows, c.line) : null;
+  };
+  return blocks.map((bl) =>
+    bl.kind !== "chain"
+      ? bl
+      : {
+          ...bl,
+          lines: bl.lines.map((l: Projected) => {
+            const { cell, ...line } = l;
+            if (!cell || !("cents" in line.value)) return line;
+            const v = valueOf(cell);
+            return v != null && v === line.value.cents ? { ...line, link: { label: `Forecast ledger, ${monthWord(cell.month)}${cell.through && cell.through !== cell.month ? ` – ${monthWord(cell.through)}` : ""}`, descriptor: cellDescriptor(cell) } } : line;
+          }),
+        },
+  );
 }
 
 const seedLink = (label: string, descriptor: ForecastDescriptor): ProofLink => ({ label, descriptor });
@@ -169,13 +208,15 @@ const START = seedLink("The forecast's starting point", { report: "forecast", fi
 type Built = Omit<Proof, "report" | "descriptor" | "today" | "checks" | "withheld"> & { checks?: ProofCheck[]; withheld?: boolean };
 
 /** What every forecast-fed figure stands on: the Book, the forecast's data and the forecast on the saved drivers (FIRE's settings put in). */
-type Base = { book: Book; data: ForecastData; seeds: OutlookSeeds; a: OutlookAssumptions; f: Forecast };
+type Base = { book: Book; data: ForecastData; seeds: OutlookSeeds; a: OutlookAssumptions; f: Forecast; saved: Forecast };
 
 function baseFrom(book: Book, data: ForecastData, patch: Partial<OutlookAssumptions> = {}): Base | null {
   const inputs = forecastInputs(data);
   if (!inputs) return null;
   const a = { ...data.profile.settings.outlook, ...patch };
-  return { book, data, seeds: inputs.seeds, a, f: buildForecast(inputs, a) };
+  const f = buildForecast(inputs, a);
+  // The forecast on the saved drivers, as the forecast ledger's cells are read (FIRE's own settings don't move a working month, but a cell is checked against this).
+  return { book, data, seeds: inputs.seeds, a, f, saved: Object.keys(patch).length ? buildForecast(inputs, data.profile.settings.outlook) : f };
 }
 
 function withheldProof(book: Book, data: ForecastData): Built {
@@ -323,21 +364,21 @@ function fireNumberProof(c: FireCtx, which: "fire" | "lean" | "fat"): Built {
 
 /** One year's walk-away row as a chain: Jan 1 net worth × the withdrawal rate, after tax, against that year's living cost. */
 function walkRowBlock(c: FireCtx, plan: OutlookPlan, row: WalkAwayRow, need: number, title: string, forecastMonths: boolean): ProofBlock {
-  const cell: MonthCell = { key: `${row.year - 1}-12`, line: "netWorth" };
-  const nwNote = forecastMonths ? undefined : `The forecast with every bonus left out, at the end of ${monthWord(cell.key)}.`;
+  const dec = `${row.year - 1}-12`;
   return {
     kind: "chain",
     title,
     lines: [
-      // TODO(proof forecast month): `${row.year - 1}-12` netWorth (the full plan only; the no-bonus plan is FIRE's own run).
-      projected(undefined, `Net worth on Jan 1, ${row.year}`, row.netWorth, cell, nwNote),
+      // The no-bonus plan is FIRE's own run, not the forecast: no ledger cell holds its net worth.
+      forecastMonths
+        ? projected(undefined, `Net worth on Jan 1, ${row.year}`, row.netWorth, { month: dec, line: "netWorth" }, `The forecast's net worth at the end of ${monthWord(dec)}.`)
+        : projected(undefined, `Net worth on Jan 1, ${row.year}`, row.netWorth, null, `The forecast with every bonus left out, at the end of ${monthWord(dec)}.`),
       { op: "×", label: "Withdrawal rate", value: { ratio: plan.withdrawalRate }, source: "assumption" },
       { op: "=", label: "Draw", value: { cents: row.draw }, source: "derived" },
       { op: "−", label: "Federal income tax", value: { cents: row.federalTax }, source: "law" },
       { op: "−", label: `State tax (${pct(plan.stateTaxRate)})`, value: { cents: row.stateTax }, source: "derived" },
       { op: "=", label: "Walk-away income after tax", value: { cents: row.afterTaxIncome }, source: "derived" },
-      // TODO(proof forecast month): `${row.year}-01` livingCost (the year's living cost; a twelfth of it each month).
-      projected("÷", `Living cost in ${row.year}`, row.livingCost, { key: `${row.year}-01`, line: "livingCost" }, `Grown by ${pct(plan.livingGrowth)} a year from the start.`),
+      projected("÷", `Living cost in ${row.year}`, row.livingCost, yearCell(row.year, "living"), `Grown by ${pct(plan.livingGrowth)} a year from the start.`),
       { op: "=", label: `Covered (${need >= 1 ? `${need * 100}%` : `${need * 100}%`} needed)`, value: { ratio: row.coverage ?? 0 }, source: "derived" },
     ],
   };
@@ -436,8 +477,7 @@ function coastYearProof(c: FireCtx): Built {
     kind: "chain",
     title,
     lines: [
-      // TODO(proof forecast month): `${r.year - 1}-12` netWorth.
-      projected(undefined, `Net worth on Jan 1, ${r.year}`, r.netWorth, { key: `${r.year - 1}-12`, line: "netWorth" }),
+      projected(undefined, `Net worth on Jan 1, ${r.year}`, r.netWorth, { month: `${r.year - 1}-12`, line: "netWorth" }, `The forecast's net worth at the end of Dec ${r.year - 1}.`),
       { label: `Coast FIRE number in ${r.year}`, value: { cents: r.coastNumber ?? 0 }, source: "derived", note: `The FIRE number in ${c.fa.retireYear} discounted at the return.` },
     ],
   });
@@ -464,7 +504,8 @@ function savingsRateProof(c: FireCtx): Built {
   const y = c.fa.projection.find((p) => p.months === 12 && p.working);
   const { checks, withheld } = forecastChecks(c);
   if (!y || c.fa.savingsRate == null) return { describes: "Savings rate", figure: { text: "—" }, selfCheck: null, blocks: [], checks, withheld, estimates: [], through: c.seeds.start.asOf };
-  const months = (line: string): MonthCell => ({ key: `${y.year}-01`, line: `${line} (Jan–Dec ${y.year})` });
+  const yr = (line: LedgerLine) => yearCell(y.year, line);
+  const sum = `The forecast's ${y.year}, Jan–Dec.`;
   const income = y.takeHome + y.employerMatch + y.bonusKept;
   const bonusSpent = y.bonusKept - y.bonusSaved;
   const parts = income - y.livingCost - y.planned - bonusSpent;
@@ -477,19 +518,15 @@ function savingsRateProof(c: FireCtx): Built {
         kind: "chain",
         title: `What ${y.year} brings in and saves`,
         lines: [
-          // TODO(proof forecast month): ${y.year}-01 … ${y.year}-12 takeHome (a year's sum).
-          projected(undefined, "Take-home from base pay", y.takeHome, months("takeHome")),
-          // TODO(proof forecast month): ${y.year}-01 … ${y.year}-12 employerMatch.
-          projected("+", "Employer 401(k) and HSA money", y.employerMatch, months("employerMatch")),
-          // TODO(proof forecast month): ${y.year}-01 … ${y.year}-12 bonusKept.
-          projected("+", "Bonus kept after tax", y.bonusKept, months("bonusKept")),
+          // The ledger has no take-home line (its taxes line nets bonus tax in), so no cell holds it.
+          projected(undefined, "Take-home from base pay", y.takeHome, null, sum),
+          projected("+", "Employer 401(k) and HSA money", y.employerMatch, yr("employer"), sum),
+          // The ledger shows bonus gross and bonus spent, not bonus kept: no cell holds it.
+          projected("+", "Bonus kept after tax", y.bonusKept, null, sum),
           { op: "=", label: "Income", value: { cents: income }, source: "derived" },
-          // TODO(proof forecast month): ${y.year}-01 … ${y.year}-12 livingCost.
-          projected("−", "Living cost", y.livingCost, months("livingCost")),
-          // TODO(proof forecast month): ${y.year}-01 … ${y.year}-12 planned.
-          projected("−", "Planned one-offs", y.planned, months("planned"), "Typed on the Forecast page."),
-          // TODO(proof forecast month): ${y.year}-01 … ${y.year}-12 bonusKept − bonusSaved.
-          projected("−", "Bonus spent (kept, not saved)", bonusSpent, months("bonusKept − bonusSaved")),
+          projected("−", "Living cost", y.livingCost, yr("living"), sum),
+          projected("−", "Planned one-offs", y.planned, yr("oneOffs"), `Typed on the Forecast page. ${sum}`),
+          projected("−", "Bonus spent (kept, not saved)", bonusSpent, yr("bonusSpent"), sum),
           { op: "=", label: "Saved", value: { cents: y.saved }, source: "derived" },
           { op: "÷", label: "Income", value: { cents: income }, source: "derived" },
           { op: "=", label: "Savings rate", value: { ratio: c.fa.savingsRate }, source: "derived" },
@@ -542,15 +579,13 @@ function milestoneProof(c: FireCtx, id: string): Built {
       const i = long.findIndex((x) => x.key === nm.key);
       const at = long[i]!;
       const lines: ChainLine[] = [{ label: "Milestone", value: { cents: target }, source: "derived", note: "One of the page's fixed net worth marks." }];
-      // TODO(proof forecast month): `${nm.key}` netWorth.
-      lines.push(projected(undefined, `Net worth at the end of ${monthWord(at.key)}: reaches it`, at.netWorth, { key: at.key, line: "netWorth" }));
-      // TODO(proof forecast month): the month before `${nm.key}`, netWorth (the start when it's the first month).
-      if (i > 0) lines.push(projected(undefined, `End of ${monthWord(long[i - 1]!.key)}: not yet`, long[i - 1]!.netWorth, { key: long[i - 1]!.key, line: "netWorth" }));
+      // The long run looks 60 years out; a month past the forecast's horizon has no cell (linkCells finds none).
+      lines.push(projected(undefined, `Net worth at the end of ${monthWord(at.key)}: reaches it`, at.netWorth, { month: at.key, line: "netWorth" }, "The forecast, kept working."));
+      if (i > 0) lines.push(projected(undefined, `End of ${monthWord(long[i - 1]!.key)}: not yet`, long[i - 1]!.netWorth, { month: long[i - 1]!.key, line: "netWorth" }, "The forecast, kept working."));
       else lines.push(startLine(c));
       blocks.push({ kind: "chain", title: `The first month at or past ${money(target)}`, lines });
     } else
-      // TODO(proof forecast month): the long run's last month, netWorth.
-      blocks.push({ kind: "chain", title: "Not within 60 years", lines: [{ label: "Milestone", value: { cents: target }, source: "derived" }, projected(undefined, `Net worth at the end of ${monthWord(long.at(-1)!.key)}`, long.at(-1)!.netWorth, { key: long.at(-1)!.key, line: "netWorth" })] });
+      blocks.push({ kind: "chain", title: "Not within 60 years", lines: [{ label: "Milestone", value: { cents: target }, source: "derived" }, projected(undefined, `Net worth at the end of ${monthWord(long.at(-1)!.key)}`, long.at(-1)!.netWorth, { month: long.at(-1)!.key, line: "netWorth" }, "The forecast, kept working, 60 years out.")] });
   } else {
     const share = Number(id.slice(3));
     const row = m.reached ? null : (c.fa.rows.find((r) => r.progress >= share) ?? null);
@@ -562,8 +597,7 @@ function milestoneProof(c: FireCtx, id: string): Built {
           kind: "chain",
           title: r === row ? `${r.year}: ${share * 100}% of the FIRE number` : `${r.year}: not yet`,
           lines: [
-            // TODO(proof forecast month): `${r.year - 1}-12` netWorth.
-            projected(undefined, `Net worth on Jan 1, ${r.year}`, r.netWorth, { key: `${r.year - 1}-12`, line: "netWorth" }),
+            projected(undefined, `Net worth on Jan 1, ${r.year}`, r.netWorth, { month: `${r.year - 1}-12`, line: "netWorth" }, `The forecast's net worth at the end of Dec ${r.year - 1}.`),
             { op: "÷", label: `FIRE number in ${r.year}`, value: { cents: r.fireNumber }, source: "derived", note: `The draw covering ${r.year}'s living cost after tax ÷ the withdrawal rate.` },
             { op: "=", label: "Progress", value: { ratio: r.progress }, source: "derived" },
           ],
@@ -762,12 +796,16 @@ function goalLandsProof(c: GoalsCtx, g: GoalProgress): Built {
     const addedBlock = (key: string, title: string): ProofBlock => {
       const at = balancesAt(f, key);
       const ls: ChainLine[] = [];
+      // Each side: its balance that month (a ledger cell) less where it started.
       for (const s of t.sides) {
-        // TODO(proof forecast month): `${key}` liquid / illiquid (the side named), less the start.
-        ls.push(projected(ls.length ? "+" : undefined, `${s === "liquid" ? "Liquid" : "Illiquid"} money added by the end of ${monthWord(key)}`, at[s] - f.plan.start[s], { key, line: s }, `The forecast's ${s} balance less ${money(f.plan.start[s])} at the start.`));
+        const word = s === "liquid" ? "Liquid" : "Illiquid";
+        ls.push(
+          projected(ls.length ? "+" : undefined, `${word} money at the end of ${monthWord(key)}`, at[s], { month: key, line: s }, `The forecast's ${s} balance.`),
+          { op: "−", label: `${word} money at the start, ${c.b!.seeds.start.asOf}`, value: { cents: f.plan.start[s] }, source: "proven", link: START },
+        );
       }
       const sum = t.sides.reduce((x, s) => x + at[s] - f.plan.start[s], 0);
-      if (ls.length > 1) ls.push({ op: "=", label: "Added", value: { cents: sum }, source: "derived" });
+      ls.push({ op: "=", label: `Money added by the end of ${monthWord(key)}`, value: { cents: sum }, source: "derived" });
       ls.push({ label: sum >= t.need ? `Covers the ${money(t.need)} needed` : `Short of the ${money(t.need)} needed`, value: { cents: t.need }, source: "derived" });
       return { kind: "chain", title, lines: ls };
     };
@@ -891,22 +929,38 @@ function homeCashProof(c: HomeCtx): Built {
     { op: "+", label: "Taxable investments", value: { cents: fb.investmentsCents }, source: "proven", ...(nw("Taxable investments", invIds) ? { link: nw("Taxable investments", invIds)! } : {}) },
   ];
   if (fb.cardsCents) lines.push(signed(fb.cardsCents, { label: "Card balances", source: "proven", ...(nw("Cards", cardIds) ? { link: nw("Cards", cardIds)! } : {}) }));
-  // TODO(proof forecast month): `${D.buyKey}` liquid, less the start's liquid.
-  if (D.buyKey) lines.push(projected(D.added < 0 ? "−" : "+", `What the forecast adds by ${monthWord(D.buyKey)}`, Math.abs(cents(D.added)), { key: D.buyKey, line: "liquid" }, "Liquid savings and growth after the proven balances."));
+  // The forecast's addition is a difference of two balances: its cell is the liquid balance, in the block below.
+  if (D.buyKey) lines.push({ op: D.added < 0 ? "−" : "+", label: `What the forecast adds by ${monthWord(D.buyKey)}`, value: { cents: Math.abs(cents(D.added)) }, source: "estimate", note: "Liquid savings and growth after the proven balances (worked out below)." });
   lines.push({ op: "=", label: D.buyKey ? `Liquid money at the end of ${monthWord(D.buyKey)}` : "Liquid money now", value: { cents: liquidC }, source: "derived" });
   lines.push({ op: "−", label: `Tax on ${money(cents(D.gain))} of gains`, value: { cents: liquidC - afterTaxC }, source: "derived", link: homeLink(c, "Gains tax rate", "gains-tax"), note: `Gains × ${pct(L.ins.capitalGainsTaxRate, 1)}.` });
   lines.push({ op: "=", label: "Liquid, after tax", value: { cents: afterTaxC }, source: "derived" });
   lines.push({ op: "×", label: "Share to put into the home", value: { ratio: c.funds.share }, source: "assumption" }, { op: "=", label: "Cash for the home", value: { cents: availableC }, source: "derived" });
   const gainLines: ChainLine[] = [{ label: "Growth in taxable investments since their first statements", value: { cents: fb.gainCents }, source: "proven", note: "Growth net of fees over every statement on file; withdrawals reduce basis dollar for dollar, so the tax errs high." }];
-  // TODO(proof forecast month): the months through `${D.buyKey}`, liquidGrowth (summed).
-  if (D.buyKey) gainLines.push(projected("+", `Growth the forecast earns by ${monthWord(D.buyKey)}`, cents(D.gainAdded), { key: D.buyKey, line: "liquidGrowth (summed from the start)" }));
+  // The ledger's growth line is liquid and illiquid together, and a span from the start isn't one of its columns: no cell holds it.
+  if (D.buyKey) gainLines.push(projected("+", `Growth the forecast earns on liquid money by ${monthWord(D.buyKey)}`, cents(D.gainAdded), null, "Each month's growth on liquid money, from the start through the buy month."));
   gainLines.push({ op: "=", label: "Gains", value: { cents: cents(D.gain) }, source: "derived" });
   const parts = fb.cashCents + fb.investmentsCents + fb.cardsCents + (D.buyKey ? cents(D.added) : 0);
   return {
     describes: `Cash for the home${D.buyKey ? `, buying in ${monthWord(D.buyKey)}` : ""}`,
     figure: { cents: availableC },
     selfCheck: sumCheck(liquidC, parts, `Cash, investments and cards${D.buyKey ? " and what the forecast adds" : ""} come to ${money(parts)} of liquid money`),
-    blocks: [{ kind: "chain", title: "Cash for the home", lines, note: `Not counted: ${fb.excluded.map((e) => e.group.toLowerCase()).join(", ") || "nothing"}.` }, { kind: "chain", title: "Gains taxed on the way out", lines: gainLines }],
+    blocks: [
+      { kind: "chain", title: "Cash for the home", lines, note: `Not counted: ${fb.excluded.map((e) => e.group.toLowerCase()).join(", ") || "nothing"}.` },
+      ...(D.buyKey && c.b && fb.forecast
+        ? [
+            {
+              kind: "chain" as const,
+              title: `What the forecast adds by ${monthWord(D.buyKey)}`,
+              lines: [
+                projected(undefined, `Liquid money at the end of ${monthWord(D.buyKey)}`, fb.forecast.months.find((m) => m.key === D.buyKey)!.liquid, { month: D.buyKey, line: "liquid" }, "The forecast's liquid balance."),
+                { op: "−" as const, label: `Liquid money at the start, ${c.b.seeds.start.asOf}`, value: { cents: fb.forecast.startLiquid }, source: "proven" as const, link: START },
+                { op: "=" as const, label: "Added", value: { cents: cents(D.added) }, source: "derived" as const },
+              ],
+            },
+          ]
+        : []),
+      { kind: "chain", title: "Gains taxed on the way out", lines: gainLines },
+    ],
     checks,
     withheld: withheld || fb.blockers.length > 0,
     estimates: D.buyKey && c.b ? [projectionEstimate(c.b)] : [],
@@ -932,8 +986,7 @@ function homeSalaryProof(c: HomeCtx): Built {
   if (n > 0)
     lines.push(
       { op: "×", label: `(1 + raise)^${n}`, value: { ratio: (1 + f.plan.salaryGrowth) ** n }, source: "assumption", note: `${pct(f.plan.salaryGrowth)} a year, each January.` },
-      // TODO(proof forecast month): `${y}-01` salary (× 12: the year's base salary).
-      projected("=", `Household base salary in ${y}`, salaryC, { key: `${y}-01`, line: "salary" }),
+      projected("=", `Household base salary in ${y}`, salaryC, yearCell(y, "salary"), `The forecast's ${y}, Jan–Dec.`),
     );
   return {
     describes: `Household base salary in ${y}, from the forecast`,
@@ -1215,13 +1268,22 @@ export async function buildPlanningProof(ctx: ProofContext, d: PlanningDescripto
   const { book } = ctx;
   const base = { report: "planning" as const, descriptor: d, today: book.today };
   let built: Built;
+  let b: Base | null = null;
   if (d.page === "fire") {
     const data = await loadForecastData(ctx.db, book);
     const c = fireCtx(book, data, d.fire);
+    b = c;
     built = c ? buildFire(c, d) : withheldProof(book, data);
-  } else if (d.page === "goals") built = buildGoal(await goalsCtx(ctx), d);
-  else if (d.page === "home") built = buildHome(await homeCtx(ctx, d));
-  else built = await buildTaxes(ctx, d);
+  } else if (d.page === "goals") {
+    const c = await goalsCtx(ctx);
+    b = c.b;
+    built = buildGoal(c, d);
+  } else if (d.page === "home") {
+    const c = await homeCtx(ctx, d);
+    b = c.b;
+    built = buildHome(c);
+  } else built = await buildTaxes(ctx, d);
+  built = { ...built, blocks: linkCells(b, built.blocks) };
   return { ...base, checks: [], withheld: false, ...built, through: built.through || book.horizon.netWorth };
 }
 

@@ -398,6 +398,51 @@ describe("planning proofs (FIRE, Goals, Home budget, Taxes)", () => {
     expect(followed).toBeGreaterThan(80);
   });
 
+  it("links a projected line to its forecast ledger cell only when the cell opens exactly that value", async () => {
+    const c = ctx();
+    const seen = new Set<string>();
+    let monthLinks = 0;
+    let unlinked = 0;
+    for (const d of descriptors) {
+      const p = await buildProof(c, d);
+      for (const b of p.blocks) {
+        if (b.kind !== "chain") continue;
+        for (const l of b.lines) {
+          if (l.source === "estimate" && !l.link) unlinked++;
+          if (l.link?.descriptor.report !== "forecast" || l.link.descriptor.figure !== "month") continue;
+          const from = `${l.label} from ${strip(d)}`;
+          expect(l.source, from).toBe("estimate");
+          const parsed = parseDescriptor(JSON.parse(JSON.stringify(l.link.descriptor)));
+          expect(parsed, from).toEqual(l.link.descriptor);
+          const q = await buildProof(c, parsed as never);
+          expect(q.withheld, from).toBe(false);
+          if (q.selfCheck) expect(q.selfCheck.ok, from).toBe(true);
+          expect(q.figure, from).toEqual(l.value);
+          seen.add(JSON.stringify(l.link.descriptor));
+          monthLinks++;
+        }
+      }
+    }
+    // Months, forecast years, and balances and flows both.
+    expect(monthLinks).toBeGreaterThan(20);
+    expect([...seen].some((x) => x.includes('"through"'))).toBe(true);
+    expect([...seen].some((x) => x.includes('"netWorth"'))).toBe(true);
+    // Some lines no cell holds (take-home, bonus kept, the no-bonus plan, liquid growth) stay unlinked estimates.
+    expect(unlinked).toBeGreaterThan(0);
+  });
+
+  it("leaves lines no ledger cell holds unlinked", async () => {
+    const base = await buildProof(ctx(), P({ page: "fire", figure: "fi-year-base", fire: FIRE }));
+    const nw = chains(base).flatMap((b) => b.lines).filter((l) => l.label.startsWith("Net worth on Jan 1"));
+    expect(nw.length).toBeGreaterThan(0);
+    expect(nw.every((l) => !l.link)).toBe(true);
+    const sr = await buildProof(ctx(), P({ page: "fire", figure: "savings-rate", fire: FIRE }));
+    const lines = chains(sr)[0]!.lines;
+    expect(lines.find((l) => l.label === "Take-home from base pay")?.link).toBeUndefined();
+    expect(lines.find((l) => l.label === "Bonus kept after tax")?.link).toBeUndefined();
+    expect(lines.find((l) => l.label === "Living cost")?.link?.descriptor).toMatchObject({ report: "forecast", figure: "month", line: "living", through: expect.stringMatching(/-12$/) });
+  });
+
   it("shows projected months as estimates and typed inputs as assumptions", async () => {
     const fi = await buildProof(ctx(), P({ page: "fire", figure: "fi-year", fire: FIRE }));
     const lines = chains(fi).flatMap((b) => b.lines);
@@ -410,7 +455,7 @@ describe("planning proofs (FIRE, Goals, Home budget, Taxes)", () => {
     expect(cl.find((l) => l.label === "Share to put into the home")).toMatchObject({ source: "assumption", value: { ratio: 0.8 } });
     expect(cl[0]!.link?.descriptor).toMatchObject({ report: "net-worth", metric: "balance", accountIds: ["chk"] });
     const lands = await buildProof(ctx(), P({ page: "goals", figure: "lands", goalId: "down" }));
-    expect(chains(lands).flatMap((b) => b.lines).some((l) => l.source === "estimate" && /money added by the end of/.test(l.label))).toBe(true);
+    expect(chains(lands).flatMap((b) => b.lines).some((l) => l.source === "estimate" && /money at the end of/.test(l.label) && l.link?.descriptor.report === "forecast")).toBe(true);
     const ef = await buildProof(ctx(), P({ page: "goals", figure: "target", goalId: "ef" }));
     expect(chains(ef)[0]!.lines[1]).toMatchObject({ label: "Months of spending", source: "assumption" });
   });
