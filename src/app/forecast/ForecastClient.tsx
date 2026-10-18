@@ -128,7 +128,7 @@ function Body({ data, s, a, setA, onSave }: { data: ForecastData; s: OutlookSeed
       <div className="flex min-w-0 flex-col gap-3">
         {data.lettersError && <Callout tone="warn" title="Bonus letters couldn't be read">{data.lettersError} The forecast uses stubs and estimates only until it&apos;s fixed.</Callout>}
         <Feeds f={f} s={s} dirty={dirty} />
-        <ForecastLedger f={f} r={data.profile} />
+        <ForecastLedger f={f} r={data.profile} provable={!dirty} />
         <BonusPayments f={f} throughYear={s.currentYear + 2} />
       </div>
     </div>

@@ -12,7 +12,8 @@ import { resolveBasePay } from "../../profile/basePay";
 import { DEFAULT_SETTINGS, PROFILE_SETTINGS_KEY, type FinancialProfileSettings } from "../../profile/settings";
 import { TAX_YEARS } from "../../tax/params";
 import type { Book, BookRow, BookStatement, BookStub } from "../load";
-import { buildForecastProof, parseForecastDescriptor, type ForecastDescriptor } from "./forecastProof";
+import { buildForecastProof, LEDGER_LINES, ledgerValue, parseForecastDescriptor, type ForecastDescriptor, type LedgerLine } from "./forecastProof";
+import { monthPeriods, yearPeriods, type Period } from "../../forecast/periods";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 import type { ChainLine } from "./types";
 
@@ -238,9 +239,10 @@ function settings(outlook: Partial<FinancialProfileSettings["outlook"]> = {}): F
 const fakeDb = (s: FinancialProfileSettings) =>
   ({ appSetting: { findUnique: async ({ where }: { where: { key: string } }) => (where.key === PROFILE_SETTINGS_KEY ? { value: JSON.stringify(s) } : null) } }) as never;
 
-const seed = (x: Record<string, unknown>) => ({ report: "forecast", figure: "seed", ...x }) as ForecastDescriptor;
+type SeedDescriptor = Extract<ForecastDescriptor, { figure: "seed" }>;
+const seed = (x: Record<string, unknown>) => ({ report: "forecast", figure: "seed", ...x }) as SeedDescriptor;
 
-const DESCRIPTORS: ForecastDescriptor[] = [
+const DESCRIPTORS: SeedDescriptor[] = [
   seed({ which: "start" }),
   seed({ which: "pay", personId: "pat", paycheck: "LATEST" }),
   seed({ which: "pay", personId: "pat", paycheck: "TYPICAL" }),
@@ -405,5 +407,125 @@ describe("forecast seed proofs", () => {
     expect(parseForecastDescriptor({ report: "forecast", figure: "seed", which: "living", basis: "NEXT_YEAR" })).toHaveProperty("error");
     expect(parseForecastDescriptor({ report: "forecast", figure: "seed", which: "deferrals", paycheck: { pat: "SOMETIMES" } })).toHaveProperty("error");
     expect(parseDescriptor({ report: "forecast", figure: "seed", which: "pay", personId: "pat", paycheck: "TYPICAL" })).toEqual({ report: "forecast", figure: "seed", which: "pay", personId: "pat", paycheck: "TYPICAL" });
+  });
+});
+
+describe("forecast ledger cells", () => {
+  const book = makeBook();
+  const ctx = (s = settings()) => ({ book, db: fakeDb(s) });
+  const LINES = Object.keys(LEDGER_LINES) as LedgerLine[];
+  const descOf = (p: Period, line: LedgerLine) => parseForecastDescriptor({ report: "forecast", figure: "month", month: p.from, through: p.through.slice(0, 7), line }) as ForecastDescriptor;
+  /** Every link with the line (or item) it sits on. */
+  const linked = (p: Proof) =>
+    p.blocks.flatMap((b) =>
+      b.kind === "breakdown"
+        ? b.items.flatMap((i) => (i.link ? [{ on: i.label, value: i.value, link: i.link }] : []))
+        : b.kind === "chain"
+          ? b.lines.flatMap((l) => (l.link ? [{ on: l.label, value: l.value, link: l.link }] : []))
+          : [],
+    );
+
+  /** Every column the page draws: the year view (5 years) and each year's months, 24 months out. */
+  async function columns(s = settings()) {
+    const data = await loadForecastData(fakeDb(s), book);
+    const f = buildForecast(forecastInputs(data)!, data.profile.settings.outlook);
+    const r = data.profile;
+    const years = [...new Set(f.months.slice(0, 24).map((m) => m.year))];
+    const cols = [...yearPeriods(f, r, { actualYears: 1, throughYear: r.currentYear + 5 }), ...years.flatMap((y) => monthPeriods(f, r, y))];
+    return { f, r, cols };
+  }
+
+  it("proves every cell the ledger shows: the page's figure, re-adding chains, links that build", async () => {
+    const c = ctx();
+    const { cols } = await columns();
+    expect(new Set(cols.map((p) => p.kind))).toEqual(new Set(["ACTUAL", "FORECAST", "TOTAL"]));
+    let cells = 0;
+    let followed = 0;
+    const seen = new Map<string, Proof>();
+    const build = async (d: unknown) => {
+      const k = JSON.stringify(d);
+      if (!seen.has(k)) seen.set(k, await buildProof(c, d as ForecastDescriptor));
+      return seen.get(k)!;
+    };
+    for (const p of cols)
+      for (const line of LINES) {
+        const v = ledgerValue(p.flows, line);
+        if (v == null) continue;
+        const label = `${p.id} ${line}`;
+        const q = await build(descOf(p, line));
+        expect(q.figure, label).toEqual({ cents: v });
+        expect(q.selfCheck, label).toMatchObject({ ok: true, deltaCents: 0 });
+        for (const ch of chains(q)) expect(reAdds(ch.lines), `${label} ${ch.title}`).toEqual([]);
+        expect(q.describes, label).toMatch(p.kind === "ACTUAL" ? /actual \(not projected\)$/ : /projected$|forecast$/);
+        cells++;
+        for (const l of linked(q)) {
+          const parsed = parseDescriptor(JSON.parse(JSON.stringify(l.link.descriptor)));
+          expect(parsed, `${l.link.label} from ${label}`).not.toHaveProperty("error");
+          const t = await build(parsed);
+          if (t.selfCheck) expect(t.selfCheck.ok, `${l.link.label} from ${label}`).toBe(true);
+          // A link to another cell opens exactly the value its line shows (the half-flow and side-growth lines show a part of it).
+          const d = l.link.descriptor;
+          if (d.report === "forecast" && d.figure === "month" && "cents" in l.value && !/^Half |^Growth on /.test(l.on)) expect(t.figure, `${l.on} from ${label}`).toEqual(l.value);
+          followed++;
+        }
+      }
+    expect(cells).toBeGreaterThan(200);
+    expect(followed).toBeGreaterThan(cells);
+  }, 60_000);
+
+  it("re-derives a projected month from the seed, the drivers and the law", async () => {
+    const { f } = await columns();
+    const m = f.months.find((x) => x.year === 2027 && x.month === 5)!;
+    const p = await buildProof(ctx(), { report: "forecast", figure: "month", month: m.key, line: "salary" });
+    expect(p.figure).toEqual({ cents: m.salary });
+    const [grownBlock, share] = chains(p);
+    expect(grownBlock!.lines[0]).toMatchObject({ label: "Pat Example's base salary", link: { descriptor: { report: "forecast", figure: "seed", which: "pay", personId: "pat" } } });
+    expect(grownBlock!.lines.find((l) => l.op === "×")).toMatchObject({ source: "assumption" });
+    expect(share!.title).toBe("May's twelfth");
+    const tax = await buildProof(ctx(), { report: "forecast", figure: "month", month: m.key, line: "taxes" });
+    expect(chains(tax).flatMap((b) => b.lines).some((l) => l.source === "law" && l.link?.descriptor.report === "forecast")).toBe(true);
+    expect(tax.estimates[0]).toMatchObject({ id: "forecast.projected" });
+  });
+
+  it("opens each balance on the month before, and the first month on the proven start", async () => {
+    const { f } = await columns();
+    const [first, second] = f.months;
+    const p1 = await buildProof(ctx(), { report: "forecast", figure: "month", month: first!.key, line: "netWorth" });
+    expect(chains(p1)[0]!.lines[0]).toMatchObject({ source: "proven", link: { descriptor: { report: "forecast", figure: "seed", which: "start" } } });
+    const p2 = await buildProof(ctx(), { report: "forecast", figure: "month", month: second!.key, line: "liquid" });
+    expect(chains(p2)[0]!.lines[0]).toMatchObject({ value: { cents: first!.liquid }, link: { descriptor: { report: "forecast", figure: "month", month: first!.key, line: "liquid" } } });
+  });
+
+  it("pays the stub bonus after the start as proven, with its pay proof", async () => {
+    const p = await buildProof(ctx(), { report: "forecast", figure: "month", month: "2026-04", line: "bonus" });
+    expect(p.figure).toEqual({ cents: 250_000 });
+    expect(chains(p)[0]!.lines[0]).toMatchObject({ source: "proven", link: { descriptor: { report: "pay", basis: "paid", lines: ["bonus"], start: "2026-04-10" } } });
+  });
+
+  it("says an actual column is actual, linking to Cash flow and the net-worth proofs", async () => {
+    const living = await buildProof(ctx(), { report: "forecast", figure: "month", month: "2025-01", through: "2025-12", line: "living" });
+    expect(living.describes).toBe("Living cost · 2025, actual (not projected)");
+    expect(chains(living)[0]!.lines[0]!.link?.descriptor).toMatchObject({ report: "cash-flow", metric: "spending" });
+    const liquid = await buildProof(ctx(), { report: "forecast", figure: "month", month: "2026-01", through: "2026-03", line: "liquid" });
+    expect(chains(liquid)[0]!.lines[0]!.link?.descriptor).toMatchObject({ report: "net-worth", metric: "balance", date: EDGE });
+    const total = await buildProof(ctx(), { report: "forecast", figure: "month", month: "2026-01", through: "2026-12", line: "saved" });
+    expect(chains(total)[0]!.lines.map((l) => l.source)).toEqual(["proven", "derived", "derived"]);
+  });
+
+  it("lists a planned one-off as an assumption in its month", async () => {
+    const s = settings({ plannedExpenses: [{ id: "x", year: 2027, month: 9, label: "New roof", amount: 1_200_000 }] });
+    const p = await buildProof(ctx(s), { report: "forecast", figure: "month", month: "2027-09", line: "oneOffs" });
+    expect(p.figure).toEqual({ cents: 1_200_000 });
+    expect(chains(p)[0]!.lines[0]).toMatchObject({ label: "New roof", source: "assumption" });
+    expect((await buildProof(ctx(s), { report: "forecast", figure: "month", month: "2027-09", line: "saved" })).selfCheck?.ok).toBe(true);
+  });
+
+  it("parses cells and refuses spans that aren't columns", async () => {
+    expect(parseForecastDescriptor({ report: "forecast", figure: "month", month: "2027-13", line: "saved" })).toHaveProperty("error");
+    expect(parseForecastDescriptor({ report: "forecast", figure: "month", month: "2027-03", through: "2027-01", line: "saved" })).toHaveProperty("error");
+    expect(parseForecastDescriptor({ report: "forecast", figure: "month", month: "2027-03", line: "rent" })).toHaveProperty("error");
+    expect(parseForecastDescriptor({ report: "forecast", figure: "month", month: "2027-03", through: "2027-03", line: "saved" })).toEqual({ report: "forecast", figure: "month", month: "2027-03", line: "saved" });
+    const p = await buildProof(ctx(), { report: "forecast", figure: "month", month: "2027-02", through: "2027-05", line: "saved" });
+    expect(p).toMatchObject({ withheld: true, figure: { text: "—" } });
   });
 });
