@@ -7,7 +7,7 @@ import type { StubLine } from "../../ingest/payroll/types";
 import { buildTimeline, type SegmentInput } from "../../ledger/timeline";
 import type { Book, BookRow, BookStatement, BookStub } from "../load";
 import { buildHsaProof, makeHsaKind, type HsaDescriptor } from "./hsaProof";
-import { parseDescriptor, type Proof, type ProofLink } from "./index";
+import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 
 // An invented household: Pat Example's HSA (••9012), card (••5678) and checking (••1234)
 // at Springfield Bank, Jan – Feb 2025, and a receipts log Pat keeps. All made up.
@@ -332,7 +332,7 @@ describe("buildHsaProof", () => {
     expect(chain.lines.filter((l) => l.source === "assumption").map((l) => l.label)).toEqual(["Reimbursable today", "Growth a year", "Years to 2045"]);
   });
 
-  it("proves pay-stub contributions when the statements don't say whose money it is", () => {
+  it("proves pay-stub contributions when the statements don't say whose money it is", async () => {
     const stub = (personId: string, employer: string, hsa: number, employerHsa: number): BookStub => {
       const lines: StubLine[] = [
         { name: "HSA", kind: "HSA", current: 0, ytd: hsa },
@@ -403,6 +403,14 @@ describe("buildHsaProof", () => {
         ...(part ? { part } : {}),
       });
       expect(p.selfCheck?.ok, p.selfCheck?.explain).toBe(true);
+      // Each stub total opens the pay proof of exactly that line, and it shows the same figure.
+      const items = p.blocks.flatMap((x) => (x.kind === "breakdown" && x.title === "From the pay stubs" ? x.items : []));
+      expect(items.length).toBeGreaterThan(0);
+      for (const i of items) {
+        expect(i.link?.descriptor.report, i.label).toBe("pay");
+        const q = await buildProof({ book: b, db: {} as never }, parseDescriptor(JSON.parse(JSON.stringify(i.link!.descriptor))) as Parameters<typeof buildProof>[1]);
+        expect(q.figure, i.label).toEqual(i.value);
+      }
     }
   });
 });

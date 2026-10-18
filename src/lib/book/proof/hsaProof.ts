@@ -7,6 +7,7 @@ import type { Book, BookRow } from "../load.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor, sumCheck } from "./common.ts";
 import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstimate, ProofGroup, ProofKind, ProofLink } from "./types.ts";
+import type { PayDescriptor } from "./payProof.ts";
 
 /**
  * The proof behind a figure on the HSA page. Two kinds of figure live there:
@@ -266,13 +267,19 @@ function contributionsProof(book: Book, r: HsaReport, part: "employee" | "employ
 
   if (f.source === "PAY_STUBS") {
     const year = f.year!;
-    // TODO(proof "pay"): link each stub line to the "pay" proof kind once it's registered.
-    const items: { label: string; value: { cents: number }; sub?: string }[] = [];
+    const items: { label: string; value: { cents: number }; sub?: string; link?: ProofLink }[] = [];
+    // Each stub total opens the pay proof of exactly that line, that person and employer, year to date on that stub.
+    const payLink = (personId: string, employerKey: string, through: string, line: "hsa" | "employer-hsa", label: string): ProofLink => ({
+      label,
+      descriptor: { report: "pay", basis: "ytd", personId, employerKeys: [employerKey], lines: [line], year, through } satisfies PayDescriptor,
+    });
     for (const p of book.taxProfile.persons)
       for (const e of personPayYear(book, p.id, year).employers) {
         const sub = `${e.employer}, year to date on the ${e.lastPayDate} stub`;
-        if (part !== "employer" && e.ytd.hsa) items.push({ label: `${p.name}: from pay`, value: { cents: e.ytd.hsa }, sub });
-        if (part !== "employee" && e.ytd.employerHsa) items.push({ label: `${p.name}: from the employer`, value: { cents: e.ytd.employerHsa }, sub });
+        if (part !== "employer" && e.ytd.hsa)
+          items.push({ label: `${p.name}: from pay`, value: { cents: e.ytd.hsa }, sub, link: payLink(p.id, e.employerKey, e.lastPayDate, "hsa", `${p.name}'s HSA from pay`) });
+        if (part !== "employee" && e.ytd.employerHsa)
+          items.push({ label: `${p.name}: from the employer`, value: { cents: e.ytd.employerHsa }, sub, link: payLink(p.id, e.employerKey, e.lastPayDate, "employer-hsa", `${p.name}'s employer HSA money`) });
       }
     const sum = items.reduce((t, i) => t + i.value.cents, 0);
     const { checks, withheld } = checksFor(book, { affects: "PAY", from: `${year}-01-01`, to: `${year}-12-31` }, HSA_PAY_CHECKS);
