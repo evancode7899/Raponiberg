@@ -133,7 +133,6 @@ describe("which statement rows are car costs", () => {
     it("takes a car-looking row off the Car tab when filed under anything but Transportation", () => {
       const rows = [
         row("2025-02-03", "SHELL OIL 123", 30, byHand("Travel")),
-        row("2025-02-04", "GEICO AUTO", 90, byHand("Shopping", "user-merchant-rule")),
         row("2025-02-05", "EXXON RIVERSIDE", 40, byHand("Transportation")),
         // Filed by the classifier, not the owner: the merchant still decides.
         row("2025-02-06", "SUNOCO 77", 35, { category: "Travel", classifiedBy: "merchant-rule" }),
@@ -154,6 +153,19 @@ describe("which statement rows are car costs", () => {
       ];
       expect(statementCharges(rows, g).map((c) => c.payee.slice(0, 14))).toEqual(["SHELL SERVICE "]);
       expect(hintsOf(g, rows)[0]).toMatchObject({ status: "NOT_FOUND" });
+    });
+
+    it("is one row's word, not a merchant rule's: a gas station's snack run is filed by the row", () => {
+      // The issuer prints the station's street, not its brand, and a rule filed that street under Dining.
+      const fuel = row("2025-02-03", "9 ELM ROAD 10007777001 SPRINGFIELD", 31, byHand("Dining", "user-merchant-rule"));
+      const snack = row("2025-02-06", "9 ELM ROAD 10007777001 SPRINGFIELD", 7, byHand("Dining"));
+      const rows = [row("2025-01-20", "SHELL SERVICE STATION 10007777001 SPRINGFIELD", 29), fuel, snack];
+      const g = garage({ entries: [entry({ date: "2025-02-03", kind: "FUEL", cents: 3100 })] });
+      expect(statementCharges(rows, g).map((c) => [c.date, c.status])).toEqual([
+        ["2025-01-20", "COUNTED"],
+        ["2025-02-03", "COUNTED"],
+      ]);
+      expect(hintsOf(g, rows)[0]).toMatchObject({ status: "MATCHED" });
     });
 
     it("gives way to the owner's word on the Car tab: a row decision or a tied log entry", () => {
