@@ -169,7 +169,7 @@ export function excessDeferralMessage(name: string, year: number, limit: number,
 
 export type IraYear = {
   /** Money arriving from a bank or taxable account, per IRA (rollovers and conversions aren't contributions). */
-  contributions: { accountId: string; account: string; kind: string; cents: number }[];
+  contributions: { accountId: string; account: string; kind: string; cents: number; rowIds: string[] }[];
   /** Moved from a traditional or rollover IRA to a Roth. */
   conversions: number;
   /** This year's traditional-IRA contributions (non-deductible basis for Form 8606). */
@@ -200,14 +200,18 @@ export function iraYear(book: Book, personId: string, year: number): IraYear {
   for (const a of iras) {
     let contributed = 0;
     let deposited = 0;
+    const rowIds: string[] = [];
     for (const r of book.rows.filter((x) => x.accountId === a.id && x.date.startsWith(String(year)))) {
       if (r.amountCents > 0 && r.lane !== "INCOME") deposited += r.amountCents;
       const other = otherLegSubtype(book, r);
       const rollover = /roll|acat|transfer of assets/i.test(r.payee) && !/conver|to roth/i.test(r.payee);
-      if (r.amountCents > 0 && r.lane !== "INCOME" && a.subtype !== "ROLLOVER_IRA" && !rollover && !RETIREMENT_SUBTYPES.includes(other ?? "") && !/conver/i.test(r.payee)) contributed += r.amountCents;
+      if (r.amountCents > 0 && r.lane !== "INCOME" && a.subtype !== "ROLLOVER_IRA" && !rollover && !RETIREMENT_SUBTYPES.includes(other ?? "") && !/conver/i.test(r.payee)) {
+        contributed += r.amountCents;
+        rowIds.push(r.id);
+      }
       if (r.amountCents < 0 && a.subtype !== "ROTH_IRA" && (other === "ROTH_IRA" || /conver|to roth/i.test(r.payee))) conversions -= r.amountCents;
     }
-    if (contributed) contributions.push({ accountId: a.id, account: a.name, kind: a.subtype!, cents: contributed });
+    if (contributed) contributions.push({ accountId: a.id, account: a.name, kind: a.subtype!, cents: contributed, rowIds });
     // The custodian's "contributions" line counts every deposit (rollovers and conversions
     // in too), so it checks that no deposit is missing; which kind each is comes from the rows.
     const stated = statementContributionsYtd(snapshotsOf(book, a), year);
@@ -236,6 +240,8 @@ export type ChetYear = {
     cents: number;
     statement: number | null;
     ledger: number | null;
+    /** The ledger's deposits into it (the rows `ledger` adds up). */
+    rowIds: string[];
   }[];
   total: number;
   mismatches: string[];
@@ -254,12 +260,13 @@ export function chetYear(book: Book, year: number): ChetYear {
       book.brokerage.filter((b) => b.accountNumber === n),
       year,
     );
-    const ledger = acct ? book.rows.filter((r) => r.accountId === acct.id && r.date.startsWith(String(year)) && r.amountCents > 0 && r.lane !== "INCOME").reduce((s, r) => s + r.amountCents, 0) : null;
+    const deposits = acct ? book.rows.filter((r) => r.accountId === acct.id && r.date.startsWith(String(year)) && r.amountCents > 0 && r.lane !== "INCOME") : null;
+    const ledger = deposits ? deposits.reduce((s, r) => s + r.amountCents, 0) : null;
     const name = acct?.name ?? `CHET 529 ••${n.slice(-4)}`;
     if (statement != null && ledger != null && statement !== ledger) {
       mismatches.push(`${name}: the ${year} statements show ${dollars(statement)} contributed, but the ledger's deposits into it add up to ${dollars(ledger)}.`);
     }
-    return { accountNumber: n, name, cents: statement ?? ledger ?? 0, statement, ledger };
+    return { accountNumber: n, name, cents: statement ?? ledger ?? 0, statement, ledger, rowIds: deposits?.map((r) => r.id) ?? [] };
   });
   return { accounts, total: accounts.reduce((s, a) => s + a.cents, 0), mismatches };
 }

@@ -21,10 +21,11 @@ import type { ChainLine, Proof, ProofBlock, ProofEstimate, ProofGroup, ProofKind
  *  - "paid": what the stubs paid in a date range, check by check (a bonus paid in a year).
  *
  * Lines name which part of pay: base (regular pay), bonus, gross (cash earnings), net, or
- * deferrals (401(k) and HSA from pay); several add up (base + bonus).
+ * deferrals (401(k) and HSA from pay), or one account's part: k401, hsa and the employer's
+ * money beside them (employer-k401, employer-hsa); several add up (base + bonus).
  */
 
-export type PayLine = "base" | "bonus" | "gross" | "net" | "deferrals";
+export type PayLine = "base" | "bonus" | "gross" | "net" | "deferrals" | "k401" | "hsa" | "employer-k401" | "employer-hsa";
 
 export type PayDescriptor = {
   report: "pay";
@@ -48,6 +49,11 @@ const LINES: Record<PayLine, { label: string; plus: ReadonlySet<StubLineKind>; m
   gross: { label: "Gross pay", plus: CASH_EARNING_KINDS },
   net: { label: "Net pay", plus: CASH_EARNING_KINDS, minus: WITHHELD_KINDS },
   deferrals: { label: "401(k) and HSA deferrals", plus: new Set(["RETIREMENT_PRETAX", "RETIREMENT_ROTH", "HSA"]) },
+  // One account's part of the deferrals, and the employer's money beside it (the Account limits page).
+  k401: { label: "401(k) deferrals", plus: new Set(["RETIREMENT_PRETAX", "RETIREMENT_ROTH"]) },
+  hsa: { label: "HSA from pay", plus: new Set(["HSA"]) },
+  "employer-k401": { label: "Employer 401(k) money", plus: new Set(["EMPLOYER_RETIREMENT"]) },
+  "employer-hsa": { label: "Employer HSA money", plus: new Set(["EMPLOYER_HSA"]) },
 };
 
 /** The checks that can withhold a pay figure, in the order the drawer lists them. */

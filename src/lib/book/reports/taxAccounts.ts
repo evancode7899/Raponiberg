@@ -1,4 +1,4 @@
-import { projectPayroll, w2FromAmounts, type PayrollAmounts } from "../../tax/facts/payroll.ts";
+import { projectPayroll, w2FromAmounts, type PaycheckBasis, type PayrollAmounts } from "../../tax/facts/payroll.ts";
 import { taxYearParams, type FilingStatus } from "../../tax/params.ts";
 import { yearInputs } from "../../tax/profile.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
@@ -21,9 +21,27 @@ import type { TaxForecastLink } from "../../forecast/forecast.ts";
  */
 
 /** Stub problems that make contribution totals unprovable (bank-side gaps don't). */
-const STUB_CHECKS: CheckId[] = ["paystub.arithmetic", "paystub.person", "pay.continuity", "pay.year-gap"];
+export const STUB_CHECKS: CheckId[] = ["paystub.arithmetic", "paystub.person", "pay.continuity", "pay.year-gap"];
 
 export type Amount = { ytd: number; projected: number };
+
+/** One employer's payroll for the year: what went to the 401(k) and HSA, and where each figure is read. */
+export type EmployerPlan = {
+  employer: string;
+  active: boolean;
+  /** 401(k) deferrals (pre-tax + Roth), employer 401(k) money, HSA from pay and the employer's HSA money. */
+  employee: Amount;
+  employer$: Amount;
+  hsa: Amount;
+  employerHsa: Amount;
+  /** The stubs' employer key (null for a W-2 with no stubs) and the latest stub counted. */
+  employerKey: string | null;
+  through: string;
+  /** A W-2 form on file replaced the stubs' year-to-date 401(k) deferrals. */
+  w2: boolean;
+  /** The projection to Dec 31: pay dates repeated after the latest stub, and the check repeated. */
+  projection: { checks: number; basis: PaycheckBasis; perCheck: PayrollAmounts | null; fromForecast: boolean } | null;
+};
 
 export type PersonAccounts = {
   id: string;
@@ -47,7 +65,7 @@ export type PersonAccounts = {
     excessDeferral: ExcessDeferral | null;
     room: number;
     perPaycheckToMax: number | null;
-    employers: { employer: string; active: boolean; employee: Amount; employer$: Amount }[];
+    employers: EmployerPlan[];
     /** Employer match captured: what the formula pays at projected deferrals, and the deferral that earns all of it. */
     match: { rate: number; upTo: number; fullMatchDeferral: number; shortfall: number } | null;
     rothCatchUpRequired: boolean;
@@ -55,7 +73,8 @@ export type PersonAccounts = {
   hsa: { coverage: HsaCoverage; assumed: boolean; limit: number; employee: Amount; employer: Amount; outsidePayroll: number; total: Amount; room: number };
   ira: {
     limit: number;
-    contributions: { account: string; kind: string; cents: number }[];
+    /** Per IRA, with the ledger rows that count (book/taxAdvantaged.ts iraYear). */
+    contributions: { account: string; kind: string; cents: number; rowIds: string[] }[];
     total: number;
     room: number;
     /** Share of the limit that may go to a Roth IRA directly at the household's MAGI. */
@@ -143,7 +162,8 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
 
     // Each employer's pay, the active one (paying most recently) first: the Taxes page's
     // payroll when the year is provable (W-2 boxes for a finished year), else the stubs.
-    type Emp = { employer: string; active: boolean; ytd: PayrollAmounts; projected: PayrollAmounts; deferred: Amount; pretax: Amount; remaining: string[]; last: string };
+    type Emp = { employer: string; active: boolean; ytd: PayrollAmounts; projected: PayrollAmounts; deferred: Amount; pretax: Amount; remaining: string[]; last: string; key: string | null; w2: boolean; projection: EmployerPlan["projection"] };
+    const keyOf = (employer: string) => book.stubs.find((s) => s.personId === person.id && s.payDate.startsWith(`${year}-`) && s.employer === employer)?.employerKey ?? null;
     const emps: Emp[] = taxPerson
       ? [...taxPerson.payroll]
           .sort((a, b) => Number(b.active) - Number(a.active) || b.latestPayDate.localeCompare(a.latestPayDate))
@@ -156,6 +176,9 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
             pretax: { ytd: p.w2Ytd.box12.D, projected: p.w2Projected.box12.D },
             remaining: isCurrentYear ? p.remainingPayDates.filter((d) => d > today) : [],
             last: p.latestPayDate,
+            key: keyOf(p.employer),
+            w2: !!p.w2Doc,
+            projection: p.active && !p.w2Doc ? { checks: p.remainingPayDates.length, basis: p.basis, perCheck: p.regularPaycheck, fromForecast: !!taxPerson.fromForecast } : null,
           }))
       : [...pay.employers]
           .sort((a, b) => b.lastPayDate.localeCompare(a.lastPayDate))
@@ -171,11 +194,25 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
               pretax: { ytd: e.ytd.retirementPretax, projected: p.retirementPretax },
               remaining: proj?.remainingPayDates.filter((d) => d > today) ?? [],
               last: e.lastPayDate,
+              key: e.employerKey,
+              w2: false,
+              projection: proj ? { checks: proj.remainingPayDates.length, basis: proj.basis, perCheck: proj.regularPaycheck, fromForecast: false } : null,
             };
           });
     const active = emps[0];
     const remainingPaychecks = active?.remaining.length ?? 0;
-    const empRows = emps.map((e) => ({ employer: e.employer, active: e.active, employee: e.deferred, employer$: { ytd: e.ytd.employerRetirement, projected: e.projected.employerRetirement } }));
+    const empRows: EmployerPlan[] = emps.map((e) => ({
+      employer: e.employer,
+      active: e.active,
+      employee: e.deferred,
+      employer$: { ytd: e.ytd.employerRetirement, projected: e.projected.employerRetirement },
+      hsa: { ytd: e.ytd.hsa, projected: e.projected.hsa },
+      employerHsa: { ytd: e.ytd.employerHsa, projected: e.projected.employerHsa },
+      employerKey: e.key,
+      through: e.last,
+      w2: e.w2,
+      projection: e.projection,
+    }));
     const total = emps.reduce((s, e) => add(s, e.deferred), ZERO);
     const pretax = emps.reduce((s, e) => add(s, e.pretax), ZERO);
     const roth: Amount = { ytd: total.ytd - pretax.ytd, projected: total.projected - pretax.projected };
@@ -204,8 +241,8 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
         : null;
 
     // ---------------------------------------------------------- HSA
-    const hsaEmployee = emps.reduce((s, e) => add(s, { ytd: e.ytd.hsa, projected: e.projected.hsa }), ZERO);
-    const hsaEmployer = emps.reduce((s, e) => add(s, { ytd: e.ytd.employerHsa, projected: e.projected.employerHsa }), ZERO);
+    const hsaEmployee = empRows.reduce((s, e) => add(s, e.hsa), ZERO);
+    const hsaEmployer = empRows.reduce((s, e) => add(s, e.employerHsa), ZERO);
     const outsidePayroll = extrasFor(person.id)?.hsaOutsidePayroll ?? 0;
     const assumed = inputs.hsaCoverage == null;
     const coverage: HsaCoverage = inputs.hsaCoverage ?? (hsaEmployee.ytd + hsaEmployer.ytd > 0 ? (book.taxProfile.dependents.length ? "FAMILY" : "SELF") : "NONE");
@@ -217,7 +254,7 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
     // account is a contribution; traditional → Roth is a conversion; rollovers are neither.
     const ira = iraYear(book, person.id, year);
     warnings.push(...ira.mismatches);
-    const contributions = ira.contributions.map(({ account, kind, cents }) => ({ account, kind, cents }));
+    const contributions = ira.contributions.map(({ account, kind, cents, rowIds }) => ({ account, kind, cents, rowIds }));
     const conversions = ira.conversions;
     const iraTotal = contributions.reduce((s, c) => s + c.cents, 0);
     const iraLimit = fp.limits.ira + (age != null && age >= 50 ? lim.iraCatchUp : 0);
@@ -246,7 +283,7 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
         excessDeferral: excessDeferred,
         room,
         perPaycheckToMax: remainingPaychecks ? Math.ceil(room / remainingPaychecks) : null,
-        employers: empRows.map(({ employer, active, employee, employer$ }) => ({ employer, active, employee, employer$ })),
+        employers: empRows,
         match,
         rothCatchUpRequired,
       },
