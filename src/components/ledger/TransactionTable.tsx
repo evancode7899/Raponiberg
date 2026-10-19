@@ -6,7 +6,9 @@ import { sortRows, SortTh, useSort, type Sort, type SortKey } from "@/components
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import { CATEGORIES, LANE_LABELS, type Lane } from "@/lib/classifier/taxonomy";
 import { formatUsdFromCents } from "@/lib/formatMoney";
-import { useState } from "react";
+import type { ReimbursementsResponse } from "@/app/api/reimbursements/route";
+import { useCallback, useEffect, useState } from "react";
+import { PaidBackDrawer } from "./PaidBackDrawer";
 import type { Api } from "./useApi";
 
 export type TxnRow = {
@@ -77,7 +79,8 @@ export function LaneBadge({ lane }: { lane: Lane | null }) {
 
 /**
  * Transactions with inline recategorizing: pick a category, then apply it to this row
- * only (locked against the classifier) or teach it for every row from the merchant.
+ * only (locked against the classifier) or teach it for every row from the merchant. A
+ * spending row can also be marked as paid back (PaidBackDrawer).
  * Date, description and amount headers sort the table; pass `sort` + `onSort` when the
  * server sorts (the rows are one page of many), otherwise the rows are sorted here.
  */
@@ -102,6 +105,20 @@ export function TransactionTable({
   const sort = serverSort ?? local.sort;
   const toggle = onSort ?? local.toggle;
   const shown = serverSort ? rows : sortRows(rows, sort, { date: (r) => r.date, amount: (r) => r.amountCents, name: (r) => r.payee });
+  const [paidBack, setPaidBack] = useState<Record<string, number>>({});
+  const [paidBackFor, setPaidBackFor] = useState<string | null>(null);
+  const [paidBackVersion, setPaidBackVersion] = useState(0);
+  useEffect(() => {
+    if (!api.ready) return;
+    api
+      .call<ReimbursementsResponse>("/api/reimbursements")
+      .then((r) => setPaidBack(r.byExpense))
+      .catch(() => {});
+  }, [api, paidBackVersion]);
+  const onPaidBackChanged = useCallback(() => {
+    setPaidBackVersion((v) => v + 1);
+    onChanged();
+  }, [onChanged]);
   return (
     <div className={table.wrap} style={maxHeight ? { maxHeight, overflowY: "auto" } : undefined}>
       <table className={table.table}>
@@ -117,15 +134,30 @@ export function TransactionTable({
         </thead>
         <tbody>
           {shown.map((r) => (
-            <Row key={r.id} r={r} api={api} onChanged={onChanged} showAccount={showAccount} />
+            <Row key={r.id} r={r} api={api} onChanged={onChanged} showAccount={showAccount} paidBackCents={paidBack[r.id] ?? 0} onPaidBack={() => setPaidBackFor(r.id)} />
           ))}
         </tbody>
       </table>
+      <PaidBackDrawer api={api} expenseId={paidBackFor} onClose={() => setPaidBackFor(null)} onChanged={onPaidBackChanged} />
     </div>
   );
 }
 
-function Row({ r, api, onChanged, showAccount }: { r: TxnRow; api: Api; onChanged: () => void; showAccount: boolean }) {
+function Row({
+  r,
+  api,
+  onChanged,
+  showAccount,
+  paidBackCents,
+  onPaidBack,
+}: {
+  r: TxnRow;
+  api: Api;
+  onChanged: () => void;
+  showAccount: boolean;
+  paidBackCents: number;
+  onPaidBack: () => void;
+}) {
   const current = r.category?.name ?? "Other";
   const [pick, setPick] = useState(current);
   const [busy, setBusy] = useState(false);
@@ -147,7 +179,7 @@ function Row({ r, api, onChanged, showAccount }: { r: TxnRow; api: Api; onChange
   };
 
   return (
-    <tr className={table.trHover}>
+    <tr className={`group ${table.trHover}`}>
       <td className={`${table.td} num whitespace-nowrap text-muted`}>{r.date.slice(0, 10)}</td>
       <td className={`${table.td} w-full max-w-0 min-w-[12rem]`}>
         <div className="truncate text-fg" title={r.payee ?? undefined}>
@@ -191,7 +223,22 @@ function Row({ r, api, onChanged, showAccount }: { r: TxnRow; api: Api; onChange
         </div>
         {error && <div className="mt-1 text-xs text-neg">{error}</div>}
       </td>
-      <td className={`${table.tdR} font-medium ${r.amountCents > 0 ? "text-pos" : "text-fg"}`}>{formatUsdFromCents(r.amountCents)}</td>
+      <td className={`${table.tdR} font-medium ${r.amountCents > 0 ? "text-pos" : "text-fg"}`}>
+        {formatUsdFromCents(r.amountCents)}
+        {r.lane === "EXPENSE" && r.amountCents < 0 && (
+          <div className="mt-0.5 text-[11px] font-normal">
+            {paidBackCents > 0 ? (
+              <button type="button" onClick={onPaidBack} title="Paid back by a reimbursement: see or change the links">
+                <Badge tone="pos">{paidBackCents >= -r.amountCents ? "paid back" : `${formatUsdFromCents(paidBackCents)} paid back`}</Badge>
+              </button>
+            ) : (
+              <button type="button" className={`${btn.link} opacity-0 focus:opacity-100 group-hover:opacity-100`} onClick={onPaidBack} title="Link this charge to the reimbursement that paid it back">
+                Paid back?
+              </button>
+            )}
+          </div>
+        )}
+      </td>
     </tr>
   );
 }

@@ -3,6 +3,9 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import { ensureCategories } from "../classifier/persist.ts";
+import { normPayee, sameRow, type RowFingerprint } from "./rowFingerprint.ts";
+
+export { normPayee, sameRow, type RowFingerprint };
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -22,7 +25,6 @@ type Db = PrismaClient | Prisma.TransactionClient;
  * Private by design: gitignored, and every change is appended to a journal beside the file.
  */
 
-export type RowFingerprint = { institution: string; identifiers: string[]; date: string; amountCents: number; payee: string };
 export type RowDecision = {
   row: RowFingerprint;
   category: string | null;
@@ -70,12 +72,6 @@ function write(file: string, data: RowDecisionsFile, journal: Record<string, unk
     rmSync(tmp, { force: true });
   }
 }
-
-const normPayee = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-
-/** The same row: same institution, a shared account identifier, same date, amount and payee. */
-export const sameRow = (a: RowFingerprint, b: RowFingerprint) =>
-  a.date === b.date && a.amountCents === b.amountCents && a.payee === b.payee && a.institution === b.institution && a.identifiers.some((i) => b.identifiers.includes(i));
 
 /**
  * Saves decisions, replacing any earlier answer for the same row. With `onlyNew`, a row

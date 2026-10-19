@@ -406,6 +406,12 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
       if (diff) lines.push(signed(diff, "Counted by the day the ledger books each row", "derived", { note: BOOKED_DAY }));
       lines.push(line("=", "Received by Zelle, Venmo…", t.reimbursements, "derived"));
       for (const p of people) if (p.reimbursements) lines.push(line("+", `${p.name}: reimbursed inside paychecks`, p.reimbursements, "proven", { note: "Non-taxable reimbursement lines, year to date on the latest stub." }));
+      if (cash.payLinked)
+        lines.push(
+          line("−", "Linked to the charges they paid back", cash.payLinked, "proven", {
+            note: "Paycheck reimbursements you tied to specific charges (Paid back on Transactions): counted as a credit in each charge's category instead.",
+          }),
+        );
       lines.push(line("=", "Reimbursements received", cash.reimbursements, "derived"));
       return chainProof(`Reimbursements received · ${label}`, cash.reimbursements, "Reimbursements offset spending", lines, { ...base, blocks: people.some((p) => p.reimbursements) ? [stubsBlock()] : [] });
     }
