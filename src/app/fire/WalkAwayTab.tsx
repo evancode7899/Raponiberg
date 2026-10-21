@@ -24,7 +24,7 @@ export function WalkAwayTab({ f, dollars, setDollars, walkBase }: FireProps & { 
       <Crossover f={f} rows={rows} dollars={dollars} setDollars={setDollars} />
       <Card
         title="Walk-away income by year"
-        subtitle={`Stop working on Jan 1 of each year: draw ${pct(plan.withdrawalRate)} of net worth, pay federal tax (real brackets, standard deduction, indexed at ${pct(plan.inflation)}) and ${pct(plan.stateTaxRate)} state tax on the taxable part. Every dollar drawn is taxed as ordinary income, which is conservative for Roth and taxable money.`}
+        subtitle={`Stop working on Jan 1 of each year: draw ${pct(plan.withdrawalRate)} of net worth, pay federal tax (real brackets, standard deduction, indexed at ${pct(plan.inflation)}) and ${plan.stateTaxRate == null ? "Connecticut income tax (its real brackets)" : `${pct(plan.stateTaxRate)} state tax on the taxable part`}. Every dollar drawn is taxed as ordinary income, which is conservative for Roth and taxable money.`}
       >
         <div className={table.wrap}>
           <table className={`${table.table} min-w-[52rem]`}>

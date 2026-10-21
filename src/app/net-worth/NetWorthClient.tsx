@@ -116,9 +116,9 @@ const balanceProof = (date: string, shownCents: number, x: { accountIds?: string
   shownCents,
 });
 /** The proof of the change over whole periods: opening + what moved = closing. A part of it (saved, markets) opens the whole chain, so it passes no shownCents. */
-const changeProof = (granularity: Granularity, start: string, end: string, shownCents?: number, accountIds?: string[]): ProofTarget => ({
+const changeProof = (granularity: Granularity, start: string, end: string, shownCents: number | null, accountIds?: string[]): ProofTarget => ({
   descriptor: { report: "net-worth", metric: "change", granularity, start, end, ...(accountIds ? { accountIds } : {}) },
-  ...(shownCents != null ? { shownCents } : {}),
+  shownCents,
 });
 /** Withheld figures open no proof: the page shows why instead. */
 const unless = (bs: BlockerRef[], t: ProofTarget) => (bs.length ? undefined : t);
@@ -130,7 +130,7 @@ function trailing(r: NetWorthReport, months: number) {
   const change = (ps.at(-1)?.household.closingCents ?? 0) - (ps[0]?.household.openingCents ?? 0);
   return {
     change,
-    proof: (shownCents?: number) => (ps.length && !blockers.length ? changeProof("month", ps[0]!.start, ps.at(-1)!.end, shownCents) : undefined),
+    proof: (shownCents: number | null) => (ps.length && !blockers.length ? changeProof("month", ps[0]!.start, ps.at(-1)!.end, shownCents) : undefined),
     principal: sum((p) => p.household.principalCents + p.household.newlyTrackedCents),
     growth: sum((p) => p.household.growthNetOfFeesCents),
     transit: sum((p) => p.household.transferResidualCents + p.household.unexplainedCents),
@@ -212,8 +212,8 @@ function Overview({ r }: { r: NetWorthReport }) {
           tone={t12.blockers.length ? "neutral" : t12.change >= 0 ? "pos" : "neg"}
           sub={t12.blockers.length ? undefined : t12.transit ? `incl. ${usd0(t12.transit)} in transit` : "change"}
         />
-        <StatCell label="…from saving" value={shown(usdDelta(t12.principal), t12.blockers)} proof={t12.proof()} sub="saved & contributed" />
-        <StatCell label="…from markets" value={shown(usdDelta(t12.growth), t12.blockers)} proof={t12.proof()} sub="growth, net of fees" />
+        <StatCell label="…from saving" value={shown(usdDelta(t12.principal), t12.blockers)} proof={t12.proof(null)} sub="saved & contributed" />
+        <StatCell label="…from markets" value={shown(usdDelta(t12.growth), t12.blockers)} proof={t12.proof(null)} sub="growth, net of fees" />
       </StatGrid>
 
       <Card
@@ -466,10 +466,10 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                         {usd0(h.retirementEmployeeCents + h.retirementEmployerCents)}
                       </td>
                       <td className={`${table.tdR} font-medium`}>
-                        <ProofValue proof={changeProof(granularity, p.start, p.end)}>{usd0(h.principalCents + h.newlyTrackedCents)}</ProofValue>
+                        <ProofValue proof={changeProof(granularity, p.start, p.end, null)}>{usd0(h.principalCents + h.newlyTrackedCents)}</ProofValue>
                       </td>
                       <td className={`${table.tdR} font-medium ${h.growthNetOfFeesCents < 0 ? "text-neg" : ""}`} title={`Fees ${usd0(h.feesCents)}`}>
-                        <ProofValue proof={changeProof(granularity, p.start, p.end)}>{usd0(h.growthNetOfFeesCents)}</ProofValue>
+                        <ProofValue proof={changeProof(granularity, p.start, p.end, null)}>{usd0(h.growthNetOfFeesCents)}</ProofValue>
                       </td>
                       <td className={`${table.tdR} text-muted`}>{usd0(h.transferResidualCents + h.unexplainedCents)}</td>
                       <td className={`${table.tdR} font-semibold`}>
@@ -504,10 +504,10 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                                     {a.newlyTrackedCents ? <span title="Balance already in the account when its first statement on file begins">{usd0(a.newlyTrackedCents)} (first on file)</span> : <ProofValue proof={balanceProof(addDays(p.start, -1), a.openingCents, { accountIds: [a.accountId] })}>{usd0(a.openingCents)}</ProofValue>}
                                   </td>
                                   <td className={table.tdR}>
-                                    <ProofValue proof={changeProof(granularity, p.start, p.end, undefined, [a.accountId])}>{usd0(a.contributionsCents)}</ProofValue>
+                                    <ProofValue proof={changeProof(granularity, p.start, p.end, null, [a.accountId])}>{usd0(a.contributionsCents)}</ProofValue>
                                   </td>
                                   <td className={table.tdR}>
-                                    <ProofValue proof={changeProof(granularity, p.start, p.end, undefined, [a.accountId])}>{usd0(a.growthNetOfFeesCents)}</ProofValue>
+                                    <ProofValue proof={changeProof(granularity, p.start, p.end, null, [a.accountId])}>{usd0(a.growthNetOfFeesCents)}</ProofValue>
                                   </td>
                                   <td className={`${table.tdR} text-muted`}>{usd0(a.feesCents)}</td>
                                   <td className={`${table.tdR} text-muted`}>{usd0(a.unexplainedCents)}</td>

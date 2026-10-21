@@ -10,8 +10,12 @@ import { createContext, useContext } from "react";
  */
 export type ProofTarget = {
   descriptor: ProofDescriptor;
-  /** The figure as the page computed it (cents, before any per-month split), to spot data that changed since the page loaded. */
-  shownCents?: number;
+  /**
+   * The figure as the page shows it (cents, before any per-month split), or null for a
+   * figure that isn't money (a rate, a date). Required: the drawer compares it with the
+   * proof's own figure, so a page and its proof can never disagree unnoticed.
+   */
+  shownCents: number | null;
   /** The page shows the total divided by this many months. */
   perMonths?: number;
 };

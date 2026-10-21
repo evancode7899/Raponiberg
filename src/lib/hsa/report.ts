@@ -1,3 +1,4 @@
+import type { BlockerRef } from "../book/reports/blockerRef.ts";
 import { daysBetween } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
 import { ownerFiled, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
@@ -78,6 +79,20 @@ export type ReportInput = {
   payrollHsa?: PayrollHsaIn | null;
   /** The Taxes page's marginal rates, when its figures are proven. */
   taxMarginal?: TaxMarginalIn | null;
+  /**
+   * The shared figures the strategy's rates default to (lib/hsa/load.ts hsaLinkedRates): the
+   * forecast's return, the dividend yield the taxable statements show, and the tax engine's
+   * rate on a long-term gain. A rate typed on Settings still wins, as a labelled assumption.
+   */
+  linked?: { returnRate: number | null; dividendYield: number | null; taxableRate: number | null };
+  /**
+   * What withholds the ledger side (lib/hsa/load.ts): `balance`, the HSA's balance at the
+   * data edge; `rows`, any bank or card finding while the HSA was open (a missing statement
+   * leaves the paying rows, suggestions and withdrawals incomplete).
+   */
+  blockers?: { balance: BlockerRef[]; rows: BlockerRef[] };
+  /** The HSA's opening day as its first statement proves it (opening at $0), for when none is typed. */
+  openedOn?: string | null;
 };
 
 export type LedgerRef = {
@@ -168,10 +183,12 @@ export type HsaReport = {
     /** Average days an unreimbursed dollar has waited (amount-weighted). */
     avgDaysWaiting: number;
   };
-  hsa: { accounts: HsaAccountIn[]; balanceCents: number | null; asOf: string | null; measuredReturn: number | null };
+  hsa: { accounts: HsaAccountIn[]; balanceCents: number | null; asOf: string | null; measuredReturn: number | null; blockers: { balance: BlockerRef[]; rows: BlockerRef[] }; openedOn: string | null; openedFrom: "SETTING" | "STATEMENTS" | null };
   growth: {
     rate: number;
-    rateSource: "SETTING" | "MEASURED" | "DEFAULT";
+    rateSource: "SETTING" | "MEASURED" | "FORECAST" | "DEFAULT";
+    dividendSource: "SETTING" | "STATEMENTS" | "DEFAULT";
+    taxableSource: "SETTING" | "TAX_ENGINE" | "DEFAULT";
     marginalRate: number;
     marginalSource: "SETTING" | "RETIREMENT" | "TAX_REPORT" | "DEFAULT";
     payrollSource: "SETTING" | "PAY_STUBS" | "TAX_REPORT" | "DEFAULT";
@@ -300,11 +317,21 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const spending = input.rows.filter((r) => r.amountCents < 0 && r.lane === "EXPENSE" && !isHsa(r.accountId));
   const claimed = new Set<string>();
 
+  // The day the HSA opened: as typed, else as its first statement shows it (opening at $0).
+  const openedOn = settings.openedOn ?? input.openedOn ?? null;
+
   // ------------------------------------------------------------ rates
   const hsaAccounts = input.hsaAccounts;
   const measured = hsaAccounts.find((a) => a.annualizedReturn != null && Math.abs(a.annualizedReturn) < 0.5)?.annualizedReturn ?? null;
-  const rate = settings.growthRate ?? measured ?? DEFAULT_RATE;
-  const rateSource = settings.growthRate != null ? "SETTING" : measured != null ? "MEASURED" : "DEFAULT";
+  // Growth: your setting, else the HSA's own measured return, else the forecast's return (the one the
+  // whole app assumes), and only with none of those a long-run assumption.
+  const linked = input.linked ?? { returnRate: null, dividendYield: null, taxableRate: null };
+  const rate = settings.growthRate ?? measured ?? linked.returnRate ?? DEFAULT_RATE;
+  const rateSource = settings.growthRate != null ? "SETTING" : measured != null ? "MEASURED" : linked.returnRate != null ? "FORECAST" : "DEFAULT";
+  const dividendYield = settings.dividendYield ?? linked.dividendYield ?? DEFAULT_DIVIDEND_YIELD;
+  const dividendSource = settings.dividendYield != null ? "SETTING" : linked.dividendYield != null ? "STATEMENTS" : "DEFAULT";
+  const taxableRate = settings.taxableRate ?? linked.taxableRate ?? DEFAULT_TAXABLE_RATE;
+  const taxableSource = settings.taxableRate != null ? "SETTING" : linked.taxableRate != null ? "TAX_ENGINE" : "DEFAULT";
   const taxM = input.taxMarginal ?? null;
   const marginal = settings.marginalRate ?? input.marginalRate ?? taxM?.incomeRate ?? DEFAULT_MARGINAL;
   const marginalSource = settings.marginalRate != null ? "SETTING" : input.marginalRate != null ? "RETIREMENT" : taxM ? "TAX_REPORT" : "DEFAULT";
@@ -351,7 +378,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     const paid = pinned.get(e.id) ?? auto.get(e.id) ?? null;
     const flags: ExpenseFlag[] = [];
     if ((dupCount.get(dupKey(e)) ?? 0) > 1) flags.push("DUPLICATE");
-    if (settings.openedOn && e.date < settings.openedOn) flags.push("BEFORE_OPEN");
+    if (openedOn && e.date < openedOn) flags.push("BEFORE_OPEN");
     if (!e.receipt) flags.push("NO_RECEIPT");
     if (e.paidWith && paid && !paid.rowId) flags.push("PAID_ROW_MISSING");
     let doubt: string | null = null;
@@ -396,7 +423,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const suggestions: Suggestion[] = [];
   for (const r of spending) {
     if (claimed.has(r.id) || isDismissed(r)) continue;
-    if (settings.openedOn && r.date < settings.openedOn) continue;
+    if (openedOn && r.date < openedOn) continue;
     const merchant = r.merchantKey || r.payee;
     if (ignored.has(merchant.toUpperCase())) continue;
     const q = qualify(r);
@@ -449,8 +476,8 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const years = planYear - thisYear;
   const assumptions: StrategyAssumptions = {
     rate,
-    dividendYield: settings.dividendYield ?? DEFAULT_DIVIDEND_YIELD,
-    taxableRate: settings.taxableRate ?? DEFAULT_TAXABLE_RATE,
+    dividendYield,
+    taxableRate,
     marginalRate: marginal,
     payrollRate: payroll.rate,
     growthCovered: settings.growthCovered ?? true,
@@ -499,10 +526,12 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     suggestions,
     withdrawals,
     totals,
-    hsa: { accounts: hsaAccounts, balanceCents: hsaBalance, asOf, measuredReturn: measured },
+    hsa: { accounts: hsaAccounts, balanceCents: hsaBalance, asOf, measuredReturn: measured, blockers: input.blockers ?? { balance: [], rows: [] }, openedOn, openedFrom: settings.openedOn ? "SETTING" : openedOn ? "STATEMENTS" : null },
     growth: {
       rate,
       rateSource,
+      dividendSource,
+      taxableSource,
       marginalRate: marginal,
       marginalSource,
       payrollSource: payroll.source,

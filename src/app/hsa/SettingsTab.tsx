@@ -64,12 +64,12 @@ export function SettingsTab({ r, send }: { r: HsaReport; send: Send }) {
       }
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="HSA opened on" hint="Expenses before this can't be reimbursed: they're flagged and left out of the totals and suggestions.">
+        <Field label="HSA opened on" hint={`Expenses before this can't be reimbursed: they're flagged and left out of the totals and suggestions. Blank: ${r.hsa.openedFrom === "STATEMENTS" ? `${r.hsa.openedOn}, when its first statement opens at $0` : "unknown (the statements on file don't reach back to the opening)"}.`}>
           <input type="date" className={inputCls} value={f.opened} onChange={set("opened")} />
         </Field>
         <Field
           label="Growth rate (% a year)"
-          hint={`Total return, the same investments in the HSA and the taxable account. Blank: ${r.hsa.measuredReturn != null ? `your HSA's measured return (${formatPercentRatio(r.hsa.measuredReturn, 1)})` : "7%, as no HSA return can be measured yet"}.`}
+          hint={`Total return, the same investments in the HSA and the taxable account. Blank: ${r.hsa.measuredReturn != null ? `your HSA's measured return (${formatPercentRatio(r.hsa.measuredReturn, 1)})` : r.growth.rateSource === "FORECAST" ? `the forecast's return (${formatPercentRatio(r.growth.rate, 1)})` : "7%, as no return can be measured or read off the forecast"}.`}
         >
           {rateInput("growth", r.hsa.measuredReturn ?? 0.07)}
         </Field>
@@ -82,11 +82,11 @@ export function SettingsTab({ r, send }: { r: HsaReport; send: Send }) {
         <Field label="Payroll tax saved (%)" hint={`Contributions through payroll skip Medicare (1.45%) and, below the Social Security wage base, Social Security (6.2%). 0 if you contribute outside payroll. Blank: ${r.growth.payrollSource === "PAY_STUBS" ? "worked out from your pay stubs" : r.growth.payrollSource === "TAX_REPORT" ? "the Taxes page's" : "1.45%"}.`}>
           {rateInput("payroll", r.growth.payrollSource === "SETTING" ? 0.0145 : r.growth.assumptions.payrollRate)}
         </Field>
-        <Field label="Dividend yield (%)" hint="The part of the return a taxable account pays out, and is taxed on, each year. Blank: 1.5% (a broad stock index).">
-          {rateInput("dividend", 0.015)}
+        <Field label="Dividend yield (%)" hint={`The part of the return a taxable account pays out, and is taxed on, each year. Blank: ${r.growth.dividendSource === "STATEMENTS" ? `what your taxable statements show (${formatPercentRatio(r.growth.assumptions.dividendYield, 2)})` : "1.5% (no taxable dividends on file to measure)"}.`}>
+          {rateInput("dividend", r.growth.dividendSource === "SETTING" ? 0.015 : r.growth.assumptions.dividendYield)}
         </Field>
-        <Field label="Taxable account tax (%)" hint="On dividends and on the gain when sold: long-term capital gains + 3.8% NIIT + state. Blank: 20%.">
-          {rateInput("taxable", 0.2)}
+        <Field label="Taxable account tax (%)" hint={`On dividends and on the gain when sold: long-term capital gains + 3.8% NIIT + state. Blank: ${r.growth.taxableSource === "TAX_ENGINE" ? `the tax engine's rate on a gain at your forecast salary (${formatPercentRatio(r.growth.assumptions.taxableRate, 1)})` : "20% (the tax engine can't price it yet)"}.`}>
+          {rateInput("taxable", r.growth.taxableSource === "SETTING" ? 0.2 : r.growth.assumptions.taxableRate)}
         </Field>
         <Field label="Medical bills will cover the growth" hint="A receipt only frees its own amount. Yes: later bills (retiree care, Medicare premiums) take the growth out tax-free too. Blank: yes.">
           <select className={inputCls} value={f.covered} onChange={set("covered")}>

@@ -86,7 +86,8 @@ export type OutlookAssumptions = {
   /** Pre-tax draw, as a share of start-of-year net worth, once retired. */
   withdrawalRate: number;
   /** Flat state rate on retirement draws (federal uses the real brackets). */
-  stateTaxRate: number;
+  /** A flat state rate on retirement draws (retiring elsewhere); null: Connecticut's brackets, the law the Taxes page uses. */
+  stateTaxRate: number | null;
   /** Indexing of the standard deduction and brackets, and inflation for the purchasing-power view. */
   inflation: number;
   plannedExpenses: PlannedExpense[];
@@ -125,7 +126,7 @@ export const DEFAULT_OUTLOOK: OutlookAssumptions = {
   returnRate: 0.05,
   walkAwayYear: null,
   withdrawalRate: 0.035,
-  stateTaxRate: 0.05,
+  stateTaxRate: null,
   inflation: 0.025,
   plannedExpenses: [],
   retirementAge: 65,
@@ -222,7 +223,8 @@ export function normalizeSettings(raw: Partial<FinancialProfileSettings> | null 
       returnRate: rate(o.returnRate, d.returnRate),
       walkAwayYear: year(o.walkAwayYear),
       withdrawalRate: rate(o.withdrawalRate, d.withdrawalRate, 0, 0.2),
-      stateTaxRate: rate(o.stateTaxRate, d.stateTaxRate, 0, 0.2),
+      // 5% was the old default every saved file carries, never a choice: it reads as untyped (the real brackets).
+      stateTaxRate: num(o.stateTaxRate) && o.stateTaxRate >= 0 && o.stateTaxRate <= 0.2 && o.stateTaxRate !== 0.05 ? o.stateTaxRate : null,
       inflation: rate(o.inflation, d.inflation, -0.05, 0.2),
       plannedExpenses: (Array.isArray(o.plannedExpenses) ? o.plannedExpenses : [])
         .filter((e) => e && typeof e.id === "string" && year(e.year) != null && num(e.amount))

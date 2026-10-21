@@ -246,6 +246,13 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
       inputs.matchRate != null && inputs.matchUpTo != null && activeRow
         ? { rate: inputs.matchRate, upTo: inputs.matchUpTo, fullMatchDeferral: Math.round(gross * inputs.matchUpTo), shortfall: pos(Math.round(gross * inputs.matchUpTo) - activeRow.employee.projected) }
         : null;
+    // The typed match formula against what the stubs show the employer paid so far this year.
+    if (match && active && activeRow && active.ytd.gross > 0) {
+      const predicted = Math.round(match.rate * Math.min(activeRow.employee.ytd, active.ytd.gross * match.upTo));
+      const paid = activeRow.employer$.ytd;
+      if (Math.abs(predicted - paid) > Math.max(5_000, paid * 0.1))
+        warnings.push(`${person.name}: the match typed on Inputs (${Math.round(match.rate * 100)}% up to ${Math.round(match.upTo * 1000) / 10}% of pay) comes to ${dollars(predicted)} so far in ${year}, but the pay stubs show ${dollars(paid)} of employer 401(k) money. Check the formula against the plan (or the employer pays something besides the match).`);
+    }
 
     // ---------------------------------------------------------- HSA
     const hsaEmployee = empRows.reduce((s, e) => add(s, e.hsa), ZERO);

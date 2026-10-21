@@ -64,9 +64,9 @@ const monthIndex = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.sl
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** A goal figure's proof ("planning" kind). */
-const goalProof = (g: GoalProgress, figure: GoalFigure, shownCents?: number | null): ProofTarget => ({
+const goalProof = (g: GoalProgress, figure: GoalFigure, shownCents: number | null): ProofTarget => ({
   descriptor: { report: "planning", page: "goals", figure, goalId: g.goal.id },
-  ...(shownCents != null ? { shownCents } : {}),
+  shownCents,
 });
 
 /** One sentence on where the goal stands: when it lands against its date, or why it doesn't. */
@@ -289,7 +289,7 @@ function Roadmap({ r }: { r: GoalsReport }) {
                           title={verdict(g, r)}
                         />
                         <span className={`num absolute top-0 whitespace-nowrap text-[11px] font-medium ${s.ink}`} style={labelX}>
-                          <ProofValue proof={goalProof(g, "lands")}>{fmtMonth(g.projectedDate)}</ProofValue>
+                          <ProofValue proof={goalProof(g, "lands", null)}>{fmtMonth(g.projectedDate)}</ProofValue>
                         </span>
                       </>
                     ) : (
@@ -360,7 +360,7 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
         <div className={`h-full rounded-full ${s.bg}`} style={{ width: `${share * 100}%` }} />
       </div>
       <p className={`mt-3 text-sm font-medium ${s.ink}`}>
-        <ProofValue proof={goalProof(g, "lands")}>{verdict(g, r)}</ProofValue>
+        <ProofValue proof={goalProof(g, "lands", null)}>{verdict(g, r)}</ProofValue>
       </p>
       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
         {left != null && left > 0 && (

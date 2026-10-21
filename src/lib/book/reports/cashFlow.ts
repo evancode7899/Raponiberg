@@ -5,6 +5,7 @@ import { bookedShare } from "../booking.ts";
 import type { Book, BookRow } from "../load.ts";
 import { withReimbursements } from "../reimbursements.ts";
 import { countsOn } from "../rent.ts";
+import { savingsRate } from "../definitions.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 
 export type CategoryAmount = { category: string; group: string | null; cents: number };
@@ -29,6 +30,8 @@ export type CashFlowPeriod = {
   retirementEmployerCents: number;
   /** Findings that make this period unprovable; when non-empty its figures must not be shown. */
   blockers: BlockerRef[];
+  /** Rows counted as the classifier filed them, though it asked for an answer (BookRow.needsReview): how many, and their size. */
+  unreviewed: { rows: number; cents: number };
 };
 
 export type CashFlowReport = {
@@ -44,6 +47,14 @@ export type CashFlowReport = {
 /** One row's part in one period's cash flow: `cents` is its signed amount times `share`, unrounded. */
 export type CashFlowContribution = { row: BookRow; periodIndex: number; share: number; cents: number; countedOn: string };
 
+/** The day each row counts on (rent.ts countsOn), worked out once per Book: rent detection reads every row. */
+const days = new WeakMap<Book, (r: BookRow) => string>();
+export function dayOfFor(book: Book): (r: BookRow) => string {
+  let d = days.get(book);
+  if (!d) days.set(book, (d = countsOn(book.rows, book.accounts, book.household.merchantRules)));
+  return d;
+}
+
 /**
  * Which rows cash flow counts, in which period, and how much of each: the one selection
  * step behind the cash-flow report and the proof of any figure on it (book/proof), so the
@@ -54,7 +65,7 @@ export type CashFlowContribution = { row: BookRow; periodIndex: number; share: n
  */
 export function cashFlowContributions(book: Book, periods: { start: string; end: string }[], accountFilter: Set<string> | null): CashFlowContribution[] {
   const idx = (iso: string) => periods.findIndex((p) => p.start <= iso && iso <= p.end);
-  const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
+  const dayOf = dayOfFor(book);
   const out: CashFlowContribution[] = [];
   // A reimbursement link's pair (book/reimbursements.ts) counts like any row: the payback moves from income into the charge's category.
   for (const r of withReimbursements(book)) {
@@ -108,12 +119,17 @@ export function buildCashFlowReport(book: Book, opts: { granularity: Granularity
       externalByCategory: [],
       retirementEmployeeCents: 0,
       retirementEmployerCents: 0,
+      unreviewed: { rows: 0, cents: 0 },
       blockers: refs(blockersFor(book, { affects: "CASH_FLOW", from: start, to: end, accountIds: opts.accountIds })),
     };
     return { p, income: new Map<string, CategoryAmount>(), spending: new Map<string, CategoryAmount>(), external: new Map<string, CategoryAmount>() };
   });
   for (const { row: r, periodIndex, cents } of cashFlowContributions(book, periods.map(({ p }) => p), accountFilter)) {
     const bucket = periods[periodIndex]!;
+    if (r.needsReview) {
+      bucket.p.unreviewed.rows++;
+      bucket.p.unreviewed.cents += Math.abs(cents);
+    }
     const add = (m: Map<string, CategoryAmount>, v: number) => {
       const cur = m.get(r.category) ?? { category: r.category, group: r.categoryGroup, cents: 0 };
       cur.cents += v;
@@ -135,7 +151,8 @@ export function buildCashFlowReport(book: Book, opts: { granularity: Granularity
     p.incomeCents = Math.round(p.incomeCents);
     p.spendingCents = Math.round(p.spendingCents);
     p.netCents = p.incomeCents - p.spendingCents;
-    p.savingsRate = p.incomeCents > 0 ? p.netCents / p.incomeCents : null;
+    p.unreviewed.cents = Math.round(p.unreviewed.cents);
+    p.savingsRate = savingsRate(p.incomeCents, p.netCents);
     p.incomeByCategory = sorted(income);
     p.spendingByCategory = sorted(spending);
     p.externalByCategory = sorted(external);

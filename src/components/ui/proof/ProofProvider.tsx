@@ -35,7 +35,7 @@ export function ProofProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const open = useCallback((t: ProofTarget) => load(t, "open"), [load]);
-  const follow = useCallback((descriptor: ProofDescriptor) => load({ descriptor }, "push"), [load]);
+  const follow = useCallback((descriptor: ProofDescriptor) => load({ descriptor, shownCents: null }, "push"), [load]);
   const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
   const close = useCallback(() => setStack([]), []);
 

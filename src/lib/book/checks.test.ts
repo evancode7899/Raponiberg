@@ -10,6 +10,9 @@ import { runChecksWithPasses } from "./checks/index";
 import { Collector } from "./checks/collector";
 import { staleEvidence } from "./exceptions";
 import { cashFlowThrough, type Book, type BookAccount, type BookRow, type BookStub } from "./load";
+import { estimatesFor } from "./proof/common";
+import { buildCashFlowReport } from "./reports/cashFlow";
+import { bookTotalsFor } from "./rowTotals";
 import type { StandingException } from "./types";
 import { TAX_DOCS_VERSION } from "../taxdocs/store";
 import type { TaxDocsFile } from "../taxdocs/types";
@@ -517,5 +520,95 @@ describe("tax documents were read by the current reader (ledger.freshness)", () 
     expect(fresh(b)).toEqual([]);
     expect(taxPasses(b)).toEqual([]);
     tallyIsEvidence(b);
+  });
+});
+
+describe("single-source audit: what a committed statement and a row can't hide", () => {
+  const statement = (over: Partial<Book["statements"][number]> = {}): Book["statements"][number] => ({
+    id: "st1",
+    accountId: "chk",
+    documentId: "d1",
+    documentTitle: "checking-jan.pdf",
+    importedAt: "2025-02-01T00:00:00.000Z",
+    status: "COMMITTED",
+    isSummary: false,
+    periodStart: "2025-01-01",
+    periodEnd: "2025-01-31",
+    deltaCents: 0,
+    ...over,
+  });
+  const rerun = (b: Book) => {
+    const r = runChecksWithPasses(b);
+    b.integrity = r.report;
+    b.passes = r.passes;
+    return b;
+  };
+
+  it("fails a committed statement whose stored printed totals don't tie, whatever its status says", () => {
+    const b = makeBook({ accounts: [checking([{ date: "2025-01-15", cents: 100 }])] });
+    b.statements = [statement({ checks: [{ label: "Deposits total", expectedCents: 150, actualCents: 100, toleranceCents: 0 }] })];
+    const f = rerun(b).integrity.findings.find((x) => x.check === "statement.held");
+    expect(f?.status).toBe("FAIL");
+    expect(f?.detail).toMatch(/printed \$1\.50, rows give \$1\.00/);
+    // Within the parser's tolerance, it passes.
+    b.statements = [statement({ checks: [{ label: "Deposits total", expectedCents: 101, actualCents: 100, toleranceCents: 2 }] })];
+    expect(rerun(b).integrity.findings.filter((x) => x.check === "statement.held")).toEqual([]);
+  });
+
+  it("lists a statement whose market change is what the balances leave as an inference on its account", () => {
+    const b = makeBook({ accounts: [checking([])] });
+    b.statements = [statement({ growthDerived: true })];
+    const inf = rerun(b).integrity.inferences.find((i) => i.id.startsWith("statement.growth:"));
+    expect(inf?.scope).toMatchObject({ accountId: "chk", from: "2025-01-01", to: "2025-01-31" });
+    expect(estimatesFor(b, { rowIds: new Set(), from: "2025-01-10", to: "2025-01-20", accountIds: ["chk"] }).map((e) => e.id)).toContain(inf!.id);
+    expect(estimatesFor(b, { rowIds: new Set(), from: "2025-03-01", to: "2025-03-31", accountIds: ["chk"] }).map((e) => e.id)).not.toContain(inf!.id);
+  });
+
+  it("counts a row awaiting review as filed, and says so on the period and in its proof", () => {
+    const b = makeBook({ accounts: [checking([{ date: "2025-01-15", cents: 1_000 }, { date: "2025-01-20", cents: -400, lane: "EXPENSE", id: "wire" }])] });
+    const wire = b.rowById.get("wire")!;
+    wire.needsReview = true;
+    const jan = buildCashFlowReport(b, { granularity: "month", from: "2025-01-01", to: "2025-01-31" }).periods[0]!;
+    expect(jan.spendingCents).toBe(400);
+    expect(jan.unreviewed).toEqual({ rows: 1, cents: 400 });
+    expect(estimatesFor(b, { rowIds: new Set(["wire"]), from: "2025-01-01", to: "2025-01-31" }).map((e) => e.id)).toContain("review:unanswered");
+  });
+
+  it("row viewers total the Book's amounts: a split payment's pieces and corrections count, a pending charge doesn't", () => {
+    const b = makeBook({ accounts: [checking([{ date: "2025-01-15", cents: 1_000, id: "pay" }, { date: "2025-01-20", cents: -400, lane: "EXPENSE", id: "bill" }])] });
+    const bill = b.rowById.get("bill")!;
+    b.rows.push({ ...bill, id: "bill:part2", partOf: "bill", amountCents: -100 }, { ...bill, id: "bill:correction", amountCents: -5 }, { ...bill, id: "later", pending: true, amountCents: -70 });
+    expect(bookTotalsFor(b, ["pay", "bill", "later", "gone"])).toEqual({ count: 4, inCents: 1_000, outCents: -505, pending: 1, notInLedger: 1 });
+  });
+});
+
+describe("tax documents agree with the ledger", () => {
+  const w2 = (wages: number): TaxDocsFile => ({
+    version: TAX_DOCS_VERSION,
+    scannedAt: "2026-02-15T00:00:00.000Z",
+    folder: "tax",
+    errors: [],
+    docs: [
+      {
+        id: "w2pat",
+        file: "2025/w2-pat.pdf",
+        duplicates: [],
+        year: 2025,
+        kind: "W2",
+        superseded: null,
+        names: ["PAT EXAMPLE"],
+        warnings: [],
+        parsed: { kind: "W2", w2: { employer: "Example Partners LP", ein: null, employee: "PAT EXAMPLE", wages, federalWithheld: 0, ssWages: wages, ssWithheld: 0, medicareWages: wages, medicareWithheld: 0, dependentCare: 0, box12: [], states: [], locals: [] } },
+      },
+    ],
+  });
+
+  it("a W-2 the pay stubs can't corroborate is missing data for that year's pay and taxes", () => {
+    const b = makeBook({ accounts: [checking([])], today: "2026-03-01", horizon: { cashFlow: "2025-12-31", netWorth: "2025-12-31" }, taxDocs: w2(5_000_000) });
+    const f = b.integrity.findings.filter((x) => x.check === "tax.documents-tie");
+    expect(f.length).toBeGreaterThan(0);
+    expect(f.every((x) => x.status === "MISSING")).toBe(true);
+    expect(f[0]!.scope).toMatchObject({ from: "2025-01-01", to: "2025-12-31", affects: ["PAY", "TAX"] });
+    expect(blockersFor(b, { affects: "TAX", from: "2025-06-01", to: "2025-06-30" }).some((x) => x.check === "tax.documents-tie")).toBe(true);
   });
 });

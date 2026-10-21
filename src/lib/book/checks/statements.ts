@@ -19,6 +19,34 @@ export function checkStatements(book: Book, c: Collector) {
   const institutionOf = (id: string) => book.accounts.find((a) => a.id === id)?.institution ?? "the institution";
 
   for (const s of book.statements) {
+    // A committed statement's printed totals are re-checked here, not taken from its stored
+    // status: a database restored from elsewhere can't carry in a statement that doesn't tie.
+    const broken = s.status === "COMMITTED" ? (s.checks ?? []).filter((k) => Math.abs(k.expectedCents - k.actualCents) > k.toleranceCents) : [];
+    if (broken.length) {
+      const { ref, accounts } = accountRef(book, s.accountId);
+      c.add({
+        id: `statement.held:${ref}:${s.periodStart}:${s.periodEnd}:printed`,
+        accounts,
+        check: "statement.held",
+        status: "FAIL",
+        title: `${nameOf(s.accountId)} ${s.periodStart} – ${s.periodEnd} doesn't match its printed totals`,
+        detail: broken.map((k) => `${k.label}: printed ${money(k.expectedCents)}, rows give ${money(k.actualCents)}`).join("; ") + ".",
+        fix: "Re-import the statement (Statements → Documents). If it still doesn't tie, the parser misreads this layout.",
+        scope: { accountId: s.accountId, from: s.periodStart, to: s.periodEnd, affects: ["CASH_FLOW", "NET_WORTH"] },
+      });
+      continue;
+    }
+    if (s.status === "COMMITTED" && s.growthDerived && !s.isSummary) {
+      const { ref } = accountRef(book, s.accountId);
+      c.infer({
+        id: `statement.growth:${ref}:${s.periodStart}:${s.periodEnd}`,
+        check: "statement.held",
+        title: `${nameOf(s.accountId)} ${s.periodStart} – ${s.periodEnd}: market change is what the balances leave`,
+        detail:
+          "The statement prints its opening and closing values but no change-in-value line, so market change is the difference the listed deposits and withdrawals don't explain. Each of those that moved money from a tracked account also has to pair with that account's statement (Every transfer pairs), so a flow the parser missed shows up there; money from an account the app doesn't track would not.",
+        scope: { accountId: s.accountId, from: s.periodStart, to: s.periodEnd },
+      });
+    }
     if (s.status === "COMMITTED") {
       c.pass("statement.held", {
         subject: `${nameOf(s.accountId)} ${s.periodStart} – ${s.periodEnd}${s.isSummary ? " (summary)" : ""}`,

@@ -20,10 +20,11 @@ export async function GET(request: NextRequest) {
   }
   const years = Object.keys(TAX_YEARS).map(Number).sort();
   const asked = Number(request.nextUrl.searchParams.get("year"));
-  const thisYear = new Date().getFullYear();
-  const year = years.includes(asked) ? asked : years.includes(thisYear) ? thisYear : years.at(-1)!;
   return jsonBody(
-    await cachedReport(prisma, `tax-accounts|${year}`, async (book) => {
+    await cachedReport(prisma, `tax-accounts|${years.includes(asked) ? asked : "current"}`, async (book) => {
+      // No year asked: the Book's year (book.today), the one every figure is built as of.
+      const thisYear = Number(book.today.slice(0, 4));
+      const year = years.includes(asked) ? asked : years.includes(thisYear) ? thisYear : years.at(-1)!;
       const [settings, profile, { forecast }] = await Promise.all([loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadProfileSettings(prisma), loadForecast(prisma, book)]);
       // The year in progress uses the shared forecast's pay and bonuses, as the Taxes page does.
       const report = buildTaxAccounts(book, year, settings, profile.birthYears, forecast ? taxLink(forecast) : null);

@@ -1,9 +1,8 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { dataStamp, getBook } from "@/lib/book/cache";
+import { dataStamp, getBook, stampTag } from "@/lib/book/cache";
 import { buildProof, parseDescriptor } from "@/lib/book/proof";
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -22,5 +21,5 @@ export async function POST(request: NextRequest) {
   const stamp = dataStamp();
   const book = await getBook(prisma, stamp);
   const proof = await buildProof({ book, db: prisma }, descriptor);
-  return NextResponse.json({ ...proof, stamp: createHash("sha1").update(stamp).digest("hex").slice(0, 12) });
+  return NextResponse.json({ ...proof, stamp: stampTag(stamp) });
 }

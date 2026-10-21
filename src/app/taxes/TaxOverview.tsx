@@ -35,7 +35,9 @@ const daysUntil = (from: string, to: string) => Math.round((Date.parse(to) - Dat
 export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
   const mfj = r.scenarios.mfj;
   const b = taxBuckets(useJointColumn(r));
-  const separate = r.scenarios.mfs.totalTax + Object.values(r.scenarios.mfs.returns).reduce((s, x) => s + x.fica.ctPfml, 0);
+  // Both totals as the Worksheet's columns have them (all.totalTaxes), the lines the proofs re-derive.
+  const cols = useMemo(() => estimateColumns(r, "projected").cols, [r]);
+  const separate = cols.filter((c) => c.id !== "joint").reduce((s, c) => s + (lineValue("all.totalTaxes", c, cols) ?? 0), 0);
   const joint = b.total;
   const depFed = r.scenarios.mfjNoDependents.federal.totalTax - r.scenarios.mfjNoDependents.federal.refundableChildCredit - b.federal;
   const depCt = r.scenarios.mfjNoDependents.ct.totalTax - mfj.ct.totalTax;
@@ -528,7 +530,7 @@ function TrueUp({
             values: [usd(sh.requiredAnnualPayment)],
             help:
               sh.priorYearTax != null
-                ? `90% of this year: ${usd(Math.round(sh.currentYearTax * 0.9))}. ${Math.round(sh.priorYearPct * 100)}% of last year${priorEstimated ? " (this app's estimate — enter the filed figure under Inputs)" : ""}: ${usd(Math.round(sh.priorYearTax * sh.priorYearPct))}. The smaller applies.`
+                ? `90% of this year: ${usd(sh.currentYearTest)}. ${Math.round(sh.priorYearPct * 100)}% of last year${priorEstimated ? " (this app's estimate — enter the filed figure under Inputs)" : ""}: ${usd(sh.priorYearTest ?? 0)}. The smaller applies.`
                 : undefined,
           },
           { label: "Withholding through year end", values: [usd(sh.withholding)], indent: true },

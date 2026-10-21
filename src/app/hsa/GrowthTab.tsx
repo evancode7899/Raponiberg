@@ -9,7 +9,7 @@ import type { Breakdown, HsaReport } from "@/lib/hsa/report";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { hsaProof } from "./proof";
 
-const RATE_SOURCE = { SETTING: "your setting", MEASURED: "your HSA's measured return", DEFAULT: "a long-run stock-market assumption" };
+const RATE_SOURCE = { SETTING: "your setting", MEASURED: "your HSA's measured return", FORECAST: "the forecast's return (Forecast page)", DEFAULT: "a long-run stock-market assumption" };
 
 export function GrowthTab({ r }: { r: HsaReport }) {
   const g = r.growth;

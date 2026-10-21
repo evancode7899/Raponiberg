@@ -1,3 +1,4 @@
+import { savingsRate as rateOfSaving } from "../book/definitions.ts";
 import { milestones as netWorthMilestones, SPAN_YEARS, type Forecast } from "../forecast/forecast.ts";
 import { financialIndependenceYear, projectOutlook, retirementTax, walkAwayTable, type OutlookPlan, type OutlookYear, type WalkAwayRow } from "../profile/outlook.ts";
 
@@ -169,7 +170,8 @@ export function analyzeFire(full: OutlookPlan, base: OutlookPlan, opts: { asOf: 
   };
   const y1 = projection.find((y) => y.months === 12 && y.working);
   const income1 = y1 ? y1.takeHome + y1.employerMatch + y1.bonusKept : 0;
-  const savingsRate = y1 && income1 > 0 ? y1.saved / income1 : null;
+  // The plan's first full working year: saved ÷ what came in (take-home + employer money + bonus kept), the shared definition.
+  const savingsRate = y1 ? rateOfSaving(income1, y1.saved) : null;
 
   return {
     plan,

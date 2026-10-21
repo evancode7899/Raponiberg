@@ -43,14 +43,19 @@ export function checksFor(book: Book, q: BlockerQuery | BlockerQuery[], ids: Che
 
 /**
  * What stands on an inference rather than a printed line: inferences about the listed
- * rows, and card cycles with no statement counted as $0 (proven idle from the paying
- * bank's side) for the accounts and window in scope.
+ * rows, rows the classifier wasn't sure of (counted as filed until answered on Review),
+ * and card cycles with no statement counted as $0 (proven idle from the paying bank's
+ * side) for the accounts and window in scope.
  */
 export function estimatesFor(book: Book, opts: { rowIds: Set<string>; from: string; to: string; accountIds?: string[] }): ProofEstimate[] {
   const inScope = (id: string) => !opts.accountIds?.length || opts.accountIds.includes(id);
   const name = (id: string) => book.accounts.find((a) => a.id === id)?.name;
+  const unreviewed = [...opts.rowIds].map((id) => book.rowById.get(id)).filter((r) => r?.needsReview);
   return [
-    ...book.integrity.inferences.filter((i) => i.rowIds?.some((id) => opts.rowIds.has(id))).map((i) => ({ id: i.id, title: i.title, detail: i.detail })),
+    ...book.integrity.inferences
+      .filter((i) => i.rowIds?.some((id) => opts.rowIds.has(id)) || (i.scope?.accountId && inScope(i.scope.accountId) && i.scope.from <= opts.to && i.scope.to >= opts.from))
+      .map((i) => ({ id: i.id, title: i.title, detail: i.detail })),
+    ...(unreviewed.length ? [unreviewedEstimate(unreviewed.map((r) => r!))] : []),
     ...book.idle.proven
       .filter((w) => inScope(w.accountId) && w.from <= opts.to && w.to >= opts.from)
       .map((w) => ({
@@ -59,6 +64,16 @@ export function estimatesFor(book: Book, opts: { rowIds: Set<string>; from: stri
         detail: "The issuer sends no statement for a cycle without activity; the paying bank's statements prove nothing happened.",
       })),
   ];
+}
+
+/** Rows counted as the classifier filed them, though it asked for a person's answer. */
+export function unreviewedEstimate(rows: { amountCents: number; category: string }[]): ProofEstimate {
+  const cents = rows.reduce((s, r) => s + Math.abs(r.amountCents), 0);
+  return {
+    id: "review:unanswered",
+    title: `${rows.length} row${rows.length === 1 ? "" : "s"} awaiting review counted as filed (${(cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })})`,
+    detail: `The classifier wasn't sure of ${rows.length === 1 ? "this row" : "these rows"} (${[...new Set(rows.map((r) => r.category))].join(", ")}). Answer ${rows.length === 1 ? "it" : "them"} on Review to settle the figure.`,
+  };
 }
 
 /** A YYYY-MM-DD date in a request body. */

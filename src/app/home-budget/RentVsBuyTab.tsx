@@ -96,7 +96,20 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
             </Group>
             <Group title="Markets">
               {S("homeAppreciationRate")}
-              {S("investmentReturnRate")}
+              {S("investmentReturnRate", {
+                onChange: (v: number) => {
+                  patch("investmentReturnRate", v);
+                  if (funds.returns.linked) funds.setConfig({ ...funds.config, returns: "manual" });
+                },
+                extra:
+                  funds.returns.forecast == null ? undefined : funds.returns.linked ? (
+                    <>Linked: the Forecast&apos;s return ({formatPercentRatio(funds.returns.forecast, 1)}). Moving it types your own.</>
+                  ) : (
+                    <button type="button" className="text-accent hover:underline" onClick={() => funds.setConfig({ ...funds.config, returns: "forecast" })}>
+                      use the Forecast&apos;s return ({formatPercentRatio(funds.returns.forecast, 1)})
+                    </button>
+                  ),
+              })}
               <GainsTaxControl ins={ins} patch={patch} funds={funds} full />
             </Group>
             <Group title="Selling">

@@ -144,6 +144,27 @@ export type TaxProfile = {
 
 export type UnavailableAccount = { last4: string; note: string };
 
+/** Each typed extra: its label and what it is for (Taxes › Inputs, and the report's list of typed figures). */
+export const EXTRA_FIELDS: [keyof PersonExtras, string, string?][] = [
+  ["expectedBonus", "Extra bonus not in the Forecast", "Gross, paid by the current employer before Dec 31, on top of what the Forecast already expects."],
+  ["otherIncome", "Other taxable income", "Freelance, prizes, taxable state refunds, Schedule 1 line 8z…"],
+  ["extraInterest", "Interest not in the statements", "An account the app doesn't track, or a 1099-INT it can't read"],
+  [
+    "usObligationIncome",
+    "State-exempt US government interest",
+    "Treasury or government money-fund income, already counted in interest or dividends, that New York and Connecticut don't tax (IT-201 line 28, CT Schedule 1 line 41).",
+  ],
+  ["extraShortTermGain", "Expected short-term gains (more sales)", "Gains (or losses, negative) from sales not yet on a statement."],
+  ["extraLongTermGain", "Expected long-term gains (more sales)"],
+  ["capitalLossCarryover", "Capital loss carried in from last year", "From last year's Schedule D carryover worksheet."],
+  ["iraBasisCarryforward", "Non-deductible IRA basis from earlier years", "Form 8606 line 14 of last year's return."],
+  ["hsaOutsidePayroll", "HSA contributions outside payroll"],
+  ["otherAdjustments", "Other above-the-line deductions"],
+  ["otherStateTax", "Tax owed to a state other than NY", "New York is worked out from the W-2s and stubs. Any other state's tax goes here: it's added to the total and credited against CT tax."],
+  ["estimatedFederalExtra", "Federal estimated payments not in the ledger"],
+  ["estimatedCtExtra", "CT estimated payments not in the ledger"],
+];
+
 export const EMPTY_EXTRAS: PersonExtras = {
   expectedBonus: 0,
   otherIncome: 0,

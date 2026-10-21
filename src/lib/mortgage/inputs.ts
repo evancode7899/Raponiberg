@@ -1,3 +1,5 @@
+import { TAX_YEARS } from "../tax/params.ts";
+
 /**
  * The Mortgage page's inputs and their defaults. Kept apart from the page so scripts can
  * read the defaults too (npm run privacy:check leaves a calculator's untouched defaults
@@ -43,16 +45,38 @@ export type MortgageInputs = {
   debtCap: number;
   inflation: number;
   realDollars: boolean;
+  /**
+   * Inputs the owner typed over a linked figure (LINKED_KEYS: the forecast's return and
+   * inflation, the tax engine's rates). Absent: the page uses the linked figure, when there is one.
+   */
+  typed?: Partial<Record<LinkedKey, true>>;
 };
 
+/** The inputs the page takes from the forecast or the tax engine unless typed (api/mortgage/links). */
+export const LINKED_KEYS = ["investReturn", "inflation", "fedMarginalRate", "standardDeduction", "stateIncomeTax"] as const;
+export type LinkedKey = (typeof LINKED_KEYS)[number];
+
+/** The inputs the model runs on: each linked figure in place of the saved one, unless the owner typed it. */
+export function withLinks(i: MortgageInputs, links: Partial<Record<LinkedKey, { value: number } | null>>): MortgageInputs {
+  const out = { ...i };
+  for (const k of LINKED_KEYS) {
+    const l = links[k];
+    if (l && !i.typed?.[k]) out[k] = l.value;
+  }
+  return out;
+}
+
 /**
- * 2026 law, as in src/lib/tax/params.ts (a test keeps them in step): top long-term gains
- * rate plus NIIT, Connecticut's top rate, and the SALT cap (joint) through 2029.
+ * 2026 law, read from src/lib/tax/params.ts: the top long-term gains rate plus NIIT,
+ * Connecticut's top rate, the SALT cap and the standard deduction (joint), in dollars.
+ * The cap from 2030 is the law's scheduled reversion, not yet a params year.
  */
-export const FED_TOP_GAINS_RATE = 0.2 + 0.038;
-export const CT_TOP_RATE = 0.0699;
-export const SALT_CAP_2026 = 40_400;
+const LAW = TAX_YEARS[2026]!;
+export const FED_TOP_GAINS_RATE = LAW.federal.preferentialRates.twenty + LAW.federal.niitRate;
+export const CT_TOP_RATE = LAW.ct.brackets.MFJ.at(-1)![1];
+export const SALT_CAP_2026 = LAW.federal.salt.cap.MFJ / 100;
 export const SALT_CAP_FROM_2030 = 10_000;
+const STANDARD_DEDUCTION_2026 = LAW.federal.standardDeduction.MFJ / 100;
 
 /**
  * Defaults: a 30-year loan at today's rates, a broad stock index (7% long-run, 16%
@@ -78,7 +102,7 @@ export const defaultInputs = (): MortgageInputs => ({
   sellAtHorizon: true,
   deductInterest: true,
   fedMarginalRate: 0.35,
-  standardDeduction: 32_200,
+  standardDeduction: STANDARD_DEDUCTION_2026,
   stateIncomeTax: 25_000,
   propertyTax: 7_500,
   charity: 5_000,

@@ -1,5 +1,5 @@
 import { computeReturn, type Dependent, type PersonIncome } from "../tax/computeReturn.ts";
-import type { TaxYearParams } from "../tax/params.ts";
+import type { CtParams, TaxYearParams } from "../tax/params.ts";
 import type { LivingBasis, OutlookAssumptions, PaycheckBasis } from "./settings.ts";
 import { DEFAULT_PERSON_OUTLOOK } from "./settings.ts";
 
@@ -116,8 +116,10 @@ export type LivingTrail = {
   payReimbursements: number;
   /** The window's living cost before annualizing. */
   windowCents: number;
-  /** THIS_YEAR: days from Jan 1, annualized × 365 ÷ days. */
+  /** THIS_YEAR: days from Jan 1 so far. */
   days?: number;
+  /** THIS_YEAR: the rest of the year as it went last year (its own trail), added to the year so far. */
+  rest?: LivingTrail;
 };
 
 export type OutlookSeeds = {
@@ -139,7 +141,8 @@ export type OutlookSeeds = {
   realizedReturn: number | null;
   /** Tax law year used for pay (today's law) and the retirement-draw brackets. */
   taxYear: number;
-  tax: { year: number; standardDeduction: number; brackets: number[] };
+  /** `ct`: Connecticut's law for the year, which taxes retirement draws unless a flat state rate is typed. */
+  tax: { year: number; standardDeduction: number; brackets: number[]; ct?: CtParams };
   dependents: Dependent[];
   birthYear: number | null;
 };
@@ -222,7 +225,8 @@ export function taxOnPay(params: TaxYearParams, people: PayForTax[], dependents:
   if (!paid.length) return { ...ZERO_TAX };
   const incomes = paid.map((p) => income(p, params));
   if (longTermGain > 0) incomes[0] = { ...incomes[0]!, longTermGain };
-  const r = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents, itemizeMode: "STANDARD" });
+  // The better of itemizing and the standard deduction, as the Taxes page files it (computeReturn's AUTO).
+  const r = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents, itemizeMode: "AUTO" });
   const t = { federal: r.federal.totalTax, ct: r.ct.totalTax, socialSecurity: r.fica.socialSecurity, medicare: r.fica.medicare, pfml: r.fica.ctPfml, total: 0 };
   t.total = t.federal + t.ct + t.socialSecurity + t.medicare + t.pfml;
   return t;

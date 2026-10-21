@@ -19,9 +19,9 @@ import { axisUsd, blockedCell, pct, usd, YearTable, type Cell, type TableRow } f
 const m = (cents: number | null | undefined, title?: string): Cell => ({ text: usd(cents), title });
 
 /** A figure that opens its annual proof (shown: the proof's own figure, for the drawer's stale-data warning). */
-const proofOf = (descriptor: AnnualDescriptor, shown?: number): ProofTarget => ({ descriptor, ...(shown != null ? { shownCents: shown } : {}) });
-const cashP = (y: YearProfile, line: AnnualCashLine, shown?: number) => proofOf({ report: "annual", figure: "cash", year: y.year, line }, shown);
-const nwP = (y: YearProfile, line: AnnualNetWorthLine, shown?: number) => proofOf({ report: "annual", figure: "net-worth", year: y.year, line }, shown);
+const proofOf = (descriptor: AnnualDescriptor, shown: number | null): ProofTarget => ({ descriptor, shownCents: shown });
+const cashP = (y: YearProfile, line: AnnualCashLine, shown: number | null) => proofOf({ report: "annual", figure: "cash", year: y.year, line }, shown);
+const nwP = (y: YearProfile, line: AnnualNetWorthLine, shown: number | null) => proofOf({ report: "annual", figure: "net-worth", year: y.year, line }, shown);
 /** A money cell as the page shows it (negated on a "Less:" line), opening its proof. */
 const fig = (cents: number, proof: ProofTarget, title?: string): Cell => ({ text: usd(cents), proof, title });
 
@@ -87,7 +87,7 @@ export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () 
         <StatCell label={`Cash saved ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.saved, full?.blockers.cash)}
           proof={full?.cash ? cashP(full, "saved", full.cash.waterfall.saved) : undefined} sub={full?.cash ? `${pct(full.cash.waterfall.savingsOfGross)} of gross pay` : undefined} />
         <StatCell label={`Cash tax rate ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.cashTaxRate, full?.blockers.cash, (n) => pct(n))}
-          proof={full?.cash ? cashP(full, "tax-rate") : undefined} sub="withheld + paid − refunds, ÷ gross" />
+          proof={full?.cash ? cashP(full, "tax-rate", null) : undefined} sub="withheld + paid − refunds, ÷ gross" />
         <StatCell
           label={`Living cost ${full?.year ?? ""}`}
           value={value(full?.cash?.waterfall.living, full?.blockers.cash)}
@@ -187,9 +187,9 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
   });
   rows.push({ label: "Less: one-off expenses", indent: true, help: "Expenses marked one-off (a wedding, a move, a car) on the One-off expenses tab or Cash flow › Spending. They still count toward cash saved; they're only kept out of living expenses.", cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.nonRecurring, cashP(y, "one-offs", c.waterfall.nonRecurring)))) });
   rows.push({ label: "Total cash saved", total: true, cells: per((y) => cashCell(y, (c) => fig(c.waterfall.saved, cashP(y, "saved", c.waterfall.saved)))) });
-  rows.push({ label: "Cash tax rate", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.cashTaxRate), proof: cashP(y, "tax-rate") }))) });
-  rows.push({ label: "Savings % of gross pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfGross), proof: cashP(y, "savings-of-gross") }))) });
-  rows.push({ label: "Savings % of net pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfNet), proof: cashP(y, "savings-of-net") }))) });
+  rows.push({ label: "Cash tax rate", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.cashTaxRate), proof: cashP(y, "tax-rate", null) }))) });
+  rows.push({ label: "Savings % of gross pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfGross), proof: cashP(y, "savings-of-gross", null) }))) });
+  rows.push({ label: "Savings % of net pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfNet), proof: cashP(y, "savings-of-net", null) }))) });
 
   // ------------------------------------------------------------ net worth
   rows.push({ kind: "heading", label: "Net worth", sub: "financial position at year end, from statements" });
@@ -225,7 +225,7 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
     });
   }
   rows.push({ label: "Change in net worth ($)", muted: true, cells: per((y) => (y.change ? fig(y.change.cents, nwP(y, "change", y.change.cents)) : blockedCell(y.blockers.change))) });
-  rows.push({ label: "Change in net worth (%)", muted: true, cells: per((y) => (y.change ? { text: pct(y.change.pct, 0), proof: nwP(y, "change-pct") } : blockedCell(y.blockers.change))) });
+  rows.push({ label: "Change in net worth (%)", muted: true, cells: per((y) => (y.change ? { text: pct(y.change.pct, 0), proof: nwP(y, "change-pct", null) } : blockedCell(y.blockers.change))) });
 
   // ------------------------------------------------------------ bridge
   rows.push({ kind: "heading", label: "What changed net worth", sub: "from the cash saved above to the change in net worth" });

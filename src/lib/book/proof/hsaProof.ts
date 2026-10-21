@@ -407,7 +407,7 @@ function receiptsProof(book: Book, r: HsaReport, metric: "reimbursable" | "ready
             detail:
               r.growth.rateSource === "MEASURED"
                 ? "Your HSA's own return, measured from its statements. Each receipt's growth is its amount compounded at that rate for the days it has waited."
-                : `${r.growth.rateSource === "SETTING" ? "Your setting" : "An assumed long-run return"}: each receipt's growth is its amount compounded at that rate for the days it has waited.`,
+                : `${r.growth.rateSource === "SETTING" ? "Your setting" : r.growth.rateSource === "FORECAST" ? "The forecast's return, the one every page assumes" : "An assumed long-run return"}: each receipt's growth is its amount compounded at that rate for the days it has waited.`,
           },
         ]
       : [];
@@ -442,7 +442,7 @@ function futureProof(r: HsaReport, metric: "future" | "future-growth"): Built {
   const rateLine: ChainLine =
     g.rateSource === "MEASURED"
       ? { label: "Growth a year", value: { ratio: g.rate }, source: "proven", note: "Your HSA's return, measured from its statements, assumed to continue." }
-      : { label: "Growth a year", value: { ratio: g.rate }, source: "assumption", note: g.rateSource === "SETTING" ? "Your setting." : "An assumed long-run stock-market return." };
+      : { label: "Growth a year", value: { ratio: g.rate }, source: "assumption", note: g.rateSource === "SETTING" ? "Your setting." : g.rateSource === "FORECAST" ? "The forecast's return (Forecast page), the one every page assumes." : "An assumed long-run stock-market return." };
   const baseLine: ChainLine = {
     label: "Reimbursable today",
     value: { cents: base },

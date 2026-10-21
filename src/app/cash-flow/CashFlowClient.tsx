@@ -40,7 +40,7 @@ export type Ctx = {
   focus: string | null;
   setFocus: (c: string | null) => void;
   /** The proof target for a figure over some of the selected months (see model.proofTarget), with the page's account filter. */
-  proof: (metric: CashFlowMetric, months: SpendingMonth[], o?: ProofOptions) => ProofTarget | undefined;
+  proof: (metric: CashFlowMetric, months: SpendingMonth[], o: ProofOptions) => ProofTarget | undefined;
 };
 
 type View = { range: RangeId; from: string; to: string };

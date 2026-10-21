@@ -341,9 +341,10 @@ describe("forecast seed proofs", () => {
     expect(lines.find((l) => l.label.startsWith("Tax payments"))).toMatchObject({ value: { cents: 123_400 } });
     expect(lines.find((l) => l.label.startsWith("Reimbursements received"))).toMatchObject({ value: { cents: 15_000 } });
     expect(lines.find((l) => l.label.startsWith("Reimbursements paid inside"))).toMatchObject({ value: { cents: 7_500 } });
-    // The year in progress: annualized, with its own one-off.
+    // The year in progress: so far, with its own one-off, plus the rest of the year as it went last year.
     const t = await buildProof(ctx(), seed({ which: "living", basis: "THIS_YEAR" }));
-    expect(chains(t)[0]!.lines.map((l) => l.label)).toEqual(expect.arrayContaining(["2026-02-10 EXAMPLE TRAVEL CO", "365 ÷ 90 days"]));
+    expect(chains(t)[0]!.lines.map((l) => l.label)).toEqual(expect.arrayContaining(["2026-02-10 EXAMPLE TRAVEL CO", "The rest of the year as last year, 2025-04-01 – 2025-12-31"]));
+    expect(t.selfCheck?.ok).toBe(true);
   });
 
   it("emits links that parse, build, and open the figure the line shows", async () => {

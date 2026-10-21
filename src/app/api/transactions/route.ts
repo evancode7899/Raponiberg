@@ -1,4 +1,6 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
+import { getBook } from "@/lib/book/cache";
+import { bookTotalsFor } from "@/lib/book/rowTotals";
 import { LANES, type Lane } from "@/lib/classifier/taxonomy";
 import { isIsoDate } from "@/lib/dates/isoDate";
 import { prisma } from "@/lib/db";
@@ -15,7 +17,8 @@ export const dynamic = "force-dynamic";
  * needsReview=1, flow (in | out), min / max (size in dollars, either sign),
  * sort (date | amount | name; amount by size), dir (asc | desc), limit (≤ 2000). Only
  * committed, non-summary statement rows. Also returns how many rows match and their
- * money in / out, beyond the page returned.
+ * money in / out, beyond the page returned: the Book's amounts for exactly those rows
+ * (book/rowTotals.ts), so they are the same dollars every figure counts.
  */
 export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
@@ -109,14 +112,9 @@ export async function GET(request: NextRequest) {
     return ids.flatMap((id) => byId.get(id) ?? []);
   };
 
-  const [rows, count, inflow, outflow] = await Promise.all([
-    page(),
-    prisma.transaction.count({ where }),
-    prisma.transaction.aggregate({ where: { AND: [where, { amountCents: { gt: 0 } }] }, _sum: { amountCents: true } }),
-    prisma.transaction.aggregate({ where: { AND: [where, { amountCents: { lt: 0 } }] }, _sum: { amountCents: true } }),
-  ]);
+  const [rows, matching, book] = await Promise.all([page(), prisma.transaction.findMany({ where, select: { id: true } }), getBook(prisma)]);
   return NextResponse.json({
     transactions: rows,
-    total: { count, inCents: inflow._sum.amountCents ?? 0, outCents: outflow._sum.amountCents ?? 0 },
+    total: bookTotalsFor(book, matching.map((r) => r.id)),
   });
 }

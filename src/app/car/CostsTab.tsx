@@ -44,9 +44,9 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
     {
       label: "Per mile",
       strong: true,
-      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—", proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }) : undefined })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }) : undefined }],
+      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—", proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }, null) : undefined })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }, null) : undefined }],
     },
-    { label: "Per month", muted: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months), proof: carProof(s.id, { span: yr, per: "month" }) })), { text: usd0(r.totals.perMonth), proof: r.totals.perMonth != null ? carProof(s.id, { span: "toDate", per: "month" }) : undefined }] },
+    { label: "Per month", muted: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months), proof: carProof(s.id, { span: yr, per: "month" }, null) })), { text: usd0(r.totals.perMonth), proof: r.totals.perMonth != null ? carProof(s.id, { span: "toDate", per: "month" }, null) : undefined }] },
   ];
 
   const kinds = (Object.keys(KIND_INFO) as CarKind[]).filter((k) => r.cash[k] !== 0);

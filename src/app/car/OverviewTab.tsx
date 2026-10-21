@@ -49,9 +49,9 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
       <Garage ctx={ctx} />
 
       <StatGrid cols={6}>
-        <StatCell label="Cost of ownership" value={usd0(t.tco)} proof={carProof(r.carId, { span: "toDate" }, t.tco)} sub={`${miles(r.odometer.daysOwned / 30.44, 0)} months, all-in`} />
-        <StatCell label="All-in per mile" value={perMile(t.perMile)} proof={t.perMile != null ? carProof(r.carId, { span: "toDate", per: "mile" }) : undefined} tone="accent" sub={r.last12.perMile != null ? `${perMile(r.last12.perMile)} over the last 12 months` : undefined} />
-        <StatCell label="Per month" value={usd0(t.perMonth)} proof={t.perMonth != null ? carProof(r.carId, { span: "toDate", per: "month" }) : undefined} sub={t.perDay != null ? `${perMile(t.perDay)} a day` : undefined} />
+        <StatCell label="Cost of ownership" value={usd0(t.tco)} proof={carProof(r.carId, { span: "toDate" }, t.tco)} sub={`${miles(r.odometer.daysOwned / 30.44, 0)} months, all-in · ${usd0(t.statementCents)} on statements, ${usd0(t.typedCents)} typed by you (price, interest, off-statement)`} />
+        <StatCell label="All-in per mile" value={perMile(t.perMile)} proof={t.perMile != null ? carProof(r.carId, { span: "toDate", per: "mile" }, null) : undefined} tone="accent" sub={r.last12.perMile != null ? `${perMile(r.last12.perMile)} over the last 12 months` : undefined} />
+        <StatCell label="Per month" value={usd0(t.perMonth)} proof={t.perMonth != null ? carProof(r.carId, { span: "toDate", per: "month" }, null) : undefined} sub={t.perDay != null ? `${perMile(t.perDay)} a day` : undefined} />
         <StatCell
           label="One more mile"
           value={perMile(t.marginalPerMile)}
@@ -107,8 +107,8 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                       <td className={table.tdR}>
                         <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : undefined}>{usd0(c)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }) : undefined}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
-                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }) : undefined}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : undefined}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : undefined}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
                       <td className={`${table.tdR} text-muted`}>{view.total ? formatPercentRatio(c / view.total, 0) : "—"}</td>
                     </tr>
                   );
@@ -118,8 +118,8 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                   <td className={table.tdR}>
                     <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : undefined}>{usd0(view.total)}</ProofValue>
                   </td>
-                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }) : undefined}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
-                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }) : undefined}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : undefined}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : undefined}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
                   <td className={table.tdR} />
                 </tr>
               </tbody>

@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
   }
   return jsonBody(
     await cachedReport(prisma, "goals", async (book) => {
-      const [settings, { forecast: f }] = await Promise.all([loadJsonSetting(prisma, GOALS_KEY, normalizeGoals), loadForecast(prisma, book)]);
-      return { report: buildGoals(book, settings, f ? goalForecastOf(f) : null), settings };
+      const [settings, { forecast: f, data }] = await Promise.all([loadJsonSetting(prisma, GOALS_KEY, normalizeGoals), loadForecast(prisma, book)]);
+      return { report: buildGoals(book, settings, f ? goalForecastOf(f) : null, data.profile.settings), settings };
     }),
   );
 }

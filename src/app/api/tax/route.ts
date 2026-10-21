@@ -22,11 +22,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const supported = Object.keys(TAX_YEARS).map(Number);
-  const raw = Number(request.nextUrl.searchParams.get("year") ?? new Date().getFullYear());
-  const year = supported.includes(raw) ? raw : Math.max(...supported);
+  const asked = Number(request.nextUrl.searchParams.get("year"));
   try {
     return jsonBody(
-      await cachedReport(prisma, `tax|${year}`, async (book) => {
+      await cachedReport(prisma, `tax|${supported.includes(asked) ? asked : "current"}`, async (book) => {
+        // No year asked: the Book's year (book.today), the one every figure is built as of.
+        const raw = supported.includes(asked) ? asked : Number(book.today.slice(0, 4));
+        const year = supported.includes(raw) ? raw : Math.max(...supported);
         const [{ forecast }, { birthYears }] = await Promise.all([loadForecast(prisma, book), loadProfileSettings(prisma)]);
         // Birth years set the 401(k) catch-up limit, as on the Tax-advantaged accounts page.
         return { ...buildTaxReport(book, year, { forecast: forecast ? taxLink(forecast) : null, birthYears }), supportedYears: supported };

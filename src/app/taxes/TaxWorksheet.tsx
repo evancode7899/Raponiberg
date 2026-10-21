@@ -50,7 +50,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
   const V = (key: EstimateKey) => cols.map((c) => lineValue(key, c, cols) ?? 0);
   const cell = (key: EstimateKey, i: number, v: number, text: ReactNode): ReactNode =>
     proofs ? (
-      <ProofValue proof={{ descriptor: { report: "tax-estimate", year: r.year, basis, ...(cols[i]!.id === "joint" ? {} : { filer: cols[i]!.id }), key }, ...(ESTIMATE_LINES[key].ratio ? {} : { shownCents: v }) }}>{text}</ProofValue>
+      <ProofValue proof={{ descriptor: { report: "tax-estimate", year: r.year, basis, ...(cols[i]!.id === "joint" ? {} : { filer: cols[i]!.id }), key }, shownCents: ESTIMATE_LINES[key].ratio ? null : v }}>{text}</ProofValue>
     ) : (
       text
     );

@@ -1,5 +1,7 @@
 import {
   FEDERAL_RATES,
+  SAFE_HARBOR_RULES,
+  type SafeHarborRules,
   type CtParams,
   type FederalParams,
   type FilingStatus,
@@ -336,7 +338,7 @@ export function taxWithPreferential(
   const atTwenty = pref - Math.min(pref, atZero) - Math.min(pref, atFifteen);
   return {
     ordinaryTax: bracketTax(ordinary, fp.brackets[fs]),
-    preferentialTax: r(Math.min(pref, atFifteen) * 0.15 + pos(atTwenty) * 0.2),
+    preferentialTax: r(Math.min(pref, atFifteen) * fp.preferentialRates.fifteen + pos(atTwenty) * fp.preferentialRates.twenty),
   };
 }
 
@@ -404,14 +406,14 @@ function computeFederal(
   const amtPref = Math.min(preferentialIncome, amtBase);
   const amtOrdinary = amtBase - amtPref;
   const b28 = fp.amt.rate28Above[fs];
-  const tmtOrdinary = r(Math.min(amtOrdinary, b28) * 0.26 + pos(amtOrdinary - b28) * 0.28);
+  const tmtOrdinary = r(Math.min(amtOrdinary, b28) * fp.amtRates.low + pos(amtOrdinary - b28) * fp.amtRates.high);
   const tmt = tmtOrdinary + taxWithPreferential(amtBase, amtPref, fp, fs).preferentialTax;
   const amt = pos(tmt - regularTax);
 
   // Credits.
   const kids = dependents.filter((d) => d.age < 17).length;
   const others = dependents.length - kids;
-  const reduction = 5_000 * Math.ceil(pos(agi - fp.childTaxCredit.phaseoutStart[fs]) / 100_000);
+  const reduction = fp.ctcPhaseout.per * Math.ceil(pos(agi - fp.childTaxCredit.phaseoutStart[fs]) / fp.ctcPhaseout.step);
   const ctcTentative = kids * fp.childTaxCredit.perChild + others * fp.childTaxCredit.otherDependent;
   const ctcAllowed = pos(ctcTentative - reduction);
   const ctcShare = ctcTentative > 0 ? (kids * fp.childTaxCredit.perChild) / ctcTentative : 0;
@@ -434,7 +436,7 @@ function computeFederal(
   const refundableChildCredit = Math.min(
     pos(r(ctcAllowed * ctcShare) - childTaxCredit),
     kids * fp.childTaxCredit.refundablePerChild,
-    r(0.15 * pos(earned - 250_000)),
+    r(fp.ctcRefundable.rate * pos(earned - fp.ctcRefundable.earnedFloor)),
   );
   const nonrefundableCredits = foreignUsed + careUsed + ctcUsed;
   const incomeTaxAfterCredits = regularTax + amt - nonrefundableCredits;
@@ -506,14 +508,9 @@ function careCredit(fp: FederalParams, fs: FilingStatus, agi: number, people: Pe
   const fsa = total(people, (p) => p.dependentCareFsa);
   const eligible = pos(Math.min(expenses, limit) - fsa);
   const steps = (over: number, per: number) => Math.ceil(pos(over) / per);
-  let pct: number;
-  if (fp.dependentCare.enhanced) {
-    pct = Math.max(35, 50 - steps(agi - 1_500_000, 200_000));
-    const hi = fs === "MFJ" ? 15_000_000 : 7_500_000;
-    if (agi > hi) pct = Math.max(20, pct - steps(agi - hi, fs === "MFJ" ? 400_000 : 200_000));
-  } else {
-    pct = Math.max(20, 35 - steps(agi - 1_500_000, 200_000));
-  }
+  const s = fp.dependentCare.creditPct;
+  let pct = Math.max(s.floor, s.top - steps(agi - s.over, s.step));
+  if (s.second && agi > s.second.over[fs]) pct = Math.max(s.second.floor, pct - steps(agi - s.second.over[fs], s.second.step[fs]));
   return r((eligible * pct) / 100);
 }
 
@@ -542,6 +539,16 @@ function computeCt(
   // CT-1040NR/PY line 7: the tax tables are read at the greater of CT AGI and CT-source income.
   const tableAgi = sourceIncome == null ? ctAgi : Math.max(ctAgi, sourceIncome);
   return ctTax(cp, fs, people, dependents, federalAgi, { additions, subtractions, chetDeduction, usObligationSubtraction, ctAgi }, tableAgi, sourceIncome, nyCredit);
+}
+
+/**
+ * Connecticut income tax on income that is all ordinary and all Connecticut AGI (a
+ * retirement draw): Tables A–E, no credits beyond the personal credit. The outlook taxes
+ * draws with it, so retirement uses the same law as the Taxes page.
+ */
+export function ctIncomeTax(cp: CtParams, fs: FilingStatus, agi: number): number {
+  const zero = { additions: 0, subtractions: 0, chetDeduction: 0, usObligationSubtraction: 0, ctAgi: agi };
+  return ctTax(cp, fs, [], [], agi, zero, agi, null, null).totalTax;
 }
 
 function ctTax(
@@ -786,6 +793,9 @@ export type SafeHarbor = {
   currentYearTax: number;
   priorYearTax: number | null;
   priorYearPct: number;
+  /** The two tests the safe harbor takes the smaller of: 90% of this year's tax, and 100%/110% of last year's (null without it). */
+  currentYearTest: number;
+  priorYearTest: number | null;
   /** The smaller of 90% of this year's tax and 100%/110% of last year's. */
   requiredAnnualPayment: number;
   basis: "CURRENT_90" | "PRIOR_YEAR";
@@ -809,9 +819,11 @@ export function safeHarbor(opts: {
   priorYearTax: number | null;
   priorYearAgi: number | null;
   highAgiThreshold: number | null;
+  rules?: SafeHarborRules;
 }): SafeHarbor {
-  const ninety = r(opts.currentYearTax * 0.9);
-  const pct = opts.highAgiThreshold != null && opts.priorYearAgi != null && opts.priorYearAgi > opts.highAgiThreshold ? 1.1 : 1;
+  const rules = opts.rules ?? SAFE_HARBOR_RULES;
+  const ninety = r(opts.currentYearTax * rules.currentShare);
+  const pct = opts.highAgiThreshold != null && opts.priorYearAgi != null && opts.priorYearAgi > opts.highAgiThreshold ? rules.priorShareHighAgi : rules.priorShare;
   const prior = opts.priorYearTax == null ? null : r(opts.priorYearTax * pct);
   const usePrior = prior != null && prior < ninety;
   const required = usePrior ? prior! : ninety;
@@ -820,11 +832,13 @@ export function safeHarbor(opts: {
     currentYearTax: opts.currentYearTax,
     priorYearTax: opts.priorYearTax,
     priorYearPct: pct,
+    currentYearTest: ninety,
+    priorYearTest: prior,
     requiredAnnualPayment: required,
     basis: usePrior ? "PRIOR_YEAR" : "CURRENT_90",
     withholding: opts.withholding,
     estimatesPaid: opts.estimatesPaid,
     shortfall: pos(required - paid),
-    underDeMinimis: opts.currentYearTax - paid < 100_000,
+    underDeMinimis: opts.currentYearTax - paid < rules.deMinimis,
   };
 }

@@ -3,6 +3,7 @@ import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { cachedReport, jsonBody } from "@/lib/book/cache";
 import { buildInvestments } from "@/lib/book/reports/investments";
 import { prisma } from "@/lib/db";
+import { loadProfileSettings } from "@/lib/profile/settings";
 import { INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings } from "@/lib/investments/settings";
 import { loadJsonSetting, saveJsonSetting } from "@/lib/settingsStore";
 import { NextRequest, NextResponse } from "next/server";
@@ -16,8 +17,9 @@ export async function GET(request: NextRequest) {
   }
   return jsonBody(
     await cachedReport(prisma, "investments", async (book) => {
-      const settings = await loadJsonSetting(prisma, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings);
-      return { report: buildInvestments(book, settings), settings };
+      const [settings, profile] = await Promise.all([loadJsonSetting(prisma, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings), loadProfileSettings(prisma)]);
+      // The forecast's return prices what a fee costs over time, as it prices every projection.
+      return { report: buildInvestments(book, settings), settings, returnRate: profile.outlook.returnRate };
     }),
   );
 }

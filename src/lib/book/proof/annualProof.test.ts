@@ -409,14 +409,14 @@ describe("annual statement proofs", () => {
     expect((await buildProof(ctx, bal.descriptor)).figure).toEqual(bal.value);
   });
 
-  it("shows the rent raise as the labelled difference between Cash flow and the annual statement", async () => {
+  it("counts each row where Cash flow does, so the annual statement and Cash flow agree to the cent", async () => {
     for (const d of [
       { report: "annual", figure: "cash", year: 2025, line: "living" },
       { report: "annual", figure: "category", year: 2025, category: "Housing & utilities" },
     ] as AnnualDescriptor[]) {
       const p = await buildProof(ctx, d);
-      const diff = chains(p)[0]!.lines.find((l) => l.label === "Counted by the day the ledger books each row");
-      expect(diff, JSON.stringify(d)).toMatchObject({ op: "+", value: { cents: 10_000 } });
+      expect(chains(p)[0]!.lines.find((l) => l.label === "Counted by the day the ledger books each row"), JSON.stringify(d)).toBeUndefined();
+      expect(p.selfCheck?.ok, JSON.stringify(d)).not.toBe(false);
     }
   });
 

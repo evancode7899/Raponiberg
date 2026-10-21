@@ -1,5 +1,6 @@
 "use client";
 
+import { BlockedNote } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
@@ -20,6 +21,9 @@ import { ValueTab } from "./ValueTab";
 
 const TABS = ["overview", "log", "costs", "fuel", "value", "service", "statements", "setup"] as const;
 export type CarTab = (typeof TABS)[number];
+
+/** Tabs built from the statement charges: withheld while a finding leaves those incomplete. */
+const MONEY_TABS = new Set<CarTab>(["overview", "costs", "statements"]);
 
 type Data = { report: GarageReport; settings: GarageSettings; /** Account names by id, to say which card a charge was on. */ accounts?: Record<string, string> };
 
@@ -151,6 +155,7 @@ export function CarClient({ requiresApiSecret }: { requiresApiSecret: boolean })
       : null;
   const showTab: CarTab = ctx && !report!.configured && tab !== "log" && tab !== "statements" ? "setup" : tab;
   const suggested = data?.report.statements.suggested ?? 0;
+  const blockers = data?.report.blockers ?? [];
 
   return (
     <>
@@ -192,13 +197,19 @@ export function CarClient({ requiresApiSecret }: { requiresApiSecret: boolean })
                 Add {ctx.report.missing.join(", ")} and save. The figures start from the purchase.
               </Callout>
             )}
-            {showTab === "overview" && <OverviewTab ctx={ctx} />}
+            {MONEY_TABS.has(showTab) && blockers.length > 0 ? (
+              <BlockedNote blockers={blockers} what="the car's costs" withheld />
+            ) : (
+              <>
+                {showTab === "overview" && <OverviewTab ctx={ctx} />}
+                {showTab === "costs" && <CostsTab ctx={ctx} />}
+                {showTab === "statements" && <StatementsTab ctx={ctx} />}
+              </>
+            )}
             {showTab === "log" && <LogTab ctx={ctx} />}
-            {showTab === "costs" && <CostsTab ctx={ctx} />}
             {showTab === "fuel" && <FuelTab ctx={ctx} />}
             {showTab === "value" && <ValueTab ctx={ctx} />}
             {showTab === "service" && <ServiceTab ctx={ctx} />}
-            {showTab === "statements" && <StatementsTab ctx={ctx} />}
             {showTab === "setup" && <SetupTab key={ctx.car.id} ctx={ctx} />}
           </>
         )}

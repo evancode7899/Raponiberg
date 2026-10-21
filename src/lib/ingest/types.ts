@@ -119,6 +119,14 @@ export type ParsedAccountSection = {
    */
   paymentsFromPrior?: boolean;
   /**
+   * The statement doesn't print its market change: growth is what the balances leave
+   * after the listed flows, so a flow the parser missed would hide in it. Stored with the
+   * statement (a derived entry in its checks) and listed as an inference on every figure
+   * that uses the account (book/checks/statements.ts). Set at commit too, wherever the
+   * opening or the period is re-derived from the previous statement.
+   */
+  growthFromBalances?: boolean;
+  /**
    * Statement-printed subtotals the parser could cross-check its rows against. Each is
    * shown on review and any mismatch blocks auto-commit.
    */
@@ -134,6 +142,8 @@ export type ParsedCheck = {
    * don't add up (rounding in their summary); balances stay exact regardless.
    */
   toleranceCents?: number;
+  /** Not a printed total: a marker that the figure was derived (growthFromBalances). Always "passes". */
+  derived?: boolean;
 };
 
 export type { PayStubFacts } from "./payroll/types.ts";

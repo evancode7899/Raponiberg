@@ -3,10 +3,13 @@ import type { Book } from "../load.ts";
 import type { BlockerRef } from "./blockerRef.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { buildNetWorth } from "./netWorth.ts";
-import { buildSpendingReport } from "./spending.ts";
+import { holdingsByAccount } from "./investments.ts";
+import { normalizeInvestmentSettings } from "../../investments/settings.ts";
+import { SPENDABLE_GROUPS } from "../definitions.ts";
+import { typicalMonthlyLiving } from "./living.ts";
 
-/** Groups that can be spent on a home without penalty: bank cash and taxable brokerage. */
-const LIQUID: AccountGroup[] = ["Cash", "Taxable investments"];
+/** Groups that can be spent on a home without penalty: bank cash and taxable brokerage (the shared definition). */
+const LIQUID: readonly AccountGroup[] = SPENDABLE_GROUPS;
 
 export type HomeFundsAccount = {
   accountId: string;
@@ -24,6 +27,8 @@ export type HomeFundsAccount = {
   gainCents: number;
   /** Part of the basis that is the opening balance of its first statement (true basis unknown). */
   openingBalanceCents: number;
+  /** STATEMENT: every position's cost basis is printed on its latest holdings, so the gain is the statement's; ESTIMATE: growth over the statements on file. */
+  gainSource: "STATEMENT" | "ESTIMATE" | "NONE";
 };
 
 export type HomeFunds = {
@@ -44,7 +49,7 @@ export type HomeFunds = {
 
 /** What the household spends today outside housing: what's left after a home's costs has to cover it. */
 export type HomeSpending = {
-  /** Average a month over the latest proven months (up to twelve), one-offs left out. */
+  /** Living cost a month (the shared definition) over the latest proven months (up to twelve), housing left out. */
   monthlyCents: number;
   months: number;
   from: string;
@@ -56,28 +61,14 @@ export type HomeSpending = {
 const HOUSING_CATEGORY = "Housing & utilities";
 
 /**
- * Average monthly spending other than housing, over the latest proven months (up to a
- * year), with one-offs left out as on Cash flow. Housing & utilities are left out whole:
- * the home's all-in cost (which includes utilities) takes their place. Null with no
- * proven month.
+ * The typical month's living cost (book/reports/living.ts: the same figure Goals and the
+ * forecast use) with housing & utilities left out whole: the home's all-in cost (which
+ * includes utilities) takes their place. Null with no proven month.
  */
 export function buildHomeSpending(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">): HomeSpending | null {
-  const months = buildSpendingReport(book, settings).months.slice(-12);
-  if (!months.length) return null;
-  let spent = 0;
-  let housing = 0;
-  for (const m of months) {
-    const h = m.spendingByCategory.find((c) => c.category === HOUSING_CATEGORY)?.cents ?? 0;
-    housing += h;
-    spent += m.spendingCents - m.oneOffCents - h;
-  }
-  return {
-    monthlyCents: Math.round(spent / months.length),
-    months: months.length,
-    from: months[0]!.start,
-    to: months.at(-1)!.end,
-    housingMonthlyCents: Math.round(housing / months.length),
-  };
+  const t = typicalMonthlyLiving(book, settings, { leaveOut: HOUSING_CATEGORY });
+  if (!t) return null;
+  return { monthlyCents: t.cents, months: t.months, from: t.from, to: t.to, housingMonthlyCents: t.leftOutCents };
 }
 
 /**
@@ -88,6 +79,7 @@ export function buildHomeSpending(book: Book, settings: Pick<FinancialProfileSet
  */
 export function buildHomeFunds(book: Book): HomeFunds {
   const nw = buildNetWorth(book, { granularity: "year" });
+  const held = holdingsByAccount(book, normalizeInvestmentSettings({}));
   const byId = new Map<string, { growth: number; unexplained: number; contributions: number; newlyTracked: number }>();
   for (const p of nw.periods) {
     for (const a of p.byAccount) {
@@ -115,7 +107,12 @@ export function buildHomeFunds(book: Book): HomeFunds {
     }
     const f = byId.get(a.id);
     const isInv = a.group === "Taxable investments";
-    const gain = isInv && f ? f.growth + f.unexplained : 0;
+    // The statement's own cost basis when every position prints one (cash is its own basis);
+    // else the growth over its statement history, which errs high (see basisCents).
+    const rows = isInv ? held.positions.filter((p) => p.accountId === a.id) : [];
+    const printed = rows.length > 0 && rows.every((p) => p.kind !== "ACCOUNT" && (p.costBasisCents != null || p.kind === "CASH"));
+    const basisPrinted = printed ? rows.reduce((s, p) => s + (p.costBasisCents ?? p.valueCents), 0) : null;
+    const gain = !isInv ? 0 : basisPrinted != null ? a.currentCents - basisPrinted : f ? f.growth + f.unexplained : 0;
     accounts.push({
       accountId: a.id,
       name: a.name,
@@ -124,7 +121,8 @@ export function buildHomeFunds(book: Book): HomeFunds {
       valueCents: a.currentCents,
       basisCents: a.currentCents - gain,
       gainCents: gain,
-      openingBalanceCents: isInv && f ? f.newlyTracked : 0,
+      openingBalanceCents: isInv && f && basisPrinted == null ? f.newlyTracked : 0,
+      gainSource: !isInv ? "NONE" : basisPrinted != null ? "STATEMENT" : "ESTIMATE",
     });
   }
   accounts.sort((x, y) => y.valueCents - x.valueCents);

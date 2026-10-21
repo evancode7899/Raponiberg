@@ -18,7 +18,7 @@ import type { Book } from "../load.ts";
 import { buildGoals, goalForecastOf, type GoalProgress, type GoalsReport } from "../reports/goals.ts";
 import { buildHomeFunds, buildHomeSpending } from "../reports/homeFunds.ts";
 import type { BonusesDescriptor } from "./bonusesProof.ts";
-import { CASH_FLOW_CHECKS, type CashFlowDescriptor } from "./cashFlowProof.ts";
+import { CASH_FLOW_CHECKS } from "./cashFlowProof.ts";
 import { checksFor, sumCheck } from "./common.ts";
 import { ledgerValue, type ForecastDescriptor, type LedgerLine } from "./forecastProof.ts";
 import { NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
@@ -98,9 +98,9 @@ export function parsePlanningDescriptor(d: Record<string, unknown>): PlanningDes
       let fire: FireSettings | undefined;
       if (d.fire != null) {
         const f = d.fire;
-        if (!isObj(f) || !(f.walkAwayYear === null || (isNum(f.walkAwayYear) && Number.isInteger(f.walkAwayYear))) || !isNum(f.withdrawalRate) || !isNum(f.stateTaxRate) || !isNum(f.retirementAge))
+        if (!isObj(f) || !(f.walkAwayYear === null || (isNum(f.walkAwayYear) && Number.isInteger(f.walkAwayYear))) || !isNum(f.withdrawalRate) || !(f.stateTaxRate === null || isNum(f.stateTaxRate)) || !isNum(f.retirementAge))
           return { error: "fire must be { walkAwayYear, withdrawalRate, stateTaxRate, retirementAge }." };
-        fire = { walkAwayYear: f.walkAwayYear as number | null, withdrawalRate: f.withdrawalRate, stateTaxRate: f.stateTaxRate, retirementAge: f.retirementAge };
+        fire = { walkAwayYear: f.walkAwayYear as number | null, withdrawalRate: f.withdrawalRate, stateTaxRate: f.stateTaxRate as number | null, retirementAge: f.retirementAge };
       }
       if (d.figure === "milestone" && (typeof d.milestone !== "string" || !/^(nw-\d+|fi-0\.\d+)$/.test(d.milestone))) return { error: "milestone must be a milestone id (nw-<cents> or fi-<share>)." };
       return { report: "planning", page: "fire", figure: d.figure as FireFigure, ...(fire ? { fire } : {}), ...(d.figure === "milestone" ? { milestone: d.milestone as string } : {}) };
@@ -297,7 +297,7 @@ function fireSettingsBlock(c: FireCtx): ProofBlock {
     title: "FIRE settings",
     lines: [
       { label: "Withdrawal rate", value: { ratio: c.fire.withdrawalRate }, source: "assumption", note: "Of Jan 1 net worth." },
-      { label: "State tax on draws", value: { ratio: c.fire.stateTaxRate }, source: "assumption" },
+      { label: "State tax on draws", value: c.fire.stateTaxRate == null ? { text: "Connecticut's brackets" } : { ratio: c.fire.stateTaxRate }, source: c.fire.stateTaxRate == null ? "law" : "assumption" },
       { label: "Walk-away year", value: { text: c.fire.walkAwayYear == null ? "keep working" : String(c.fire.walkAwayYear) }, source: "assumption" },
       { label: "Retirement age (Coast target)", value: { text: String(c.fire.retirementAge) }, source: "assumption" },
       { label: "Federal brackets and standard deduction", value: { text: String(c.plans.full.tax.year) }, source: "law", note: `Married filing jointly; indexed by inflation (${pct(c.plans.full.inflation)}) each year after ${c.plans.full.tax.year}.` },
@@ -321,7 +321,7 @@ function fireNumberBlocks(c: FireCtx, plan: OutlookPlan, year: number, spending:
         lines: [
           { label: `Pre-tax draw in ${year}`, value: { cents: draw }, source: "derived", note: "The smallest draw whose after-tax income covers the spending." },
           { op: "−", label: "Federal income tax", value: { cents: t.federal }, source: "law", note: `On ${money(t.taxable)} after the standard deduction.` },
-          { op: "−", label: `State tax (${pct(plan.stateTaxRate)} of the taxable draw)`, value: { cents: t.state }, source: "derived" },
+          { op: "−", label: plan.stateTaxRate == null ? "Connecticut income tax (its brackets)" : `State tax (${pct(plan.stateTaxRate)} of the taxable draw)`, value: { cents: t.state }, source: plan.stateTaxRate == null ? "law" : "derived" },
           { op: "=", label: "After-tax income", value: { cents: t.afterTax }, source: "derived", note: `Covers ${money(spending)}.` },
         ],
       },
@@ -376,7 +376,7 @@ function walkRowBlock(c: FireCtx, plan: OutlookPlan, row: WalkAwayRow, need: num
       { op: "×", label: "Withdrawal rate", value: { ratio: plan.withdrawalRate }, source: "assumption" },
       { op: "=", label: "Draw", value: { cents: row.draw }, source: "derived" },
       { op: "−", label: "Federal income tax", value: { cents: row.federalTax }, source: "law" },
-      { op: "−", label: `State tax (${pct(plan.stateTaxRate)})`, value: { cents: row.stateTax }, source: "derived" },
+      { op: "−", label: plan.stateTaxRate == null ? "Connecticut income tax (its brackets)" : `State tax (${pct(plan.stateTaxRate)})`, value: { cents: row.stateTax }, source: plan.stateTaxRate == null ? "law" : "derived" },
       { op: "=", label: "Walk-away income after tax", value: { cents: row.afterTaxIncome }, source: "derived" },
       projected("÷", `Living cost in ${row.year}`, row.livingCost, yearCell(row.year, "living"), `Grown by ${pct(plan.livingGrowth)} a year from the start.`),
       { op: "=", label: `Covered (${need >= 1 ? `${need * 100}%` : `${need * 100}%`} needed)`, value: { ratio: row.coverage ?? 0 }, source: "derived" },
@@ -656,7 +656,7 @@ async function goalsCtx(ctx: ProofContext): Promise<GoalsCtx> {
   // As api/goals: the saved goals, buildGoals on the shared forecast.
   const [settings, data] = await Promise.all([loadJsonSetting(ctx.db, GOALS_KEY, normalizeGoals), loadForecastData(ctx.db, ctx.book)]);
   const b = baseFrom(ctx.book, data);
-  return { book: ctx.book, r: buildGoals(ctx.book, settings, b ? goalForecastOf(b.f) : null), b };
+  return { book: ctx.book, r: buildGoals(ctx.book, settings, b ? goalForecastOf(b.f) : null, data.profile.settings), b };
 }
 
 const goalLink = (g: GoalProgress, label: string, figure: GoalFigure): ProofLink => ({ label, descriptor: { report: "planning", page: "goals", figure, goalId: g.goal.id } });
@@ -718,14 +718,19 @@ function goalSpendingProof(c: GoalsCtx): Built {
   const total = s.periods.reduce((t, p) => t + p.cents, 0);
   const { checks, withheld } = checksFor(c.book, { affects: "CASH_FLOW", from: s.from!, to: s.to! }, CASH_FLOW_CHECKS);
   return {
-    describes: `Typical monthly spending: the last ${s.months} proven months`,
+    describes: `Typical monthly living cost: the last ${s.months} proven months`,
     figure: { cents: s.cents },
     selfCheck: sumCheck(Math.round(total / s.months), s.cents, `The ${s.months} months add up to ${money(total)}; ÷ ${s.months} is ${money(Math.round(total / s.months))}`),
     blocks: [
       {
         kind: "breakdown",
-        title: "Spending by month",
-        items: s.periods.map((p) => ({ label: monthWord(p.start), value: { cents: p.cents }, link: { label: `Spending, ${monthWord(p.start)}`, descriptor: { report: "cash-flow", metric: "spending", granularity: "month", start: p.start, end: p.end } satisfies CashFlowDescriptor } })),
+        title: "Living cost by month",
+        items: s.periods.map((p) => ({
+          label: monthWord(p.start),
+          value: { cents: p.cents },
+          sub: `Cash flow's spending ${money(p.spendingCents)}, less tax payments, one-offs and reimbursements`,
+        })),
+        note: "Living cost, as everywhere in the app: spending less tax payments (taxes, not living), what you count as one-off, and reimbursements received.",
       },
       {
         kind: "chain",
@@ -753,7 +758,7 @@ function goalTargetProof(c: GoalsCtx, g: GoalProgress): Built {
       kind: "chain",
       title: "Emergency fund target",
       lines: [
-        { label: "Typical monthly spending", value: { cents: s.cents }, source: "proven", link: { label: "Monthly spending", descriptor: { report: "planning", page: "goals", figure: "spending" } } },
+        { label: "Typical monthly living cost", value: { cents: s.cents }, source: "proven", link: { label: "Monthly living cost", descriptor: { report: "planning", page: "goals", figure: "spending" } } },
         { op: "×", label: "Months of spending", value: { text: String(g.goal.months) }, source: "assumption" },
         { op: "=", label: "Target", value: { cents: g.targetCents }, source: "derived" },
       ],

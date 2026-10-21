@@ -197,13 +197,13 @@ function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year:
                   {l.note && <div className="mt-0.5 text-xs text-muted">{l.note}</div>}
                 </td>
                 <td className={table.tdR}>
-                  <ProofValue proof={{ descriptor: { report: "filed-return", year, jurisdiction, key: l.key }, ...(l.percent || l.filed == null ? {} : { shownCents: l.filed }) }}>{show(l, l.filed)}</ProofValue>
+                  <ProofValue proof={{ descriptor: { report: "filed-return", year, jurisdiction, key: l.key }, shownCents: l.percent || l.filed == null ? null : l.filed }}>{show(l, l.filed)}</ProofValue>
                 </td>
                 <td className={table.tdR}>
                   {l.model == null ? (
                     show(l, l.model)
                   ) : (
-                    <ProofValue proof={{ descriptor: { report: "tax-estimate", year, basis: "filed", key: `${ESTIMATE_PREFIX[jurisdiction]}.${l.key}` as EstimateKey }, ...(l.percent ? {} : { shownCents: l.model }) }}>{show(l, l.model)}</ProofValue>
+                    <ProofValue proof={{ descriptor: { report: "tax-estimate", year, basis: "filed", key: `${ESTIMATE_PREFIX[jurisdiction]}.${l.key}` as EstimateKey }, shownCents: l.percent ? null : l.model }}>{show(l, l.model)}</ProofValue>
                   )}
                 </td>
                 <td className={table.td}>

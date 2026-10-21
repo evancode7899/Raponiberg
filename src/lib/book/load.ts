@@ -32,6 +32,8 @@ export type BookAccount = {
   group: AccountGroup;
   /** Every identifier the institution has used for the account. */
   identifiers: string[];
+  /** Hidden from pickers by the owner. Its history still counts in every figure. */
+  archived?: boolean;
 };
 
 export type BookStatement = {
@@ -46,6 +48,10 @@ export type BookStatement = {
   periodStart: string;
   periodEnd: string;
   deltaCents: number;
+  /** The parser's printed-total checks as stored at import; statement.held re-verifies each one. */
+  checks?: { label: string; expectedCents: number; actualCents: number; toleranceCents: number }[];
+  /** Its market change isn't printed: it's what the balances leave after the listed flows (ParsedAccountSection.growthFromBalances). */
+  growthDerived?: boolean;
 };
 
 /** A committed, non-summary ledger row. */
@@ -86,6 +92,12 @@ export type BookRow = {
   counterpartyAccountHint: string | null;
   /** Which classifier rule decided ("untracked-card:...", USER, MATCH...). */
   classifiedBy: string | null;
+  /**
+   * The classifier wasn't sure (a wire out, a check, an unknown refund) or filed no lane.
+   * The row counts as filed, and every figure that includes it says so (its proof, the
+   * page) until it's answered on Review.
+   */
+  needsReview?: boolean;
   transferMatchId: string | null;
   /**
    * The statement (BookStatement.id) and source document the row was read from. A row the
@@ -208,6 +220,7 @@ type RawRow = {
   counterpartyInstitution: string | null;
   counterpartyAccountHint: string | null;
   classifiedBy: string | null;
+  needsReview: number | boolean;
   categoryName: string | null;
   categoryGroup: string | null;
   matchId: string | null;
@@ -233,7 +246,8 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   const household = householdPatterns();
   const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfile, documents, classifiedWith, classifiedWithHousehold] = await Promise.all([
     loadLedger(db, { today }),
-    db.account.findMany({ where: { archivedAt: null }, include: { aliases: { select: { identifier: true } } } }),
+    // Archived accounts included: archiving hides an account from pickers, never its history from figures.
+    db.account.findMany({ include: { aliases: { select: { identifier: true } } } }),
     db.statementImport.findMany({
       select: {
         id: true,
@@ -244,6 +258,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
         periodStart: true,
         periodEnd: true,
         reconciliationDeltaCents: true,
+        checksJson: true,
         document: { select: { title: true, originalFileName: true, createdAt: true } },
       },
     }),
@@ -251,15 +266,14 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     // (Prisma's per-row relation handling was most of the Book's load time).
     db.$queryRaw<RawRow[]>`
       SELECT t.id, t.date, t.datePrecision, s.periodStart, s.periodEnd, t.amountCents, t.lane, t.accountId, t.payee, t.detail,
-             t.merchantKey, t.counterpartyKind, t.counterpartyInstitution, t.counterpartyAccountHint, t.classifiedBy,
+             t.merchantKey, t.counterpartyKind, t.counterpartyInstitution, t.counterpartyAccountHint, t.classifiedBy, t.needsReview,
              c.name AS categoryName, c.groupName AS categoryGroup, l.matchId,
              s.id AS statementImportId, s.documentId
       FROM "Transaction" t
       JOIN "StatementImport" s ON s.id = t.statementImportId
-      JOIN "Account" a ON a.id = t.accountId
       LEFT JOIN "Category" c ON c.id = t.categoryId
       LEFT JOIN "TransferLeg" l ON l.transactionId = t.id
-      WHERE s.status = 'COMMITTED' AND s.isSummary = 0 AND a.archivedAt IS NULL
+      WHERE s.status = 'COMMITTED' AND s.isSummary = 0
       ORDER BY t.date ASC, t.id ASC`,
     db.payStub.findMany({
       orderBy: [{ payDate: "asc" }, { netYtdCents: "asc" }],
@@ -299,6 +313,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       statement,
       bookedOn: bookedOn({ date, statement }),
       amountCents: r.amountCents,
+      // No lane filed: counted as spending, and flagged (needsReview) until answered.
       lane: (r.lane ?? "EXPENSE") as Lane,
       accountId: r.accountId,
       payee: r.payee ?? "",
@@ -310,6 +325,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       counterpartyInstitution: r.counterpartyInstitution,
       counterpartyAccountHint: r.counterpartyAccountHint,
       classifiedBy: r.classifiedBy,
+      needsReview: Boolean(r.needsReview) || r.lane == null,
       transferMatchId: r.matchId ?? null,
       statementImportId: r.statementImportId,
       documentId: r.documentId,
@@ -357,6 +373,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       counterpartyInstitution: null,
       counterpartyAccountHint: null,
       classifiedBy: "bill-correction",
+      needsReview: false,
       transferMatchId: null,
     });
   }
@@ -382,6 +399,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       subtype: a.subtype,
       group: groupFor(a.subtype, a.type),
       identifiers: a.aliases.map((x) => x.identifier),
+      archived: a.archivedAt != null,
     })),
     statements: imports.map((s) => ({
       id: s.id,
@@ -394,6 +412,8 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       periodStart: iso(s.periodStart),
       periodEnd: iso(s.periodEnd),
       deltaCents: s.reconciliationDeltaCents,
+      checks: storedChecks(s.checksJson),
+      growthDerived: Array.isArray(s.checksJson) && s.checksJson.some((k) => (k as { derived?: unknown } | null)?.derived === true),
     })),
     rows: bookRows,
     rowById: new Map(bookRows.map((r) => [r.id, r])),
@@ -488,6 +508,16 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     book.reimbursements = { ...EMPTY_REIMBURSEMENTS, error: e instanceof Error ? e.message : String(e) };
   }
   return book;
+}
+
+/** A statement's stored parser checks (commitDocument.ts checksJson); derived markers and entries without amounts are skipped. */
+function storedChecks(raw: unknown): NonNullable<BookStatement["checks"]> {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((c) => {
+    const o = (c ?? {}) as Record<string, unknown>;
+    if (o.derived === true || typeof o.expectedCents !== "number" || typeof o.actualCents !== "number") return [];
+    return [{ label: typeof o.label === "string" ? o.label : "Printed total", expectedCents: o.expectedCents, actualCents: o.actualCents, toleranceCents: typeof o.toleranceCents === "number" ? o.toleranceCents : 0 }];
+  });
 }
 
 /**
