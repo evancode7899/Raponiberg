@@ -70,7 +70,8 @@ export function amountsFromLines(lines: StubLine[], pick: "current" | "ytd"): Pa
         break;
       case "IMPUTED":
         a.imputed += v;
-        if (/LIFE|GTL|GROUP TERM/i.test(l.name)) a.groupTermLife += v;
+        // Whole words only: an insurer named "…Life" on a dental line is not group-term life.
+        if (/\bLIFE\b|\bGTL\b|GROUP TERM/i.test(l.name)) a.groupTermLife += v;
         a.gross += v;
         break;
       case "NONTAXABLE":

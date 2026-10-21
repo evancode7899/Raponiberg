@@ -103,6 +103,26 @@ USD $6,991.00`);
     expect(stubChecks(s).filter((c) => !c.ok)).toEqual([]);
   });
 
+  it("reads a starred company-paid line as imputed income carried from earlier paychecks, and only life as group-term life", () => {
+    const s = stub(`Example Partners LP
+${COMMON}
+Net Pay 7,000.00 14,000.00
+Taxable Benefits Current Year-to-Date
+Basic Life 2.00 4.00
+FakeLife Dental 10.00 20.00
+Total Taxable 12.00 24.00
+Non-Taxable Benefits Current Year-to-Date
+Dental 30.00 60.00
+LTD* 0.00 15.00
+Total Non-Taxable 30.00 75.00
+USD $7,000.00`);
+    expect(s.lines.find((l) => l.name === "Imputed: LTD")).toMatchObject({ kind: "IMPUTED", current: 0, ytd: 1_500 });
+    const ytd = amountsFromLines(s.lines, "ytd");
+    expect(ytd.imputed).toBe(400 + 2_000 + 1_500);
+    expect(ytd.groupTermLife).toBe(400);
+    expect(stubChecks(s).filter((c) => !c.ok)).toEqual([]);
+  });
+
   it("leaves the deferral at zero before 401(k) enrollment", () => {
     const s = stub(`EARNINGS STATEMENT Example Partners LP
 ${COMMON}
