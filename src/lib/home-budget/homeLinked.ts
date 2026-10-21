@@ -17,6 +17,8 @@ export type FundsConfig = {
   salary?: "forecast" | "manual";
   incomeTax?: "engine" | "manual";
   gainsTax?: "engine" | "manual";
+  /** The investment return: the forecast's (the one every page assumes) unless typed. */
+  returns?: "forecast" | "manual";
   lenderBonus?: boolean;
 };
 
@@ -38,6 +40,8 @@ export type HomeLinked = {
   tax: { year: number | null; income: LinkedRate; gains: LinkedRate & { gain: number } };
   /** True when the cash for the home is the net-worth figure (linked, loaded, proven). */
   linked: boolean;
+  /** The forecast's return, and whether the page uses it for the investment return. */
+  returns: { forecast: number | null; linked: boolean };
   /** What the model sees: the typed inputs with the linked figures put in. */
   ins: HomeBudgetInputs;
   /** The lender's two-year bonus average (dollars), whether it's counted, and the income the lender view uses. */
@@ -50,7 +54,7 @@ export type HomeLinked = {
  * (today's proven balances plus what the forecast adds), the tax engine's rates, and the
  * inputs the model runs on. Money in dollars, as the model takes it. Pure.
  */
-export function linkHome(book: FundsBook | null, stored: HomeBudgetInputs, config: FundsConfig, fallbackYear = new Date().getFullYear()): HomeLinked {
+export function linkHome(book: FundsBook | null, stored: HomeBudgetInputs, config: FundsConfig, fallbackYear = Number((book?.asOf ?? "0").slice(0, 4))): HomeLinked {
   // A buy month only means something with a forecast that reaches it.
   const fc = book?.forecast ?? null;
   const buyKey = fc && config.buyAt && config.buyAt > fc.startKey && fc.months.some((m) => m.key === config.buyAt) ? config.buyAt : null;
@@ -88,6 +92,7 @@ export function linkHome(book: FundsBook | null, stored: HomeBudgetInputs, confi
   }
 
   const linked = config.mode === "networth" && derived !== null && book!.blockers.length === 0;
+  const returns = { forecast: fc?.returnRate ?? null, linked: config.returns !== "manual" && fc?.returnRate != null };
   // The model only sees one number each: the linked figure, or the typed amount.
   const ins: HomeBudgetInputs = {
     ...stored,
@@ -95,9 +100,10 @@ export function linkHome(book: FundsBook | null, stored: HomeBudgetInputs, confi
     annualHouseholdSalary: salary,
     incomeTaxRate: tax.income.linked ? tax.income.engine! : stored.incomeTaxRate,
     capitalGainsTaxRate,
+    investmentReturnRate: returns.linked ? returns.forecast! : stored.investmentReturnRate,
   };
 
   const lenderBonus = fc?.lenderBonus ? { annual: fc.lenderBonus.annual / 100, years: fc.lenderBonus.years } : null;
   const countBonus = config.lenderBonus !== false && lenderBonus != null;
-  return { buy, derived, tax, linked, ins, lender: { bonus: lenderBonus, countBonus, income: ins.annualHouseholdSalary + (countBonus ? lenderBonus!.annual : 0) } };
+  return { buy, derived, tax, linked, returns, ins, lender: { bonus: lenderBonus, countBonus, income: ins.annualHouseholdSalary + (countBonus ? lenderBonus!.annual : 0) } };
 }

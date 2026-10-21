@@ -1,6 +1,7 @@
 import type { AwardLetter } from "../bonuses/awardStore.ts";
 import type { BonusesReport } from "../book/reports/bonuses.ts";
 import type { BonusEstimates } from "../profile/settings.ts";
+import { grow } from "../profile/outlook.ts";
 
 /**
  * Every bonus the forecast pays, dated to the month, in three kinds:
@@ -106,7 +107,7 @@ export function bonusSchedule(x: {
     for (let year = pattern ? pattern.lastAwardYear + 1 : x.startYear - 1; year <= x.throughYear; year++) {
       // Without a letter, an award whose payout is already behind the latest stub or the start was paid or missed.
       if (!pattern && monthKey(year + 1, parts[0]!.offset) <= floor) continue;
-      const award = Math.round(p.salary * (1 + x.salaryGrowth) ** Math.max(0, year - x.startYear) * p.bonusPct);
+      const award = Math.round(grow(p.salary, x.salaryGrowth, Math.max(0, year - x.startYear)) * p.bonusPct);
       for (const part of parts) {
         const key = monthKey(year + 1, part.offset);
         if (key <= x.startKey) continue;

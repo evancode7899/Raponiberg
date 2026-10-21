@@ -5,7 +5,6 @@ import type { Book } from "../book/load.ts";
 import { buildBonuses } from "../book/reports/bonuses.ts";
 import { buildAnnualProfile, type AnnualProfileReport } from "../profile/buildAnnualProfile.ts";
 import { loadProfileSettings } from "../profile/settings.ts";
-import { loadTaxProfile } from "../tax/profile.ts";
 import { bonusFacts, type BonusFacts } from "./bonusSchedule.ts";
 import { buildForecast, type Forecast, type ForecastInputs } from "./forecast.ts";
 
@@ -21,8 +20,9 @@ export type ForecastData = {
 
 /** Everything the forecast is built from, from the Book (the cached one unless given), the owner's settings and the bonus letters. */
 export async function loadForecastData(db: Db, book?: Book): Promise<ForecastData> {
-  const [b, settings, taxProfile] = await Promise.all([book ?? getBook(db), loadProfileSettings(db), loadTaxProfile(db)]);
-  const profile = buildAnnualProfile(b, settings, taxProfile.dependents);
+  const [b, settings] = await Promise.all([book ?? getBook(db), loadProfileSettings(db)]);
+  // The dependents as the Book read them, so the forecast and the Taxes page see one tax profile.
+  const profile = buildAnnualProfile(b, settings, b.taxProfile.dependents);
   let facts: BonusFacts = { scheduled: [], patterns: [] };
   let lettersError: string | null = null;
   try {

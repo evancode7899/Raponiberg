@@ -15,11 +15,10 @@ describe("security classification", () => {
     expect(describeSecurity(h({ symbol: "FXAIX", expenseRatio: 0.0002 }), 2026, {}).expenseRatio).toBe(0.0002);
   });
 
-  it("reads plan funds without tickers from their names, target-date funds by glide path", () => {
-    const far = describeSecurity(h({ name: "Example Target Retire 2065 Tr P" }), 2026, {}).weights!;
-    expect((far.US_STOCK ?? 0) + (far.INTL_STOCK ?? 0)).toBeCloseTo(0.9, 2);
-    const near = describeSecurity(h({ name: "Example Target Retirement 2030 Fund" }), 2026, {}).weights!;
-    expect(near.BOND).toBeGreaterThan(0.4);
+  it("reads plan funds without tickers from their names, and never guesses a target-date fund's glide path", () => {
+    // No statement prints a target-date fund's mix: unclassified until the owner sets it.
+    expect(describeSecurity(h({ name: "Example Target Retire 2065 Tr P" }), 2026, {})).toMatchObject({ weights: null, source: "NONE" });
+    expect(describeSecurity(h({ name: "Example Target Retirement 2030 Fund" }), 2026, {})).toMatchObject({ weights: null, source: "NONE" });
     expect(describeSecurity(h({ name: "EX INTERNATIONAL INDEX" }), 2026, {}).weights).toEqual({ INTL_STOCK: 1 });
   });
 

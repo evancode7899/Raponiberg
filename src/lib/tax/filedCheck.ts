@@ -415,10 +415,28 @@ function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
     push(`${a.label} · interest`, a.doc!.file, a.ytd.interest, s.interest);
     push(`${a.label} · realized gains`, a.doc!.file, a.ytd.shortTermGain + a.ytd.longTermGain + a.ytd.capGainDistLong, s.shortTermGain + s.longTermGain + s.capGainDistLong);
   }
-  for (const f of docs.ints) push(`${f.form.payer} ••${f.form.account ?? "?"} · interest (1099-INT)`, f.doc.file, f.form.interest, null, "Counted from the 1099-INT; the bank statements' interest for this account is set aside.");
+  for (const f of docs.ints) {
+    const part = report.bankInterest.parts.find((p) => p.doc?.id === f.doc.id);
+    const ledger = part?.ledgerCents ?? null;
+    push(`${f.form.payer} ••${f.form.account ?? "?"} · interest (1099-INT)`, f.doc.file, f.form.interest, ledger, ledger == null ? "No bank statements for this account are on file." : "The bank statements' interest rows for the year.");
+  }
   const sa = report.people.reduce((s, p) => s + p.payroll.reduce((t, x) => t + x.w2Projected.box12.W, 0), 0);
   const filedSa = docs.federal?.federal?.hsaEmployer;
   if (filedSa != null) push("HSA employer + payroll contributions (Form 8889 line 9)", docs.federal!.doc.file, filedSa, sa, "W-2 box 12 W across the household.");
+}
+
+/**
+ * Every figure a finished year's documents print that the ledger also shows: W-2 boxes
+ * against the pay stubs, 1099s against the statements, 1099-INTs against the bank's
+ * interest rows, and (with a filed return) the estimated payments, balance and refund
+ * against the bank. With or without a filed return. Integrity turns each into a finding
+ * (book/checks/taxDocuments.ts); the Filed return tab lists them.
+ */
+export function documentTies(report: TaxReport, docs: YearDocs): SourceCheck[] {
+  const out: SourceCheck[] = [];
+  sourceChecks(report, docs, out);
+  paymentChecks(report, docs, out, []);
+  return out;
 }
 
 /** Estimated payments, balance-due payments and refunds: the filed returns against the bank ledger. */

@@ -6,7 +6,7 @@ import { collapseSpaces, lines, parseMoney, parseMonthNameDate, parseSlashDate, 
 
 export const VANGUARD_BROKERAGE_PARSER_ID = "vanguard-brokerage";
 /** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
-export const VERSION = 1;
+export const VERSION = 2;
 
 export function detectVanguardBrokerage(text: string): boolean {
   return (
@@ -332,6 +332,8 @@ export function parseVanguardBrokerage(text: string): ParsedDocument {
       openingBalanceCents: row.opening,
       closingBalanceCents: row.closing,
       growthCents: growth,
+      // Vanguard prints values, not a change-in-value line: growth is what the dated flows leave.
+      growthFromBalances: true,
       feesCents: fees,
       transactions,
       checks,

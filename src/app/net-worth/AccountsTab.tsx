@@ -18,7 +18,7 @@ const yearLabel = (y: number, currentYear: number) => (y === currentYear ? `${y}
 /** One roll-forward line of one account-year, opening its proof. */
 const rollP = (a: AccountRollforward, x: RollYear, line: RollLine): ProofTarget => ({
   descriptor: { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line },
-  ...(line === "return" ? {} : { shownCents: rollValue(x, line) }),
+  shownCents: line === "return" ? null : rollValue(x, line),
 });
 
 /**

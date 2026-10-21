@@ -4,7 +4,7 @@ import { lines, parseMoney, parseSlashDate, trailingAmounts } from "../text.ts";
 
 export const HEALTHEQUITY_PARSER_ID = "healthequity-hsa";
 /** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
-export const VERSION = 1;
+export const VERSION = 2;
 
 export function detectHealthEquity(text: string): boolean {
   return /HealthEquity/.test(text) && /Health Savings Account/.test(text) && /Account Statement/.test(text) && /Account Number:\s*\d+/.test(text);
@@ -91,7 +91,6 @@ export function parseHealthEquity(text: string): ParsedDocument {
   // previous statement's closing replaces it (see openingFromPrior).
   const growth = closing - cashOpen - flows - fees;
   const invested = holdingClose > 0 || toHolding !== 0;
-  if (!invested && interest !== growth) warnings.push("Interest does not explain the change in balance");
   return {
     parserId: HEALTHEQUITY_PARSER_ID,
     parserVersion: VERSION,
@@ -114,8 +113,13 @@ export function parseHealthEquity(text: string): ParsedDocument {
         growthCents: growth,
         feesCents: fees,
         transactions,
-        ...(invested ? { openingFromPrior: true } : {}),
-        checks: [{ label: "Cash activity ties to the printed ending cash balance", expectedCents: cashClose, actualCents: balance }],
+        // Invested: the fund's performance isn't printed, so growth is what the balances leave.
+        ...(invested ? { openingFromPrior: true, growthFromBalances: true } : {}),
+        checks: [
+          { label: "Cash activity ties to the printed ending cash balance", expectedCents: cashClose, actualCents: balance },
+          // Cash only: the printed interest is the whole change the flows don't explain.
+          ...(invested ? [] : [{ label: "Printed interest = change in balance the flows don't explain", expectedCents: interest, actualCents: growth }]),
+        ],
       },
     ],
     holdings: [extractHealthEquityHoldings(text, accountNumber, periodEnd, cashClose)],

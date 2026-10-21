@@ -24,7 +24,7 @@ import { taxBlockers, taxYearThrough } from "../blockers.ts";
 import type { Book, BookRow } from "../load.ts";
 import { personPayYear } from "../pay.ts";
 import type { CheckId } from "../types.ts";
-import { checksFor, sumCheck } from "./common.ts";
+import { checksFor, sumCheck, unreviewedEstimate } from "./common.ts";
 import { groupRows, type PayLine } from "./payProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofContext, ProofEstimate, ProofKind, ProofLink, ProofValue } from "./types.ts";
 
@@ -79,6 +79,7 @@ export type TaxEstimateDescriptor = {
 /** The checks that can withhold a tax figure: taxBlockers' pay, tax and bank-account findings. */
 export const TAX_ESTIMATE_CHECKS: CheckId[] = [
   "tax.params",
+  "tax.documents-tie",
   "tax.brokerage-coverage",
   "paystub.arithmetic",
   "paystub.person",
@@ -881,7 +882,10 @@ export async function buildTaxEstimateProof(ctx: ProofContext, d: TaxEstimateDes
   const inferences: ProofEstimate[] = book.integrity.inferences
     .filter((i) => i.check.startsWith("pay.") && i.scope && i.scope.from <= through && i.scope.to >= from && (!d.filer || !i.scope.personId || i.scope.personId === d.filer))
     .map((i) => ({ id: i.id, title: i.title, detail: i.detail }));
-  const estimates = [...forecastNote, ...inferences];
+  // Interest and tax-payment rows the classifier asked about count as filed: say so.
+  const bankRowIds = new Set([...report.bankInterest.parts.flatMap((p) => p.rowIds), ...report.payments.map((p) => p.transactionId)]);
+  const unreviewed = [...bankRowIds].map((id) => book.rowById.get(id)).filter((r) => r?.needsReview);
+  const estimates = [...forecastNote, ...inferences, ...(unreviewed.length ? [unreviewedEstimate(unreviewed.map((r) => r!))] : [])];
 
   // The Payments tab's totals: just the rows.
   if (isFound(d.key)) {

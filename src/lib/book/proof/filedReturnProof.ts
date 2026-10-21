@@ -91,7 +91,7 @@ export function filedSources(ret: FiledReturn, jurisdiction: FiledJurisdiction, 
 }
 
 /** The checks over a filed line: the year's tax law (the app's side of the comparison) and whether its inputs were read by current code. */
-export const FILED_RETURN_CHECKS: CheckId[] = ["tax.params", "ledger.freshness"];
+export const FILED_RETURN_CHECKS: CheckId[] = ["tax.params", "tax.documents-tie", "ledger.freshness"];
 
 const STATUS_WORDS: Record<CheckStatus, string> = {
   MATCH: "Matches the filed return to the dollar.",

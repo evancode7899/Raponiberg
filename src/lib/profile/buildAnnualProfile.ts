@@ -5,7 +5,7 @@ import type { Book, BookStub } from "../book/load.ts";
 import { personPayYear, type PersonPayYear } from "../book/pay.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import { buildNetWorth } from "../book/reports/netWorth.ts";
-import { rentPayments } from "../book/rent.ts";
+import { cashRowsIn, livingIn, livingTrail, type CashRows, type OneOffRow } from "../book/reports/living.ts";
 import { taxRows } from "../book/taxPayments.ts";
 import { CATEGORIES } from "../classifier/taxonomy.ts";
 import type { Quality } from "../ledger/timeline.ts";
@@ -17,7 +17,6 @@ import type { BonusYear, DeferralParts, LivingTrail, OutlookSeeds, PaycheckSeed,
 import {
   bucketForGroup,
   cashWaterfall,
-  expenseFingerprint,
   netWorthBridge,
   summarizeBuckets,
   ZERO_BUCKETS,
@@ -62,18 +61,7 @@ export type PersonYear = {
 
 export type CategoryCents = { category: string; cents: number };
 
-export type OneOffRow = {
-  fingerprint: string;
-  date: string;
-  payee: string;
-  account: string;
-  category: string;
-  cents: number;
-  /** Counted as non-recurring: tagged by hand, or its category is. */
-  tagged: boolean;
-  viaCategory: boolean;
-  label: string;
-};
+export type { OneOffRow } from "../book/reports/living.ts";
 
 export type YearCash = {
   waterfall: CashWaterfall;
@@ -86,6 +74,12 @@ export type YearCash = {
   taxRowsByCategory: { income: CategoryCents[]; spending: CategoryCents[] };
   /** How the year's living cost adds up (the forecast's LAST_YEAR / THIS_YEAR seeds' proof). */
   livingTrail: LivingTrail;
+  /**
+   * Income less spending the ledger books this year that Cash flow counts in another (rent
+   * paid in December for January): the cash figures follow Cash flow, net worth the
+   * booking day, so the bridge's timing line holds it.
+   */
+  timing: number;
 };
 
 export type YearNetWorth = NetWorthSummary & {
@@ -134,20 +128,6 @@ export type AnnualProfileReport = {
   settings: FinancialProfileSettings;
 };
 
-/** Income and spending rows booked in a window (buildAnnualProfile cashRows). */
-type CashRows = {
-  interest: number;
-  other: number;
-  reimbursements: number;
-  nonRecurring: number;
-  taxSpending: number;
-  spending: Map<string, number>;
-  candidates: OneOffRow[];
-  otherByCategory: Map<string, number>;
-  taxByCategory: { income: Map<string, number>; spending: Map<string, number> };
-};
-
-const NOT_OTHER_INCOME = new Set(["Paycheck", "P2P & reimbursements", "Interest"]);
 const unique = (bs: BlockerRef[]) => [...new Map(bs.map((b) => [b.id, b])).values()];
 const minIso = (a: string, b: string) => (a < b ? a : b);
 const byCents = (m: Map<string, number>): CategoryCents[] =>
@@ -192,10 +172,6 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
   const firstYear = Math.min(book.ledger.firstDay ? Number(book.ledger.firstDay.slice(0, 4)) : currentYear, currentYear);
   const years: number[] = [];
   for (let y = firstYear; y <= currentYear; y++) years.push(y);
-  const nonRecurringCats = new Set(settings.nonRecurringCategories);
-  const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
-  // Rent is a big charge every month, never a one-off: left out of the candidates (as on Cash flow).
-  const rentIds = new Set(rentPayments(book.rows, [], book.household.merchantRules).map((p) => p.rowId));
 
   // Matched transfers in flight at a date count in the bucket of the account they hadn't reached.
   const inTransitAt = (end: string) => {
@@ -204,77 +180,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     return signed;
   };
 
-  // Income and spending rows booked in [from, to], tax payments excluded. Rows count in
-  // the year the ledger books them, so the bridge to net worth has no slippage.
-  const cashRows = (from: string, to: string, taxIds: Set<string>) => {
-    let interest = 0;
-    let other = 0;
-    let reimbursements = 0;
-    let nonRecurring = 0;
-    // Tax payments filed as spending: taxes, not living (Cash flow counts them as spending).
-    let taxSpending = 0;
-    const spending = new Map<string, number>();
-    const candidates: OneOffRow[] = [];
-    // The same, by category (the proof of each line).
-    const otherByCategory = new Map<string, number>();
-    const taxByCategory = { income: new Map<string, number>(), spending: new Map<string, number>() };
-    const bump = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
-    for (const r of book.rows) {
-      if (r.bookedOn < from || r.bookedOn > to) continue;
-      if (taxIds.has(r.id)) {
-        if (r.lane === "EXPENSE") {
-          taxSpending -= r.amountCents;
-          bump(taxByCategory.spending, r.category, -r.amountCents);
-        } else if (r.lane === "INCOME") bump(taxByCategory.income, r.category, r.amountCents);
-        continue;
-      }
-      if (r.lane === "INCOME") {
-        if (r.category === "P2P & reimbursements") reimbursements += r.amountCents;
-        else if (r.category === "Interest") interest += r.amountCents;
-        else if (!NOT_OTHER_INCOME.has(r.category)) {
-          other += r.amountCents;
-          bump(otherByCategory, r.category, r.amountCents);
-        }
-        continue;
-      }
-      if (r.lane !== "EXPENSE") continue;
-      const fp = expenseFingerprint({ accountId: r.accountId, date: r.date, amountCents: r.amountCents, payee: r.payee });
-      const viaCategory = nonRecurringCats.has(r.category);
-      const tagged = viaCategory || fp in settings.oneOffs;
-      if (tagged) nonRecurring -= r.amountCents;
-      else spending.set(r.category, (spending.get(r.category) ?? 0) - r.amountCents);
-      if (tagged || (-r.amountCents >= 150_000 && !rentIds.has(r.id))) {
-        candidates.push({ fingerprint: fp, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
-      }
-    }
-    candidates.sort((a, b) => Number(b.tagged) - Number(a.tagged) || b.cents - a.cents);
-    return { interest, other, reimbursements, nonRecurring, taxSpending, spending, candidates, otherByCategory, taxByCategory };
-  };
-
-  /** A living-cost figure's parts, as the forecast's proof lists them. */
-  const livingTrail = (from: string, to: string, rows: CashRows, payReimbursements: number): LivingTrail => {
-    const tagged = rows.candidates.filter((c) => c.tagged);
-    const byCategory = new Map<string, { cents: number; rows: number }>();
-    for (const c of tagged.filter((x) => x.viaCategory)) {
-      const cur = byCategory.get(c.category) ?? { cents: 0, rows: 0 };
-      byCategory.set(c.category, { cents: cur.cents + c.cents, rows: cur.rows + 1 });
-    }
-    const spending = [...rows.spending.values()].reduce((s, v) => s + v, 0);
-    return {
-      from,
-      to,
-      spending,
-      taxPayments: rows.taxSpending,
-      oneOffs: tagged
-        .filter((c) => !c.viaCategory)
-        .map(({ date, payee, account, category, cents, label }) => ({ date, payee, account, category, cents, label }))
-        .sort((a, b) => a.date.localeCompare(b.date) || b.cents - a.cents),
-      oneOffCategories: [...byCategory].map(([category, v]) => ({ category, ...v })).sort((a, b) => b.cents - a.cents),
-      reimbursements: rows.reimbursements,
-      payReimbursements,
-      windowCents: spending - rows.reimbursements - payReimbursements,
-    };
-  };
+  const cashRows = (from: string, to: string, taxIds: Set<string>) => cashRowsIn(book, settings, from, to, taxIds);
 
   const pays = new Map<string, PersonPayYear>();
   const out: YearProfile[] = [];
@@ -375,6 +281,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
             otherIncomeByCategory: byCents(rows.otherByCategory),
             taxRowsByCategory: { income: byCents(rows.taxByCategory.income), spending: byCents(rows.taxByCategory.spending) },
             livingTrail: livingTrail(start, cashEnd, rows, sumPeople((p) => p.reimbursements)),
+            timing: rows.timing,
           }
         : null;
     const h = period?.household;
@@ -607,24 +514,26 @@ function outlookSeeds(x: {
     LAST_YEAR: { cents: base.cash!.waterfall.living, label: `${base.year} actual`, detail: `Living expenses in ${base.year}, excluding tagged one-offs`, trail: base.cash!.livingTrail },
   };
   if (cur?.cash) {
+    // This year so far, then the rest of the year as it went last year (actual months, not a
+    // straight-line × 365 ÷ days: December's bills and gifts aren't like March's).
     const days = daysBetween(`${currentYear}-01-01`, cur.asOf) + 1;
-    if (days >= 60) {
+    const restFrom = addDays(`${currentYear - 1}${cur.asOf.slice(4) === "-02-29" ? "-02-28" : cur.asOf.slice(4)}`, 1);
+    const restTo = `${currentYear - 1}-12-31`;
+    if (days >= 60 && base.year === currentYear - 1 && restFrom <= restTo && blockersFor(book, { affects: "CASH_FLOW", from: restFrom, to: restTo }).length === 0) {
+      const rest = livingIn(book, settings, restFrom, restTo);
       living.THIS_YEAR = {
-        cents: Math.round((cur.cash.waterfall.living * 365) / days),
-        label: `${currentYear} so far, annualized`,
-        detail: `${usd0(cur.cash.waterfall.living)} from Jan 1 to ${cur.asOf} (${days} days) × 365, excluding tagged one-offs`,
-        trail: { ...cur.cash.livingTrail, days },
+        cents: cur.cash.waterfall.living + rest.cents,
+        label: `${currentYear} so far + the rest as ${currentYear - 1}`,
+        detail: `${usd0(cur.cash.waterfall.living)} from Jan 1 to ${cur.asOf}, plus ${usd0(rest.cents)} for ${restFrom} – ${restTo} last year, excluding tagged one-offs`,
+        trail: { ...cur.cash.livingTrail, days, rest: rest.trail },
       };
     }
     // The twelve months ending at the cash data edge.
     const to = cur.asOf;
     const from = addDays(`${Number(to.slice(0, 4)) - 1}${to.slice(4) === "-02-29" ? "-02-28" : to.slice(4)}`, 1);
     if (blockersFor(book, { affects: "CASH_FLOW", from, to }).length === 0) {
-      const rows = x.cashRows(from, to, new Set(taxRows(book, from, to).map((r) => r.id)));
-      // Reimbursements paid inside a paycheck offset spending, as in each year's figures.
-      const inPay = book.stubs.filter((s) => s.personId && s.payDate >= from && s.payDate <= to).reduce((t, s) => t + amountsFromLines(s.lines, "current").nonTaxable, 0);
-      const cents = [...rows.spending.values()].reduce((t, v) => t + v, 0) - rows.reimbursements - inPay;
-      living.TRAILING_12 = { cents, label: "Last 12 months", detail: `Living expenses ${from} to ${to}, excluding tagged one-offs`, trail: x.livingTrail(from, to, rows, inPay) };
+      const l = livingIn(book, settings, from, to);
+      living.TRAILING_12 = { cents: l.cents, label: "Last 12 months", detail: `Living expenses ${from} to ${to}, excluding tagged one-offs`, trail: l.trail };
     }
   }
 
@@ -637,7 +546,7 @@ function outlookSeeds(x: {
     living,
     realizedReturn: x.nwReturn,
     taxYear,
-    tax: { year: taxYear, standardDeduction: fp.standardDeduction.MFJ, brackets: fp.brackets.MFJ },
+    tax: { year: taxYear, standardDeduction: fp.standardDeduction.MFJ, brackets: fp.brackets.MFJ, ct: TAX_YEARS[taxYear]!.ct },
     dependents: x.dependents.map((d) => ({ name: d.name, age: Math.max(0, taxYear - d.birthYear) })),
     birthYear: firstBirth,
   };

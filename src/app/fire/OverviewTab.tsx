@@ -39,22 +39,22 @@ export function OverviewTab({
         <StatCell
           label="Financially independent"
           value={f.fi ? String(f.fi.year) : "Not in 60 yrs"}
-          proof={pf("fi-year")}
+          proof={pf("fi-year", null)}
           tone={f.fi ? "pos" : "warn"}
           sub={
             <>
               {f.fi ? `${f.fi.age != null ? `age ${f.fi.age} · ` : ""}${fiIn! <= 0 ? "already there" : `${fiIn} yr${fiIn === 1 ? "" : "s"} to go`}` : "walk-away income stays short"}
-              {f.fiBase?.year !== f.fi?.year && <> · with no bonuses: <ProofValue proof={pf("fi-year-base")}>{f.fiBase ? f.fiBase.year : "not in 60 yrs"}</ProofValue></>}
+              {f.fiBase?.year !== f.fi?.year && <> · with no bonuses: <ProofValue proof={pf("fi-year-base", null)}>{f.fiBase ? f.fiBase.year : "not in 60 yrs"}</ProofValue></>}
             </>
           }
         />
-        <StatCell label="Savings rate" value={pct(f.savingsRate, 0)} proof={pf("savings-rate")} sub="of take-home + employer money, this year's plan" />
-        <StatCell label="Years of spending saved" value={now.yearsOfSpending.toFixed(1)} proof={pf("years-saved")} sub={`net worth ÷ ${short(now.livingCost)} a year`} />
-        <StatCell label="Runway (liquid)" value={`${now.liquidYears.toFixed(1)} yrs`} proof={pf("runway")} sub="taxable money ÷ a year's living cost" />
+        <StatCell label="Savings rate" value={pct(f.savingsRate, 0)} proof={pf("savings-rate", null)} sub="of take-home + employer money, this year's plan" />
+        <StatCell label="Years of spending saved" value={now.yearsOfSpending.toFixed(1)} proof={pf("years-saved", null)} sub={`net worth ÷ ${short(now.livingCost)} a year`} />
+        <StatCell label="Runway (liquid)" value={`${now.liquidYears.toFixed(1)} yrs`} proof={pf("runway", null)} sub="taxable money ÷ a year's living cost" />
         <StatCell
           label="Coast FIRE"
           value={now.coastNumber != null && now.netWorth >= now.coastNumber ? "Reached" : f.coast ? String(f.coast.year) : plan.birthYear == null ? "Needs age" : "—"}
-          proof={pf("coast-year")}
+          proof={pf("coast-year", null)}
           sub={f.retireYear ? `stop saving, still FI at ${f.retireYear - plan.birthYear!}` : "add birth years in Settings"}
         />
       </StatGrid>
@@ -82,7 +82,7 @@ function Progress({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Progress to financial independence</div>
           <div className="num text-3xl font-semibold text-fg">
-            <ProofValue proof={pf("progress")}>{pct(now.progress, 0)}</ProofValue>
+            <ProofValue proof={pf("progress", null)}>{pct(now.progress, 0)}</ProofValue>
           </div>
         </div>
         <div className="text-right text-xs text-muted">
@@ -272,7 +272,7 @@ function Flavors({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
         {reached && <span className="rounded-full bg-pos-soft px-1.5 text-[10px] font-semibold uppercase text-pos">reached</span>}
       </div>
       <div className="num text-lg font-semibold text-fg">
-        <ProofValue proof={pf(proofs.year)}>{reached ? "Now" : row ? yearAge(row.year, plan) : "Not in 60 yrs"}</ProofValue>
+        <ProofValue proof={pf(proofs.year, null)}>{reached ? "Now" : row ? yearAge(row.year, plan) : "Not in 60 yrs"}</ProofValue>
       </div>
       <div className="text-[11px] text-muted">{reached || !row ? "" : yearsFrom(row.year, plan)}</div>
       <div className="text-[11px] font-medium text-fg-2">{proofs.cents != null ? <ProofValue proof={pf(proofs.number, proofs.cents)}>{target}</ProofValue> : target}</div>
@@ -328,7 +328,7 @@ function Milestones({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
             <div className="flex flex-wrap items-baseline gap-x-3">
               <span className={`text-sm font-medium ${m.reached ? "text-fg" : "text-fg-2"}`}>{m.label}</span>
               <span className={`num text-xs ${m.reached ? "text-pos" : "text-muted"}`}>
-                <ProofValue proof={MILESTONE_FIGURE[m.id] ? pf(MILESTONE_FIGURE[m.id]!) : pf("milestone", undefined, m.id)}>
+                <ProofValue proof={MILESTONE_FIGURE[m.id] ? pf(MILESTONE_FIGURE[m.id]!, null) : pf("milestone", null, m.id)}>
                   {m.reached ? "✓ reached" : m.key ? `${monthLabel(m.year!, Number(m.key.slice(5)))}${m.age != null ? ` (age ${m.age})` : ""} · ${yearsFrom(m.year, plan)}` : m.year ? `Jan 1, ${yearAge(m.year, plan)} · ${yearsFrom(m.year, plan)}` : "not within 60 years"}
                 </ProofValue>
               </span>

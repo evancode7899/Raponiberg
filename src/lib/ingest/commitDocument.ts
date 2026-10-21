@@ -148,6 +148,7 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
                 openingBalanceCents: inside.closingBalanceCents,
                 transactions,
                 growthCents: rawSection.closingBalanceCents - inside.closingBalanceCents - flows - rawSection.feesCents,
+                growthFromBalances: true,
               };
             }
           }
@@ -168,6 +169,7 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
                 ...rawSection,
                 openingBalanceCents: prior.closingBalanceCents,
                 growthCents: rawSection.closingBalanceCents - prior.closingBalanceCents - flows - rawSection.feesCents,
+                growthFromBalances: true,
               };
             } else {
               priorMissing = true;
@@ -250,7 +252,12 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
               growthCents: section.growthCents,
               feesCents: section.feesCents,
               reconciliationDeltaCents: v.deltaCents,
-              checksJson: section.checks.map((c) => ({ ...c, passed: Math.abs(c.expectedCents - c.actualCents) <= (c.toleranceCents ?? 0) })),
+              checksJson: [
+                ...section.checks.map((c) => ({ ...c, passed: Math.abs(c.expectedCents - c.actualCents) <= (c.toleranceCents ?? 0) })),
+                ...(section.growthFromBalances
+                  ? [{ label: "Market change isn't printed: it's what the balances leave after the listed flows", expectedCents: section.growthCents, actualCents: section.growthCents, derived: true, passed: true }]
+                  : []),
+              ],
               status: outcome.status!,
             },
           });

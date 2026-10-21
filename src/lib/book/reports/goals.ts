@@ -6,7 +6,9 @@ import { netWorthAtBlockers, netWorthBlockers } from "../blockers.ts";
 import type { Book } from "../load.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
-import { buildCashFlowReport } from "./cashFlow.ts";
+import { SPENDABLE_GROUPS } from "../definitions.ts";
+import type { FinancialProfileSettings } from "../../profile/settings.ts";
+import { typicalMonthlyLiving } from "./living.ts";
 
 /**
  * Progress on each savings goal from the Book: the funding accounts' balances at the
@@ -32,8 +34,8 @@ export const goalForecastOf = (f: Pick<Forecast, "startKey" | "plan" | "months">
   months: f.months.map(({ key, liquid, illiquid }) => ({ key, liquid, illiquid })),
 });
 
-/** Groups whose money the forecast counts as liquid. */
-const LIQUID_GROUPS: AccountGroup[] = ["Cash", "Taxable investments"];
+/** Groups whose money the forecast counts as liquid (the shared definition, less the cards: they fund nothing). */
+const LIQUID_GROUPS: readonly AccountGroup[] = SPENDABLE_GROUPS;
 
 const MONTH_DAYS = 30.4375;
 
@@ -83,34 +85,41 @@ export type GoalsReport = {
   asOf: string;
   /** Every account at least one goal draws on, with who claimed what. */
   funding: FundingRow[];
-  /** Typical monthly spending for emergency funds: average of the last 12 proven months. */
-  monthlySpending: { cents: number; months: number; from: string | null; to: string | null; periods: { start: string; end: string; cents: number }[] } | null;
+  /**
+   * Typical monthly living cost for emergency funds: the shared definition (book/reports/living.ts),
+   * averaged over the latest proven months, up to a year.
+   */
+  monthlySpending: { cents: number; months: number; from: string | null; to: string | null; periods: { start: string; end: string; cents: number; spendingCents: number }[] } | null;
+  /** What the cards owed at asOf: a first claim on bank cash, before any goal (cards are paid from it). */
+  cardsOwedCents: number;
   goals: GoalProgress[];
   accounts: { id: string; name: string; group: AccountGroup; cents: number }[];
   /** Account groups that can fund a goal, in display order. */
   groups: AccountGroup[];
 };
 
-export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalForecast | null = null): GoalsReport {
+export function buildGoals(
+  book: Book,
+  settings: GoalSettings,
+  forecast: GoalForecast | null,
+  /** The one-off tags: living cost leaves them out (book/reports/living.ts). */
+  profile: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">,
+): GoalsReport {
   const asOf = book.horizon.netWorth;
   const open = book.ledger.accounts.filter((a) => !a.closed && a.group !== "Credit cards" && a.timeline.firstDay! <= asOf);
   const balance = new Map(open.map((a) => [a.id, valueAt(a.timeline, asOf).cents]));
 
-  const cf = buildCashFlowReport(book, { granularity: "month" });
-  const proven = cf.periods.filter((p) => !p.blockers.length && !p.through).slice(-12);
-  const monthlySpending = proven.length
-    ? {
-        cents: Math.round(proven.reduce((s, p) => s + p.spendingCents, 0) / proven.length),
-        months: proven.length,
-        from: proven[0]!.start,
-        to: proven.at(-1)!.end,
-        periods: proven.map((p) => ({ start: p.start, end: p.end, cents: p.spendingCents })),
-      }
+  const typical = typicalMonthlyLiving(book, profile);
+  const monthlySpending = typical
+    ? { cents: typical.cents, months: typical.months, from: typical.from, to: typical.to, periods: typical.periods.map((p) => ({ start: p.start, end: p.end, cents: p.cents, spendingCents: p.spendingCents })) }
     : null;
+  const cardsOwedCents = -book.ledger.accounts.filter((a) => !a.closed && a.group === "Credit cards" && a.timeline.firstDay! <= asOf).reduce((s, a) => s + valueAt(a.timeline, asOf).cents, 0);
 
   const fundersOf = (g: Goal) => open.filter((a) => g.groups.includes(a.group) || g.accountIds.includes(a.id));
   const reach = forecast ? forecastFiller(forecast) : null;
   const claimer = goalClaimer(balance);
+  // Liquid money is cash less what the cards owe: that debt claims bank cash before any goal does.
+  if (cardsOwedCents > 0) claimer.reserve(open.filter((a) => a.group === "Cash").sort((x, y) => (balance.get(y.id) ?? 0) - (balance.get(x.id) ?? 0)), cardsOwedCents, "Card balances owed");
   const goals = settings.goals.map((goal): GoalProgress => {
     const funders = fundersOf(goal);
     const ids = funders.map((a) => a.id);
@@ -191,6 +200,7 @@ export function buildGoals(book: Book, settings: GoalSettings, forecast: GoalFor
     asOf,
     funding,
     monthlySpending,
+    cardsOwedCents,
     goals,
     accounts: open.map((a) => ({ id: a.id, name: a.name, group: a.group, cents: balance.get(a.id) ?? 0 })),
     groups: GROUP_ORDER.filter((g) => g !== "Credit cards" && open.some((a) => a.group === g)),
@@ -208,6 +218,18 @@ export function goalClaimer(balance: Map<string, number>) {
   const claims = new Map<string, FundingRow["claims"]>();
   const tracked = new Map<string, string[]>();
   return {
+    /** Takes `cents` from these accounts' unclaimed money, in order, before any goal (what the cards owe). */
+    reserve(accounts: { id: string }[], cents: number, name: string) {
+      let need = cents;
+      for (const a of accounts) {
+        const left = pool.get(a.id) ?? 0;
+        const take = Math.max(0, Math.min(left, need));
+        if (!take) continue;
+        need -= take;
+        pool.set(a.id, left - take);
+        claims.set(a.id, [...(claims.get(a.id) ?? []), { goalId: "cards-owed", name, cents: take }]);
+      }
+    },
     claim(goal: Goal, funders: { id: string; name: string }[], targetCents: number | null): { accounts: GoalAccount[]; claimedFirstBy: string[] } {
       const track = goal.funding === "TRACK";
       let need = targetCents ?? Infinity;

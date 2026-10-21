@@ -20,7 +20,7 @@ export type HomeTab = (typeof TABS)[number];
 export type { FundsBook, FundsConfig, LinkedRate } from "@/lib/home-budget/homeLinked";
 
 /** Where the cash for the home comes from, as shown in the Cash card. */
-export type FundsState = Pick<HomeLinked, "derived" | "buy" | "linked" | "tax"> & {
+export type FundsState = Pick<HomeLinked, "derived" | "buy" | "linked" | "tax" | "returns"> & {
   config: FundsConfig;
   setConfig: (c: FundsConfig) => void;
   /** Book figures (null while loading or on error). */
@@ -32,7 +32,7 @@ export type FundsState = Pick<HomeLinked, "derived" | "buy" | "linked" | "tax"> 
 };
 
 /** A Home budget figure's proof ("planning" kind); `dollars` is the figure as the page has it. */
-export type HomeProof = (figure: HomeFigure, dollars?: number) => ProofTarget;
+export type HomeProof = (figure: HomeFigure, dollars: number | null) => ProofTarget;
 
 /** What the lender view counts: base salary plus, when counted, the lender's two-year bonus average. */
 export type LenderState = { bonus: { annual: number; years: number[] } | null; countBonus: boolean; setCountBonus: (v: boolean) => void; income: number };
@@ -56,14 +56,14 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
   }, [api]);
 
   // The buy month, the forecast's salary then, liquid money then, the engine's tax rates: the inputs the model runs on.
-  const { buy, derived, tax, linked, ins, lender: lend } = useMemo(() => linkHome(book, stored, config), [book, stored, config]);
+  const { buy, derived, tax, linked, returns, ins, lender: lend } = useMemo(() => linkHome(book, stored, config), [book, stored, config]);
 
   const patch: Patch = (key, v) => setStored((s) => ({ ...s, [key]: v }));
   const proof: HomeProof = (figure, dollars) => ({
     descriptor: { report: "planning", page: "home", figure, inputs: stored, funds: config },
-    ...(dollars != null ? { shownCents: Math.round(dollars * 100) } : {}),
+    shownCents: dollars == null ? null : Math.round(dollars * 100),
   });
-  const funds: FundsState = { config, setConfig, book, loading: api.ready && !book && !error, error, derived, linked, buy, tax, proof };
+  const funds: FundsState = { config, setConfig, book, loading: api.ready && !book && !error, error, derived, linked, buy, tax, returns, proof };
   const lender: LenderState = { ...lend, setCountBonus: (v) => setConfig({ ...config, lenderBonus: v }) };
   const lenderMax = useMemo(() => computeLenderMax(ins, lender.income), [ins, lender.income]);
   const spendMonthly = book?.spending ? book.spending.monthlyCents / 100 : null;

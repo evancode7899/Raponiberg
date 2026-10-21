@@ -45,6 +45,14 @@ export type FederalParams = {
   };
   salt: { cap: ByStatus<number>; phaseoutStart: ByStatus<number>; floor: ByStatus<number>; phaseoutRate: number };
   qbiThreshold: ByStatus<number>;
+  /** Rates on qualified dividends and long-term gains above the 0% band (the 15% band, then 20%). */
+  preferentialRates: { fifteen: number; twenty: number };
+  /** AMT rates: on AMT income up to rate28Above, and above it. */
+  amtRates: { low: number; high: number };
+  /** Child tax credit phase-out: `per` for each `step` (or part) of MAGI over phaseoutStart. */
+  ctcPhaseout: { per: number; step: number };
+  /** Refundable child credit: `rate` of earned income above `earnedFloor`. */
+  ctcRefundable: { earnedFloor: number; rate: number };
   amt: {
     exemption: ByStatus<number>;
     phaseoutStart: ByStatus<number>;
@@ -65,9 +73,14 @@ export type FederalParams = {
     expenseLimit: [number, number];
     /** Dependent-care FSA exclusion limit (MFS gets half). */
     fsaLimit: number;
-    /** 2026+: 50% → 35% (1 pt per $2k over $15k) → 20% (1 pt per $2k/$4k MFJ over $75k/$150k). */
-    enhanced: boolean;
+    /**
+     * The credit's percentage of expenses: `top`, down 1 point per `step` (or part) of AGI over
+     * `over` to `floor`; from 2026 a second phase-down to `second.floor` above `second.over`.
+     */
+    creditPct: { top: number; floor: number; over: number; step: number; second: { floor: number; over: ByStatus<number>; step: ByStatus<number> } | null };
   };
+  /** Underpayment-penalty safe harbor (Form 2210; Connecticut's CT-2210 follows the same tests). */
+  safeHarborRules: SafeHarborRules;
   socialSecurity: { wageBase: number; rate: number };
   medicareRate: number;
   additionalMedicareRate: number;
@@ -125,6 +138,10 @@ export type CtParams = {
 /** "AGI over `start`: `per` for each `step` (or part), capped at `max`." */
 export type RecaptureTier = { start: number; step: number; per: number; max: number };
 
+/** Pay 90% of this year's tax, or 100% of last year's (110% above the high-AGI line), or owe under $1,000 at filing. */
+export type SafeHarborRules = { currentShare: number; priorShare: number; priorShareHighAgi: number; deMinimis: number };
+export const SAFE_HARBOR_RULES: SafeHarborRules = { currentShare: 0.9, priorShare: 1, priorShareHighAgi: 1.1, deMinimis: $(1_000) };
+
 const FED_2026: FederalParams = {
   brackets: byStatus(
     [12_400, 50_400, 105_700, 201_775, 256_225, 640_600].map($),
@@ -151,6 +168,10 @@ const FED_2026: FederalParams = {
     floor: byStatus($(10_000), $(10_000), $(5_000), $(10_000)),
     phaseoutRate: 0.3,
   },
+  preferentialRates: { fifteen: 0.15, twenty: 0.2 },
+  amtRates: { low: 0.26, high: 0.28 },
+  ctcPhaseout: { per: $(50), step: $(1_000) },
+  ctcRefundable: { earnedFloor: $(2_500), rate: 0.15 },
   qbiThreshold: byStatus($(201_750), $(403_500), $(201_775), $(201_750)),
   amt: {
     exemption: byStatus($(90_100), $(140_200), $(70_100), $(90_100)),
@@ -163,7 +184,12 @@ const FED_2026: FederalParams = {
   charitableNonItemizer: byStatus($(1_000), $(2_000), $(1_000), $(1_000)),
   charitableAgiFloor: 0.005,
   itemizedLimitation37: true,
-  dependentCare: { expenseLimit: [$(3_000), $(6_000)], fsaLimit: $(7_500), enhanced: true },
+  dependentCare: {
+    expenseLimit: [$(3_000), $(6_000)],
+    fsaLimit: $(7_500),
+    creditPct: { top: 50, floor: 35, over: $(15_000), step: $(2_000), second: { floor: 20, over: byStatus($(75_000), $(150_000), $(75_000), $(75_000)), step: byStatus($(2_000), $(4_000), $(2_000), $(2_000)) } },
+  },
+  safeHarborRules: SAFE_HARBOR_RULES,
   socialSecurity: { wageBase: $(184_500), rate: 0.062 },
   medicareRate: 0.0145,
   additionalMedicareRate: 0.009,
@@ -206,6 +232,10 @@ const FED_2025: FederalParams = {
     floor: byStatus($(10_000), $(10_000), $(5_000), $(10_000)),
     phaseoutRate: 0.3,
   },
+  preferentialRates: { fifteen: 0.15, twenty: 0.2 },
+  amtRates: { low: 0.26, high: 0.28 },
+  ctcPhaseout: { per: $(50), step: $(1_000) },
+  ctcRefundable: { earnedFloor: $(2_500), rate: 0.15 },
   qbiThreshold: byStatus($(197_300), $(394_600), $(197_300), $(197_300)),
   amt: {
     exemption: byStatus($(88_100), $(137_000), $(68_500), $(88_100)),
@@ -216,7 +246,7 @@ const FED_2025: FederalParams = {
   charitableNonItemizer: byStatus(0, 0, 0, 0),
   charitableAgiFloor: 0,
   itemizedLimitation37: false,
-  dependentCare: { expenseLimit: [$(3_000), $(6_000)], fsaLimit: $(5_000), enhanced: false },
+  dependentCare: { expenseLimit: [$(3_000), $(6_000)], fsaLimit: $(5_000), creditPct: { top: 35, floor: 20, over: $(15_000), step: $(2_000), second: null } },
   socialSecurity: { wageBase: $(176_100), rate: 0.062 },
   limits: { k401: $(23_500), ira: $(7_000), hsaSelf: $(4_300), hsaFamily: $(8_550) },
   retirement: {
@@ -260,6 +290,10 @@ const FED_2024: FederalParams = {
     floor: byStatus($(10_000), $(10_000), $(5_000), $(10_000)),
     phaseoutRate: 0,
   },
+  preferentialRates: { fifteen: 0.15, twenty: 0.2 },
+  amtRates: { low: 0.26, high: 0.28 },
+  ctcPhaseout: { per: $(50), step: $(1_000) },
+  ctcRefundable: { earnedFloor: $(2_500), rate: 0.15 },
   qbiThreshold: byStatus($(191_950), $(383_900), $(191_950), $(191_950)),
   amt: {
     exemption: byStatus($(85_700), $(133_300), $(66_650), $(85_700)),

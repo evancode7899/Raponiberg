@@ -3,7 +3,7 @@ import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
 import { buildForecast, type Forecast } from "../../forecast/forecast.ts";
 import { monthPeriods, yearPeriods, type Flows, type Period } from "../../forecast/periods.ts";
 import type { AnnualProfileReport } from "../../profile/buildAnnualProfile.ts";
-import type { OutlookMonth } from "../../profile/outlook.ts";
+import { grow, monthlyReturn, type OutlookMonth } from "../../profile/outlook.ts";
 import { forecastInputs, loadForecastData, type ForecastData } from "../../forecast/load.ts";
 import { bucketForGroup } from "../../profile/annualMath.ts";
 import { resolveBasePay, type DeferralParts, type LivingTrail, type OutlookSeeds, type ResolvedBasePay } from "../../profile/basePay.ts";
@@ -418,7 +418,7 @@ function takeHomeProof(c: Ctx, paycheck?: Record<string, PaycheckBasis>): Built 
     { label: "Tax law year", value: { text: String(seeds.taxYear) }, source: "law", note: `Today's law: the latest year on file through ${seeds.currentYear}. Pay and the retirement brackets both use it.` },
     { label: "Dependents", value: { text: String(seeds.dependents.length) }, source: "assumption", note: "From Settings › tax profile." },
     { label: "Inflation / yr", value: { ratio: c.a.inflation }, source: "assumption", note: "Indexes the standard deduction and brackets in retirement." },
-    { label: "State tax on retirement draws", value: { ratio: c.a.stateTaxRate }, source: "assumption" },
+    { label: "State tax on retirement draws", value: c.a.stateTaxRate == null ? { text: "Connecticut's brackets" } : { ratio: c.a.stateTaxRate }, source: c.a.stateTaxRate == null ? "law" : "assumption" },
     { label: "Withdrawal rate once retired", value: { ratio: c.a.withdrawalRate }, source: "assumption" },
   ];
   const blocks: ProofBlock[] = [{ kind: "chain", title: "Base pay after tax", lines }];
@@ -483,9 +483,14 @@ function livingProof(c: Ctx, basis: LivingBasis): Built {
   const living = livingLines(book, t);
   const lines = living.lines;
   let recomputed = living.recomputed;
-  if (t.days) {
-    lines.push({ op: "×", label: `365 ÷ ${t.days} days`, value: { text: `365 ÷ ${t.days}` }, source: "derived" }, { op: "=", label: "A year at this rate", value: { cents: seed.cents }, source: "derived" });
-    recomputed = Math.round((recomputed * 365) / t.days);
+  if (t.rest) {
+    // The rest of the year as it went last year, its own window re-added the same way.
+    const rest = livingLines(book, t.rest);
+    lines.push(
+      { op: "+", label: `The rest of the year as last year, ${t.rest.from} – ${t.rest.to}`, value: { cents: t.rest.windowCents }, source: "proven", note: "Last year's actual months for the part of the year still to come." },
+      { op: "=", label: "This year, so far + the rest", value: { cents: seed.cents }, source: "derived" },
+    );
+    recomputed += rest.recomputed;
   }
   const blocks: ProofBlock[] = [{ kind: "chain", title: seed.label, lines, note: seed.detail }];
   const others = LIVING.filter((b) => b !== basis && seeds.living[b]);
@@ -700,9 +705,9 @@ function projectedMonth(x: CellCtx, m: OutlookMonth): Built {
   const prev = idx > 0 ? f.months[idx - 1]! : null;
   const word = keyWord(m.key);
   // The engine's figures for the year (outlook.ts projectOutlook), from the same plan.
-  const salaryY = pl.salary * (1 + pl.salaryGrowth) ** i;
+  const salaryY = grow(pl.salary, pl.salaryGrowth, i);
   const scale = pl.salary > 0 ? salaryY / pl.salary : 1;
-  const livingY = pl.livingCost * (1 + pl.livingGrowth) ** i;
+  const livingY = grow(pl.livingCost, pl.livingGrowth, i);
   const paycheck = Object.fromEntries(pay.people.map((p) => [p.personId, p.basis]));
   const blocks: ProofBlock[] = [];
   let parts = figure;
@@ -717,7 +722,7 @@ function projectedMonth(x: CellCtx, m: OutlookMonth): Built {
       link: prev ? { label: `${LEDGER_LINES[side]}, ${keyWord(prev.key)}`, descriptor: cellOf(prev.key, prev.key, side) } : seedLink("The forecast's starting net worth", { report: "forecast", figure: "seed", which: "start" }),
     };
   };
-  const rm = (1 + pl.returnRate) ** (1 / 12) - 1;
+  const rm = monthlyReturn(pl, i);
   const growthSide = (liquid: boolean): { block: ProofBlock; sum: number } => {
     const flow = liquid ? m.saved - m.deferrals - m.employerMatch : m.deferrals + m.employerMatch;
     const o = open(liquid ? "liquid" : "illiquid");

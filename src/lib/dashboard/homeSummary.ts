@@ -7,9 +7,9 @@ import { buildNetWorth } from "../book/reports/netWorth.ts";
 import { latestProvenMonthEnd } from "../book/reports/spending.ts";
 import { addDays, endOfMonth, startOfMonth } from "../dates/isoDate.ts";
 import { GROUP_ORDER } from "../ledger/loadLedger.ts";
+import { isLiquid, liquidCents, savingsRate } from "../book/definitions.ts";
 import { homeEncouragement } from "./homeEncouragement.ts";
 
-const LIQUID_GROUPS = new Set(["Cash", "Taxable investments", "Credit cards"]);
 
 /** First day of the month `n` months before the month containing `iso`. */
 function monthsBack(iso: string, n: number): string {
@@ -55,7 +55,7 @@ export function buildHomeSummary(book: Book) {
     cents: byGroup.get(g)!.cents,
     proof: balance({ accountIds: byGroup.get(g)!.accountIds }),
   }));
-  const liquidIds = nw.accounts.filter((a) => LIQUID_GROUPS.has(a.group)).map((a) => a.id);
+  const liquidIds = nw.accounts.filter((a) => isLiquid(a.group)).map((a) => a.id);
 
   // Where the last twelve months of change came from.
   const t12 = periods.slice(-12);
@@ -108,7 +108,7 @@ export function buildHomeSummary(book: Book) {
       totalCents: known ? nw.current.totalCents : null,
       assetsCents: known ? nw.accounts.reduce((s, a) => s + Math.max(0, a.currentCents), 0) : null,
       debtsCents: known ? nw.accounts.reduce((s, a) => s + Math.min(0, a.currentCents), 0) : null,
-      liquidCents: known ? nw.accounts.filter((a) => LIQUID_GROUPS.has(a.group)).reduce((s, a) => s + a.currentCents, 0) : null,
+      liquidCents: known ? liquidCents(nw.accounts.map((a) => ({ group: a.group, cents: a.currentCents }))) : null,
       proofs: known
         ? {
             total: balance(),
@@ -149,7 +149,7 @@ export function buildHomeSummary(book: Book) {
             incomeCents: income12,
             spendingCents: spending12,
             netCents: income12 - spending12,
-            savingsRate: income12 > 0 ? (income12 - spending12) / income12 : null,
+            savingsRate: savingsRate(income12, income12 - spending12),
             proofs: { income: cashFlow("income", cfFrom, throughMonthEnd), spending: cashFlow("spending", cfFrom, throughMonthEnd), net: cashFlow("net", cfFrom, throughMonthEnd) },
           }
         : null,

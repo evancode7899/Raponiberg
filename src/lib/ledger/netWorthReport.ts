@@ -158,7 +158,9 @@ export function buildNetWorthReport(
       const newlyTracked = entering ? d.openingCents : 0;
       if (entering) {
         d.openingCents = 0;
-        if (d.quality === "UNKNOWN") d.quality = "EXACT";
+        // Its opening is what it held when first on file (newlyTracked), not an unknown: the
+        // month is as good as its closing value, which may itself be an estimate.
+        if (d.quality === "UNKNOWN") d.quality = valueAt(t, end).quality;
       }
       let ret: number | null = null;
       if (a.isInvestment) {

@@ -1,6 +1,6 @@
 import { resolveBasePay, type OutlookSeeds, type ResolvedBasePay } from "../profile/basePay.ts";
 import type { Dependent } from "../tax/computeReturn.ts";
-import { projectOutlook, type OutlookMonth, type OutlookPlan, type OutlookYear } from "../profile/outlook.ts";
+import { grow, projectOutlook, type OutlookMonth, type OutlookPlan, type OutlookYear } from "../profile/outlook.ts";
 import type { OutlookAssumptions } from "../profile/settings.ts";
 import { TAX_YEARS } from "../tax/params.ts";
 import { bonusSchedule, monthKey, type BonusFacts, type ScheduledBonus } from "./bonusSchedule.ts";
@@ -153,12 +153,14 @@ export type HomeForecast = {
    * complete years (fewer if that's all there is), summed. Null with no bonus history.
    */
   lenderBonus: { annual: number; years: number[] } | null;
+  /** The forecast's return: what the page's investments earn unless a return is typed. */
+  returnRate: number;
 };
 
 export function homeForecast(f: Forecast, seeds: OutlookSeeds): HomeForecast {
   const { start, salary, salaryGrowth } = f.plan;
   const salaryByYear: Record<number, number> = {};
-  for (let y = start.year; y <= f.plan.horizonYear; y++) salaryByYear[y] = Math.round(salary * (1 + salaryGrowth) ** (y - start.year));
+  for (let y = start.year; y <= f.plan.horizonYear; y++) salaryByYear[y] = Math.round(grow(salary, salaryGrowth, y - start.year));
   const earners = f.pay.people.filter((p) => p.salary > 0).map((p) => ({ id: p.personId, name: p.name, share: salary > 0 ? p.salary / salary : 0 }));
   let bonus = 0;
   const years = new Set<number>();
@@ -175,6 +177,7 @@ export function homeForecast(f: Forecast, seeds: OutlookSeeds): HomeForecast {
     salary: salaryByYear,
     tax: { year: seeds.taxYear, earners, dependents: seeds.dependents },
     lenderBonus: bonus > 0 ? { annual: Math.round(bonus), years: [...years].sort((a, b) => a - b) } : null,
+    returnRate: f.assumptions.returnRate,
   };
 }
 

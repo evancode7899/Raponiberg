@@ -58,8 +58,8 @@ export function FireInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: Outlo
           <Field label="Withdrawal rate" hint="of Jan 1 net worth">
             <PercentInput value={a.withdrawalRate} onChange={(v) => set("withdrawalRate", v)} />
           </Field>
-          <Field label="State tax on draws" hint="federal uses brackets">
-            <PercentInput value={a.stateTaxRate} onChange={(v) => set("stateTaxRate", v)} />
+          <Field label="State tax on draws" hint={a.stateTaxRate == null ? "Connecticut's brackets; type a flat rate to retire elsewhere" : "flat, typed; clear it for Connecticut's brackets"}>
+            <PercentInput value={a.stateTaxRate ?? 0} onChange={(v) => set("stateTaxRate", v || null)} />
           </Field>
           <Field label="Retirement age" hint="Coast FIRE target">
             <YearInput value={a.retirementAge} min={40} max={80} onChange={(v) => v != null && set("retirementAge", v)} />

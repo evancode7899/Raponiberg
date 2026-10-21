@@ -32,6 +32,7 @@ export type CheckId =
   | "retirement.contributions"
   | "tax.brokerage-coverage"
   | "tax.params"
+  | "tax.documents-tie"
   | "networth.reconciles";
 
 export type CheckDef = { id: CheckId; title: string; description: string };
@@ -114,7 +115,7 @@ export type Inference = {
    * stub, from its year-to-date totals). Shown, but labelled partial wherever it appears.
    */
   partial?: boolean;
-  scope?: Pick<FindingScope, "personId" | "employerKey" | "from" | "to">;
+  scope?: Pick<FindingScope, "personId" | "employerKey" | "from" | "to"> & { accountId?: string };
 };
 
 /** `failed` and `missing` count findings inside the data edge; `awaiting`, those past it (statements still on their way). */
@@ -262,6 +263,12 @@ export const CHECKS: CheckDef[] = [
     id: "tax.brokerage-coverage",
     title: "Investment income is on file",
     description: "Every taxable investment account has its year's tax figures (dividends, interest, gains) on file.",
+  },
+  {
+    id: "tax.documents-tie",
+    title: "Tax documents agree with the ledger",
+    description:
+      "Every finished year's W-2 boxes equal what its pay stubs add up to, each 1099's dividends, interest and gains equal the statements' figures, each 1099-INT equals the bank's interest rows, and the filed return's estimated payments, balance and refund equal what the bank paid or received — to the dollar. A document the ledger can't corroborate (no stubs or statements for it) is missing data.",
   },
   {
     id: "tax.params",

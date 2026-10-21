@@ -67,23 +67,17 @@ const REFERENCE: Record<string, { weights: Weights; expenseRatio: number }> = {
 };
 
 /** Plan funds and 529 portfolios carry no ticker; their names say what they hold. */
-function byName(name: string, asOfYear: number): Weights | null {
+function byName(name: string): Weights | null {
   const n = name.toUpperCase();
-  const target = /TARGET (?:RETIRE(?:MENT)?|DATE)?\s*(20\d\d)/.exec(n) ?? /\b(20[4-7]\d)\b.*\b(TR|FUND|TRUST)\b/.exec(n);
-  if (target) {
-    // A typical glide path: ~90% stocks 25+ years out, easing to ~50% at the target date.
-    const years = Number(target[1]) - asOfYear;
-    const stocks = Math.max(0.5, Math.min(0.9, 0.5 + (0.4 * years) / 25));
-    return { US_STOCK: round(stocks * 0.6), INTL_STOCK: round(stocks * 0.4), BOND: round(1 - stocks) };
-  }
+  // A target-date fund's mix is the fund company's glide path, which no statement prints:
+  // left unclassified for the owner to set from the fund's fact sheet, never guessed.
+  if (/TARGET (?:RETIRE(?:MENT)?|DATE)?\s*20\d\d/.test(n) || /\b20[4-7]\d\b.*\b(TR|FUND|TRUST)\b/.test(n)) return null;
   if (/MONEY MARKET|GOVT? MONEY|FEDERAL MONEY|CASH RESERVE|HSA CASH/.test(n)) return CASH;
   if (/BOND|INCOME FUND|TREASURY|FIXED INCOME/.test(n)) return { BOND: 1 };
   if (/INT'?L|INTERNATIONAL|EX[- ]US|ALL ?WORLD EX|DEVELOPED|EMERGING/.test(n)) return INTL;
   if (/500|TOTAL (STK|STOCK) MKT|TOTAL MARKET|S&P|LARGE CAP|MID CAP|SMALL CAP|EXTENDED MARKET/.test(n)) return US;
   return null;
 }
-
-const round = (x: number) => Math.round(x * 1000) / 1000;
 
 /** Key the owner's classification is stored under: the ticker, else the name. */
 export const securityKey = (h: Pick<Holding, "symbol" | "name">) => (h.symbol ?? h.name).toUpperCase().replace(/\s+/g, " ").trim();
@@ -93,12 +87,13 @@ export type OwnerSecurity = { weights: Weights | null; expenseRatio: number | nu
 export function describeSecurity(h: Holding, asOfYear: number, owner: Record<string, OwnerSecurity>): SecurityInfo {
   const mine = owner[securityKey(h)];
   const ref = h.symbol ? REFERENCE[h.symbol.toUpperCase()] : undefined;
-  const expenseRatio = mine?.expenseRatio ?? h.expenseRatio ?? ref?.expenseRatio ?? null;
+  // What the statement prints wins; the owner's figure fills in where it prints none, the reference list last.
+  const expenseRatio = h.expenseRatio ?? mine?.expenseRatio ?? ref?.expenseRatio ?? null;
   if (mine?.weights) return { weights: mine.weights, expenseRatio, source: "OWNER" };
   if (h.kind === "CASH") return { weights: CASH, expenseRatio, source: "KIND" };
   if (h.kind === "OPTION") return { weights: { OPTIONS: 1 }, expenseRatio: 0, source: "KIND" };
   if (ref) return { weights: ref.weights, expenseRatio, source: "REFERENCE" };
-  const named = byName(h.name, asOfYear);
+  const named = byName(h.name);
   if (named) return { weights: named, expenseRatio, source: "NAME_RULE" };
   // An individual stock is equity; where it's listed decides US vs international, which
   // the statement doesn't say — US unless the owner says otherwise.

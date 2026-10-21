@@ -1,5 +1,6 @@
 "use client";
 
+import { lastDataStamp } from "@/components/ledger/useApi";
 import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
 import type { ChainLine, ProofCheck, ProofGroup, ProofRow, ProofStatement, ProofValue } from "@/lib/book/proof/types";
@@ -60,7 +61,8 @@ export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofE
   );
 }
 
-function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof; shownCents?: number; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
+function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?: string }; shownCents: number | null; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
+  const stamp = p.stamp;
   const statements = uniqueStatements(p.blocks);
   const figureCents = "cents" in p.figure ? p.figure.cents : null;
   return (
@@ -72,11 +74,17 @@ function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof; shownCent
             Shown as {usd0(figureCents / perMonths)} a month: this total ÷ {perMonths} months.
           </div>
         ) : null}
-        {figureCents != null && shownCents != null && shownCents !== figureCents && (
+        {figureCents != null && shownCents != null && Math.round(shownCents) !== figureCents && (
           <div className="mt-2">
-            <Callout tone="warn" title="The data changed since this page loaded">
-              The page shows {usd0(shownCents)}; the data on file now gives {usd0(figureCents)}. Reload the page to see the new figures.
-            </Callout>
+            {stamp && stamp === lastDataStamp() ? (
+              <Callout tone="bad" title="The page and its proof disagree">
+                On the same data, the page shows {cents(Math.round(shownCents))} and the proof works out {cents(figureCents)}. That&apos;s a bug in the app, not in your documents: the page and the proof compute this figure differently.
+              </Callout>
+            ) : (
+              <Callout tone="warn" title="The data changed since this page loaded">
+                The page shows {usd0(shownCents)}; the data on file now gives {usd0(figureCents)}. Reload the page to see the new figures.
+              </Callout>
+            )}
           </div>
         )}
         {p.selfCheck && (

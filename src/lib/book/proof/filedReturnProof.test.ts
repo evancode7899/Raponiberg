@@ -213,11 +213,12 @@ describe("filed-return proof", () => {
     expect(p.blocks[0].lines[0]!.note).toMatch(/2 amounts; this is the last \(the New York column\)/);
   });
 
-  it("lists the year's tax law and freshness checks, each passed or honestly empty", async () => {
+  it("lists the year's tax law, document-tie and freshness checks, each passed or honestly empty", async () => {
     const pass: CheckPass = { check: "tax.params", n: 1, subject: "2025 tax law", scope: { from: "2025-01-01", to: "2025-12-31", affects: ["TAX"] } };
     const p = await buildProof(ctx({ passes: [pass] }), d("CT", "totalTax"));
     expect(p.checks.map((c) => [c.id, c.state])).toEqual([
       ["tax.params", "passed"],
+      ["tax.documents-tie", "none"],
       ["ledger.freshness", "none"],
     ]);
     // Printed on the return: never withheld.

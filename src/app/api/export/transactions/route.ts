@@ -2,6 +2,7 @@ import { AUDIT_ACTOR_API, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { csvRow } from "@/lib/csv";
 import { prisma } from "@/lib/db";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
+import { getBook } from "@/lib/book/cache";
 import { NextRequest, NextResponse } from "next/server";
 
 function filenameSafe(s: string): string {
@@ -11,7 +12,9 @@ function filenameSafe(s: string): string {
 /**
  * CSV export of one account's ledger rows (or every account with accountId=all), with
  * how each row counts (lane), its category, counterparty, transfer pairing and the
- * statement it came from. UTF-8 with BOM for Excel.
+ * statement it came from, and whether and where the Book counts it (counted_in_figures,
+ * booked_on: a held statement's rows, or a landlord's charge past the last bill, count in
+ * no figure). UTF-8 with BOM for Excel.
  */
 export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
@@ -30,6 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
 
+  const book = await getBook(prisma);
   const rows = await prisma.transaction.findMany({
     where: { ...(all ? {} : { accountId }), statementImport: { isSummary: false } },
     orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -64,6 +68,8 @@ export async function GET(request: NextRequest) {
     "account_name",
     "institution",
     "db_transaction_id",
+    "counted_in_figures",
+    "booked_on",
   ];
 
   const lines = [csvRow(headers)];
@@ -94,6 +100,10 @@ export async function GET(request: NextRequest) {
         r.account.name,
         r.account.institution ?? "",
         r.id,
+        ...(() => {
+          const b = book.rowById.get(r.id);
+          return b && !b.pending ? ["true", b.bookedOn] : ["false", ""];
+        })(),
       ]),
     );
   }

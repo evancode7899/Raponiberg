@@ -75,6 +75,19 @@ export function checkNetWorth(book: Book, c: Collector) {
         `transfers between your accounts net to ${money(h.transferResidualCents)}, but only ${money(Math.round(expected))} was in flight at the month's edges or came from accounts with no statements`,
       );
     if (problems.length === 0) {
+      // A month whose opening or closing value is an estimate (an investment statement's
+      // market change spread across its quarter) balances by construction: listed as an
+      // inference, never counted as a pass that proves anything.
+      if (h.quality !== "EXACT") {
+        c.infer({
+          id: `networth.reconciles:estimated:${p.start.slice(0, 7)}`,
+          check: "networth.reconciles",
+          title: `${p.label}: balances on estimated values`,
+          detail: `At least one account's value at the month's edges falls between its statements (quality: ${h.quality.toLowerCase()}): its market change is spread across the statement's period, so the month adds up by construction. The statement periods around it are what's proven.`,
+          scope: { from: p.start, to: end },
+        });
+        continue;
+      }
       c.pass("networth.reconciles", { subject: `${p.label}: every dollar of change explained`, from: p.start, to: end, affects: ["NET_WORTH", "CASH_FLOW"] });
       continue;
     }

@@ -1,3 +1,4 @@
+import { grow } from "../../profile/outlook.ts";
 import { readAwards, type PaymentKind } from "../../bonuses/awardStore.ts";
 import { readReviews } from "../../bonuses/reviewStore.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
@@ -561,8 +562,8 @@ export function buildEstimateProof(book: Book, x: EstimateInputs, d: Extract<Bon
   const part = parts.find((p) => p.label === d.part && monthKey(d.awardYear + 1, p.offset) === d.month)!;
   const startYear = x.seeds.start.year;
   const years = Math.max(0, d.awardYear - startYear);
-  const growth = (1 + x.forecast.assumptions.salaryGrowth) ** years;
-  const award = Math.round(person.salary * growth * person.bonusPct);
+  const growth = grow(1, x.forecast.assumptions.salaryGrowth, years);
+  const award = Math.round(grow(person.salary, x.forecast.assumptions.salaryGrowth, years) * person.bonusPct);
   const gross = Math.round(award * part.share);
   const blocks: ProofBlock[] = [];
 

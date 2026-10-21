@@ -31,7 +31,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
   const t = pay.tax;
   // Each person's paycheck choice as the page has it, for the household figures' proofs.
   const paycheck = Object.fromEntries(pay.people.map((p) => [p.personId, p.basis]));
-  const seed = (x: SeedRecipe, shownCents?: number): ProofTarget => ({ descriptor: { report: "forecast", figure: "seed", ...x } as ForecastDescriptor, ...(shownCents != null ? { shownCents } : {}) });
+  const seed = (x: SeedRecipe, shownCents: number | null): ProofTarget => ({ descriptor: { report: "forecast", figure: "seed", ...x } as ForecastDescriptor, shownCents });
   const estimates: { value: BonusEstimates; label: string }[] = [
     { value: "NEXT_PAYOUT", label: "From the next payout" },
     { value: "AFTER_NEAR_TERM", label: `From ${nearTermThrough + 1} (after the near term)` },
@@ -58,7 +58,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         </Line>
         <Line
           label="Kept after tax"
-          proof={seed({ which: "take-home", paycheck })}
+          proof={seed({ which: "take-home", paycheck }, null)}
           help={[
             `Share of base salary left after tax and payroll deductions (${s.taxYear} law, filing jointly, standard deduction${s.dependents.length ? `, ${s.dependents.length} dependent(s)` : ""}). 401(k)/HSA deferrals stay in: they're savings.`,
             `Base salary ${usd(pay.salary)}`,
@@ -109,7 +109,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         <OneOffs a={a} set={set} startYear={s.start.year} />
 
         <Group title="Bonuses" note="stub + letter payments always count" />
-        <Line label="Estimate awards" proof={seed({ which: "bonus" })} help="Bonuses already on a stub after the start, and payments an award letter still schedules, always count on their dates. This sets when awards no letter shows yet are estimated.">
+        <Line label="Estimate awards" proof={seed({ which: "bonus" }, null)} help="Bonuses already on a stub after the start, and payments an award letter still schedules, always count on their dates. This sets when awards no letter shows yet are estimated.">
           <select className={`${selectCls} w-full !py-1`} aria-label="Estimated bonuses" value={a.bonus.estimates} onChange={(e) => set("bonus", { ...a.bonus, estimates: e.target.value as BonusEstimates })}>
             {estimates.map((o) => (
               <option key={o.value} value={o.value}>
@@ -153,7 +153,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         </Line>
 
         <Group title="Markets" />
-        <Line label="Return / yr" proof={seed({ which: "return" })} help={`Nominal return on everything invested, compounded monthly.${s.realizedReturn != null ? ` Your realized return: ${pct(s.realizedReturn)}.` : ""}`}>
+        <Line label="Return / yr" proof={seed({ which: "return" }, null)} help={`Nominal return on everything invested, compounded monthly.${s.realizedReturn != null ? ` Your realized return: ${pct(s.realizedReturn)}.` : ""}`}>
           <PercentInput size="xs" ariaLabel="Investment return per year" value={a.returnRate} onChange={(v) => set("returnRate", v)} />
         </Line>
         <Line label="Inflation / yr" help="Indexes tax brackets in retirement; FIRE's today's-dollar figures.">

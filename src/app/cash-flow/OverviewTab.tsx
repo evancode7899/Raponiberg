@@ -23,7 +23,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   const ui = chartChrome(chart);
   const t = useMemo(() => totals(slice.months), [slice]);
   const p = useMemo(() => (slice.prior.length ? totals(slice.prior) : null), [slice]);
-  const insights = useMemo(() => buildInsights(slice, report), [slice, report]);
+  const insights = useMemo(() => buildInsights(slice, report, ctx.proof), [slice, report, ctx]);
   const rows = slice.months.map((m) => ({ label: m.label, income: m.incomeCents / 100, spending: m.spendingCents / 100, net: m.netCents / 100 }));
   const last = slice.months.at(-1)!;
   const cats = mergeCategories(slice.months, (m) => m.spendingByCategory).filter((c) => c.cents > 0);
@@ -37,6 +37,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
         <StatCell
           label="Excluding one-offs"
           value={usd0(t.avgCore)}
+          proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending - t.oneOff, excludeOneOffs: true })}
           sub={t.oneOff ? `${usd0(t.oneOff)} marked one-off` : "none marked yet"}
         />
         <StatCell label="Net saved" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={`over ${t.n} month${t.n === 1 ? "" : "s"}`} />
@@ -81,7 +82,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                     {TONE[i.tone].icon}
                   </span>
                   <div className="min-w-0">
-                    <div className="text-[13px] font-semibold text-fg">{i.title}</div>
+                    <div className="text-[13px] font-semibold text-fg">{i.proof ? <ProofValue proof={i.proof}>{i.title}</ProofValue> : i.title}</div>
                     <div className="mt-0.5 text-xs leading-relaxed text-muted">{i.body}</div>
                     {i.action && (
                       <button type="button" className="mt-1 text-xs font-medium text-accent hover:underline" onClick={() => ctx.goTo((i.action!.tab ?? "spending") as CashTab, i.action!.category)}>

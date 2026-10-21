@@ -1,5 +1,6 @@
 "use client";
 
+import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { apiSecretHeaders, cachedResponse, useApi } from "@/components/ledger/useApi";
 import { btn, Callout, downloadResponse, ErrorNote, Loading, PageBody, StatCell, StatGrid, Tabs, useTabParam } from "@/components/ui/kit";
@@ -135,10 +136,12 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
               />
               <StatCell
                 label="HSA balance"
-                value={usd0(r.hsa.balanceCents)}
+                value={r.hsa.blockers.balance.length ? <BlockedValue blockers={r.hsa.blockers.balance} /> : usd0(r.hsa.balanceCents)}
                 proof={r.hsa.balanceCents == null ? undefined : hsaProof("balance", r.hsa.balanceCents)}
                 sub={
-                  r.hsa.balanceCents == null
+                  r.hsa.blockers.balance.length
+                    ? undefined
+                    : r.hsa.balanceCents == null
                     ? "No HSA statements imported"
                     : t.unreimbursedCents > r.hsa.balanceCents
                       ? `${usd0(t.unreimbursedCents - r.hsa.balanceCents)} short of covering every receipt`
@@ -146,6 +149,7 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
                 }
               />
             </StatGrid>
+            <BlockedNote blockers={r.hsa.blockers.rows} what="the statement side (paying rows, suggestions, withdrawals)" />
 
             {tab === "receipts" && (
               <ReceiptsTab

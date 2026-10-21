@@ -55,7 +55,7 @@ export const yearsFrom = (year: number | null | undefined, plan: OutlookPlan) =>
 export type FireProps = { f: FireAnalysis; dollars: Dollars; setDollars: (d: Dollars) => void };
 
 /** A FIRE figure's proof ("planning" kind), on the settings as the page has them. */
-export type FireProof = (figure: FireFigure, shownCents?: number, milestone?: string) => ProofTarget;
+export type FireProof = (figure: FireFigure, shownCents: number | null, milestone?: string) => ProofTarget;
 export const fireProof =
   (fire: FireSettings): FireProof =>
-  (figure, shownCents, milestone) => ({ descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, ...(shownCents != null ? { shownCents } : {}) });
+  (figure, shownCents, milestone) => ({ descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, shownCents });

@@ -5,7 +5,6 @@ import { bucketForGroup } from "../../profile/annualMath.ts";
 import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "../../profile/rollLines.ts";
 import { buildAccountRollforwards, type AccountRollforward, type RollYear } from "../../profile/rollforwards.ts";
 import { BUCKETS, loadProfileSettings, type NetWorthBucket } from "../../profile/settings.ts";
-import { loadTaxProfile } from "../../tax/profile.ts";
 import type { BlockerQuery } from "../blockers.ts";
 import { accountIdForNumber, investmentIncomeByAccount } from "../investments.ts";
 import type { Book } from "../load.ts";
@@ -16,10 +15,10 @@ import { buildNetWorth } from "../reports/netWorth.ts";
 import { taxRows } from "../taxPayments.ts";
 import type { CheckId } from "../types.ts";
 import { CASH_FLOW_CHECKS, type CashFlowDescriptor } from "./cashFlowProof.ts";
-import { checksFor, sumCheck } from "./common.ts";
+import { checksFor, estimatesFor, sumCheck } from "./common.ts";
 import { buildNetWorthProof, NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { buildPayProof, groupRows, PAY_CHECKS, type PayDescriptor, type PayLine } from "./payProof.ts";
-import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofKind, ProofLink } from "./types.ts";
+import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstimate, ProofKind, ProofLink } from "./types.ts";
 
 /**
  * The proof behind a line of the Annual statement (Annual › Statement) and of Net worth ›
@@ -201,14 +200,21 @@ function withheld(describes: string, blockers: BlockerRef[], through: string): B
 }
 
 /** Every check over a year's cash and pay (the statement's cash section is withheld by either). */
-function cashChecks(c: Ctx, y: YearProfile, extra: BlockerQuery[] = [], ids: CheckId[] = []): { checks: ProofCheck[]; withheld: boolean } {
+/**
+ * Every check over a year's cash and pay (the statement's cash section is withheld by
+ * either), and what in that year stands on an inference rather than a printed line (rows
+ * awaiting review, inferred pay, idle card cycles): the same list the Cash flow proof gives.
+ */
+function cashChecks(c: Ctx, y: YearProfile, extra: BlockerQuery[] = [], ids: CheckId[] = []): { checks: ProofCheck[]; withheld: boolean; estimates: ProofEstimate[] } {
   const from = `${y.year}-01-01`;
   const qs: BlockerQuery[] = [{ affects: "CASH_FLOW", from, to: y.asOf }, ...c.profile.persons.map((p) => ({ affects: "PAY" as const, from, to: y.asOf, personId: p.id })), ...extra];
-  return checksFor(c.book, qs, [...new Set([...CASH_FLOW_CHECKS, ...PAY_CHECKS, ...ids])]);
+  const rowIds = new Set(c.book.rows.filter((r) => r.bookedOn >= from && r.bookedOn <= y.asOf && (r.lane === "INCOME" || r.lane === "EXPENSE" || r.lane === "EXTERNAL_TRANSFER")).map((r) => r.id));
+  return { ...checksFor(c.book, qs, [...new Set([...CASH_FLOW_CHECKS, ...PAY_CHECKS, ...ids])]), estimates: estimatesFor(c.book, { rowIds, from, to: y.asOf }) };
 }
 
+/** Checks over net worth in a window, and what in it is inferred (market change derived from balances, idle card cycles). */
 function nwChecks(c: Ctx, from: string, to: string, accountIds?: string[]) {
-  return checksFor(c.book, { affects: "NET_WORTH", from, to, ...(accountIds ? { accountIds } : {}) }, NET_WORTH_CHECKS);
+  return { ...checksFor(c.book, { affects: "NET_WORTH", from, to, ...(accountIds ? { accountIds } : {}) }, NET_WORTH_CHECKS), estimates: estimatesFor(c.book, { rowIds: new Set(), from, to, accountIds }) };
 }
 
 /** The year on Cash flow (one period, Jan 1 through the statement's cash edge). */
@@ -229,7 +235,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
   const start = `${yr}-01-01`;
   const people = (y.people ?? []).filter((p) => p.hasPay);
   const payD = (personId: string, l: PayLine): PayDescriptor => ({ report: "pay", basis: "ytd", personId, year: yr, through: y.asOf, lines: [l] });
-  const base = { ...cashChecks(c, y), estimates: [], through: y.asOf };
+  const base = { ...cashChecks(c, y), through: y.asOf };
   const label = `${y.label}`;
 
   /** Each person's pay stubs (their gross pay proof), for lines read off the stubs. */
@@ -453,7 +459,7 @@ function categoryProof(c: Ctx, y: YearProfile, cash: YearCash, category: string)
   if (tax) lines.push(line("−", "Tax payments filed here (taxes, not living)", tax, "proven", { link: cashLink("Taxes paid", y.year, "taxes-paid") }));
   for (const o of tagged) lines.push(line("−", `${o.date} ${o.payee}`, o.cents, "proven", { note: [o.label && `“${o.label}”`, "tagged by you as a one-off"].filter(Boolean).join(" · ") }));
   lines.push(line("=", category, cents, "derived"));
-  return chainProof(`${category} · ${y.label}`, cents, "Cash flow's category, as the annual statement counts it", lines, { ...cashChecks(c, y), estimates: [], through: y.asOf });
+  return chainProof(`${category} · ${y.label}`, cents, "Cash flow's category, as the annual statement counts it", lines, { ...cashChecks(c, y), through: y.asOf });
 }
 
 // ------------------------------------------------------------------- net worth
@@ -484,7 +490,6 @@ function bucketProof(c: NwCtx, bucket: NetWorthBucket): Built {
   const accounts = period.byAccount.filter((a) => groupBucket.get(a.accountId) === bucket && a.closingCents !== 0);
   return chainProof(`${bucketLabel(bucket)} · ${y.netWorthAsOf}`, figure, "Statements + transfers in transit", lines, {
     ...nwChecks(c, y.netWorthAsOf, y.netWorthAsOf, ids.length ? ids : undefined),
-    estimates: [],
     through: y.netWorthAsOf,
     note: BUCKETS.find((x) => x.id === bucket)!.debt ? "Debts are negative: what's owed." : undefined,
     blocks: accounts.length
@@ -498,7 +503,7 @@ function netWorthProof(c: NwCtx, ln: AnnualNetWorthLine): Built {
   const n = y.netWorth!;
   const yr = y.year;
   const at = y.netWorthAsOf;
-  const base = { ...nwChecks(c, at, at), estimates: [], through: at };
+  const base = { ...nwChecks(c, at, at), through: at };
   const bucketLines = (ids: NetWorthBucket[]) =>
     startChain(ids.filter((b) => n.buckets[b] !== 0).map((b) => signed(signedBucket(n, b), bucketLabel(b), "derived", { link: bucketLink(bucketLabel(b), yr, b) })));
   const assets = BUCKETS.filter((b) => !b.debt).map((b) => b.id);
@@ -557,7 +562,7 @@ function netWorthProof(c: NwCtx, ln: AnnualNetWorthLine): Built {
           y.change.pct,
           [line(undefined, "Change in net worth", y.change.cents, "derived", { link: nwLink("Change in net worth", yr, "change") })],
           line(undefined, `Net worth, ${prev.netWorthAsOf}`, p.netWorth, "derived", { link: nwLink("Net worth a year earlier", prev.year, "net-worth") }),
-          { ...checks, estimates: [], through: at },
+          { ...checks, through: at },
         );
       const period = nwPeriod(c, yr);
       const h = period?.household;
@@ -579,7 +584,6 @@ function netWorthProof(c: NwCtx, ln: AnnualNetWorthLine): Built {
         ]),
         {
           ...checks,
-          estimates: [],
           through: at,
           blocks: [{ kind: "chain", title: "The same change, from the net-worth statements", lines: again, note: reAgain === y.change.cents ? undefined : `These lines add up to ${money(reAgain)}.` }],
         },
@@ -603,7 +607,7 @@ function bridgeProof(c: NwCtx, ln: AnnualBridgeLine): Built {
   const nwChangeLink = (what: string): ProofLink => ({ label: `${what} in the net-worth change, ${y.label}`, descriptor: nwChange });
   const cf = cashFlowYear(c, y);
   const changeQ = { affects: "NET_WORTH" as const, from: addDays(`${yr}-01-01`, -1), to: y.netWorthAsOf };
-  const base = { ...cashChecks(c, y, [changeQ], NET_WORTH_CHECKS), estimates: [], through: y.netWorthAsOf };
+  const base = { ...cashChecks(c, y, [changeQ], NET_WORTH_CHECKS), through: y.netWorthAsOf };
   const estimated = h.quality !== "EXACT";
   const LABEL: Record<AnnualBridgeLine, string> = {
     cashSaved: "Cash saved",
@@ -673,9 +677,22 @@ function bridgeProof(c: NwCtx, ln: AnnualBridgeLine): Built {
         line("−", "Cash saved by the paycheck math", b.cashSaved, "derived", { link: cashLink("Cash saved", yr, "saved") }),
         line("=", LABEL[ln], b.unexplainedSavings, "derived"),
       ]);
+      const timing = cash.timing ?? 0;
+      const split: ProofBlock[] = timing
+        ? [
+            {
+              kind: "chain",
+              title: "Of which",
+              lines: startChain([
+                signed(timing, "Rent and bills booked this year that Cash flow counts in the month they pay for", "proven", { note: "The cash figures above follow Cash flow; net worth follows the day each row is booked." }),
+                signed(b.unexplainedSavings - timing, "Contributions posted after the year's last paycheck, and other timing", "derived"),
+              ]).concat([line("=", LABEL[ln], b.unexplainedSavings, "derived")]),
+            },
+          ]
+        : [];
       return chainProof(describes, b.unexplainedSavings, "Statements − paycheck math", lines, {
         ...base,
-        blocks: [whole],
+        blocks: [...split, whole],
         note: "With every check passing this is timing: a 401(k) or HSA contribution posted after the year's last paycheck.",
       });
     }
@@ -712,7 +729,7 @@ function rollforwardProof(c: Ctx, a: AccountRollforward, x: RollYear, ln: RollLi
   const { from, to } = rollWindow(c, x.year);
   const describes = `${a.name} · ${ROLL_LABEL[ln]} · ${x.year === Number(c.book.today.slice(0, 4)) ? `${x.year} YTD` : x.year}`;
   if (x.blockers.length) return withheld(describes, x.blockers, to);
-  const base = { ...nwChecks(c, addDays(from, -1), to, [a.id]), estimates: [], through: to };
+  const base = { ...nwChecks(c, addDays(from, -1), to, [a.id]), through: to };
   const estimated = x.quality !== "EXACT";
   const rl = (l: RollLine) => (l === ln ? {} : { link: { label: ROLL_LABEL[l], descriptor: { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line: l } satisfies AnnualDescriptor } });
   const other = x.closing - rollValue(x, "after-contributions") - (x.income ?? 0) - x.marketChange - x.fees - x.unexplained;
@@ -787,7 +804,6 @@ function rollTotalProof(c: Ctx, year: number, ln: RollTotalLine, accounts: Accou
   lines.push(line("=", label, figure, "derived"));
   return chainProof(`${label} · ${year}`, figure, "Every investment account", lines, {
     ...nwChecks(c, addDays(`${year}-01-01`, -1), to, ys.map(({ a }) => a.id)),
-    estimates: [],
     through: to,
     note: ln === "growth" ? "Dividends & interest + market change + fees, each account." : ln === "contributions" ? "Your and your employer's contributions, each account." : undefined,
   });
@@ -796,8 +812,7 @@ function rollTotalProof(c: Ctx, year: number, ln: RollTotalLine, accounts: Accou
 // -------------------------------------------------------------------
 
 export async function loadAnnualProfile(ctx: ProofContext): Promise<AnnualProfileReport> {
-  const [settings, taxProfile] = await Promise.all([loadProfileSettings(ctx.db), loadTaxProfile(ctx.db)]);
-  return buildAnnualProfile(ctx.book, settings, taxProfile.dependents);
+  return buildAnnualProfile(ctx.book, await loadProfileSettings(ctx.db), ctx.book.taxProfile.dependents);
 }
 
 /** `profile`: the annual profile (roll-forwards don't need it). */

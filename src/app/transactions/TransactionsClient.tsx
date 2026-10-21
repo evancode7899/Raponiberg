@@ -26,7 +26,7 @@ type Filters = {
   sort: SortKey;
   dir: "asc" | "desc";
 };
-type Response = { transactions: TxnRow[]; total: { count: number; inCents: number; outCents: number } };
+type Response = { transactions: TxnRow[]; total: { count: number; inCents: number; outCents: number; pending?: number; notInLedger?: number } };
 
 const LANE_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "Everything" },
@@ -284,6 +284,7 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
           subtitle={
             <span className="num">
               In <span className="text-pos">{usd0(data.total.inCents)}</span> · out {usd0(-data.total.outCents)} · net {usd0(data.total.inCents + data.total.outCents)}
+              {!!data.total.pending && <span className="text-muted" title="A landlord's charge dated after the last bill on file is in no figure until a bill covers its day."> · {data.total.pending} not in the ledger yet</span>}
             </span>
           }
         >

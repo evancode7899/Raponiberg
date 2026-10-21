@@ -3,7 +3,8 @@ import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { Book, BookRow } from "../load.ts";
 import { countsOn, rentPayments } from "../rent.ts";
 import { buildCashFlowReport, cashFlowContributions, type CashFlowPeriod } from "../reports/cashFlow.ts";
-import { detectRecurring, merchantKeyOf, merchantName, merchantsIn, spendingRows } from "../reports/spending.ts";
+import { detectRecurring, merchantKeyOf, merchantName, merchantsIn, oneOffTest, spendingRows } from "../reports/spending.ts";
+import { loadProfileSettings } from "../../profile/settings.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor, isIsoDate, sumCheck } from "./common.ts";
 import type { Proof, ProofBlock, ProofCheck, ProofEstimate, ProofGroup, ProofKind, ProofRow } from "./types.ts";
@@ -41,6 +42,8 @@ export type CashFlowDescriptor = {
    * Recurring tab's "last 12 months" sums them.
    */
   merchantBasis?: "charges";
+  /** Spending without what the owner counts as one-off (Cash flow's "Excluding one-offs"): those rows are listed apart. */
+  oneOffs?: "exclude";
 };
 
 export type CashFlowSection = {
@@ -105,6 +108,7 @@ export function parseCashFlowDescriptor(d: Record<string, unknown>): CashFlowDes
   if (d.merchantKey != null && d.metric !== "spending" && d.metric !== "income") return { error: "merchantKey goes with spending (a merchant) or income (a payer)." };
   if (d.merchantKey != null && d.category != null) return { error: "Give a category or a merchantKey, not both." };
   if (d.merchantBasis != null && (d.merchantBasis !== "charges" || !d.merchantKey || d.metric !== "spending")) return { error: "merchantBasis can only be charges, with a merchantKey and spending." };
+  if (d.oneOffs != null && (d.oneOffs !== "exclude" || d.metric !== "spending" || d.merchantKey != null)) return { error: "oneOffs can only be exclude, with spending (not a merchant)." };
   return {
     report: "cash-flow",
     metric: d.metric as CashFlowMetric,
@@ -115,6 +119,7 @@ export function parseCashFlowDescriptor(d: Record<string, unknown>): CashFlowDes
     ...((d.accountIds as string[] | undefined)?.length ? { accountIds: d.accountIds as string[] } : {}),
     ...(d.merchantKey ? { merchantKey: d.merchantKey as string } : {}),
     ...(d.merchantBasis ? { merchantBasis: "charges" as const } : {}),
+    ...(d.oneOffs ? { oneOffs: "exclude" as const } : {}),
   };
 }
 
@@ -129,7 +134,8 @@ const PARTS: Record<"income" | "spending" | "external", Part> = {
   external: { lane: "EXTERNAL_TRANSFER", label: "Outside money", sign: 1, pick: (p) => p.externalByCategory.reduce((t, c) => t + c.cents, 0), cats: (p) => p.externalByCategory },
 };
 
-export function buildCashFlowProof(book: Book, d: CashFlowDescriptor): CashFlowProof {
+export function buildCashFlowProof(book: Book, d: CashFlowDescriptor, isOneOff: (r: BookRow) => boolean = () => false): CashFlowProof {
+  const dropOneOffs = d.oneOffs === "exclude";
   const report = buildCashFlowReport(book, { granularity: d.granularity, from: d.start, to: d.end, accountIds: d.accountIds });
   const periods = report.periods;
   const accountFilter = d.accountIds?.length ? new Set(d.accountIds) : null;
@@ -179,10 +185,12 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor): CashFlowP
 
   const section = (part: Part): CashFlowSection => {
     const m = d.merchantKey ? merchantPart(part) : null;
-    const mine = m?.mine ?? contributions.filter((c) => c.row.lane === part.lane && (!d.category || c.row.category === d.category));
+    const mine = m?.mine ?? contributions.filter((c) => c.row.lane === part.lane && (!d.category || c.row.category === d.category) && !(dropOneOffs && isOneOff(c.row)));
+    // Excluding one-offs: the report's figure less each one-off row, whole, as the spending report counts them.
+    const oneOffCents = dropOneOffs ? contributions.filter((c) => c.row.lane === "EXPENSE" && isOneOff(c.row) && (!d.category || c.row.category === d.category)).reduce((t, c) => t - c.cents, 0) : 0;
     const figureCents =
       m?.figureCents ??
-      periods.reduce((t, p) => t + (d.category ? (part.cats(p).find((c) => c.category === d.category)?.cents ?? 0) : part.pick(p)), 0);
+      periods.reduce((t, p) => t + (d.category ? (part.cats(p).find((c) => c.category === d.category)?.cents ?? 0) : part.pick(p)), 0) - Math.round(oneOffCents);
     // Re-added from the rows alone: each period's rows summed, then rounded once (as the report does).
     const perPeriod = periods.map(() => 0);
     for (const c of mine) perPeriod[c.periodIndex]! += part.sign * c.cents;
@@ -346,7 +354,7 @@ export function cashFlowToProof(p: CashFlowProof): Proof {
 export const cashFlowKind: ProofKind<CashFlowDescriptor> = {
   report: "cash-flow",
   parse: parseCashFlowDescriptor,
-  build: ({ book }, d) => cashFlowToProof(buildCashFlowProof(book, d)),
+  build: async ({ book, db }, d) => cashFlowToProof(buildCashFlowProof(book, d, d.oneOffs ? oneOffTest(await loadProfileSettings(db)) : undefined)),
 };
 
 function describe(d: CashFlowDescriptor, book: Book, periods: CashFlowPeriod[]): string {
@@ -358,5 +366,5 @@ function describe(d: CashFlowDescriptor, book: Book, periods: CashFlowPeriod[]):
   const span = periods.length === 0 ? `${d.start} – ${d.end}` : periods.length === 1 ? periods[0]!.label : `${periods[0]!.label} – ${periods.at(-1)!.label}`;
   const cut = periods.at(-1)?.through ? ` (through ${periods.at(-1)!.through})` : "";
   const who = d.merchantKey ? ` ${d.metric === "income" ? "from" : "at"} ${merchantName(d.merchantKey)}` : "";
-  return `${what}${who}${d.category ? ` · ${d.category}` : ""}, ${span}${cut}${accounts}`;
+  return `${what}${who}${d.category ? ` · ${d.category}` : ""}${d.oneOffs ? " excluding one-offs" : ""}, ${span}${cut}${accounts}`;
 }

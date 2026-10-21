@@ -3,7 +3,6 @@ import { cachedReport, jsonBody } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { buildAnnualProfile } from "@/lib/profile/buildAnnualProfile";
 import { loadProfileSettings } from "@/lib/profile/settings";
-import { loadTaxProfile } from "@/lib/tax/profile";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +19,7 @@ export async function GET(request: NextRequest) {
   }
   return jsonBody(
     await cachedReport(prisma, "profile", async (book) => {
-      const [settings, taxProfile] = await Promise.all([loadProfileSettings(prisma), loadTaxProfile(prisma)]);
-      return buildAnnualProfile(book, settings, taxProfile.dependents);
+      return buildAnnualProfile(book, await loadProfileSettings(prisma), book.taxProfile.dependents);
     }),
   );
 }

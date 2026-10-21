@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
@@ -128,9 +129,12 @@ export function cachedReport(db: Db, key: string, build: (book: Book) => unknown
   return body;
 }
 
-/** A JSON response from text already serialized (cachedReport). */
+/** A short tag for the data as it is (dataStamp): pages and proofs carry it, so the proof drawer can tell changed data from a bug. */
+export const stampTag = (stamp = dataStamp()) => createHash("sha1").update(stamp).digest("hex").slice(0, 12);
+
+/** A JSON response from text already serialized (cachedReport), tagged with the data it was built from (x-data-stamp). */
 export function jsonBody(body: string): Response {
-  return new Response(body, { headers: { "content-type": "application/json" } });
+  return new Response(body, { headers: { "content-type": "application/json", "x-data-stamp": stampTag() } });
 }
 
 /**

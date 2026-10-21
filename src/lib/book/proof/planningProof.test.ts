@@ -323,7 +323,7 @@ describe("planning proofs (FIRE, Goals, Home budget, Taxes)", () => {
     const plans = firePlans(f);
     const fa = analyzeFire(plans.full, plans.base, { asOf: s.start.asOf, retirementAge: a.retirementAge });
     const shared = buildForecast(forecastInputs(data)!, saved);
-    const goals = buildGoals(book, { version: 1, goals: GOALS }, goalForecastOf(shared));
+    const goals = buildGoals(book, { version: 1, goals: GOALS }, goalForecastOf(shared), data.profile.settings);
     const home = (buyAt: string | null) => linkHome({ ...buildHomeFunds(book), forecast: homeForecast(shared, s), spending: buildHomeSpending(book, data.profile.settings) }, HOME_INPUTS, { ...HOME_FUNDS, buyAt }, 2026);
     const tax = buildTaxReport(book, 2026, { forecast: taxLink(shared) });
     if (tax.blocked) throw new Error("tax blocked");

@@ -89,7 +89,8 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
  */
 export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise<Ledger> {
   const [accounts, imports, mergeDate] = await Promise.all([
-    db.account.findMany({ where: { archivedAt: null }, orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
+    // Archived accounts included: archiving hides an account from pickers, never its history from figures.
+    db.account.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
     db.statementImport.findMany({
       where: { status: "COMMITTED" },
       orderBy: { periodStart: "asc" },

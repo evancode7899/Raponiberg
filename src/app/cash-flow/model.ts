@@ -1,6 +1,7 @@
 import type { CategoryAmount } from "@/lib/book/reports/cashFlow";
 import type { MerchantMonth, SpendingMonth, SpendingReport } from "@/lib/book/reports/spending";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
+import { savingsRate } from "@/lib/book/definitions";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
@@ -97,7 +98,7 @@ export function totals(months: SpendingMonth[]): Totals {
     typicalIncome: median(months.map((m) => m.incomeCents)),
     typicalSpending: median(months.map((m) => m.spendingCents)),
     avgCore: (spending - oneOff) / n,
-    savingsRate: income > 0 ? (income - spending) / income : null,
+    savingsRate: savingsRate(income, income - spending),
     employee: sum(months, (m) => m.retirementEmployeeCents),
     employer: sum(months, (m) => m.retirementEmployerCents),
   };
@@ -136,7 +137,11 @@ export function mergeMerchants(months: SpendingMonth[], pick: (m: SpendingMonth)
   return [...out.values()].filter((x) => x.cents > 0).sort((a, b) => b.cents - a.cents);
 }
 
-export type Insight = { tone: "good" | "bad" | "info" | "warn"; title: string; body: string; action?: { label: string; tab?: string; category?: string } };
+/** `proof`: the figure the title names, so a number in a sentence is as provable as one in a tile. */
+export type Insight = { tone: "good" | "bad" | "info" | "warn"; title: string; body: string; action?: { label: string; tab?: string; category?: string }; proof?: ProofTarget };
+
+/** Builds a figure's proof target over months (CashFlowClient's ctx.proof). */
+export type ProofOf = (metric: CashFlowMetric, months: SpendingMonth[], o: ProofOptions) => ProofTarget | undefined;
 
 /** Which insights lead when there are more than fit: changes and warnings before context. */
 const RANK = ["Spending", "You kept", "ran high", "went up", "recurring bills", "of spending", "Bonuses", "Largest", "Top habit"];
@@ -151,7 +156,7 @@ const pct = (r: number) => formatPercentRatio(Math.abs(r), 0);
  * Plain-language observations about the selected months, most useful first. Each
  * compares like with like: averages per month against the same-length run before.
  */
-export function buildInsights(slice: Slice, r: Report): Insight[] {
+export function buildInsights(slice: Slice, r: Report, proof?: ProofOf): Insight[] {
   const out: Insight[] = [];
   const { months, prior } = slice;
   if (!months.length) return out;
@@ -175,9 +180,10 @@ export function buildInsights(slice: Slice, r: Report): Insight[] {
           driver && Math.abs(driver.d) >= 5000 ? ` Biggest mover: ${driver.c} (${driver.d > 0 ? "+" : "−"}${usd0(Math.abs(driver.d))}/mo).` : ""
         }`,
         action: driver ? { label: `Open ${driver.c}`, tab: "spending", category: driver.c } : undefined,
+        proof: proof?.("spending", months, { perMonth: true, shownCents: t.spending }),
       });
     } else {
-      out.push({ tone: "info", title: "Spending is steady", body: `${usd0(t.avgSpending)}/mo, within ${pct(ch)} of the previous ${p.n} months (${usd0(p.avgSpending)}/mo).` });
+      out.push({ tone: "info", proof: proof?.("spending", months, { perMonth: true, shownCents: t.spending }), title: "Spending is steady", body: `${usd0(t.avgSpending)}/mo, within ${pct(ch)} of the previous ${p.n} months (${usd0(p.avgSpending)}/mo).` });
     }
   }
 
@@ -188,6 +194,7 @@ export function buildInsights(slice: Slice, r: Report): Insight[] {
     out.push({
       tone: t.savingsRate >= 0.2 ? "good" : t.savingsRate >= 0 ? "info" : "bad",
       title: `You kept ${formatPercentRatio(t.savingsRate, 0)} of income`,
+      proof: proof?.("net", months, { shownCents: t.net }),
       body: `${usd0(t.net)} saved over ${t.n} month${t.n === 1 ? "" : "s"}. ${deficit ? `${deficit} month${deficit === 1 ? "" : "s"} spent more than came in` : "No month spent more than came in"}${
         best && t.n > 2 ? `; best was ${best.label} (${formatPercentRatio(best.savingsRate ?? 0, 0)})` : ""
       }.`,
@@ -198,6 +205,7 @@ export function buildInsights(slice: Slice, r: Report): Insight[] {
     out.push({
       tone: "info",
       title: "Bonuses lift the average",
+      proof: proof?.("income", months, { perMonth: true, shownCents: t.income }),
       body: `A typical month brings in ${usd0(t.typicalIncome)}, but the average is ${usd0(t.avgIncome)} — the gap is irregular pay (bonuses, one-time deposits). Budget against the typical month.`,
       action: { label: "See income", tab: "income" },
     });
@@ -209,6 +217,7 @@ export function buildInsights(slice: Slice, r: Report): Insight[] {
     out.push({
       tone: "info",
       title: `${top.category} is ${pct(top.cents / t.spending)} of spending`,
+      proof: proof?.("spending", months, { category: top.category, perMonth: true, shownCents: top.cents }),
       body: `${usd0(top.cents / t.n)}/mo on average${cats[1] ? `, then ${cats[1].category} (${usd0(cats[1].cents / t.n)}/mo) and ${cats[2]?.category ?? "the rest"}` : ""}.`,
       action: { label: `Open ${top.category}`, tab: "spending", category: top.category },
     });
@@ -226,6 +235,7 @@ export function buildInsights(slice: Slice, r: Report): Insight[] {
       out.push({
         tone: "warn",
         title: `${s.c} ran high in ${last.label}`,
+        proof: proof?.("spending", [last], { category: s.c, shownCents: s.now }),
         body: `${usd0(s.now)} against a typical ${usd0(s.typ)} — ${usd0(s.now - s.typ)} more than usual.`,
         action: { label: `Open ${s.c}`, tab: "spending", category: s.c },
       });
@@ -320,7 +330,10 @@ export type ProofOptions = {
   /** With merchantKey: the merchant's charges dated in the twelve months ending with the last of `months` (Recurring's "last 12 months"). */
   charges?: boolean;
   perMonth?: boolean;
-  shownCents?: number;
+  /** Spending without the one-offs (Cash flow's "Excluding one-offs"). */
+  excludeOneOffs?: boolean;
+  /** The total the page shows (before any per-month split); null for a figure that isn't one. */
+  shownCents: number | null;
 };
 
 /**
@@ -333,7 +346,7 @@ export function proofTarget(
   metric: CashFlowMetric,
   months: SpendingMonth[],
   accountIds: string[] | undefined,
-  o: ProofOptions = {},
+  o: ProofOptions,
 ): ProofTarget | undefined {
   if (!months.length) return undefined;
   return {
@@ -346,8 +359,9 @@ export function proofTarget(
       ...(o.category ? { category: o.category } : {}),
       ...(o.merchantKey ? { merchantKey: o.merchantKey, ...(o.charges ? { merchantBasis: "charges" as const } : {}) } : {}),
       ...(accountIds?.length ? { accountIds } : {}),
+      ...(o.excludeOneOffs ? { oneOffs: "exclude" as const } : {}),
     },
-    ...(o.shownCents != null ? { shownCents: o.shownCents } : {}),
+    shownCents: o.shownCents,
     ...(o.perMonth && months.length > 1 ? { perMonths: months.length } : {}),
   };
 }

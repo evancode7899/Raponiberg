@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 
 const TABS = ["overview", "holdings", "fees", "gains", "growth"] as const;
-type Data = { report: InvestmentsReport; settings: InvestmentSettings };
+type Data = { report: InvestmentsReport; settings: InvestmentSettings; /** The forecast's return. */ returnRate: number };
 
 /** Each asset class keeps one chart slot everywhere; unclassified is the neutral gray. */
 export function classColor(p: ChartPalette, c: ClassId) {
@@ -34,7 +34,7 @@ const ratio = (r: number | null) => (r == null ? "—" : `${(r * 100).toFixed(r 
 const accountTarget = (accountId: string | null, shownCents: number): ProofTarget => ({ descriptor: { report: "investments", ...(accountId ? { accountId } : {}) }, shownCents });
 /** A position's proof; the balancing line ("whole account", "change since holdings") opens its account's. */
 const positionTarget = (p: PositionRow): ProofTarget =>
-  p.kind === "ACCOUNT" ? { descriptor: { report: "investments", accountId: p.accountId } } : { descriptor: { report: "investments", accountId: p.accountId, position: p.key }, shownCents: p.valueCents };
+  p.kind === "ACCOUNT" ? { descriptor: { report: "investments", accountId: p.accountId }, shownCents: p.valueCents } : { descriptor: { report: "investments", accountId: p.accountId, position: p.key }, shownCents: p.valueCents };
 
 export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
@@ -98,7 +98,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
             <BlockedNote what="every account's latest balance" blockers={r!.blockers} />
             {tab === "overview" && <Overview data={data} save={save} saving={saving} />}
             {tab === "holdings" && <Holdings data={data} save={save} saving={saving} />}
-            {tab === "fees" && <Fees r={r!} />}
+            {tab === "fees" && <Fees r={r!} returnRate={data!.returnRate} />}
             {tab === "gains" && <Gains r={r!} />}
             {tab === "growth" && <Growth r={r!} />}
           </>
@@ -414,7 +414,7 @@ function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSett
 
 // ---------------------------------------------------------------------------- fees
 
-function Fees({ r }: { r: InvestmentsReport }) {
+function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
   const funds = r.positions.filter((p) => (p.annualFeeCents ?? 0) > 0).sort((a, b) => (b.annualFeeCents ?? 0) - (a.annualFeeCents ?? 0));
   const unknown = r.positions.filter((p) => p.expenseRatio == null && p.valueCents > 0).sort((a, b) => b.valueCents - a.valueCents);
   return (
@@ -446,13 +446,13 @@ function Fees({ r }: { r: InvestmentsReport }) {
                   <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                   <td className={table.tdR}>{ratio(p.expenseRatio)}</td>
                   <td className={table.tdR}>{usd0(p.annualFeeCents)}</td>
-                  <td className={`${table.tdR} text-muted`}>{usd0(costOver(p.valueCents, p.expenseRatio!, 20))}</td>
+                  <td className={`${table.tdR} text-muted`}>{usd0(costOver(p.valueCents, p.expenseRatio!, 20, returnRate))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-muted">* Ending value lost to the fee over 20 years at a 6% gross return, with no new money: value × (1.06²⁰ − (1.06 − ratio)²⁰).</p>
+        <p className="mt-2 text-[11px] text-muted">* Ending value lost to the fee over 20 years at the Forecast&apos;s {ratio(returnRate)} return, with no new money: value × ((1 + return)²⁰ − (1 + return − ratio)²⁰).</p>
       </Card>
       {unknown.length > 0 && (
         <Card title="Expense ratio unknown" subtitle="Add the ratio from the fund's fact sheet or your plan's fee disclosure on the Holdings tab.">
@@ -489,7 +489,8 @@ function Fees({ r }: { r: InvestmentsReport }) {
   );
 }
 
-const costOver = (cents: number, er: number, years: number) => Math.round(cents * (1.06 ** years - (1.06 - er) ** years));
+/** What a fee takes from the ending value over `years`, at return `rate` (the forecast's). */
+const costOver = (cents: number, er: number, years: number, rate: number) => Math.round(cents * ((1 + rate) ** years - (1 + rate - er) ** years));
 
 // ---------------------------------------------------------------------------- gains
 

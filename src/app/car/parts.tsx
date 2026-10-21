@@ -41,8 +41,9 @@ export function byBucket(lines: Partial<Record<CostLine, number>>): Record<Bucke
 }
 
 /** A Car figure that opens its proof: the recipe (lib/book/proof/carProof.ts) and the figure as the page has it. */
-export function carProof(carId: string, x: Omit<CarFigureDescriptor, "report" | "carId" | "basis"> & { basis?: CarFigureDescriptor["basis"] }, shownCents?: number | null): ProofTarget {
-  return { descriptor: { report: "car", carId, basis: x.basis ?? "accrued", span: x.span, ...(x.line ? { line: x.line } : {}), ...(x.per ? { per: x.per } : {}) }, ...(shownCents != null && !x.per ? { shownCents: Math.round(shownCents) } : {}) };
+export function carProof(carId: string, x: Omit<CarFigureDescriptor, "report" | "carId" | "basis"> & { basis?: CarFigureDescriptor["basis"] }, shownCents: number | null): ProofTarget {
+  // A per-mile or per-month figure is a rate, not cents the drawer can compare.
+  return { descriptor: { report: "car", carId, basis: x.basis ?? "accrued", span: x.span, ...(x.line ? { line: x.line } : {}), ...(x.per ? { per: x.per } : {}) }, shownCents: shownCents != null && !x.per ? Math.round(shownCents) : null };
 }
 
 /** A line of the car log at its full amount. */

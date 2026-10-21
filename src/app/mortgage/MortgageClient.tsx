@@ -4,10 +4,15 @@ import { useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, PageBody, StatCell, StatGrid, table, useSavedState } from "@/components/ui/kit";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { comparePrepayVsInvest, loanMonthToCalendar, monteCarlo, type PathSeries } from "@/lib/mortgage/prepayVsInvest";
-import { useDeferredValue, useEffect, useMemo } from "react";
+import { apiSecretHeaders } from "@/components/ledger/useApi";
+import { withLinks, type LinkedKey } from "@/lib/mortgage/inputs";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { BalancesChart, GapChart, INVEST, NetWorthChart, OpportunityChart, PREPAY, SensitivityChart, type YearPoint } from "./MortgageCharts";
 import { MortgageInputsPanel } from "./MortgageInputsPanel";
 import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, RETIRED_KEYS, STORAGE_KEY, toPlan, type MortgageInputs } from "./inputs";
+
+/** The linked figures (api/mortgage/links): each with where it comes from. */
+export type MortgageLinks = Partial<Record<LinkedKey, { value: number; from: string } | null>>;
 
 /** A chance of investing winning inside this range is a coin flip, not a verdict. */
 const TOSS_UP = [0.45, 0.55] as const;
@@ -31,8 +36,19 @@ export function MortgageClient() {
     setIns((x) => Object.fromEntries(Object.entries(x).filter(([k]) => !(RETIRED_KEYS as readonly string[]).includes(k))) as MortgageInputs);
   }, [ins, setIns]);
   const set = (p: Partial<MortgageInputs>) => setIns((x) => ({ ...x, ...p }));
+  // The forecast's and the tax engine's figures, used wherever nothing is typed over them.
+  const [links, setLinks] = useState<MortgageLinks>({});
+  useEffect(() => {
+    fetch("/api/mortgage/links", { headers: apiSecretHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { links?: MortgageLinks } | null) => j?.links && setLinks(j.links))
+      .catch(() => {});
+  }, []);
+  const saved = ins;
+  // What the model and every figure run on: the saved inputs with the links put in.
+  const eff = useMemo(() => withLinks(saved, links), [saved, links]);
 
-  const plan = useMemo(() => toPlan(ins), [ins]);
+  const plan = useMemo(() => toPlan(eff), [eff]);
   const labels = useMemo(() => Object.fromEntries(ins.lumps.map((r) => [r.id, lumpLabel(r)])), [ins.lumps]);
   const cmp = useMemo(() => comparePrepayVsInvest(plan, labels), [plan, labels]);
   // The simulation is the heavy part: let it trail slider drags.
@@ -42,7 +58,7 @@ export function MortgageClient() {
 
   const H = cmp.horizonMonths;
   const { invest, prepay } = cmp;
-  const defl = (m: number) => (ins.realDollars ? Math.pow(1 + ins.inflation, m / 12) : 1);
+  const defl = (m: number) => (ins.realDollars ? Math.pow(1 + eff.inflation, m / 12) : 1);
   /** A value at month m (a balance), in the display unit. */
   const at = (a: Float64Array, m = H) => a[m]! / defl(m);
   /** A running total through the horizon: each month's amount deflated by its own month. */
@@ -68,7 +84,7 @@ export function MortgageClient() {
     months.push(H);
     const band = new Map(mc.bands.map((b) => [b.month, b]));
     return months.map((m) => {
-      const d = ins.realDollars ? Math.pow(1 + ins.inflation, m / 12) : 1;
+      const d = ins.realDollars ? Math.pow(1 + eff.inflation, m / 12) : 1;
       const b = m === 0 ? { p10: 0, p25: 0, p50: 0, p75: 0, p90: 0 } : band.get(m);
       return {
         year: m / 12,
@@ -82,7 +98,7 @@ export function MortgageClient() {
         ...(b ? { band90: [b.p10 / d, b.p90 / d] as [number, number], band50: [b.p25 / d, b.p75 / d] as [number, number], p50: b.p50 / d } : {}),
       };
     });
-  }, [H, invest, prepay, mc, ins.realDollars, ins.inflation]);
+  }, [H, invest, prepay, mc, ins.realDollars, eff.inflation]);
 
   const sens = cmp.sensitivity.map((p) => ({ rate: p.rate, advantage: p.advantage / defl(H) }));
   const opp = cmp.opportunityCost.map((o) => ({ key: o.key, label: o.label, cost: o.cost / defl(H) }));
@@ -98,7 +114,7 @@ export function MortgageClient() {
   return (
     <PageBody>
       <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <MortgageInputsPanel ins={ins} set={set} payment={cmp.monthlyPayment} onReset={() => setIns(defaultInputs())} />
+        <MortgageInputsPanel ins={eff} typed={ins.typed ?? {}} links={links} set={set} payment={cmp.monthlyPayment} onReset={() => setIns(defaultInputs())} />
 
         <div className="flex min-w-0 flex-col gap-4">
           {!hasChoice ? (
@@ -115,7 +131,7 @@ export function MortgageClient() {
               }
             >
               {cmp.breakEvenReturn !== null
-                ? `Investing has to earn more than ${formatPercentRatio(cmp.breakEvenReturn, 2)} a year to beat paying down a ${formatPercentRatio(ins.rate, 3)} loan with these taxes; you assumed ${formatPercentRatio(ins.investReturn, 2)}. `
+                ? `Investing has to earn more than ${formatPercentRatio(cmp.breakEvenReturn, 2)} a year to beat paying down a ${formatPercentRatio(ins.rate, 3)} loan with these taxes; you assumed ${formatPercentRatio(eff.investReturn, 2)}. `
                 : ""}
               {mcFresh && `In ${Math.round(mc.chanceInvestWins * 100)}% of ${mc.paths} simulated markets investing ended ahead. `}
               {tossUp
@@ -175,7 +191,7 @@ export function MortgageClient() {
             title="How much the return matters"
             subtitle={`Invest − pay down after ${ins.horizonYears} years at each steady return. Right of the break-even, investing wins; left of it, paying down does.`}
           >
-            <SensitivityChart rows={sens} chart={chart} assumed={ins.investReturn} breakEven={cmp.breakEvenReturn} mortgageRate={ins.rate} />
+            <SensitivityChart rows={sens} chart={chart} assumed={eff.investReturn} breakEven={cmp.breakEvenReturn} mortgageRate={ins.rate} />
           </Card>
 
           {opp.length > 0 && (

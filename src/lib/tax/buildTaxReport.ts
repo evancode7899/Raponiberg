@@ -25,7 +25,7 @@ import { amountsFromLines, projectPayroll, w2FromAmounts, ZERO_AMOUNTS, type Pay
 import { checkFiled, type FiledCheck } from "./filedCheck.ts";
 import { TAX_YEARS, taxYearParams, type TaxYearParams } from "./params.ts";
 import { bestSeparate, type MfsResult } from "./scenarios.ts";
-import { ageAtYearEnd, yearInputs, type NyResidency, type PayForecast, type Residency, type TaxPerson, type TaxProfile, type YearInputs } from "./profile.ts";
+import { ageAtYearEnd, EXTRA_FIELDS, yearInputs, type NyResidency, type PayForecast, type Residency, type TaxPerson, type TaxProfile, type YearInputs } from "./profile.ts";
 
 /** A brokerage statement's tax figures for one account, as stored in the Book. */
 export type FidelitySnapshot = BookBrokerage;
@@ -242,7 +242,12 @@ export type TaxReport = {
    * through `through`, or its 1099-INT (a finished year), with its owner ("JOINT" splits
    * evenly); a year in progress runs it to December 31 by `factor` (365 ÷ days so far).
    */
-  bankInterest: { through: string; factor: number; parts: { accountId: string | null; name: string; ownerId: string; cents: number; doc: DocRef | null; rowIds: string[] }[] };
+  bankInterest: {
+    through: string;
+    factor: number;
+    /** `ledgerCents`: with a 1099-INT counted, what the account's bank statements show for the year (null: no tracked account), checked against it (tax.documents-tie). */
+    parts: { accountId: string | null; name: string; ownerId: string; cents: number; doc: DocRef | null; rowIds: string[]; ledgerCents?: number | null }[];
+  };
   /** How far each source goes: the forecast fills in everything after these dates. */
   dataThrough: { payStubs: { person: string; employer: string; date: string }[]; statements: string | null; bank: string };
   plan: {
@@ -372,11 +377,11 @@ export function buildTaxReport(
     const form = intForms.find((f) => f.form.account && acct.identifiers.some((i) => i.endsWith(f.form.account!)));
     if (form) {
       interestForms.add(form.doc.id);
-      add(form.personId ?? ownerOfAccount(id), form.form.interest, { accountId: id, name: acct.name, doc: form.doc, rowIds: [] });
+      add(form.personId ?? ownerOfAccount(id), form.form.interest, { accountId: id, name: acct.name, doc: form.doc, rowIds: [], ledgerCents: interestByAccount.get(id) ?? 0 });
     } else if (interestByAccount.has(id)) add(ownerOfAccount(id), interestByAccount.get(id)!, { accountId: id, name: acct.name, doc: null, rowIds: interestRows.get(id)! });
   }
   // A 1099-INT for an account the ledger doesn't track still counts.
-  for (const f of intForms.filter((f) => !interestForms.has(f.doc.id))) add(f.personId ?? "JOINT", f.form.interest, { accountId: null, name: `${f.form.payer} ••${f.form.account ?? "?"}`, doc: f.doc, rowIds: [] });
+  for (const f of intForms.filter((f) => !interestForms.has(f.doc.id))) add(f.personId ?? "JOINT", f.form.interest, { accountId: null, name: `${f.form.payer} ••${f.form.account ?? "?"}`, doc: f.doc, rowIds: [], ledgerCents: null });
   const daysIn = (Date.parse(interestThrough) - Date.parse(`${year}-01-01`)) / 86_400_000 + 1;
   const interestFactor = isCurrentYear && daysIn > 0 ? 365 / daysIn : 1;
   const bankInterest = (personId: string, pick: "ytd" | "projected") => {
@@ -670,19 +675,50 @@ export function buildTaxReport(
     payroll: (mfjBumped.fica.socialSecurity + mfjBumped.fica.medicare - mfj.fica.socialSecurity - mfj.fica.medicare) / 100_000,
   };
 
+  // Figures typed under Inputs stand on the owner's word alone (no statement, stub or tax
+  // document shows them): listed, so none of them passes for a proven figure.
+  const typedNow = [
+    ...profile.persons.flatMap((p) =>
+      EXTRA_FIELDS.filter(([k]) => inputs.people[p.id]!.extras[k]).map(([k, label]) => `${p.name}: ${label.toLowerCase()} ${usd(inputs.people[p.id]!.extras[k])}`),
+    ),
+    ...(
+      [
+        ["mortgage interest", inputs.household.mortgageInterest],
+        ["property tax", inputs.household.propertyTax],
+        ["charity (cash)", inputs.household.charitableCash],
+        ["charity (other)", inputs.household.charitableOther],
+        ["dependent care expenses", inputs.household.dependentCareExpenses],
+      ] as const
+    )
+      .filter(([, v]) => v)
+      .map(([label, v]) => `${label} ${usd(v)}`),
+  ];
+  if (typedNow.length) assumptions.push(`Typed under Inputs, not shown by any statement, stub or tax document: ${typedNow.join("; ")}.`);
+
   // ---------------------------------------------------------------- safe harbor & plan
   const py = inputs.priorYear;
   // Until last year's filed figures are entered, the model's own estimate of last year
   // (when that year is proven) stands in for the prior-year safe harbor.
-  let priorYearSource: TaxReport["priorYearSource"] = py.federalTotalTax != null ? "ENTERED" : "NONE";
+  // Last year's filed return (tax documents folder) is the figure of record: it wins over
+  // anything typed under Inputs, which counts only for a figure no filed return prints.
+  let priorYearSource: TaxReport["priorYearSource"] = "NONE";
   // Last year's filed return (tax documents folder) is the figure the safe harbor needs;
   // anything typed under Inputs overrides it, figure by figure.
   const filedFederalTax = safeHarborTax(lastYearDocs.federal);
   const filedAgi = lastYearDocs.federal?.federal?.agi ?? null;
   const filedCt = lastYearDocs.ct?.state?.totalTax ?? null;
-  let priorFederal = { tax: py.federalTotalTax ?? filedFederalTax, agi: py.federalAgi ?? filedAgi };
-  let priorCt = py.ctTotalTax ?? filedCt;
-  if (priorYearSource === "NONE" && filedFederalTax != null) priorYearSource = "FILED";
+  let priorFederal = { tax: filedFederalTax ?? py.federalTotalTax, agi: filedAgi ?? py.federalAgi };
+  let priorCt = filedCt ?? py.ctTotalTax;
+  if (filedFederalTax != null) priorYearSource = "FILED";
+  else if (py.federalTotalTax != null) priorYearSource = "ENTERED";
+  const typedAgainstFiled: [string, number | null, number | null][] = [
+    ["federal total tax (Form 1040 line 24)", py.federalTotalTax, filedFederalTax],
+    ["federal AGI", py.federalAgi, filedAgi],
+    ["Connecticut income tax", py.ctTotalTax, filedCt],
+  ];
+  for (const [what, typed, filed] of typedAgainstFiled)
+    if (typed != null && filed != null && Math.abs(typed - filed) > 100)
+      warnings.push(`${year - 1}'s ${what} typed under Inputs (${usd(typed)}) differs from the filed return in the tax documents folder (${usd(filed)}); the filed return is used. Clear the typed figure.`);
   if (priorYearSource === "NONE" && opts.estimatePriorYear !== false && TAX_YEARS[year - 1]) {
     const prev = buildTaxReport(book, year - 1, { estimatePriorYear: false, birthYears: opts.birthYears });
     if (!prev.blocked) {
@@ -707,6 +743,7 @@ export function buildTaxReport(
     priorYearTax: priorFederal.tax,
     priorYearAgi: priorFederal.agi,
     highAgiThreshold: fp.safeHarborHighAgi.MFJ,
+    rules: fp.safeHarborRules,
   });
   const ct = safeHarbor({
     currentYearTax: mfj.ct.totalTax,
@@ -715,8 +752,9 @@ export function buildTaxReport(
     priorYearTax: priorCt,
     priorYearAgi: null,
     highAgiThreshold: null,
+    rules: fp.safeHarborRules,
   });
-  if (py.ctTotalTax == null && priorCt != null && lastYearDocs.ct?.form === "CT-1040NR/PY") {
+  if (filedCt != null && priorCt === filedCt && lastYearDocs.ct?.form === "CT-1040NR/PY") {
     assumptions.push(`Connecticut's prior-year safe harbor uses ${year - 1}'s part-year return (${usd(priorCt)}). It covered all twelve months, but only part of the income; check CT-2210 before leaning on it.`);
   }
   if (priorYearSource === "NONE") {
@@ -964,6 +1002,9 @@ function applyBrokerage1099s(accounts: AccountIncome[], docs: YearDocs | null, l
     }
     a.calibratedFrom = lastYear.year;
   }
+  // No 1099 from last year to read the split from: the qualified share is the one typed under Inputs.
+  for (const a of accounts.filter((x) => x.kind === "TAXABLE" && x.source === "STATEMENTS" && x.calibratedFrom == null && x.ytd.ordinaryDividends > 0))
+    warnings.push(`${a.label}: no ${lastYear.year} 1099 to read the qualified share of its dividends from, so ${Math.round(profile.qualifiedDividendShare * 100)}% of its fund and stock dividends (as set under Inputs) count as qualified. The year's 1099 will settle it.`);
 }
 
 /** The share of the year before `d` (a move out), or null without a date. */
@@ -1097,6 +1138,9 @@ export function investmentAccounts(
     const latest = inYear.at(-1)!;
     const monthly = inYear.filter((s) => !s.isYearEnd);
     const kind = profile.accountKinds[acct] ?? latest.kind;
+    // A type set under Inputs beats the statement; when the statement reads one, say they disagree.
+    if (profile.accountKinds[acct] && latest.kind !== "OTHER" && profile.accountKinds[acct] !== latest.kind)
+      warnings.push(`Account ••${acct.slice(-4)} is taxed as ${ACCOUNT_KIND_LABEL[kind]} (set under Inputs), though its statement reads ${ACCOUNT_KIND_LABEL[latest.kind]}.`);
     // A custodial account is the child's: no parent owns its income.
     const child = kind === "CUSTODIAL" ? (profile.dependents.find((d) => latest.ownerLine.toUpperCase().includes(d.name.toUpperCase()))?.name ?? latest.ownerLine) : null;
     const ownerId = child

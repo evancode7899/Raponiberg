@@ -149,7 +149,7 @@ export function InputsPanel({
           <EngineRate
             label={LABELS.incomeTaxRate!}
             value={ins.incomeTaxRate}
-            proof={funds.proof("income-tax")}
+            proof={funds.proof("income-tax", null)}
             note={`Federal + Connecticut income tax and payroll on ${formatUsd(ins.annualHouseholdSalary)} of wages, ${funds.tax.year} law, from the tax engine.`}
             onManual={() => {
               patch("incomeTaxRate", Math.round(ins.incomeTaxRate * 200) / 200);
@@ -413,7 +413,7 @@ export function GainsTaxControl({ ins, patch, funds, full }: { ins: HomeBudgetIn
       <EngineRate
         label={LABELS.capitalGainsTaxRate!}
         value={ins.capitalGainsTaxRate}
-        proof={funds.proof("gains-tax")}
+        proof={funds.proof("gains-tax", null)}
         note={`Federal 15/20% + 3.8% NIIT + Connecticut on ${formatUsd(Math.max(50_000, gains.gain))} of long-term gains on top of the salary, ${year} law.`}
         onManual={() => {
           patch("capitalGainsTaxRate", Math.round(ins.capitalGainsTaxRate * 1000) / 1000);

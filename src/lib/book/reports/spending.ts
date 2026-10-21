@@ -105,7 +105,8 @@ export type SpendingReport = {
   oneOffs: OneOffExpense[];
 };
 
-const ONE_OFF_MIN_CENTS = 150_000;
+import { ONE_OFF_MIN_CENTS } from "../definitions.ts";
+export { ONE_OFF_MIN_CENTS };
 
 /** "WWW SWEETGREEN COM" → "Sweetgreen". */
 export function merchantName(key: string): string {
@@ -286,14 +287,19 @@ export function merchantsIn(rows: BookRow[], p: { start: string; end: string }, 
   return { merchants: sorted(merchants), payers: sorted(payers) };
 }
 
+/** Whether an expense row counts as one-off: tagged by hand, or its category always is. The one test the spending report and its proofs use. */
+export const oneOffTest = (settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">) => {
+  const nonRecurring = new Set(settings.nonRecurringCategories);
+  return (r: BookRow) => r.lane === "EXPENSE" && (nonRecurring.has(r.category) || expenseFingerprint(r) in settings.oneOffs);
+};
+
 export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
   const { report, window, current, withheldAfter, withheldBefore, from, to, windowEnd, dayOf, inScope, windowRows, last12From } = spendingRows(book, opts.accountIds);
   const accountFilter = opts.accountIds?.length ? new Set(opts.accountIds) : null;
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
-  const nonRecurring = new Set(settings.nonRecurringCategories);
   const recurring = windowEnd ? detectRecurring(windowRows, windowEnd, last12From) : [];
   const bills = new Set(recurring.filter((c) => c.kind === "bill").map((c) => c.key));
-  const isOneOff = (r: BookRow) => nonRecurring.has(r.category) || expenseFingerprint(r) in settings.oneOffs;
+  const isOneOff = oneOffTest(settings);
 
   const enrich = (p: CashFlowPeriod): SpendingMonth => {
     let oneOffCents = 0;
@@ -307,7 +313,7 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
   for (const r of windowRows) {
     if (r.lane !== "EXPENSE") continue;
     const fp = expenseFingerprint(r);
-    const viaCategory = nonRecurring.has(r.category);
+    const viaCategory = settings.nonRecurringCategories.includes(r.category);
     const tagged = viaCategory || fp in settings.oneOffs;
     if (!tagged && (-r.amountCents < ONE_OFF_MIN_CENTS || bills.has(merchantKeyOf(r)))) continue;
     oneOffs.push({

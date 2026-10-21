@@ -1,3 +1,4 @@
+import type { BlockerRef } from "../book/reports/blockerRef.ts";
 import { addDays, daysBetween, endOfMonth, periodLabel, startOfMonth, ymd } from "../dates/isoDate.ts";
 import { reconcile, type HintMatch, type MatchRow, type StatementCharge } from "./detect.ts";
 import { carName, KIND_INFO, ownedOn, SHARED, type Car, type CarEntry, type CarKind, type CostGroup, type GarageSettings } from "./settings.ts";
@@ -178,6 +179,9 @@ export type CarReport = {
   };
   totals: {
     tco: number;
+    /** Of tco, what stands on the owner's word (paid outside the statements, parking in the rent, interest, depreciation), and what the statements show. */
+    typedCents: number;
+    statementCents: number;
     perMile: number | null;
     perMonth: number | null;
     perDay: number | null;
@@ -261,6 +265,12 @@ export type GarageReport = {
   today: string;
   /** The last day the statements are in for (a log entry after it is awaiting its statement). */
   statementsThrough: string;
+  /**
+   * Findings that make the statement charges incomplete between the first car's purchase
+   * and statementsThrough (a missing card statement, an unpaired transfer): while any is
+   * open, money figures are withheld like on every other page (the route fills it in).
+   */
+  blockers?: BlockerRef[];
   cars: CarReport[];
   /**
    * The log: every counted cost (statement charges, entries paid outside the statements,
@@ -736,12 +746,17 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
   const accrued = emptyBreakdown();
   const cash = { ...Object.fromEntries((Object.keys(KIND_INFO) as CarKind[]).map((k) => [k, 0])), INTEREST: 0 } as CarReport["cash"];
   let prepaid = 0;
+  // What stands on the owner's word rather than a statement row: entries paid outside the
+  // statements, parking inside the rent, the typed loan interest, and depreciation (from the
+  // typed purchase price and values).
+  let typed = 0;
   for (const it of items) {
     if (it.date > end) continue;
     cash[it.kind] += it.cents;
     const line = lineOf(it.kind);
     const used = overlap(it, it.start, end);
     if (line) accrued[line] += used;
+    if (line && it.source !== "STATEMENT") typed += used;
     if (line) prepaid += it.cents - used;
   }
   if (interestItem && interestItem.start <= end) {
@@ -753,6 +768,7 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
   for (const k of Object.keys(cash) as (keyof typeof cash)[]) cash[k] = Math.round(cash[k]);
 
   const tco = sum(accrued);
+  const typedCents = Math.round(typed) + accrued.INTEREST + accrued.DEPRECIATION;
   const operating = COST_LINES.filter((l) => LINE_INFO[l].group === "OPERATING").reduce((s, l) => s + accrued[l], 0);
   const fixed = COST_LINES.filter((l) => LINE_INFO[l].group === "FIXED").reduce((s, l) => s + accrued[l], 0);
   const monthsOwned = daysOwned / DAYS_PER_MONTH;
@@ -1053,6 +1069,8 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
     },
     totals: {
       tco,
+      typedCents,
+      statementCents: tco - typedCents,
       perMile: per(tco, driven),
       perMonth: monthsOwned >= 1 ? tco / monthsOwned : null,
       perDay: per(tco, daysOwned),

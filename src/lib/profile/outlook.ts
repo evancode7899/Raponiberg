@@ -1,4 +1,5 @@
-import { bracketTax } from "../tax/computeReturn.ts";
+import { bracketTax, ctIncomeTax } from "../tax/computeReturn.ts";
+import type { CtParams } from "../tax/params.ts";
 import type { PlannedExpense } from "./settings.ts";
 
 /**
@@ -44,7 +45,8 @@ export type OutlookPlan = {
   returnRate: number;
   walkAwayYear: number | null;
   withdrawalRate: number;
-  stateTaxRate: number;
+  /** A flat state rate on draws (retiring elsewhere); null: Connecticut's brackets (tax.ct). */
+  stateTaxRate: number | null;
   inflation: number;
   plannedExpenses: PlannedExpense[];
   /**
@@ -53,7 +55,7 @@ export type OutlookPlan = {
    */
   returns?: number[];
   /** Married-filing-jointly standard deduction and bracket tops for `tax.year`. */
-  tax: { year: number; standardDeduction: number; brackets: number[] };
+  tax: { year: number; standardDeduction: number; brackets: number[]; ct?: CtParams };
   birthYear: number | null;
 };
 
@@ -123,15 +125,22 @@ export type OutlookYear = {
 
 export type Outlook = { months: OutlookMonth[]; years: OutlookYear[] };
 
-const grow = (base: number, rate: number, years: number) => base * (1 + rate) ** years;
+/** A base amount after `years` of growth at `rate` (raises, living cost): the one formula the engine and its proofs share. */
+export const grow = (base: number, rate: number, years: number) => base * (1 + rate) ** years;
+/** The monthly return the engine compounds in plan year `i` (a stress test's own year, else the plan's rate). */
+export const monthlyReturn = (plan: Pick<OutlookPlan, "returnRate" | "returns">, i: number) => (1 + (plan.returns?.[i] ?? plan.returnRate)) ** (1 / 12) - 1;
 const pad = (m: number) => String(m).padStart(2, "0");
 
-/** Federal + state tax on a retirement draw in `year` (all draws treated as ordinary income). */
+/**
+ * Federal + state tax on a retirement draw in `year` (all draws treated as ordinary income).
+ * State: a typed flat rate on the taxable part, else Connecticut's real brackets (the tax
+ * year's law, indexed like the federal brackets: the draw is taxed in tax-year dollars).
+ */
 export function retirementTax(plan: Pick<OutlookPlan, "tax" | "inflation" | "stateTaxRate">, year: number, draw: number) {
   const idx = (1 + plan.inflation) ** (year - plan.tax.year);
   const taxable = Math.max(0, draw - plan.tax.standardDeduction * idx);
   const federal = bracketTax(taxable, plan.tax.brackets.map((b) => b * idx));
-  const state = Math.round(taxable * plan.stateTaxRate);
+  const state = plan.stateTaxRate != null ? Math.round(taxable * plan.stateTaxRate) : plan.tax.ct ? Math.round(ctIncomeTax(plan.tax.ct, "MFJ", Math.round(draw / idx)) * idx) : 0;
   return { taxable: Math.round(taxable), federal, state, afterTax: Math.round(draw - federal - state) };
 }
 
@@ -151,7 +160,7 @@ export function projectOutlook(plan: OutlookPlan): Outlook {
     const first = year === plan.start.year ? plan.start.month + 1 : 1;
     if (first > 12) continue;
     const i = year - plan.start.year;
-    const rm = (1 + (plan.returns?.[i] ?? plan.returnRate)) ** (1 / 12) - 1;
+    const rm = monthlyReturn(plan, i);
     const working = walkAway == null || year < walkAway;
     const nearTerm = year <= plan.nearTermThrough;
     const startNw = liquid + illiquid;

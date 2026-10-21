@@ -1,7 +1,9 @@
 "use client";
 
 import { Group } from "@/app/home-budget/parts";
-import { RangeSlider } from "@/app/home-budget/RangeSlider";
+import { fmtValue, RangeSlider } from "@/app/home-budget/RangeSlider";
+import { LINKED_KEYS, type LinkedKey } from "@/lib/mortgage/inputs";
+import type { MortgageLinks } from "./MortgageClient";
 import { btn, Card, MoneyInput, Segmented, selectCls } from "@/components/ui/kit";
 import { formatUsd } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
@@ -28,17 +30,49 @@ function Toggle<T extends string>({ label, hint, value, options, onChange }: { l
 
 export function MortgageInputsPanel({
   ins,
+  typed,
+  links,
   set,
   payment,
   onReset,
 }: {
+  /** The inputs as the model runs them (linked figures put in). */
   ins: MortgageInputs;
+  /** Linked inputs the owner typed over. */
+  typed: Partial<Record<LinkedKey, true>>;
+  links: MortgageLinks;
   set: (p: Partial<MortgageInputs>) => void;
   payment: number;
   onReset: () => void;
 }) {
+  const isLinked = (k: NumKey): k is LinkedKey => (LINKED_KEYS as readonly string[]).includes(k);
+  /** Where a linked input comes from, or (typed) what the linked figure is, with a way back to it. */
+  const linkNote = (k: NumKey): ReactNode => {
+    if (!isLinked(k)) return null;
+    const l = links[k];
+    if (!l) return null;
+    const shown = fmtValue(l.value, SPECS[k].unit, "digits" in SPECS[k] ? (SPECS[k] as { digits: number }).digits : 1);
+    if (!typed[k]) return <span>Linked: {l.from} ({shown}).</span>;
+    return (
+      <span>
+        Typed (an assumption). {l.from}: {shown}.{" "}
+        <button type="button" className="font-medium text-accent hover:underline" onClick={() => set({ typed: { ...typed, [k]: undefined } })}>
+          Use it
+        </button>
+      </span>
+    );
+  };
   const S = (k: NumKey, label: string, hint?: string, extra?: ReactNode, disabled?: boolean) => (
-    <RangeSlider label={label} hint={hint} spec={SPECS[k]} value={ins[k]} defaultValue={DEF[k]} onChange={(v) => set({ [k]: v })} extra={extra} disabled={disabled} />
+    <RangeSlider
+      label={label}
+      hint={hint}
+      spec={SPECS[k]}
+      value={ins[k]}
+      defaultValue={DEF[k]}
+      onChange={(v) => set({ [k]: v, ...(isLinked(k) && links[k] ? { typed: { ...typed, [k]: true } } : {}) })}
+      extra={extra || isLinked(k) ? <>{extra}{extra && linkNote(k) ? " " : null}{linkNote(k)}</> : undefined}
+      disabled={disabled}
+    />
   );
   const setRow = (id: string, p: Partial<LumpRow>) => set({ lumps: ins.lumps.map((r) => (r.id === id ? { ...r, ...p } : r)) });
   const addRow = () => {

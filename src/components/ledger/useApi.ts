@@ -17,6 +17,10 @@ export function cachedResponse<T>(path: string): T | null {
   return (responses.get(path)?.data as T | undefined) ?? null;
 }
 
+/** The data tag (x-data-stamp) of the latest answer this tab got: what the figures on screen were built from. */
+let dataStampSeen: string | null = null;
+export const lastDataStamp = () => dataStampSeen;
+
 export function clearCachedResponses() {
   responses.clear();
 }
@@ -69,6 +73,7 @@ export function useApi(requiresApiSecret: boolean) {
       if (!isRead) responses.clear();
       const res = await fetch(path, { ...init, headers, body });
       const text = await res.text().catch(() => "");
+      if (isRead && res.ok) dataStampSeen = res.headers.get("x-data-stamp") ?? dataStampSeen;
       const prior = isRead ? responses.get(path) : undefined;
       // An unchanged answer hands back the same object, so the page doesn't redraw.
       if (res.ok && prior && prior.text === text) return prior.data as T;
