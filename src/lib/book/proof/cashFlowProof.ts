@@ -354,7 +354,7 @@ export function cashFlowToProof(p: CashFlowProof): Proof {
 export const cashFlowKind: ProofKind<CashFlowDescriptor> = {
   report: "cash-flow",
   parse: parseCashFlowDescriptor,
-  build: async ({ book, db }, d) => cashFlowToProof(buildCashFlowProof(book, d, d.oneOffs ? oneOffTest(await loadProfileSettings(db)) : undefined)),
+  build: async ({ book, db }, d) => cashFlowToProof(buildCashFlowProof(book, d, d.oneOffs ? oneOffTest(await loadProfileSettings(db), book.rowById) : undefined)),
 };
 
 function describe(d: CashFlowDescriptor, book: Book, periods: CashFlowPeriod[]): string {

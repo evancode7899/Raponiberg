@@ -3,6 +3,7 @@ import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { LivingTrail } from "../../profile/basePay.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import type { Book, BookRow } from "../load.ts";
+import { oneOffSubject } from "../reimbursements.ts";
 import { countsOn, rentPayments } from "../rent.ts";
 import { taxRows } from "../taxPayments.ts";
 import { cashFlowContributions } from "./cashFlow.ts";
@@ -53,6 +54,8 @@ export type CashRows = {
   interest: number;
   other: number;
   reimbursements: number;
+  /** Paycheck reimbursement lines linked to the charges they paid back: already counted in those charges' categories. */
+  payLinked: number;
   nonRecurring: number;
   taxSpending: number;
   spending: Map<string, number>;
@@ -74,6 +77,7 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
   let interest = 0;
   let other = 0;
   let reimbursements = 0;
+  let payLinked = 0;
   let nonRecurring = 0;
   // Tax payments filed as spending: taxes, not living (Cash flow counts them as spending).
   let taxSpending = 0;
@@ -91,6 +95,8 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
     if (day === r.bookedOn) continue;
     timing += (r.bookedOn >= from && r.bookedOn <= to ? r.amountCents : 0) - (day >= from && day <= to ? r.amountCents : 0);
   }
+  // A reimbursement link's pair (book/reimbursements.ts) is among the contributions: its credit
+  // nets the charge's category, its debit takes the payback off the income it came in with.
   for (const { row: r, cents } of cashFlowContributions(book, [{ start: from, end: to }], null)) {
     if (taxIds.has(r.id)) {
       if (r.lane === "EXPENSE") {
@@ -100,7 +106,9 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
       continue;
     }
     if (r.lane === "INCOME") {
-      if (r.category === "P2P & reimbursements") reimbursements += cents;
+      // Paid inside a paycheck: the stub line already offsets living, so it's taken off that instead.
+      if (r.reimbursement?.source === "stub") payLinked -= cents;
+      else if (r.category === "P2P & reimbursements") reimbursements += cents;
       else if (r.category === "Interest") interest += cents;
       else if (!NOT_OTHER_INCOME.has(r.category)) {
         other += cents;
@@ -109,12 +117,14 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
       continue;
     }
     if (r.lane !== "EXPENSE") continue;
-    const fp = expenseFingerprint({ accountId: r.accountId, date: r.date, amountCents: r.amountCents, payee: r.payee });
+    // A reimbursement credit counts the way its charge does (living or one-off).
+    const subject = oneOffSubject(r, book.rowById);
+    const fp = expenseFingerprint({ accountId: subject.accountId, date: subject.date, amountCents: subject.amountCents, payee: subject.payee });
     const viaCategory = nonRecurringCats.has(r.category);
     const tagged = viaCategory || fp in settings.oneOffs;
     if (tagged) nonRecurring -= cents;
     else spending.set(r.category, (spending.get(r.category) ?? 0) - cents);
-    if (tagged || (-r.amountCents >= ONE_OFF_MIN_CENTS && !rentIds.has(r.id))) {
+    if (!r.reimbursement && (tagged || (-r.amountCents >= ONE_OFF_MIN_CENTS && !rentIds.has(r.id)))) {
       candidates.push({ fingerprint: fp, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
     }
   }
@@ -125,6 +135,7 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
     interest: Math.round(interest),
     other: Math.round(other),
     reimbursements: Math.round(reimbursements),
+    payLinked: Math.round(payLinked),
     nonRecurring: Math.round(nonRecurring),
     taxSpending: Math.round(taxSpending),
     spending: round(spending),
@@ -168,7 +179,8 @@ export function payReimbursementsIn(book: Book, from: string, to: string): numbe
 /** Living cost over [from, to] (inclusive days), with how it adds up. */
 export function livingIn(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, from: string, to: string): { cents: number; trail: LivingTrail; rows: CashRows } {
   const rows = cashRowsIn(book, settings, from, to, new Set(taxRows(book, from, to).map((r) => r.id)));
-  const inPay = payReimbursementsIn(book, from, to);
+  // Paycheck lines already linked to their charges are counted in those charges' categories.
+  const inPay = payReimbursementsIn(book, from, to) - rows.payLinked;
   const trail = livingTrail(from, to, rows, inPay);
   return { cents: trail.windowCents, trail, rows };
 }

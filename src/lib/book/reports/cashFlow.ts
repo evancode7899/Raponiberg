@@ -3,6 +3,7 @@ import { decompose } from "../../ledger/timeline.ts";
 import { blockersFor } from "../blockers.ts";
 import { bookedShare } from "../booking.ts";
 import type { Book, BookRow } from "../load.ts";
+import { withReimbursements } from "../reimbursements.ts";
 import { countsOn } from "../rent.ts";
 import { savingsRate } from "../definitions.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
@@ -66,7 +67,8 @@ export function cashFlowContributions(book: Book, periods: { start: string; end:
   const idx = (iso: string) => periods.findIndex((p) => p.start <= iso && iso <= p.end);
   const dayOf = dayOfFor(book);
   const out: CashFlowContribution[] = [];
-  for (const r of book.rows) {
+  // A reimbursement link's pair (book/reimbursements.ts) counts like any row: the payback moves from income into the charge's category.
+  for (const r of withReimbursements(book)) {
     if (r.lane !== "INCOME" && r.lane !== "EXPENSE" && r.lane !== "EXTERNAL_TRANSFER") continue;
     if (accountFilter && !accountFilter.has(r.accountId)) continue;
     if (r.precision === "EXACT") {

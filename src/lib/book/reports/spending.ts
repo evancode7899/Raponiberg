@@ -2,6 +2,7 @@ import { daysBetween, endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import type { Book, BookRow } from "../load.ts";
+import { oneOffSubject, withReimbursements } from "../reimbursements.ts";
 import { countsOn, rentPayments, type RentPayment } from "../rent.ts";
 import type { BlockerRef } from "./blockerRef.ts";
 import { buildCashFlowReport, type CashFlowPeriod } from "./cashFlow.ts";
@@ -241,7 +242,9 @@ export function provenMonths(book: Book, accountIds?: string[]) {
  * (a charge and its exact credit on the same account within a week net to nothing: left
  * out so neither side shows on its own). Rows count in the month the period totals count
  * them: where the ledger books them (booking.ts), or for rent, the month it pays for
- * (rent.ts). The merchant proof reads these same rows (proof/cashFlowProof.ts).
+ * (rent.ts). A reimbursement link's pair counts too, so a paid-back charge's merchant
+ * nets down when the payback arrives. The merchant proof reads these same rows
+ * (proof/cashFlowProof.ts).
  */
 export function spendingRows(book: Book, accountIds?: string[]) {
   const proven = provenMonths(book, accountIds);
@@ -250,7 +253,7 @@ export function spendingRows(book: Book, accountIds?: string[]) {
   const to = (proven.current ?? proven.window.at(-1))?.end;
   const windowEnd = proven.window.at(-1)?.end;
   const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
-  const inRange = book.rows.filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
+  const inRange = withReimbursements(book).filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
   const reversed = reversals(inRange);
   const inScope = inRange.filter((r) => !reversed.has(r.id));
   return {
@@ -288,9 +291,14 @@ export function merchantsIn(rows: BookRow[], p: { start: string; end: string }, 
 }
 
 /** Whether an expense row counts as one-off: tagged by hand, or its category always is. The one test the spending report and its proofs use. */
-export const oneOffTest = (settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">) => {
+export const oneOffTest = (settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, rowById?: Map<string, BookRow>) => {
   const nonRecurring = new Set(settings.nonRecurringCategories);
-  return (r: BookRow) => r.lane === "EXPENSE" && (nonRecurring.has(r.category) || expenseFingerprint(r) in settings.oneOffs);
+  // A reimbursement credit counts the way its charge does (book/reimbursements.ts).
+  return (row: BookRow) => {
+    if (row.lane !== "EXPENSE") return false;
+    const r = rowById ? oneOffSubject(row, rowById) : row;
+    return nonRecurring.has(r.category) || expenseFingerprint(r) in settings.oneOffs;
+  };
 };
 
 export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
@@ -299,7 +307,7 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
   const recurring = windowEnd ? detectRecurring(windowRows, windowEnd, last12From) : [];
   const bills = new Set(recurring.filter((c) => c.kind === "bill").map((c) => c.key));
-  const isOneOff = oneOffTest(settings);
+  const isOneOff = oneOffTest(settings, book.rowById);
 
   const enrich = (p: CashFlowPeriod): SpendingMonth => {
     let oneOffCents = 0;
@@ -311,7 +319,7 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
   // Candidates: anything already counted as one-off, and big charges that aren't a bill.
   const oneOffs: OneOffExpense[] = [];
   for (const r of windowRows) {
-    if (r.lane !== "EXPENSE") continue;
+    if (r.lane !== "EXPENSE" || r.reimbursement) continue;
     const fp = expenseFingerprint(r);
     const viaCategory = settings.nonRecurringCategories.includes(r.category);
     const tagged = viaCategory || fp in settings.oneOffs;

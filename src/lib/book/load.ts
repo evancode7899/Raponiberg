@@ -10,6 +10,8 @@ import { loadTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.
 import { readTaxDocs } from "../taxdocs/store.ts";
 import type { TaxDocsFile } from "../taxdocs/types.ts";
 import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts";
+import { readReimbursementLinks } from "../reimbursements/store.ts";
+import { EMPTY_REIMBURSEMENTS, resolveReimbursements, type ReimbursementState, type ReimbursementTag } from "./reimbursements.ts";
 import { billAccountIds, transferDifferenceAdjustments } from "../ledger/transferFees.ts";
 import { bookedOn } from "./booking.ts";
 import { readExceptions } from "./exceptionStore.ts";
@@ -104,6 +106,8 @@ export type BookRow = {
    */
   statementImportId: string;
   documentId: string;
+  /** Only on the rows a reimbursement link books (Book.reimbursements.rows), never on a statement's row. */
+  reimbursement?: ReimbursementTag;
 };
 
 export type BookStub = PayStubFacts & {
@@ -172,6 +176,11 @@ export type Book = {
   documents: BookDocument[];
   /** The owner's saved transfer decisions (transfers/decisionStore.ts), or why the file can't be read. */
   decisions: DecisionsFile | { error: string };
+  /**
+   * The owner's reimbursement links found in the rows, and the credit/debit pairs they
+   * book (book/reimbursements.ts). Absent on a Book built without them (tests): no links.
+   */
+  reimbursements?: ReimbursementState;
   /** The classification rules version the rows were last filed with (null: never recorded). */
   classifiedWith: number | null;
   /** The household file (lib/household) as it is now: local merchants for rent detection, tax-year caveats. */
@@ -223,7 +232,7 @@ type RawRow = {
  * Loads the whole Book and runs every integrity check over it. The one entry point for
  * figures: modules take a Book, never the database.
  */
-export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: string; decisionsFile?: string } = {}): Promise<Book> {
+export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: string; decisionsFile?: string; reimbursementsFile?: string } = {}): Promise<Book> {
   const today = opts.today ?? localToday();
   // Read first: a damaged exceptions file stops the Book rather than silently dropping them.
   const exceptions = readExceptions(opts.exceptionsFile);
@@ -492,6 +501,12 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   book.integrity = { ...checked.report, retired: exceptions.retired };
   book.passes = checked.passes;
   book.horizon.cashFlow = cashFlowThrough(book);
+  // A damaged links file applies no link (every figure stays as the statements print it) and says so where links are shown.
+  try {
+    book.reimbursements = resolveReimbursements(readReimbursementLinks(opts.reimbursementsFile), book);
+  } catch (e) {
+    book.reimbursements = { ...EMPTY_REIMBURSEMENTS, error: e instanceof Error ? e.message : String(e) };
+  }
   return book;
 }
 

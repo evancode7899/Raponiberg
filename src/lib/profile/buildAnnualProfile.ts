@@ -67,6 +67,8 @@ export type YearCash = {
   waterfall: CashWaterfall;
   otherIncomeDetail: { interest: number; dividends: number; other: number };
   reimbursements: number;
+  /** Paycheck reimbursements linked to specific charges (book/reimbursements.ts): netted in those charges' categories, so left out of `reimbursements`. */
+  payLinked: number;
   spending: CategoryCents[];
   /** The "other" income by category (income rows that aren't pay, interest or reimbursements). */
   otherIncomeByCategory: CategoryCents[];
@@ -237,7 +239,9 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     for (const v of investmentIncomeByAccount(book, year, cashEnd).values()) if (v.kind === "TAXABLE") dividends += v.cents;
     const sumPeople = (f: (p: PersonYear) => number) => people.reduce((s, p) => s + f(p), 0);
     // Expense reimbursements arrive by Zelle/Venmo or inside a paycheck; both offset spending.
-    reimbursements += sumPeople((p) => p.reimbursements);
+    // Less the paycheck lines linked to specific charges: those are netted in the charges' categories.
+    const payReimbursements = sumPeople((p) => p.reimbursements) - rows.payLinked;
+    reimbursements += payReimbursements;
     const living = [...spending.values()].reduce((s, v) => s + v, 0) - reimbursements;
     const waterfall = cashWaterfall({
       salary: sumPeople((p) => p.salary),
@@ -277,10 +281,11 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
             waterfall,
             otherIncomeDetail: { interest, dividends, other },
             reimbursements,
+            payLinked: rows.payLinked,
             spending: byCents(spending),
             otherIncomeByCategory: byCents(rows.otherByCategory),
             taxRowsByCategory: { income: byCents(rows.taxByCategory.income), spending: byCents(rows.taxByCategory.spending) },
-            livingTrail: livingTrail(start, cashEnd, rows, sumPeople((p) => p.reimbursements)),
+            livingTrail: livingTrail(start, cashEnd, rows, payReimbursements),
             timing: rows.timing,
           }
         : null;

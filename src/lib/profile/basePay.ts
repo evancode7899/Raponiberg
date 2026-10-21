@@ -107,7 +107,11 @@ export type LivingTrail = {
   /** One-offs tagged one by one, and whole categories counted as one-offs (Settings › non-recurring categories). */
   oneOffs: { date: string; payee: string; account: string; category: string; cents: number; label: string }[];
   oneOffCategories: { category: string; cents: number; rows: number }[];
-  /** Reimbursements received (Zelle/Venmo rows), and paid inside paychecks. */
+  /**
+   * Reimbursements received (Zelle/Venmo rows), and paid inside paychecks; both less what
+   * is linked to specific charges (book/reimbursements.ts), which nets in those charges'
+   * categories inside `spending` instead.
+   */
   reimbursements: number;
   payReimbursements: number;
   /** The window's living cost before annualizing. */

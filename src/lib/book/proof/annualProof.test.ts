@@ -10,6 +10,9 @@ import { rollTotalValue, rollValue } from "../../profile/rollLines";
 import { buildAccountRollforwards } from "../../profile/rollforwards";
 import { BUCKETS, DEFAULT_SETTINGS, PROFILE_SETTINGS_KEY, type FinancialProfileSettings } from "../../profile/settings";
 import type { Book, BookBrokerage, BookRow, BookStatement, BookStub, BookTransferMatch } from "../load";
+import { resolveReimbursements, rowFingerprint } from "../reimbursements";
+import { buildCashFlowReport } from "../reports/cashFlow";
+import type { ReimbursementLinksFile } from "../../reimbursements/store";
 import { buildAnnualProof, parseAnnualDescriptor, type AnnualCashLine, type AnnualDescriptor } from "./annualProof";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 import type { ChainLine } from "./types";
@@ -444,5 +447,95 @@ describe("annual statement proofs", () => {
     expect(parseAnnualDescriptor({ report: "annual", figure: "rollforward", year: 2025, line: "closing" })).toHaveProperty("error");
     expect(parseAnnualDescriptor({ report: "annual", figure: "nope", year: 2025 })).toHaveProperty("error");
     expect(parseAnnualDescriptor({ report: "annual", figure: "cash", line: "saved" })).toHaveProperty("error");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reimbursement links: the May 9 stub's $75 expense reimbursement paid back $50 of the
+// May 10 groceries and $25 of the May 15 diner bill; the Aug 5 Zelle paid back the Aug 15
+// diner bill in part. Totals stay put; the money moves into the charges' categories.
+
+describe("reimbursement links", () => {
+  const ids: Record<string, string[]> = { chk: ["1234"], card: ["5678"], brk: ["X2468"], ret: ["R9999"] };
+  const base = makeBook();
+  const linkedBase = { ...base, accounts: base.accounts.map((a) => ({ ...a, identifiers: ids[a.id] ?? [] })) } as Book;
+  const row = (account: string, date: string, payee: string) => rows.find((r) => r.accountId === account && r.date === date && r.payee === payee)!;
+  const groceries = row("chk", "2025-05-10", "SPRINGFIELD GROCER");
+  const diner = row("card", "2025-05-15", "EXAMPLE DINER");
+  const augDiner = row("card", "2025-08-15", "EXAMPLE DINER");
+  const junGroceries = row("chk", "2025-06-10", "SPRINGFIELD GROCER");
+  const zelle = row("chk", "2025-08-05", "ZELLE FROM SAM SAMPLE");
+  const fp = (r: BookRow) => rowFingerprint(r, linkedBase.accounts);
+  const stubLine = { kind: "stub" as const, stub: { employerKey: employerKey(EMPLOYER), payDate: "2025-05-09", line: "Expense Reimbursement", cents: 7_500 } };
+  const at = (n: number) => `2026-04-0${n}T00:00:00Z`;
+  const file: ReimbursementLinksFile = {
+    version: 1,
+    links: [
+      { id: "l1", expense: fp(groceries), source: stubLine, cents: 5_000, note: "Q2 report", linkedAt: at(1) },
+      { id: "l2", expense: fp(diner), source: stubLine, cents: 2_500, note: null, linkedAt: at(2) },
+      // The stub line is used up: this one waits.
+      { id: "l3", expense: fp(junGroceries), source: stubLine, cents: 100, note: null, linkedAt: at(3) },
+      { id: "l4", expense: fp(augDiner), source: { kind: "row", row: fp(zelle) }, cents: 10_000, note: null, linkedAt: at(4) },
+      { id: "l5", expense: { ...fp(groceries), date: "2019-01-01" }, source: stubLine, cents: 1, note: null, linkedAt: at(5) },
+    ],
+  };
+  const linked = { ...linkedBase, reimbursements: resolveReimbursements(file, linkedBase) } as Book;
+  const linkedProfile = buildAnnualProfile(linked, SETTINGS);
+  const y0 = profile.years.find((y) => y.year === 2025)!.cash!;
+  const y1 = linkedProfile.years.find((y) => y.year === 2025)!.cash!;
+  const cat = (c: typeof y0, name: string) => c.spending.find((s) => s.category === name)?.cents ?? 0;
+
+  it("applies links that fit and says why the others wait", () => {
+    const st = linked.reimbursements!;
+    expect(st.links.map((l) => [l.id, l.status])).toEqual([
+      ["l1", "APPLIED"],
+      ["l2", "APPLIED"],
+      ["l3", "WAITING"],
+      ["l4", "APPLIED"],
+      ["l5", "WAITING"],
+    ]);
+    expect(st.links.find((l) => l.id === "l3")!.reason).toMatch(/payback is \$75\.00 and other links already use \$75\.00/);
+    expect(st.links.find((l) => l.id === "l5")!.reason).toMatch(/isn't on any statement/);
+    expect(st.rows).toHaveLength(6);
+    expect(st.rows.reduce((t, r) => t + r.amountCents, 0)).toBe(0);
+  });
+
+  it("moves the money into the charges' categories and leaves living cost alone", () => {
+    expect(y1.waterfall.living).toBe(y0.waterfall.living);
+    expect(y1.waterfall.saved).toBe(y0.waterfall.saved);
+    expect(cat(y1, "Groceries")).toBe(cat(y0, "Groceries") - 5_000);
+    expect(cat(y1, "Restaurants")).toBe(cat(y0, "Restaurants") - 12_500);
+    expect(y1.payLinked).toBe(7_500);
+    expect(y1.reimbursements).toBe(y0.reimbursements - 17_500);
+  });
+
+  it("keeps cash flow's net month by month, with the credit in the charge's category", () => {
+    const before = buildCashFlowReport(base, { granularity: "month" }).periods;
+    const after = buildCashFlowReport(linked, { granularity: "month" }).periods;
+    expect(after.map((p) => p.netCents)).toEqual(before.map((p) => p.netCents));
+    const may0 = before.find((p) => p.start === "2025-05-01")!;
+    const may1 = after.find((p) => p.start === "2025-05-01")!;
+    expect(may1.spendingCents).toBe(may0.spendingCents - 7_500);
+    expect(may1.incomeByCategory.find((c) => c.category === "Paycheck")!.cents).toBe(may0.incomeByCategory.find((c) => c.category === "Paycheck")!.cents - 7_500);
+  });
+
+  it("proves the year's cash lines and categories with the links applied", async () => {
+    const ctx2 = { book: linked, db: fakeDb };
+    const ds: [AnnualDescriptor, number][] = [
+      ...CASH.flatMap(([line, f]) => {
+        const v = f(linkedProfile.years.find((y) => y.year === 2025)!);
+        return v == null ? [] : [[{ report: "annual", figure: "cash", year: 2025, line }, v] as [AnnualDescriptor, number]];
+      }),
+      ...y1.spending.map((s) => [{ report: "annual", figure: "category", year: 2025, category: s.category }, s.cents] as [AnnualDescriptor, number]),
+    ];
+    for (const [d, page] of ds) {
+      const p = await buildProof(ctx2, d);
+      const what = JSON.stringify(d);
+      expect(p.figure, what).toEqual({ cents: page });
+      expect(p.selfCheck?.ok, `${what}: ${p.selfCheck?.explain}`).toBe(true);
+      for (const c of chains(p)) expect(reAdds(c.lines), `${what} · ${c.title}`).toEqual([]);
+    }
+    const reimb = await buildProof(ctx2, { report: "annual", figure: "cash", year: 2025, line: "reimbursements" });
+    expect(chains(reimb)[0]!.lines.find((l) => l.label === "Linked to the charges they paid back")).toMatchObject({ op: "−", value: { cents: 7_500 } });
   });
 });
