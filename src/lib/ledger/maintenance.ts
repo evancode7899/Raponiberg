@@ -3,6 +3,7 @@ import { applyRecurringChecks, reclassifyRows, syncMerchantRules } from "../clas
 import { CLASSIFIER_HOUSEHOLD_SETTING, CLASSIFIER_VERSION, CLASSIFIER_VERSION_SETTING } from "../classifier/version.ts";
 import { householdPatterns } from "../household/householdFile.ts";
 import { refreshOutdatedFacts } from "../ingest/documentFacts.ts";
+import { FACT_PARSERS, FACTS_VERSION } from "../ingest/factsVersion.ts";
 import { syncRowDecisions } from "../review/rowDecisions.ts";
 import { runTransferMatching } from "../transfers/runMatching.ts";
 
@@ -94,4 +95,18 @@ export async function refreshDerived(db: Db): Promise<MaintenanceReport> {
     const derived = "$transaction" in db ? await (db as PrismaClient).$transaction(run, { timeout: 300_000, maxWait: 60_000 }) : await run(db);
     return { ...derived, factsRefreshed: facts.refreshed, factsFailed: facts.failed };
   });
+}
+
+/**
+ * Run when the server starts: if any document's facts were stored by an older extractor
+ * (FACTS_VERSION was bumped), runs the full refresh once, so the new extractor's figures
+ * reach the Book on the next launch without an import or the Re-run classifier button.
+ * Returns null when every document is current.
+ */
+export async function refreshOutdatedFactsOnLaunch(
+  db: PrismaClient,
+  refresh: (db: PrismaClient) => Promise<MaintenanceReport> = refreshDerived,
+): Promise<MaintenanceReport | null> {
+  const outdated = await db.sourceDocument.count({ where: { factsVersion: { lt: FACTS_VERSION }, parserId: { in: FACT_PARSERS } } });
+  return outdated > 0 ? refresh(db) : null;
 }
