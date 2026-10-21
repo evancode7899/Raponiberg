@@ -126,7 +126,13 @@ export function extractTrinetStub(text: string): PayStubFacts | null {
     for (const r of sectionRows(ls, iTaxable + 1, iTotTaxable)) lineItems.push({ name: `Imputed: ${r.name}`, kind: "IMPUTED", current: r.values[0] ?? 0, ytd: r.values[1] ?? null });
   }
   if (iNonTaxable != null && iTotNonTaxable != null) {
-    for (const r of sectionRows(ls, iNonTaxable + 1, iTotNonTaxable)) lineItems.push({ name: r.name, kind: classifyEmployer(r.name), current: r.values[0] ?? 0, ytd: r.values[1] ?? null });
+    for (const r of sectionRows(ls, iNonTaxable + 1, iTotNonTaxable)) {
+      // "LTD*": a taxable benefit with nothing this period moves here, "*" marking it taxable,
+      // still carrying its year-to-date imputed income.
+      const taxable = r.name.endsWith("*");
+      const name = taxable ? `Imputed: ${r.name.slice(0, -1).trim()}` : r.name;
+      lineItems.push({ name, kind: taxable ? "IMPUTED" : classifyEmployer(r.name), current: r.values[0] ?? 0, ytd: r.values[1] ?? null });
+    }
   }
 
   const taxes = totalValues(iTotTaxes);
