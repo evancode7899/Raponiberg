@@ -36,8 +36,21 @@ Add-Type -AssemblyName System.Drawing | Out-Null
 . (Join-Path $PSScriptRoot "launcher-splash.ps1")
 $script:Splash = $null
 
+# Logging is best-effort: a launcher.log held open by another program (a `tail -f`, an
+# editor, a sync client) must never stop the app from starting. A failed write would
+# otherwise throw under $ErrorActionPreference = "Stop", and the trap below logs first,
+# so it failed too and the launcher died without a word. A brief lock is retried; a
+# lasting one drops the line.
 function Write-Log([string]$Text) {
-  Add-Content -Path $LauncherLog -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $Text"
+  $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $Text"
+  for ($try = 0; $try -lt 3; $try++) {
+    try {
+      Add-Content -Path $LauncherLog -Value $line -ErrorAction Stop
+      return
+    } catch {
+      Start-Sleep -Milliseconds 50
+    }
+  }
 }
 
 $script:Tray = $null
