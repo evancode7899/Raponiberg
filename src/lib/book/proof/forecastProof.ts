@@ -14,7 +14,7 @@ import { inclusiveDays } from "../../dates/isoDate.ts";
 import type { Book } from "../load.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
 import { buildCashFlowProof, CASH_FLOW_CHECKS, type CashFlowDescriptor } from "./cashFlowProof.ts";
-import { checksFor, sumCheck } from "./common.ts";
+import { checksFor, perBook, sumCheck } from "./common.ts";
 import { buildNetWorthProof, NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { PAY_CHECKS, type PayDescriptor } from "./payProof.ts";
 import type { BonusesDescriptor } from "./bonusesProof.ts";
@@ -1234,5 +1234,5 @@ export function buildForecastProof(book: Book, data: ForecastData, d: ForecastDe
 export const forecastKind: ProofKind<ForecastDescriptor> = {
   report: "forecast",
   parse: parseForecastDescriptor,
-  build: async ({ book, db }, d) => buildForecastProof(book, await loadForecastData(db, book), d),
+  build: async (ctx, d) => buildForecastProof(ctx.book, await perBook(ctx, "forecast-data", () => loadForecastData(ctx.db, ctx.book)), d),
 };

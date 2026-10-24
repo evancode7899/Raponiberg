@@ -34,7 +34,7 @@ const ratio = (r: number | null) => (r == null ? "—" : `${(r * 100).toFixed(r 
 const accountTarget = (accountId: string | null, shownCents: number): ProofTarget => ({ descriptor: { report: "investments", ...(accountId ? { accountId } : {}) }, shownCents });
 /** A position's proof; the balancing line ("whole account", "change since holdings") opens its account's. */
 const positionTarget = (p: PositionRow): ProofTarget =>
-  p.kind === "ACCOUNT" ? { descriptor: { report: "investments", accountId: p.accountId }, shownCents: p.valueCents } : { descriptor: { report: "investments", accountId: p.accountId, position: p.key }, shownCents: p.valueCents };
+  p.kind === "ACCOUNT" ? { descriptor: { report: "investments", accountId: p.accountId }, shownCents: p.valueCents } : { descriptor: { report: "investments", accountId: p.accountId, position: p.key, ...(p.lot ? { lot: p.lot } : {}) }, shownCents: p.valueCents };
 
 export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);

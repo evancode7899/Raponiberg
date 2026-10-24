@@ -5,7 +5,7 @@ import { decompose, valueAt } from "../../ledger/timeline.ts";
 import { personPayYear } from "../pay.ts";
 import type { Book, BookRow } from "../load.ts";
 import type { CheckId } from "../types.ts";
-import { checksFor, estimatesFor, sumCheck } from "./common.ts";
+import { checksFor, estimatesFor, perBook, sumCheck } from "./common.ts";
 import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstimate, ProofGroup, ProofKind, ProofLink } from "./types.ts";
 import type { PayDescriptor } from "./payProof.ts";
 
@@ -510,4 +510,4 @@ export function makeHsaKind(load: (ctx: ProofContext) => Promise<HsaReport>): Pr
   return { report: "hsa", parse: parseHsaDescriptor, build: async (ctx, d) => buildHsaProof(ctx.book, await load(ctx), d) };
 }
 
-export const hsaKind = makeHsaKind(async ({ db }) => (await import("../../hsa/loadReport.ts")).loadHsaReport(db));
+export const hsaKind = makeHsaKind((ctx) => perBook(ctx, "hsa-report", async () => (await import("../../hsa/loadReport.ts")).loadHsaReport(ctx.db)));

@@ -1,5 +1,6 @@
 import { minIso } from "../dates/isoDate.ts";
 import { valueAt } from "../ledger/timeline.ts";
+import { taxYearThrough } from "./blockers.ts";
 import type { FederalParams } from "../tax/params.ts";
 import type { Book, BookAccount, BookBrokerage, BookRow } from "./load.ts";
 
@@ -174,7 +175,7 @@ export type IraYear = {
   conversions: number;
   /** This year's traditional-IRA contributions (non-deductible basis for Form 8606). */
   traditionalContributions: number;
-  /** Pre-tax IRA money (traditional, rollover) on December 31, or on the latest statement for the year in progress. */
+  /** Pre-tax IRA money (traditional, rollover) on December 31, or at the data edge for the year in progress. */
   pretaxAccounts: { name: string; cents: number }[];
   /** Where the custodian's year-to-date contributions line disagrees with the ledger. */
   mismatches: string[];
@@ -191,8 +192,14 @@ export function taxableConversion(conversions: number, basis: number, pretaxYear
   return pos(conversions - nontaxable);
 }
 
-/** A person's IRA contributions and Roth conversions for the year, from the IRAs' ledger rows. */
+/**
+ * A person's IRA contributions and Roth conversions for the year, from the IRAs' ledger
+ * rows. The year in progress runs through the data edge (taxYearThrough), as pay and every
+ * other figure on the Taxes and Account limits pages do: an IRA statement already in past
+ * it waits for the rest of the household's.
+ */
 export function iraYear(book: Book, personId: string, year: number): IraYear {
+  const through = taxYearThrough(book, year);
   const iras = book.accounts.filter((a) => IRA_SUBTYPES.includes(a.subtype ?? "") && accountOwner(book, a.id) === personId);
   const contributions: IraYear["contributions"] = [];
   const mismatches: string[] = [];
@@ -201,7 +208,7 @@ export function iraYear(book: Book, personId: string, year: number): IraYear {
     let contributed = 0;
     let deposited = 0;
     const rowIds: string[] = [];
-    for (const r of book.rows.filter((x) => x.accountId === a.id && x.date.startsWith(String(year)))) {
+    for (const r of book.rows.filter((x) => x.accountId === a.id && x.date.startsWith(String(year)) && x.date <= through)) {
       if (r.amountCents > 0 && r.lane !== "INCOME") deposited += r.amountCents;
       const other = otherLegSubtype(book, r);
       const rollover = /roll|acat|transfer of assets/i.test(r.payee) && !/conver|to roth/i.test(r.payee);
@@ -214,7 +221,7 @@ export function iraYear(book: Book, personId: string, year: number): IraYear {
     if (contributed) contributions.push({ accountId: a.id, account: a.name, kind: a.subtype!, cents: contributed, rowIds });
     // The custodian's "contributions" line counts every deposit (rollovers and conversions
     // in too), so it checks that no deposit is missing; which kind each is comes from the rows.
-    const stated = statementContributionsYtd(snapshotsOf(book, a), year);
+    const stated = statementContributionsYtd(snapshotsOf(book, a).filter((s) => s.periodEnd <= through), year);
     if (stated != null && stated !== deposited) {
       mismatches.push(`${a.name}: the ${year} statements show ${dollars(stated)} deposited, but the ledger's deposits into it add up to ${dollars(deposited)}.`);
     }
@@ -224,7 +231,7 @@ export function iraYear(book: Book, personId: string, year: number): IraYear {
     .filter((a) => a.subtype !== "ROTH_IRA")
     .map((a) => {
       const t = book.ledger.accounts.find((l) => l.id === a.id)?.timeline;
-      return { name: a.name, cents: t?.lastDay ? valueAt(t, minIso(`${year}-12-31`, t.lastDay)).cents : 0 };
+      return { name: a.name, cents: t?.lastDay ? valueAt(t, minIso(through, t.lastDay)).cents : 0 };
     })
     .filter((x) => x.cents !== 0);
   return { contributions, conversions, traditionalContributions, pretaxAccounts, mismatches };
@@ -252,15 +259,17 @@ export type ChetYear = {
  * year-to-date line, checked against the deposits the ledger shows going into the account.
  */
 export function chetYear(book: Book, year: number): ChetYear {
-  const numbers = [...new Set(book.brokerage.filter((b) => b.isChet && b.periodEnd.startsWith(String(year))).map((b) => b.accountNumber))];
+  // The year in progress runs through the data edge, as iraYear does.
+  const through = taxYearThrough(book, year);
+  const numbers = [...new Set(book.brokerage.filter((b) => b.isChet && b.periodEnd.startsWith(String(year)) && b.periodEnd <= through).map((b) => b.accountNumber))];
   const mismatches: string[] = [];
   const accounts = numbers.map((n) => {
     const acct = book.accounts.find((a) => a.identifiers.includes(n));
     const statement = statementContributionsYtd(
-      book.brokerage.filter((b) => b.accountNumber === n),
+      book.brokerage.filter((b) => b.accountNumber === n && b.periodEnd <= through),
       year,
     );
-    const deposits = acct ? book.rows.filter((r) => r.accountId === acct.id && r.date.startsWith(String(year)) && r.amountCents > 0 && r.lane !== "INCOME") : null;
+    const deposits = acct ? book.rows.filter((r) => r.accountId === acct.id && r.date.startsWith(String(year)) && r.date <= through && r.amountCents > 0 && r.lane !== "INCOME") : null;
     const ledger = deposits ? deposits.reduce((s, r) => s + r.amountCents, 0) : null;
     const name = acct?.name ?? `CHET 529 ••${n.slice(-4)}`;
     if (statement != null && ledger != null && statement !== ledger) {

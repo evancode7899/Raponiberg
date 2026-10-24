@@ -42,9 +42,11 @@ const snap = (accountNumber: string, periodEnd: string, contributionsYtd: number
 const statement = (accountId: string, periodEnd: string): BookStatement =>
   ({ id: `s-${accountId}-${periodEnd}`, accountId, documentId: "d", documentTitle: "", importedAt: "", status: "COMMITTED", isSummary: false, periodStart: periodEnd.slice(0, 8) + "01", periodEnd, deltaCents: 0 }) as BookStatement;
 
-const book = (b: { accounts?: BookAccount[]; rows?: BookRow[]; brokerage?: BookBrokerage[]; statements?: BookStatement[] }): Book =>
+const book = (b: { accounts?: BookAccount[]; rows?: BookRow[]; brokerage?: BookBrokerage[]; statements?: BookStatement[]; edge?: string }): Book =>
   ({
     today: "2026-10-01",
+    // The data edge: the year in progress runs through it.
+    horizon: { cashFlow: b.edge ?? "2026-09-30", netWorth: b.edge ?? "2026-09-30" },
     accounts: b.accounts ?? [],
     rows: b.rows ?? [],
     brokerage: b.brokerage ?? [],
@@ -137,6 +139,15 @@ describe("IRA contributions and conversions", () => {
     const ira = iraYear(book({ accounts: [trad, roth], rows }), "pat", 2026);
     expect(ira).toMatchObject({ conversions: $(7_000.73), traditionalContributions: $(7_000), contributions: [{ account: trad.name, cents: $(7_000) }], mismatches: [] });
     expect(taxableConversion(ira.conversions, ira.traditionalContributions, 0)).toBe(73);
+  });
+
+  it("counts the year in progress through the data edge, like every other figure on the page", () => {
+    const rows = [row("r", "2026-03-10", 3_000, "IRA CONTRIBUTION"), row("r", "2026-08-12", 2_000, "IRA CONTRIBUTION")];
+    expect(iraYear(book({ accounts: [roth], rows, edge: "2026-06-30" }), "pat", 2026).contributions).toMatchObject([{ cents: $(3_000) }]);
+    expect(iraYear(book({ accounts: [roth], rows, edge: "2026-08-31" }), "pat", 2026).contributions).toMatchObject([{ cents: $(5_000) }]);
+    // A finished year counts all of it, wherever the edge is.
+    const last = [row("r", "2025-11-12", 2_000, "IRA CONTRIBUTION")];
+    expect(iraYear(book({ accounts: [roth], rows: last, edge: "2026-06-30" }), "pat", 2025).contributions).toMatchObject([{ cents: $(2_000) }]);
   });
 
   it("checks every deposit against the custodian's contributions line (rollovers count there too)", () => {

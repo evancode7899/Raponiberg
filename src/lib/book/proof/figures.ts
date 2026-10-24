@@ -1,0 +1,409 @@
+import type { GarageReport } from "../../car/report.ts";
+import type { Forecast } from "../../forecast/forecast.ts";
+import { monthPeriods, yearPeriods } from "../../forecast/periods.ts";
+import { COST_LINES } from "../../car/report.ts";
+import { CAR_KINDS } from "../../car/settings.ts";
+import type { HsaReport } from "../../hsa/report.ts";
+import type { AnnualProfileReport } from "../../profile/buildAnnualProfile.ts";
+import { rollTotalValue, rollValue } from "../../profile/rollLines.ts";
+import type { RollforwardReport } from "../../profile/rollforwards.ts";
+import { BUCKETS } from "../../profile/settings.ts";
+import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateKey } from "../../tax/estimateLines.ts";
+import type { TaxReport } from "../../tax/buildTaxReport.ts";
+import type { BonusesReport } from "../reports/bonuses.ts";
+import type { CashFlowPeriod } from "../reports/cashFlow.ts";
+import type { GoalsReport } from "../reports/goals.ts";
+import type { InvestmentsReport } from "../reports/investments.ts";
+import type { NetWorthReport } from "../reports/netWorth.ts";
+import type { TaxAccountsReport } from "../reports/taxAccounts.ts";
+import type { buildHomeSummary } from "../../dashboard/homeSummary.ts";
+import type { AccountLimitsDescriptor } from "./accountLimitsProof.ts";
+import type { AnnualCashLine, AnnualDescriptor } from "./annualProof.ts";
+import type { BonusesDescriptor } from "./bonusesProof.ts";
+import type { CarFigureDescriptor } from "./carProof.ts";
+import { LEDGER_LINES, ledgerValue, type LedgerLine } from "./forecastProof.ts";
+import type { ProofDescriptor } from "./index.ts";
+import type { Book } from "../load.ts";
+import type { ProofValue } from "./types.ts";
+
+/**
+ * Every figure each page shows, with the descriptor of its proof and the value the page
+ * shows (null where the page shows no single value the proof's figure can be held to: a
+ * date, a projection the page recomputes as you type). One list per page, read off the
+ * same report the page reads: the page's tests walk it on invented households, and the
+ * proof sweep (sweep.ts) walks it on the owner's own Book, so a figure that drifts from
+ * its proof is caught whether or not anyone clicks it.
+ */
+export type PageFigure = {
+  page: string;
+  descriptor: ProofDescriptor;
+  shown: ProofValue | null;
+  /** A document as it prints (a statement, a row, a stub): viewers always show it, so a finding over its days withholds what's built from it, never it. */
+  asPrinted?: boolean;
+};
+
+const cents = (c: number | null | undefined): ProofValue | null => (c == null ? null : { cents: c });
+
+// ------------------------------------------------------------------ Cash flow
+
+/** Each proven month's income, spending, outside money and saved, and each category of it. */
+export function cashFlowFigures(periods: CashFlowPeriod[], accountIds?: string[]): PageFigure[] {
+  const out: PageFigure[] = [];
+  const scope = accountIds?.length ? { accountIds } : {};
+  for (const p of periods) {
+    if (p.blockers.length) continue;
+    const d = (metric: "income" | "spending" | "external" | "net", category?: string): ProofDescriptor => ({ report: "cash-flow", metric, granularity: "month", start: p.start, end: p.end, ...(category ? { category } : {}), ...scope });
+    out.push(
+      { page: "Cash flow", descriptor: d("income"), shown: cents(p.incomeCents) },
+      { page: "Cash flow", descriptor: d("spending"), shown: cents(p.spendingCents) },
+      { page: "Cash flow", descriptor: d("net"), shown: cents(p.netCents) },
+      { page: "Cash flow", descriptor: d("external"), shown: cents(p.externalByCategory.reduce((t, c) => t + c.cents, 0)) },
+    );
+    for (const c of p.spendingByCategory) out.push({ page: "Cash flow", descriptor: d("spending", c.category), shown: cents(c.cents) });
+    for (const c of p.incomeByCategory) out.push({ page: "Cash flow", descriptor: d("income", c.category), shown: cents(c.cents) });
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ Net worth
+
+/** Net worth today, assets, debts, each group and account, the twelve months' change, and each month's change. */
+export function netWorthFigures(r: NetWorthReport): PageFigure[] {
+  const out: PageFigure[] = [];
+  const at = r.current.asOf;
+  const page = "Net worth";
+  if (!r.current.blockers.length) {
+    out.push(
+      { page, descriptor: { report: "net-worth", metric: "balance", date: at }, shown: cents(r.current.totalCents) },
+      { page, descriptor: { report: "net-worth", metric: "balance", date: at, side: "assets" }, shown: cents(r.summary.assetsCents) },
+      { page, descriptor: { report: "net-worth", metric: "balance", date: at, side: "debts" }, shown: cents(r.summary.debtsCents) },
+    );
+    for (const g of r.summary.groups) out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: at, accountIds: g.accountIds }, shown: cents(g.cents) });
+    for (const a of r.accounts) if (a.currentCents !== 0) out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: at, accountIds: [a.id] }, shown: cents(a.currentCents) });
+  }
+  const t = r.summary.trailing12;
+  if (t && !t.blockers.length) {
+    out.push(
+      { page, descriptor: { report: "net-worth", metric: "change", granularity: "month", start: t.start, end: t.end }, shown: cents(t.changeCents) },
+      { page, descriptor: { report: "dashboard", figure: "saving", start: t.start, end: t.end }, shown: cents(t.principalCents) },
+      { page, descriptor: { report: "dashboard", figure: "markets", start: t.start, end: t.end }, shown: cents(t.growthCents) },
+    );
+  }
+  for (const p of r.periods) {
+    if (p.blockers.length) continue;
+    out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: p.end }, shown: cents(p.household.closingCents) });
+    out.push({ page, descriptor: { report: "net-worth", metric: "change", granularity: r.granularity, start: p.start, end: p.end }, shown: cents(p.household.closingCents - p.household.openingCents) });
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ Home
+
+/** Every figure on Home: each one carries its own proof descriptor in the summary. */
+export function homeFigures(s: ReturnType<typeof buildHomeSummary>): PageFigure[] {
+  const out: PageFigure[] = [];
+  const page = "Home";
+  const add = (descriptor: ProofDescriptor | null | undefined, shown: number | null | undefined) => {
+    if (descriptor && shown != null) out.push({ page, descriptor, shown: { cents: shown } });
+  };
+  const nw = s.netWorth;
+  if (nw.proofs) {
+    add(nw.proofs.total, nw.totalCents);
+    add(nw.proofs.assets, nw.assetsCents);
+    add(nw.proofs.debts, nw.debtsCents);
+    add(nw.proofs.liquid, nw.liquidCents);
+  }
+  for (const c of [nw.change.month, nw.change.year, nw.change.ytd]) if ("proof" in c) add(c.proof, c.cents);
+  if (nw.drivers) {
+    add(nw.drivers.proofs.principal, nw.drivers.principalCents);
+    add(nw.drivers.proofs.growth, nw.drivers.growthCents);
+  }
+  for (const g of nw.groups) add(g.proof, g.cents);
+  const cf = s.cashFlow;
+  if (cf.last12) {
+    add(cf.last12.proofs.income, cf.last12.incomeCents);
+    add(cf.last12.proofs.spending, cf.last12.spendingCents);
+    add(cf.last12.proofs.net, cf.last12.netCents);
+  }
+  if (cf.lastMonth) add(cf.lastMonth.proof, cf.lastMonth.spendingCents);
+  for (const c of cf.categories) if (c.lastMonthCents) add(c.proof, c.lastMonthCents);
+  return out;
+}
+
+// ------------------------------------------------------------------ Investments
+
+/** The invested total, each account's value and each position in it. */
+export function investmentsFigures(r: InvestmentsReport): PageFigure[] {
+  const page = "Investments";
+  const out: PageFigure[] = [{ page, descriptor: { report: "investments" }, shown: cents(r.totalCents) }];
+  for (const a of r.accounts) if (!a.blockers.length) out.push({ page, descriptor: { report: "investments", accountId: a.accountId }, shown: cents(a.valueCents) });
+  for (const p of r.positions) if (p.kind !== "ACCOUNT") out.push({ page, descriptor: { report: "investments", accountId: p.accountId, position: p.key, ...(p.lot ? { lot: p.lot } : {}) }, shown: cents(p.valueCents) });
+  return out;
+}
+
+// ------------------------------------------------------------------ Annual
+
+const CASH: [AnnualCashLine, (y: AnnualProfileReport["years"][number]) => number | null][] = [
+  ["other-income", (y) => y.cash!.waterfall.otherIncome],
+  ["gross", (y) => y.cash!.waterfall.grossCash],
+  ["withholding", (y) => y.cash!.waterfall.withholding],
+  ["taxes-paid", (y) => y.cash!.waterfall.additionalTaxes],
+  ["refunds", (y) => y.cash!.waterfall.refunds],
+  ["deductions", (y) => y.cash!.waterfall.otherDeductions],
+  ["employer", (y) => y.cash!.waterfall.employer],
+  ["net-cash", (y) => y.cash!.waterfall.netCash],
+  ["living", (y) => y.cash!.waterfall.living],
+  ["one-offs", (y) => y.cash!.waterfall.nonRecurring],
+  ["saved", (y) => y.cash!.waterfall.saved],
+  ["reimbursements", (y) => y.cash!.reimbursements],
+  ["tax-rate", () => null],
+  ["savings-of-gross", () => null],
+  ["savings-of-net", () => null],
+];
+
+/** The annual statement's cash lines and categories, year-end net worth and its buckets, the bridge, and every roll-forward. */
+export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardReport): PageFigure[] {
+  const out: PageFigure[] = [];
+  const add = (page: string, d: AnnualDescriptor, v: number | null) => out.push({ page, descriptor: d, shown: cents(v) });
+  for (const y of profile.years) {
+    const year = y.year;
+    if (y.cash) {
+      for (const [line, f] of CASH) add("Annual", { report: "annual", figure: "cash", year, line }, f(y));
+      for (const s of y.cash.spending) add("Annual", { report: "annual", figure: "category", year, category: s.category }, s.cents);
+    }
+    const n = y.netWorth;
+    if (n) {
+      for (const b of BUCKETS) if (n.buckets[b.id] !== 0) add("Annual", { report: "annual", figure: "bucket", year, bucket: b.id }, b.debt ? -n.buckets[b.id] : n.buckets[b.id]);
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "net-worth" }, n.netWorth);
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "assets" }, n.grossAssets);
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "debt" }, -n.grossDebt);
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "liquid" }, n.liquid);
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "illiquid" }, n.illiquid);
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "in-transit" }, n.inTransit);
+    }
+    if (y.change) {
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "change" }, y.change.cents);
+      add("Annual", { report: "annual", figure: "net-worth", year, line: "change-pct" }, null);
+    }
+    if (y.bridge)
+      for (const line of ["cashSaved", "investmentGrowth", "outsideMoney", "newlyTracked", "inTransit", "unexplainedSavings", "total"] as const)
+        add("Annual", { report: "annual", figure: "bridge", year, line }, y.bridge[line]);
+  }
+  for (const a of rolls.accounts)
+    for (const x of a.years) {
+      for (const line of ["opening", "employee", "employer", "deposits", "withdrawals", "after-contributions", "income", "market", "fees", "closing"] as const)
+        add("Net worth › Account roll-forwards", { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line }, rollValue(x, line));
+      add("Net worth › Account roll-forwards", { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line: "return" }, null);
+    }
+  for (const year of rolls.years)
+    for (const line of ["closing", "contributions", "growth"] as const) {
+      const xs = rolls.accounts.flatMap((a) => a.years.filter((x) => x.year === year));
+      if (xs.length) add("Net worth › Account roll-forwards", { report: "annual", figure: "rollforward-total", year, line }, xs.reduce((s, x) => s + rollTotalValue(x, line), 0));
+    }
+  return out;
+}
+
+// ------------------------------------------------------------------ Bonuses
+
+const bon = (d: Record<string, unknown>) => ({ report: "bonuses", ...d }) as BonusesDescriptor;
+
+/** The totals, each award, tranche and vesting window, each letter's totals, and each year's reconciliation. */
+export function bonusesFigures(r: BonusesReport): PageFigure[] {
+  const page = "Bonuses";
+  const t = r.totals;
+  const out: [BonusesDescriptor, number][] = [
+    [bon({ figure: "totals", measure: "headline" }), t.headlineCents],
+    [bon({ figure: "totals", measure: "upfront" }), t.upfrontCents],
+    [bon({ figure: "totals", measure: "deferred" }), t.deferredCents],
+    [bon({ figure: "totals", measure: "deferredPaid" }), t.deferredPaidCents],
+    [bon({ figure: "totals", measure: "forfeited" }), t.forfeitedCents],
+    [bon({ figure: "totals", measure: "outstanding" }), t.outstandingCents],
+  ];
+  for (const a of r.awards) {
+    const aw = (measure: string, v: number) => out.push([bon({ figure: "award", letterId: a.letterId, year: a.year, measure }), v]);
+    aw("scheduled", a.upfrontCents + a.deferredCents + a.oneOffCents);
+    if (a.totalBonusCents != null) aw("headline", a.totalBonusCents);
+    if (a.totalComp) aw("totalComp", a.totalComp.cents);
+    aw("upfront", a.upfrontCents);
+    aw("deferred", a.deferredCents + a.planDeferredCents);
+    aw("paid", a.paidCents);
+    aw("forfeited", a.forfeitedCents);
+    aw("outstanding", a.outstandingCents);
+    for (const tr of a.tranches) out.push([bon({ figure: "tranche", letterId: a.letterId, year: a.year, window: tr.window, kind: tr.kind }), tr.amountCents]);
+  }
+  for (const w of r.windows) {
+    out.push([bon({ figure: "window", window: w.key, measure: "scheduled" }), w.scheduledCents]);
+    out.push([bon({ figure: "window", window: w.key, measure: "paid" }), w.paidCents]);
+  }
+  for (const l of r.letters) {
+    out.push([bon({ figure: "letter", letterId: l.id, measure: "scheduled" }), l.windowTotals.scheduledCents]);
+    out.push([bon({ figure: "letter", letterId: l.id, measure: "paid" }), l.windowTotals.paidCents]);
+  }
+  for (const y of r.byYear) out.push([bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }), y.explainedCents]);
+  return out.map(([descriptor, v]) => ({ page, descriptor, shown: cents(v) }));
+}
+
+// ------------------------------------------------------------------ HSA
+
+/** The HSA page's figures, each read off the report the page shows. */
+export function hsaFigures(r: HsaReport): PageFigure[] {
+  const page = "HSA";
+  const list: [ProofDescriptor, number | null][] = [
+    [{ report: "hsa", metric: "balance" }, r.hsa.balanceCents],
+    [{ report: "hsa", metric: "contributions" }, r.growth.funding.employeeCents + r.growth.funding.employerCents],
+    [{ report: "hsa", metric: "contributions", part: "employee" }, r.growth.funding.employeeCents],
+    [{ report: "hsa", metric: "contributions", part: "employer" }, r.growth.funding.employerCents],
+    [{ report: "hsa", metric: "distributions", part: "distribution" }, r.withdrawalTotals.distributionCents],
+    [{ report: "hsa", metric: "distributions", part: "direct" }, r.withdrawalTotals.directCents],
+    [{ report: "hsa", metric: "reimbursable" }, r.totals.unreimbursedCents],
+    [{ report: "hsa", metric: "ready" }, r.totals.readyCents],
+    [{ report: "hsa", metric: "reimbursed" }, r.totals.reimbursedCents],
+    [{ report: "hsa", metric: "logged" }, r.totals.loggedCents],
+    [{ report: "hsa", metric: "growth" }, r.totals.growthCents],
+    [{ report: "hsa", metric: "future" }, r.growth.futureValueCents],
+    [{ report: "hsa", metric: "future-growth" }, r.growth.futureValueCents - r.totals.unreimbursedCents],
+  ];
+  return list.filter(([, v]) => v != null).map(([descriptor, v]) => ({ page, descriptor, shown: cents(v) }));
+}
+
+// ------------------------------------------------------------------ Account limits
+
+/** Every limit, contribution, room and projection on Account limits for the report's year. */
+export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
+  const f = (x: Omit<AccountLimitsDescriptor, "report" | "year">, c: number): PageFigure => ({ page: "Account limits", descriptor: { report: "account-limits", year: r.year, ...x }, shown: { cents: c } });
+  const chetStep = r.steps.find((s) => s.id === "chet");
+  const out = [f({ account: "steps", figure: "room" }, r.pretax.roomCents), f({ account: "chet", figure: "used" }, r.household.chet.contributed), f({ account: "chet", figure: "limit" }, r.household.chet.deductionLimit)];
+  if (chetStep) out.push(f({ account: "chet", figure: "room" }, chetStep.roomCents));
+  if (r.pretax.taxSavedCents != null) out.push(f({ account: "steps", figure: "tax-saved" }, r.pretax.taxSavedCents));
+  for (const p of r.people) {
+    const personId = p.id;
+    out.push(
+      f({ account: "k401", personId, figure: "used" }, p.k401.total.ytd),
+      f({ account: "k401", personId, figure: "projected" }, p.k401.total.projected),
+      f({ account: "k401", personId, figure: "limit" }, p.k401.limit),
+      f({ account: "k401", personId, figure: "room" }, p.k401.room),
+      f({ account: "hsa", personId, figure: "used" }, p.hsa.total.ytd),
+      f({ account: "hsa", personId, figure: "projected" }, p.hsa.total.projected),
+      f({ account: "hsa", personId, figure: "limit" }, p.hsa.limit),
+      f({ account: "hsa", personId, figure: "room" }, p.hsa.room),
+      f({ account: "hsa", personId, figure: "used", part: "employee" }, p.hsa.employee.ytd),
+      f({ account: "hsa", personId, figure: "projected", part: "employer" }, p.hsa.employer.projected),
+      f({ account: "ira", personId, figure: "used" }, p.ira.total),
+      f({ account: "ira", personId, figure: "limit" }, p.ira.limit),
+      f({ account: "ira", personId, figure: "room" }, p.ira.room),
+    );
+    if (p.k401.excess) out.push(f({ account: "k401", personId, figure: "excess" }, p.k401.excess));
+    for (const e of p.k401.employers)
+      out.push(
+        f({ account: "k401", personId, figure: "used", employer: e.employer, part: "employee" }, e.employee.ytd),
+        f({ account: "k401", personId, figure: "projected", employer: e.employer, part: "employee" }, e.employee.projected),
+        f({ account: "k401", personId, figure: "used", employer: e.employer, part: "employer" }, e.employer$.ytd),
+        f({ account: "k401", personId, figure: "projected", employer: e.employer, part: "employer" }, e.employer$.projected),
+      );
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ Car
+
+/** Each car's cost per line and in total: to date, the last 12 months, each year and each month; and what was paid to date, kind by kind. */
+export function carFigures(g: GarageReport): PageFigure[] {
+  const out: PageFigure[] = [];
+  const page = "Car";
+  for (const r of g.cars) {
+    if (!r.configured) continue;
+    const fig = (x: Partial<CarFigureDescriptor>): CarFigureDescriptor => ({ report: "car", carId: r.carId, basis: "accrued", span: "toDate", ...x });
+    const spans = ["toDate", "last12", ...new Set(r.months.map((m) => m.month.slice(0, 4))), ...r.months.map((m) => m.month)];
+    for (const span of spans)
+      for (const line of [undefined, ...COST_LINES]) {
+        const shown =
+          span === "toDate" ? (line ? r.accrued[line] : r.totals.tco)
+          : span === "last12" ? (line ? r.last12.lines[line] : r.last12.total)
+          : r.months.filter((m) => m.month.startsWith(span)).reduce((t, m) => t + (line ? m.lines[line] : m.total), 0);
+        out.push({ page, descriptor: fig({ span, ...(line ? { line } : {}) }), shown: cents(shown) });
+      }
+    for (const line of [...CAR_KINDS, "INTEREST" as const]) out.push({ page, descriptor: fig({ basis: "cash", line }), shown: cents(line === "INTEREST" ? r.cash.INTEREST : r.cash[line]) });
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ Taxes
+
+const KEYS = Object.keys(ESTIMATE_LINES) as EstimateKey[];
+
+/** Every Worksheet line of every return (each spouse separately, and joint), projected and year to date. */
+export function taxEstimateFigures(report: TaxReport): PageFigure[] {
+  const out: PageFigure[] = [];
+  for (const basis of ["projected", "ytd"] as const) {
+    const { cols } = estimateColumns(report, basis);
+    for (const col of cols)
+      for (const key of KEYS) {
+        const v = lineValue(key, col, cols);
+        out.push({
+          page: `Taxes ${report.year}`,
+          descriptor: { report: "tax-estimate", year: report.year, basis, ...(col.id === "joint" ? {} : { filer: col.id }), key },
+          shown: v == null ? { text: "—" } : ESTIMATE_LINES[key].ratio ? { ratio: v } : { cents: v },
+        });
+      }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ Goals
+
+/** Each goal's saved-so-far, target and monthly need, and the emergency fund's typical month. */
+export function goalsFigures(r: GoalsReport): PageFigure[] {
+  const page = "Goals";
+  const out: PageFigure[] = [];
+  if (r.monthlySpending) out.push({ page, descriptor: { report: "planning", page: "goals", figure: "spending" }, shown: cents(r.monthlySpending.cents) });
+  for (const g of r.goals) {
+    if (g.blockers.length) continue;
+    const d = (figure: "current" | "target" | "needed" | "to-go" | "lands"): ProofDescriptor => ({ report: "planning", page: "goals", figure, goalId: g.goal.id });
+    out.push({ page, descriptor: d("current"), shown: cents(g.currentCents) });
+    if (g.targetCents != null) out.push({ page, descriptor: d("target"), shown: cents(g.targetCents) });
+    if (g.neededMonthlyCents != null) out.push({ page, descriptor: d("needed"), shown: cents(g.neededMonthlyCents) });
+    out.push({ page, descriptor: d("to-go"), shown: null }, { page, descriptor: d("lands"), shown: null });
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ Forecast
+
+const LINES = Object.keys(LEDGER_LINES) as LedgerLine[];
+
+/**
+ * Every cell the Forecast ledger draws on the saved drivers: the year view (the proven
+ * year, the year in progress and five years on) and each of those years month by month,
+ * two years out.
+ */
+export function forecastFigures(f: Forecast, r: AnnualProfileReport): PageFigure[] {
+  const years = [...new Set(f.months.slice(0, 24).map((m) => m.year))];
+  const cols = [...yearPeriods(f, r, { actualYears: 1, throughYear: r.currentYear + 5 }), ...years.flatMap((y) => monthPeriods(f, r, y))];
+  const out: PageFigure[] = [];
+  for (const p of cols)
+    for (const line of LINES) {
+      const v = ledgerValue(p.flows, line);
+      if (v == null) continue;
+      const through = p.through.slice(0, 7);
+      out.push({ page: "Forecast", descriptor: { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line }, shown: { cents: v } });
+    }
+  return out;
+}
+
+// ------------------------------------------------------------------ Sources
+
+/**
+ * Every source as it prints, under every figure above: each committed statement's closing
+ * balance, each ledger row's amount (a bill payment booked in pieces is its pieces added
+ * back) and each pay stub's net pay. The page is the document itself.
+ */
+export function sourceFigures(book: Book): PageFigure[] {
+  const out: PageFigure[] = [];
+  for (const s of book.statements.filter((x) => x.status === "COMMITTED"))
+    out.push({ page: "Statements", descriptor: { report: "statement", statementId: s.id }, shown: s.printed ? { cents: s.printed.closingCents } : null, asPrinted: true });
+  const printed = new Map(book.rows.map((r) => [r.id, r.amountCents]));
+  for (const r of book.rows) if (r.partOf) printed.set(r.partOf, (printed.get(r.partOf) ?? 0) + r.amountCents);
+  for (const r of book.rows) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });
+  for (const s of book.stubs) out.push({ page: "Pay stubs", descriptor: { report: "stub", stubId: s.id }, shown: s.printed.netCurrent == null ? null : { cents: s.printed.netCurrent }, asPrinted: true });
+  return out;
+}

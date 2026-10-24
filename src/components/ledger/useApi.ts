@@ -20,6 +20,12 @@ export function cachedResponse<T>(path: string): T | null {
 /** The data tag (x-data-stamp) of the latest answer this tab got: what the figures on screen were built from. */
 let dataStampSeen: string | null = null;
 export const lastDataStamp = () => dataStampSeen;
+const stampListeners = new Set<(stamp: string) => void>();
+/** Calls `f` each time an answer arrives built from different data than the last one; returns an unsubscribe. */
+export function onDataStamp(f: (stamp: string) => void): () => void {
+  stampListeners.add(f);
+  return () => void stampListeners.delete(f);
+}
 
 export function clearCachedResponses() {
   responses.clear();
@@ -73,7 +79,13 @@ export function useApi(requiresApiSecret: boolean) {
       if (!isRead) responses.clear();
       const res = await fetch(path, { ...init, headers, body });
       const text = await res.text().catch(() => "");
-      if (isRead && res.ok) dataStampSeen = res.headers.get("x-data-stamp") ?? dataStampSeen;
+      if (isRead && res.ok) {
+        const stamp = res.headers.get("x-data-stamp");
+        if (stamp && stamp !== dataStampSeen) {
+          dataStampSeen = stamp;
+          for (const f of stampListeners) f(stamp);
+        }
+      }
       const prior = isRead ? responses.get(path) : undefined;
       // An unchanged answer hands back the same object, so the page doesn't redraw.
       if (res.ok && prior && prior.text === text) return prior.data as T;

@@ -24,6 +24,8 @@ export type InvestmentsDescriptor = {
   accountId?: string;
   /** One position in that account, by its security key (PositionRow.key). */
   position?: string;
+  /** One line of that security when the statement lists it more than once (PositionRow.lot); omitted: every line of it. */
+  lot?: number;
 };
 
 /** The checks that can withhold an account's value at the proven-through date. */
@@ -42,7 +44,8 @@ export function parseInvestmentsDescriptor(d: Record<string, unknown>): Investme
   if (d.accountId != null && (typeof d.accountId !== "string" || !d.accountId)) return { error: "accountId must be an account id." };
   if (d.position != null && (typeof d.position !== "string" || !d.position)) return { error: "position must be a security key." };
   if (d.position != null && d.accountId == null) return { error: "a position needs its accountId." };
-  return { report: "investments", ...(d.accountId ? { accountId: d.accountId as string } : {}), ...(d.position ? { position: d.position as string } : {}) };
+  if (d.lot != null && (d.position == null || typeof d.lot !== "number" || !Number.isInteger(d.lot) || d.lot < 1)) return { error: "lot must be a line number (1, 2…) of a position." };
+  return { report: "investments", ...(d.accountId ? { accountId: d.accountId as string } : {}), ...(d.position ? { position: d.position as string } : {}), ...(d.lot != null ? { lot: d.lot as number } : {}) };
 }
 
 const usd = formatUsdFromCents;
@@ -108,7 +111,7 @@ function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: Investmen
         label: positionLabel(p),
         sub: p.symbol ? p.name : undefined,
         value: { cents: p.valueCents },
-        link: { label: positionLabel(p), descriptor: { report: "investments" as const, accountId: a.accountId, position: p.key } },
+        link: { label: positionLabel(p), descriptor: { report: "investments" as const, accountId: a.accountId, position: p.key, ...(p.lot ? { lot: p.lot } : {}) } },
       })),
       ...(plug ? [{ label: plug.name, sub: held.length ? "the balance less the positions above" : "the statement's balance as one line", value: { cents: plug.valueCents } }] : []),
     ],
@@ -184,7 +187,7 @@ function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: Investmen
 }
 
 function positionProof({ book, positions }: Ctx, a: AccountHoldings, d: InvestmentsDescriptor & { position: string }): Proof {
-  const mine = positions.filter((p) => p.accountId === a.accountId && p.key === d.position && p.kind !== "ACCOUNT");
+  const mine = positions.filter((p) => p.accountId === a.accountId && p.key === d.position && p.kind !== "ACCOUNT" && (d.lot == null || p.lot === d.lot));
   const snap = a.holdingsId ? (book.holdings.find((h) => h.id === a.holdingsId) ?? null) : null;
   const figure = mine.reduce((t, p) => t + p.valueCents, 0);
   const blocks: ProofBlock[] = [readFrom(book, a, snap)];

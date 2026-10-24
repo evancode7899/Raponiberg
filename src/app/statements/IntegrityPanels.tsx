@@ -1,12 +1,93 @@
 "use client";
 
+import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import type { SweepReport } from "@/lib/book/proof/sweep";
 import type { AcceptedFinding, Finding, RetiredException, StaleException } from "@/lib/book/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BookReport, OnAccept, OnRetire } from "./useBookReport";
 
 const date = (iso: string) => formatDisplayDateFromYmd(iso);
+
+const KIND_WORDS: Record<SweepReport["problems"][number]["kind"], string> = {
+  DIFFERS: "page and proof differ",
+  SELF_CHECK: "parts don't re-add",
+  CHAIN: "a step doesn't add up",
+  WITHHELD: "shown though withheld",
+  LINK: "a link fails",
+  ERROR: "couldn't be built",
+};
+
+/**
+ * The proof sweep: every figure every page shows held to its proof (lib/book/proof/sweep.ts).
+ * A problem here is a bug in the app, never in the documents, and the page withholds that figure.
+ */
+function SweepCard({ api }: { api: Api }) {
+  const [r, setR] = useState<SweepReport | null>(() => cachedResponse<SweepReport>("/api/proof/sweep"));
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api
+      .call<SweepReport>("/api/proof/sweep")
+      .then((x) => live && setR(x))
+      .catch((e: Error) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [api]);
+  const bad = r?.problems.length ?? 0;
+  return (
+    <Card
+      title="Figures vs their proofs"
+      subtitle={
+        r
+          ? `Every figure on every page, opened and re-derived from the statements: ${r.figures.toLocaleString()} figures and ${r.links.toLocaleString()} linked proofs, in ${(r.ms / 1000).toFixed(1)}s.`
+          : error
+            ? `Couldn't run: ${error}`
+            : "Opening every figure's proof…"
+      }
+    >
+      {r && (
+        <>
+          <p className={`mb-2 text-sm ${bad ? "font-semibold text-neg" : "text-pos"}`}>
+            {bad ? `${bad} figure${bad === 1 ? "" : "s"} disagree with their proofs: a bug in the app, not your documents. Each one is withheld on its page.` : "Every figure ties to its proof, to the cent."}
+          </p>
+          <div className={table.wrap}>
+            <table className={`${table.table} min-w-[32rem]`}>
+              <thead className={table.head}>
+                <tr>
+                  <th className={table.th}>Page</th>
+                  <th className={table.thR}>Figures</th>
+                  <th className={table.thR}>Problems</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.pages.map((p) => (
+                  <tr key={p.page} className={table.tr}>
+                    <td className={table.td}>{p.page}</td>
+                    <td className={table.tdR}>{p.figures.toLocaleString()}</td>
+                    <td className={`${table.tdR} ${p.problems ? "font-semibold text-neg" : ""}`}>{p.problems || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {bad > 0 && (
+            <ul className="mt-3 flex flex-col gap-2 text-xs">
+              {r.problems.map((p, i) => (
+                <li key={i}>
+                  <Badge tone="neg">{KIND_WORDS[p.kind]}</Badge> <span className="font-medium text-fg">{p.page}</span>
+                  <span className="text-muted"> — {p.detail}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
 
 /** Open findings inside the data edge: what withholds figures today. */
 export function openIssues(r: BookReport) {
@@ -76,9 +157,10 @@ export function IssuesPanel({ r, onAccept, onRetire, onGo }: { r: BookReport; on
  * What stands behind every figure: each check with its tally, every figure inferred from
  * two sources, and every exception you accepted or retired by hand.
  */
-export function ChecksPanel({ r, onRetire }: { r: BookReport; onRetire: OnRetire }) {
+export function ChecksPanel({ r, onRetire, api }: { r: BookReport; onRetire: OnRetire; api: Api }) {
   return (
     <>
+      <SweepCard api={api} />
       <Card title="Checks" subtitle="What stands behind every figure. Counts are items checked (statements, stubs, transfers, years…).">
         <div className={table.wrap}>
           <table className={`${table.table} min-w-[48rem]`}>

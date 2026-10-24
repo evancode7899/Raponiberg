@@ -8,7 +8,8 @@ import type { Book, BookRow } from "../load.ts";
 import { buildTaxAccounts, STUB_CHECKS, type Amount, type EmployerPlan, type PersonAccounts, type TaxAccountsReport } from "../reports/taxAccounts.ts";
 import { accountOwner, chetYear, IRA_SUBTYPES } from "../taxAdvantaged.ts";
 import type { CheckId } from "../types.ts";
-import { checksFor, estimatesFor, sumCheck } from "./common.ts";
+import { checksFor, estimatesFor, perBook, sumCheck } from "./common.ts";
+import { taxYearThrough } from "../blockers.ts";
 import { groupRows, type PayLine } from "./payProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstimate, ProofKind, ProofLink } from "./types.ts";
 
@@ -289,7 +290,8 @@ function iraUsed(book: Book, r: TaxAccountsReport, p: PersonAccounts): Built {
     });
   else blocks.push({ kind: "chain", title: "Nothing this year", lines: [{ label: `No contributions on ${iras.length ? iras.map((a) => a.name).join(", ") : "any IRA statement"} in ${r.year}`, value: { cents: 0 }, source: "proven" }] });
   const from = `${r.year}-01-01`;
-  const to = `${r.year}-12-31`;
+  // As iraYear counts them: the year in progress through the data edge.
+  const to = taxYearThrough(book, r.year);
   const accountIds = iras.map((a) => a.id);
   const { checks, withheld } = accountIds.length ? checksFor(book, { affects: "NET_WORTH", from, to, accountIds }, STATEMENT_CHECKS) : { checks: [], withheld: false };
   return {
@@ -330,7 +332,8 @@ function chetUsed(book: Book, r: TaxAccountsReport): Built {
   else lines.push({ label: `No CHET statements for ${r.year}`, value: { cents: 0 }, source: "proven" });
   const accountIds = chet.accounts.flatMap((a) => book.accounts.filter((x) => x.identifiers.includes(a.accountNumber)).map((x) => x.id));
   const from = `${r.year}-01-01`;
-  const to = `${r.year}-12-31`;
+  // As chetYear counts them: the year in progress through the data edge.
+  const to = taxYearThrough(book, r.year);
   const { checks, withheld } = accountIds.length ? checksFor(book, { affects: "NET_WORTH", from, to, accountIds }, STATEMENT_CHECKS) : { checks: [], withheld: false };
   return {
     describes: `CHET 529 contributions, ${r.year}`,
@@ -354,7 +357,13 @@ function roomProof(r: TaxAccountsReport, d: AccountLimitsDescriptor, p: PersonAc
   const lines: ChainLine[] = [
     { label: "Limit", value: { cents: limit }, source: "law", link: link("The limit", d, { figure: "limit" }) },
     { op: "−", label: `${name}${proj ? " projected to Dec 31" : ` in ${r.year}`}`, value: { cents: counted }, source: proj && r.isCurrentYear ? "estimate" : "proven", link: link(name, d, { figure: proj ? "projected" : "used" }) },
-    { op: "=", label: counted > limit ? "Over the limit: no room" : "Room left", value: { cents: room }, source: "derived" },
+    // Over the limit, the difference is shown as it is and room is zero: no step claims −$X is $0.
+    ...(counted > limit
+      ? ([
+          { op: "=", label: "Over the limit by", value: { cents: limit - counted }, source: "derived" },
+          { label: "Room left (none once over)", value: { cents: room }, source: "derived" },
+        ] satisfies ChainLine[])
+      : ([{ op: "=", label: "Room left", value: { cents: room }, source: "derived" }] satisfies ChainLine[])),
   ];
   const blocks: ProofBlock[] = [{ kind: "chain", title: "Room left", lines }];
   if (d.account === "k401" && p!.k401.perPaycheckToMax != null && room)
@@ -507,6 +516,10 @@ export function buildAccountLimitsProof(book: Book, inputs: AccountLimitsInputs,
 
 /** The page's report for the year, built as GET /api/tax-accounts builds it. */
 export async function accountLimitsInputs(ctx: ProofContext, year: number): Promise<AccountLimitsInputs> {
+  return perBook(ctx, `account-limits|${year}`, () => loadAccountLimitsInputs(ctx, year));
+}
+
+async function loadAccountLimitsInputs(ctx: ProofContext, year: number): Promise<AccountLimitsInputs> {
   const [settings, { forecast }] = await Promise.all([loadJsonSetting(ctx.db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadForecast(ctx.db, ctx.book)]);
   return { report: buildTaxAccounts(ctx.book, year, settings, forecast ? taxLink(forecast) : null), birthYears: ctx.book.birthYears ?? {}, settings };
 }

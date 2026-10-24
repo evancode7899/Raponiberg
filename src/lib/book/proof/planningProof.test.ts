@@ -18,6 +18,7 @@ import type { Book, BookRow, BookStatement, BookStub } from "../load";
 import { buildGoals, goalForecastOf } from "../reports/goals";
 import { buildHomeFunds, buildHomeSpending } from "../reports/homeFunds";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
+import { chainReAdds } from "./common";
 import type { PlanningDescriptor } from "./planningProof";
 import type { ChainLine } from "./types";
 
@@ -270,24 +271,7 @@ const links = (p: Proof): (ProofLink & { value?: ChainLine["value"]; source?: Ch
         : [],
   );
 
-/** Every money step of a chain (lines up to each "=") re-adds to the "=" line. */
-function reAdds(lines: ChainLine[]): string[] {
-  const bad: string[] = [];
-  let acc: number | null = null;
-  let additive = true;
-  for (const l of lines) {
-    const c = "cents" in l.value ? l.value.cents : null;
-    if (l.op === "=") {
-      if (additive && acc != null && c != null && acc !== c) bad.push(`${l.label}: parts ${acc} ≠ ${c}`);
-      acc = c;
-      additive = true;
-    } else if (l.op === "×" || l.op === "÷" || c == null) additive = false;
-    else if (l.op === "−") acc = (acc ?? 0) - c;
-    else if (l.op === "+" || acc == null) acc = (acc ?? 0) + c;
-    else additive = false;
-  }
-  return bad;
-}
+const reAdds = chainReAdds;
 
 const FIRE_FIGS = ["fire-number", "lean-number", "fat-number", "coast-number", "fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "years-saved", "runway", "progress"];
 const GOAL_FIGS = ["current", "target", "to-go", "lands", "needed"];

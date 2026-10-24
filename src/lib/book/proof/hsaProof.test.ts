@@ -6,6 +6,7 @@ import { EMPTY_SETTINGS, type HsaExpense, type HsaFile } from "../../hsa/store";
 import type { StubLine } from "../../ingest/payroll/types";
 import { buildTimeline, type SegmentInput } from "../../ledger/timeline";
 import type { Book, BookRow, BookStatement, BookStub } from "../load";
+import { hsaFigures } from "./figures";
 import { buildHsaProof, makeHsaKind, type HsaDescriptor } from "./hsaProof";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 
@@ -244,21 +245,6 @@ function report(book: Book, file = LOG): HsaReport {
 }
 
 /** Every wired figure, and what the HSA page shows for it (HsaClient / GrowthTab / ReimburseTab). */
-const FIGURES: [HsaDescriptor, (r: HsaReport) => number][] = [
-  [{ report: "hsa", metric: "balance" }, (r) => r.hsa.balanceCents!],
-  [{ report: "hsa", metric: "contributions" }, (r) => r.growth.funding.employeeCents + r.growth.funding.employerCents],
-  [{ report: "hsa", metric: "contributions", part: "employee" }, (r) => r.growth.funding.employeeCents],
-  [{ report: "hsa", metric: "contributions", part: "employer" }, (r) => r.growth.funding.employerCents],
-  [{ report: "hsa", metric: "distributions", part: "distribution" }, (r) => r.withdrawals.filter((w) => w.kind === "DISTRIBUTION").reduce((t, w) => t + w.amountCents, 0)],
-  [{ report: "hsa", metric: "distributions", part: "direct" }, (r) => r.withdrawals.filter((w) => w.kind === "DIRECT").reduce((t, w) => t + w.amountCents, 0)],
-  [{ report: "hsa", metric: "reimbursable" }, (r) => r.totals.unreimbursedCents],
-  [{ report: "hsa", metric: "ready" }, (r) => r.totals.readyCents],
-  [{ report: "hsa", metric: "reimbursed" }, (r) => r.totals.reimbursedCents],
-  [{ report: "hsa", metric: "logged" }, (r) => r.totals.loggedCents],
-  [{ report: "hsa", metric: "growth" }, (r) => r.totals.growthCents],
-  [{ report: "hsa", metric: "future" }, (r) => r.growth.futureValueCents],
-  [{ report: "hsa", metric: "future-growth" }, (r) => r.growth.futureValueCents - r.totals.unreimbursedCents],
-];
 
 const label = (d: HsaDescriptor) => `${d.metric}${d.part ? `:${d.part}` : ""}`;
 const linksOf = (p: Proof): ProofLink[] =>
@@ -270,9 +256,12 @@ describe("buildHsaProof", () => {
 
   it("proves every figure the page shows, its parts re-adding exactly", () => {
     expect(r.hsa.balanceCents).toBe(237_099);
-    for (const [d, shown] of FIGURES) {
+    const figures = hsaFigures(r);
+    expect(figures.length).toBe(13);
+    for (const { descriptor, shown } of figures) {
+      const d = descriptor as HsaDescriptor;
       const p = buildHsaProof(book, r, d);
-      expect(p.figure, label(d)).toEqual({ cents: shown(r) });
+      expect(p.figure, label(d)).toEqual(shown);
       expect(p.selfCheck?.ok, `${label(d)}: ${p.selfCheck?.explain}`).toBe(true);
       expect(p.descriptor).toEqual(d);
     }
@@ -422,7 +411,7 @@ describe("as a registered proof kind", () => {
   const ctx = { book, db: {} as never };
 
   it("parses through the registry and rejects bad parts", () => {
-    for (const [d] of FIGURES) expect(parseDescriptor(JSON.parse(JSON.stringify(d))), label(d)).toEqual(d);
+    for (const { descriptor: d } of hsaFigures(r)) expect(parseDescriptor(JSON.parse(JSON.stringify(d))), label(d as HsaDescriptor)).toEqual(d);
     expect(parseDescriptor({ report: "hsa", metric: "distributions" })).toHaveProperty("error");
     expect(parseDescriptor({ report: "hsa", metric: "balance", part: "employee" })).toHaveProperty("error");
     expect(parseDescriptor({ report: "hsa", metric: "horoscope" })).toHaveProperty("error");
@@ -430,7 +419,8 @@ describe("as a registered proof kind", () => {
 
   it("emits links that parse, build and come to the value they're shown with", async () => {
     let seen = 0;
-    for (const [d] of FIGURES) {
+    for (const { descriptor } of hsaFigures(r)) {
+      const d = descriptor as HsaDescriptor;
       const p = await kind.build(ctx, d);
       const values = new Map<string, unknown>();
       for (const b of p.blocks) {

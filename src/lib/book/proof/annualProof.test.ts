@@ -5,16 +5,17 @@ import { employerKey, type StubLine } from "../../ingest/payroll/types";
 import { groupFor, refreshLedgerStatus, type LedgerAccount } from "../../ledger/loadLedger";
 import { buildTimeline, type SegmentInput } from "../../ledger/timeline";
 import { expenseFingerprint } from "../../profile/annualMath";
-import { buildAnnualProfile, type AnnualProfileReport, type YearProfile } from "../../profile/buildAnnualProfile";
-import { rollTotalValue, rollValue } from "../../profile/rollLines";
-import { buildAccountRollforwards } from "../../profile/rollforwards";
-import { BUCKETS, DEFAULT_SETTINGS, PROFILE_SETTINGS_KEY, type FinancialProfileSettings } from "../../profile/settings";
+import { buildAnnualProfile, type AnnualProfileReport } from "../../profile/buildAnnualProfile";
+import { buildAccountRollforwards, type RollforwardReport } from "../../profile/rollforwards";
+import { DEFAULT_SETTINGS, PROFILE_SETTINGS_KEY, type FinancialProfileSettings } from "../../profile/settings";
 import type { Book, BookBrokerage, BookRow, BookStatement, BookStub, BookTransferMatch } from "../load";
 import { resolveReimbursements, rowFingerprint } from "../reimbursements";
 import { buildCashFlowReport } from "../reports/cashFlow";
 import type { ReimbursementLinksFile } from "../../reimbursements/store";
-import { buildAnnualProof, parseAnnualDescriptor, type AnnualCashLine, type AnnualDescriptor } from "./annualProof";
+import { buildAnnualProof, parseAnnualDescriptor, type AnnualDescriptor } from "./annualProof";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
+import { chainReAdds } from "./common";
+import { annualFigures } from "./figures";
 import type { ChainLine } from "./types";
 
 // An invented household: Pat Example, paid every other Friday by Example Partners LP into
@@ -264,60 +265,9 @@ const ctx = { book, db: fakeDb };
 // Every figure the two pages make clickable, with the value the page computes for it.
 
 type Wired = { d: AnnualDescriptor; page: number | null };
-const CASH: [AnnualCashLine, (y: YearProfile) => number | null][] = [
-  ["other-income", (y) => y.cash!.waterfall.otherIncome],
-  ["gross", (y) => y.cash!.waterfall.grossCash],
-  ["withholding", (y) => y.cash!.waterfall.withholding],
-  ["taxes-paid", (y) => y.cash!.waterfall.additionalTaxes],
-  ["refunds", (y) => y.cash!.waterfall.refunds],
-  ["deductions", (y) => y.cash!.waterfall.otherDeductions],
-  ["employer", (y) => y.cash!.waterfall.employer],
-  ["net-cash", (y) => y.cash!.waterfall.netCash],
-  ["living", (y) => y.cash!.waterfall.living],
-  ["one-offs", (y) => y.cash!.waterfall.nonRecurring],
-  ["saved", (y) => y.cash!.waterfall.saved],
-  ["reimbursements", (y) => y.cash!.reimbursements],
-  ["tax-rate", () => null],
-  ["savings-of-gross", () => null],
-  ["savings-of-net", () => null],
-];
-
+/** Every figure the Annual page and the roll-forwards show (figures.ts, the list the live sweep walks too). */
 function wired(): Wired[] {
-  const out: Wired[] = [];
-  for (const y of profile.years) {
-    const year = y.year;
-    if (y.cash) {
-      for (const [line, f] of CASH) out.push({ d: { report: "annual", figure: "cash", year, line }, page: f(y) });
-      for (const s of y.cash.spending) out.push({ d: { report: "annual", figure: "category", year, category: s.category }, page: s.cents });
-    }
-    const n = y.netWorth;
-    if (n) {
-      for (const b of BUCKETS) if (n.buckets[b.id] !== 0) out.push({ d: { report: "annual", figure: "bucket", year, bucket: b.id }, page: b.debt ? -n.buckets[b.id] : n.buckets[b.id] });
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "net-worth" }, page: n.netWorth });
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "assets" }, page: n.grossAssets });
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "debt" }, page: -n.grossDebt });
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "liquid" }, page: n.liquid });
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "illiquid" }, page: n.illiquid });
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "in-transit" }, page: n.inTransit });
-    }
-    if (y.change) {
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "change" }, page: y.change.cents });
-      out.push({ d: { report: "annual", figure: "net-worth", year, line: "change-pct" }, page: null });
-    }
-    if (y.bridge) for (const line of ["cashSaved", "investmentGrowth", "outsideMoney", "newlyTracked", "inTransit", "unexplainedSavings", "total"] as const) out.push({ d: { report: "annual", figure: "bridge", year, line }, page: y.bridge[line] });
-  }
-  for (const a of rolls.accounts)
-    for (const x of a.years) {
-      for (const line of ["opening", "employee", "employer", "deposits", "withdrawals", "after-contributions", "income", "market", "fees", "closing"] as const)
-        out.push({ d: { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line }, page: rollValue(x, line) });
-      out.push({ d: { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line: "return" }, page: null });
-    }
-  for (const year of rolls.years)
-    for (const line of ["closing", "contributions", "growth"] as const) {
-      const xs = rolls.accounts.flatMap((a) => a.years.filter((x) => x.year === year));
-      if (xs.length) out.push({ d: { report: "annual", figure: "rollforward-total", year, line }, page: xs.reduce((s, x) => s + rollTotalValue(x, line), 0) });
-    }
-  return out;
+  return annualFigures(profile, rolls).map((f) => ({ d: f.descriptor as AnnualDescriptor, page: f.shown && "cents" in f.shown ? f.shown.cents : null }));
 }
 
 const chains = (p: Proof) => p.blocks.flatMap((b) => (b.kind === "chain" ? [b] : []));
@@ -330,24 +280,7 @@ const links = (p: Proof): (ProofLink & { value?: ChainLine["value"] })[] =>
         : [],
   );
 
-/** Every money step of a chain (lines up to each "=") re-adds to the "=" line. */
-function reAdds(lines: ChainLine[]): string[] {
-  const bad: string[] = [];
-  let acc: number | null = null;
-  let additive = true;
-  for (const l of lines) {
-    const cents = "cents" in l.value ? l.value.cents : null;
-    if (l.op === "=") {
-      if (additive && acc != null && cents != null && acc !== cents) bad.push(`${l.label}: parts ${acc} ≠ ${cents}`);
-      acc = cents;
-      additive = true;
-    } else if (l.op === "×" || l.op === "÷" || cents == null) additive = false;
-    else if (l.op === "−") acc = (acc ?? 0) - cents;
-    else if (l.op === "+" || acc == null) acc = (acc ?? 0) + cents;
-    else additive = false;
-  }
-  return bad;
-}
+const reAdds = chainReAdds;
 
 describe("annual statement proofs", () => {
   it("has proven years with a bridge on the invented household", () => {
@@ -521,13 +454,12 @@ describe("reimbursement links", () => {
 
   it("proves the year's cash lines and categories with the links applied", async () => {
     const ctx2 = { book: linked, db: fakeDb };
-    const ds: [AnnualDescriptor, number][] = [
-      ...CASH.flatMap(([line, f]) => {
-        const v = f(linkedProfile.years.find((y) => y.year === 2025)!);
-        return v == null ? [] : [[{ report: "annual", figure: "cash", year: 2025, line }, v] as [AnnualDescriptor, number]];
-      }),
-      ...y1.spending.map((s) => [{ report: "annual", figure: "category", year: 2025, category: s.category }, s.cents] as [AnnualDescriptor, number]),
-    ];
+    // The year's cash lines and categories, as the page lists them (figures.ts).
+    const ds = annualFigures(linkedProfile, { accounts: [], years: [] } as unknown as RollforwardReport).flatMap((f): [AnnualDescriptor, number][] => {
+      const d = f.descriptor as AnnualDescriptor;
+      return (d.figure === "cash" || d.figure === "category") && d.year === 2025 && f.shown && "cents" in f.shown ? [[d, f.shown.cents]] : [];
+    });
+    expect(ds.length).toBeGreaterThan(y1.spending.length);
     for (const [d, page] of ds) {
       const p = await buildProof(ctx2, d);
       const what = JSON.stringify(d);

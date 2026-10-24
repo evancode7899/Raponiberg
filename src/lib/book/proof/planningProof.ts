@@ -19,7 +19,7 @@ import { buildGoals, goalForecastOf, type GoalProgress, type GoalsReport } from 
 import { buildHomeFunds, buildHomeSpending } from "../reports/homeFunds.ts";
 import type { BonusesDescriptor } from "./bonusesProof.ts";
 import { CASH_FLOW_CHECKS } from "./cashFlowProof.ts";
-import { checksFor, sumCheck } from "./common.ts";
+import { checksFor, perBook, sumCheck } from "./common.ts";
 import { ledgerValue, type ForecastDescriptor, type LedgerLine } from "./forecastProof.ts";
 import { NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { PAY_CHECKS, type PayDescriptor } from "./payProof.ts";
@@ -654,7 +654,7 @@ type GoalsCtx = { book: Book; r: GoalsReport; b: Base | null };
 
 async function goalsCtx(ctx: ProofContext): Promise<GoalsCtx> {
   // As api/goals: the saved goals, buildGoals on the shared forecast.
-  const [settings, data] = await Promise.all([loadJsonSetting(ctx.db, GOALS_KEY, normalizeGoals), loadForecastData(ctx.db, ctx.book)]);
+  const [settings, data] = await Promise.all([loadJsonSetting(ctx.db, GOALS_KEY, normalizeGoals), perBook(ctx, "forecast-data", () => loadForecastData(ctx.db, ctx.book))]);
   const b = baseFrom(ctx.book, data);
   return { book: ctx.book, r: buildGoals(ctx.book, settings, b ? goalForecastOf(b.f) : null, data.profile.settings), b };
 }
@@ -899,7 +899,7 @@ type HomeCtx = { book: Book; fb: FundsBook; L: HomeLinked; inputs: HomeBudgetInp
 
 async function homeCtx(ctx: ProofContext, d: Extract<PlanningDescriptor, { page: "home" }>): Promise<HomeCtx> {
   // As api/home-budget/funds, then the page's own links (linkHome) on the typed inputs.
-  const data = await loadForecastData(ctx.db, ctx.book);
+  const data = await perBook(ctx, "forecast-data", () => loadForecastData(ctx.db, ctx.book));
   const b = baseFrom(ctx.book, data);
   const fb: FundsBook = { ...buildHomeFunds(ctx.book), forecast: b ? homeForecast(b.f, b.seeds) : null, spending: buildHomeSpending(ctx.book, data.profile.settings) };
   const inputs = { ...defaultHomeBudgetInputs(), ...d.inputs };
@@ -1177,7 +1177,7 @@ function buildHome(c: HomeCtx): Built {
 
 async function buildTaxes(ctx: ProofContext, d: Extract<PlanningDescriptor, { page: "taxes" }>): Promise<Built> {
   // As api/tax: the year in progress follows the shared forecast.
-  const data = await loadForecastData(ctx.db, ctx.book);
+  const data = await perBook(ctx, "forecast-data", () => loadForecastData(ctx.db, ctx.book));
   const b = baseFrom(ctx.book, data);
   if (!TAX_YEARS[d.year]) return notFound(`No ${d.year} tax law in the app.`);
   const r = buildTaxReport(ctx.book, d.year, { forecast: b ? taxLink(b.f) : null });
@@ -1275,7 +1275,7 @@ export async function buildPlanningProof(ctx: ProofContext, d: PlanningDescripto
   let built: Built;
   let b: Base | null = null;
   if (d.page === "fire") {
-    const data = await loadForecastData(ctx.db, book);
+    const data = await perBook(ctx, "forecast-data", () => loadForecastData(ctx.db, book));
     const c = fireCtx(book, data, d.fire);
     b = c;
     built = c ? buildFire(c, d) : withheldProof(book, data);

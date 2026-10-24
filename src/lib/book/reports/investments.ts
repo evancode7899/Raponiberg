@@ -48,6 +48,8 @@ export type PositionRow = {
   account: string;
   treatment: TaxTreatment;
   key: string;
+  /** Which line of this security in the account (1, 2…) when the statement lists it more than once (lots); null when once. */
+  lot: number | null;
   symbol: string | null;
   name: string;
   kind: HoldingKind | "ACCOUNT";
@@ -179,6 +181,7 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
       account: a.name,
       treatment,
       key: securityKey(h),
+      lot: null,
       symbol: h.symbol,
       name: h.name,
       kind: h.kind,
@@ -196,9 +199,13 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
     const year = Number(lastDay.slice(0, 4));
     let covered = 0;
     if (usable) {
-      for (const h of usable.positions) {
-        positions.push(row(h, describeSecurity(h, year, settings.securities), usable.asOf));
-        covered += h.valueCents;
+      const mine = usable.positions.map((h) => row(h, describeSecurity(h, year, settings.securities), usable.asOf));
+      // A security listed on more than one line (lots) numbers its lines, so each row opens a proof of its own line.
+      for (const p of mine) {
+        const same = mine.filter((x) => x.key === p.key);
+        if (same.length > 1) p.lot = same.indexOf(p) + 1;
+        positions.push(p);
+        covered += p.valueCents;
       }
     }
     if (covered !== value) {
