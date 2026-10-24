@@ -34,6 +34,7 @@ import {
   hsaFigures,
   investmentsFigures,
   netWorthFigures,
+  sourceFigures,
   taxEstimateFigures,
   type PageFigure,
 } from "./figures.ts";
@@ -120,6 +121,8 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
     });
     await page(`Account limits ${y}`, () => accountLimitsFigures(buildTaxAccounts(book, y, retirement, link)));
   }
+  // The sources under every figure: each statement, row and pay stub as it prints.
+  await page("Sources", () => sourceFigures(book));
   return { figures, errors };
 }
 
@@ -170,7 +173,7 @@ export async function sweepProofs(ctx: ProofContext, opts: { followLinks?: boole
     if (p.selfCheck && !p.selfCheck.ok) note({ kind: "SELF_CHECK", page: f.page, descriptor: f.descriptor, detail: `${p.describes}: ${p.selfCheck.explain}, ${(p.selfCheck.deltaCents / 100).toFixed(2)} off the figure.` });
     for (const b of p.blocks)
       if (b.kind === "chain") for (const bad of chainReAdds(b.lines)) note({ kind: "CHAIN", page: f.page, descriptor: f.descriptor, detail: `${p.describes} · ${b.title}: ${bad}` });
-    if (p.withheld && f.shown) note({ kind: "WITHHELD", page: f.page, descriptor: f.descriptor, detail: `${p.describes}: the page shows it, but an open finding withholds it.` });
+    if (p.withheld && f.shown && !f.asPrinted) note({ kind: "WITHHELD", page: f.page, descriptor: f.descriptor, detail: `${p.describes}: the page shows it, but an open finding withholds it.` });
     if (opts.followLinks !== false) for (const l of linksOf(p)) links.set(descriptorKey(l.descriptor), { from: p.describes, page: f.page, link: l });
   }
   for (const { from, page, link } of links.values()) {

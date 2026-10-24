@@ -135,6 +135,7 @@ function accountBalance(book: Book, a: LedgerAccount, date: string): AccountBala
           ? `${st?.documentTitle ?? "Summary"} (this stretch derived from it)`
           : (st?.documentTitle ?? ""),
       status: s.idle ? "IDLE" : s.derived ? "DERIVED" : (st?.status ?? "COMMITTED"),
+      ...(st ? { importId: st.id } : {}),
     };
   };
   /** A line that isn't a ledger row: a balance, or a statement's market change / fees (its day's share when `share` < 1). */
@@ -185,6 +186,7 @@ function accountBalance(book: Book, a: LedgerAccount, date: string): AccountBala
         share: 1,
         precision: "EXACT",
         ...(r?.partOf || (r && r.amountCents !== f.amount && f.lane === "TRANSFER") ? { piece: true } : {}),
+        ...(r ? { rowId: r.id } : {}),
       });
     });
     s.spread.forEach((f, i) => {
@@ -201,6 +203,7 @@ function accountBalance(book: Book, a: LedgerAccount, date: string): AccountBala
         countedCents: f.amount * frac,
         share: frac,
         precision: "PERIOD",
+        ...(r ? { rowId: r.id } : {}),
       });
     });
     sum += (s.growth + s.fees) * frac;
