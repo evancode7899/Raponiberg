@@ -21,9 +21,9 @@ back to a statement.
 
 ![The Raponiberg dashboard: net worth over time, what it's made of, and twelve months of income, spending and savings](docs/screenshots/dashboard.png)
 
-| Cash flow | Taxes | FIRE |
-|---|---|---|
-| ![Cash flow: income vs spending by month, with insights](docs/screenshots/cash-flow.png) | ![Taxes: projected federal and state tax, what you'll owe at filing](docs/screenshots/taxes.png) | ![FIRE: progress to financial independence and the year you get there](docs/screenshots/fire.png) |
+| Cash flow | Taxes | Net worth | Forecast |
+|---|---|---|---|
+| ![Cash flow: income vs spending by month, with insights](docs/screenshots/cash-flow.png) | ![Taxes: projected federal and state tax, what you'll owe at filing](docs/screenshots/taxes.png) | ![Net worth: every account on the same month-ends, stacked by account type](docs/screenshots/net-worth.png) | ![Forecast: a month-by-month path of income, taxes, spending and saving](docs/screenshots/forecast.png) |
 
 <sub>Screenshots are from demo mode: a made-up household, not anyone's real finances.</sub>
 
