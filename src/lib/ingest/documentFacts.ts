@@ -100,6 +100,11 @@ export async function storeDocumentFacts(tx: Tx, documentId: string, doc: Parsed
  * Re-extracts facts for documents stored under an older FACTS_VERSION, reading each
  * document's stored file with the parser that imported it. Statements and their rows
  * are left alone; only pay stubs and brokerage tax figures are rewritten.
+ *
+ * Every file is read first, then all their facts are stored in one transaction: each
+ * write changes the data the pages are built from (book/cache.ts), so storing them one
+ * document at a time rebuilt everything once per document, for minutes, after a
+ * FACTS_VERSION bump.
  */
 export async function refreshOutdatedFacts(db: PrismaClient): Promise<{ refreshed: number; failed: { title: string; error: string }[] }> {
   const docs = await db.sourceDocument.findMany({
@@ -107,7 +112,7 @@ export async function refreshOutdatedFacts(db: PrismaClient): Promise<{ refreshe
     orderBy: { periodStart: "asc" },
     select: { id: true, title: true, filePath: true, parserId: true, originalFileName: true },
   });
-  let refreshed = 0;
+  const read: { id: string; label: string; doc: ParsedDocument }[] = [];
   const failed: { title: string; error: string }[] = [];
   for (const d of docs) {
     const label = d.originalFileName ?? d.title;
@@ -116,11 +121,23 @@ export async function refreshOutdatedFacts(db: PrismaClient): Promise<{ refreshe
       const parsed = parseStatementText(text, householdPatterns());
       if (!parsed.ok) throw new Error(parsed.reason === "PARSE_ERROR" ? parsed.error : "no parser recognizes the stored file");
       if (parsed.parserId !== d.parserId) throw new Error(`the stored file now reads as ${parsed.parserId}, not ${d.parserId}`);
-      await db.$transaction((tx) => storeDocumentFacts(tx, d.id, parsed.doc), { timeout: 60_000 });
-      refreshed++;
+      read.push({ id: d.id, label, doc: parsed.doc });
     } catch (e) {
       failed.push({ title: label, error: e instanceof Error ? e.message : String(e) });
     }
   }
-  return { refreshed, failed };
+  if (!read.length) return { refreshed: 0, failed };
+  try {
+    await db.$transaction(
+      async (tx) => {
+        for (const r of read) await storeDocumentFacts(tx, r.id, r.doc);
+      },
+      { timeout: 300_000, maxWait: 60_000 },
+    );
+  } catch (e) {
+    // Nothing was stored: every document stays outdated and is tried again.
+    const error = e instanceof Error ? e.message : String(e);
+    return { refreshed: 0, failed: [...failed, ...read.map((r) => ({ title: r.label, error }))] };
+  }
+  return { refreshed: read.length, failed };
 }

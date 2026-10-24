@@ -128,13 +128,14 @@ export function jsonBody(body: string): Response {
  * server for `reports` (GET paths) so their cached answers are ready too: the page opened
  * after an import or an edit finds everything built. Waits for the stamp to hold still
  * for one poll first, so a burst of edits (a review queue) costs one rebuild, not one per
- * row. Runs once per process; returns a function that stops it.
+ * row. `then` runs once they're ready, without being waited for (the proof sweep, which
+ * works in its own process). Runs once per process; returns a function that stops it.
  */
-export function keepBookWarm(db: Db, opts: { reports?: string[]; everyMs?: number } = {}): () => void {
+export function keepBookWarm(db: Db, opts: { reports?: string[]; then?: () => void; everyMs?: number } = {}): () => void {
   const store = state();
   if (store.watching) return () => {};
   store.watching = true;
-  const { reports = [], everyMs = 2000 } = opts;
+  const { reports = [], then, everyMs = 2000 } = opts;
   let seen = dataStamp();
   // The Book entry whose reports were last warmed. Tracked by entry, not stamp: data can
   // change and change back (same stamp) while a request built a Book in between.
@@ -155,6 +156,7 @@ export function keepBookWarm(db: Db, opts: { reports?: string[]; everyMs?: numbe
         await fetch(origin + p, { headers }).then((r) => r.arrayBuffer()).catch(() => {});
       }
       warmed = entry;
+      if (dataStamp() === stamp) then?.();
     } catch {
       /* the next request reports the error */
     } finally {

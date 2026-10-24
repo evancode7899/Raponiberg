@@ -31,10 +31,11 @@ export function blockersFor(book: Book, q: BlockerQuery): Finding[] {
  * about what covers a figure.
  */
 export function scopeHits(book: Book, q: BlockerQuery): (s: FindingScope, atEdge?: boolean) => boolean {
-  const afterEdge = addDays(book.horizon.netWorth, 1);
+  // Only findings past the data edge need it; a figure's passes ask thousands of times.
+  let afterEdge: string | undefined;
   return (s, atEdge = false) => {
     if (!s.affects.includes(q.affects)) return false;
-    const from = atEdge ? maxIso(s.from, afterEdge) : s.from;
+    const from = atEdge ? maxIso(s.from, (afterEdge ??= addDays(book.horizon.netWorth, 1))) : s.from;
     if (s.to < q.from || from > q.to) return false;
     if (q.accountIds && s.accountId && !q.accountIds.includes(s.accountId)) return false;
     if (q.personId && s.personId && s.personId !== q.personId) return false;
@@ -43,10 +44,46 @@ export function scopeHits(book: Book, q: BlockerQuery): (s: FindingScope, atEdge
   };
 }
 
+/**
+ * Book.passes by what each affects and its account ("" for none), as positions in the list,
+ * made once per list: a proof sweep asks for thousands of figures' passes, most of them
+ * one account's, and testing every pass for each was most of its time.
+ */
+type PassIndex = { n: number; all: Map<string, number[]>; byAccount: Map<string, number[]> };
+const passIndexes = new WeakMap<CheckPass[], PassIndex>();
+const append = (m: Map<string, number[]>, k: string, i: number) => {
+  const list = m.get(k);
+  if (list) list.push(i);
+  else m.set(k, [i]);
+};
+
 /** The passing checks that cover a figure (Book.passes), by the same test as its blockers. */
 export function passesFor(book: Book, q: BlockerQuery): CheckPass[] {
+  const passes = book.passes;
+  let ix = passIndexes.get(passes);
+  if (!ix || ix.n !== passes.length) {
+    ix = { n: passes.length, all: new Map(), byAccount: new Map() };
+    passes.forEach((p, i) => {
+      for (const a of new Set(p.scope.affects)) {
+        append(ix!.all, a, i);
+        append(ix!.byAccount, `${a}|${p.scope.accountId ?? ""}`, i);
+      }
+    });
+    passIndexes.set(passes, ix);
+  }
+  // A pass for another account never covers a figure scoped to some accounts (scopeHits): only those accounts' and account-less ones can.
+  const at = q.accountIds
+    ? [...(ix.byAccount.get(`${q.affects}|`) ?? []), ...q.accountIds.flatMap((id) => (id ? (ix.byAccount.get(`${q.affects}|${id}`) ?? []) : []))].sort((a, b) => a - b)
+    : (ix.all.get(q.affects) ?? []);
   const hits = scopeHits(book, q);
-  return book.passes.filter((p) => hits(p.scope));
+  const out: CheckPass[] = [];
+  let last = -1;
+  for (const i of at) {
+    if (i === last) continue;
+    last = i;
+    if (hits(passes[i]!.scope)) out.push(passes[i]!);
+  }
+  return out;
 }
 
 /** The owner's accepted exceptions that cover a figure: listed, never blocking. */

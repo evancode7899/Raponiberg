@@ -52,7 +52,8 @@ export function ProofProvider({ children }: { children: ReactNode }) {
           if (!live || !r) return;
           const m = new Map<string, ProofFlag>();
           for (const p of r.problems) if (p.descriptor) m.set(descriptorKey(p.descriptor), { kind: p.kind === "WITHHELD" ? "WITHHELD" : "BUG", detail: p.detail });
-          setFlags(m);
+          // The same verdicts keep the same map: a new one redraws every figure on the page.
+          setFlags((old) => (old.size === m.size && [...m].every(([k, f]) => old.get(k)?.kind === f.kind && old.get(k)?.detail === f.detail) ? old : m));
         })
         .catch(() => {
           /* the sweep is a second line of defence; pages work without it */

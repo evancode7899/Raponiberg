@@ -35,6 +35,7 @@ export async function register() {
         for (const f of r.factsFailed) console.error(`Re-extracting facts failed for ${f.title}: ${f.error}`);
       })
       .catch((e) => console.error("Re-extracting outdated facts failed:", e instanceof Error ? e.message : e));
+    const { proofSweep } = await import("@/lib/book/proof/sweepProcess");
     keepBookWarm(prisma, {
       reports: [
         "/api/ledger/attention",
@@ -52,9 +53,9 @@ export async function register() {
         "/api/bonuses",
         "/api/home-budget/funds",
         "/api/dashboard/net-worth/accounts",
-        // Last: it opens every figure's proof, so the reports above are cached by then.
-        "/api/proof/sweep",
       ],
+      // Then the proof sweep, in its own process (it opens every figure's proof).
+      then: () => proofSweep().warm(),
     });
   }
 }
