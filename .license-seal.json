@@ -12,8 +12,8 @@
     ".cursor/rules/raponiberg.mdc": "bc8aa488570c39667a7e038f56ef00820d33bb4be5331c40a08af228a459f7db",
     ".githooks/pre-commit": "a29c89b21d15c0fc03aa97088f1d100afefb1d80af19831abb4ba7c748511e50",
     ".githooks/pre-push": "d6048d376150e8b97fa70b142e504f7c5ce2b0a305b27174585302d386ac1839",
-    "scripts/license-guard.ts": "3913f7771ae32f8cc470cefbb1bf790d12f03f26e8391b3f9ef2d499b0ff52bf",
+    "scripts/license-guard.ts": "90bc62a8003c16403ea767b290233f282d3a763bc373c4aa4fd02159e42b1a03",
     "scripts/license-seal.ts": "29526ca9228ad02dd59cb8a18bd2d08e6162ba0d5ef5ea1badcaf07e13d02286"
   },
-  "signature": "T9suWDk5Up5k32Z3vK1tkJWaWudOobcXmpACKvXiIIXtN+vUR5WdWFzBJXg/AVm/K7CvJuh9VxPPFIJ67YtLDg=="
+  "signature": "wT4XV4Tkz8bPRUQv2o/Elcg0GT5icJktadLGqLysD/hH5V/fAFIsGZr6RRa37KZty3rOHudxw0mc7T8k0QBlCw=="
 }
