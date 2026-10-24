@@ -141,3 +141,45 @@ describe("idle card cycles after a payoff (Chase)", () => {
     expect(report.proven.some((w) => w.trailing)).toBe(false);
   });
 });
+
+describe("owner-closed cards", () => {
+  // Closing statement left $48.00 owing; the bank paid it off three days later.
+  const closed: Acct = { id: "closed", subtype: "CREDIT_CARD", institution: "Example Card Co", segs: [["2024-05-12", "2024-06-10", 0, -30_00], ["2024-06-11", "2024-07-11", -30_00, -48_00]] };
+  const payoff = (id: string, date: string, cents: number, classifiedBy: string | null = "closed-card-payoff:bank-card-payment"): BookRow => ({
+    ...row(id, "bank", date, cents), payee: "EXAMPLE CARD CO PAYMENT", counterpartyInstitution: "Example Card Co", classifiedBy,
+  });
+  const ledgerClosed = () => {
+    const ledger = ledgerOf([bank, closed]);
+    ledger.accounts.find((a) => a.id === "closed")!.closedByOwner = "closed by phone";
+    return ledger;
+  };
+
+  it("the matcher's payoff settles the card, which ends at $0 on the payoff's day", () => {
+    const ledger = ledgerClosed();
+    const report = applyIdleWindows(ledger, [payoff("x1", "2024-07-14", -48_00)], [], "2024-12-31");
+    expect(report.proven).toEqual([
+      expect.objectContaining({ accountId: "closed", from: "2024-07-12", to: "2024-07-14", trailing: true, openingCents: -48_00, payoff: [expect.objectContaining({ transactionId: "x1" })] }),
+    ]);
+    const card = ledger.accounts.find((a) => a.id === "closed")!;
+    expect(valueAt(card.timeline, "2024-07-13")).toMatchObject({ cents: -48_00 });
+    expect(valueAt(card.timeline, "2024-07-14")).toMatchObject({ cents: 0, quality: "EXACT" });
+    expect(card.timeline.lastDay).toBe("2024-07-14");
+    expect(card.closed).toBe(true);
+  });
+
+  it("only counts payments the matcher marked as the payoff", () => {
+    const report = proveIdleWindows(ledgerClosed(), [payoff("x1", "2024-07-14", -48_00, "closed-card:bank-card-payment")], []);
+    expect(report.proven).toEqual([]);
+  });
+
+  it("isn't settled by the bank's statements alone when they don't reach the payoff", () => {
+    const short: Acct = { ...bank, segs: [["2024-01-01", "2024-07-12", 100_00, 100_00]] };
+    const ledger = ledgerOf([short, closed]);
+    ledger.accounts.find((a) => a.id === "closed")!.closedByOwner = "closed by phone";
+    expect(proveIdleWindows(ledger, [payoff("x1", "2024-07-14", -48_00)], []).proven).toEqual([]);
+  });
+
+  it("an open card of an issuer that sends every statement gets no payoff window", () => {
+    expect(proveIdleWindows(ledgerOf([bank, closed]), [payoff("x1", "2024-07-14", -48_00)], []).proven).toEqual([]);
+  });
+});

@@ -4,9 +4,11 @@ import { dataDir } from "../dataDir.ts";
 
 /**
  * Accounts the owner says are closed although their last statement didn't end at $0 (a
- * card closed with a small credit, whose closing statement isn't on file). Such an
- * account counts as closed after its last statement: it no longer holds back the data
- * edge or waits for newer statements, and a payment to it after that statement paid
+ * card closed with a small credit, whose closing statement isn't on file; or a closing
+ * statement with a balance that was paid off after it). Such an account counts as closed
+ * after its last statement: it no longer holds back the data edge or waits for newer
+ * statements. Payments to it after that statement first settle what the statement left
+ * owing (a transfer: the card ends at $0 on the payoff's day); any beyond that paid
  * charges on a closing statement that isn't on file (spending, like an untracked card).
  *
  * Like the other owner decisions it lives in a file next to the database, keyed by the
@@ -75,4 +77,19 @@ export function declaredClosure(
   identifiers: string[],
 ): ClosedAccount | undefined {
   return list.find((a) => sameAccount(a, institution, identifiers));
+}
+
+/**
+ * The payments (bank-side, so negative; in date order) that settle what a closed card's
+ * last statement left owing: the first ones, when they add up to it exactly. None when
+ * nothing was owing or no run of them does.
+ */
+export function settlement<T extends { amountCents: number }>(payments: T[], owingCents: number): T[] {
+  let paid = 0;
+  for (let n = 0; n < payments.length && owingCents > 0; n++) {
+    paid -= payments[n]!.amountCents;
+    if (paid === owingCents) return payments.slice(0, n + 1);
+    if (paid > owingCents) break;
+  }
+  return [];
 }

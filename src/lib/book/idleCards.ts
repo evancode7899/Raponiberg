@@ -1,6 +1,7 @@
 import { addDays, dayNumber, endOfMonth, fromDayNumber } from "../dates/isoDate.ts";
 import { refreshLedgerStatus, type Ledger, type LedgerAccount } from "../ledger/loadLedger.ts";
 import { withIdleWindows, type AccountTimeline } from "../ledger/timeline.ts";
+import { RELABEL } from "../transfers/relabel.ts";
 import { money } from "./coverage.ts";
 import type { BookRow, BookTransferMatch } from "./load.ts";
 
@@ -23,6 +24,11 @@ import type { BookRow, BookTransferMatch } from "./load.ts";
  *
  * After a card's last statement, cycles count as idle only once their payment would
  * have left the bank inside the bank's own statements (cycle end + the grace period).
+ *
+ * A card the owner marked closed (closedAccounts.ts) gets the same payoff after its last
+ * statement, whatever the issuer: the bank payments the transfer matcher found settled
+ * what the last statement left owing (runMatching.ts, "closed-card-payoff:") are the
+ * card's payoff, and it ends at $0 on the payoff's day. It has no cycles after that.
  */
 
 /** Issuers that send no statement for a cycle without activity, and how their card payments read on a bank statement. */
@@ -48,6 +54,8 @@ export type IdleWindow = {
 /** A window before a $0 balance that couldn't be proven idle, and why. */
 export type IdleRejection = { accountId: string; from: string; to: string; reason: string };
 export type IdleReport = { proven: IdleWindow[]; unproven: IdleRejection[] };
+
+const upper = (s: string | null) => (s ?? "").trim().toUpperCase();
 
 const issuerOf = (a: LedgerAccount) =>
   a.group === "Credit cards" ? SKIPS_IDLE_STATEMENTS.find((i) => (a.institution ?? "").toUpperCase().includes(i.institution)) : undefined;
@@ -87,7 +95,13 @@ export function proveIdleWindows(
 
   for (const card of ledger.accounts) {
     const issuer = issuerOf(card);
-    if (!issuer) continue;
+    const closedCard = card.group === "Credit cards" && card.closedByOwner != null;
+    if (!issuer && !closedCard) continue;
+    const institution = upper(card.institution);
+    const paysCard = (r: BookRow) =>
+      issuer
+        ? issuer.payment.test(r.payee.toUpperCase())
+        : !!r.classifiedBy?.startsWith(RELABEL.CLOSED_CARD_PAYOFF) && upper(r.counterpartyInstitution) === institution;
     const own = (identifiers.get(card.id) ?? []).map((i) => i.replace(/\D/g, "").slice(-4)).filter((i) => i.length === 4);
     // Bank-side payments to the issuer that no statement on file accounts for (to this
     // card, or to an unnamed card of the issuer's).
@@ -96,7 +110,7 @@ export function proveIdleWindows(
         (r) =>
           byId.get(r.accountId)?.group === "Cash" &&
           r.transferMatchId == null &&
-          issuer.payment.test(r.payee.toUpperCase()) &&
+          paysCard(r) &&
           (!r.counterpartyAccountHint || own.length === 0 || own.includes(r.counterpartyAccountHint.slice(-4))),
       )
       .sort((x, y) => x.date.localeCompare(y.date));
@@ -116,7 +130,8 @@ export function proveIdleWindows(
     const total = (rs: BookRow[]) => rs.reduce((t, r) => t + r.amountCents, 0);
 
     const segs = [...card.timeline.segments].sort((x, y) => x.start - y.start);
-    for (let i = 1; i < segs.length; i++) {
+    // Gaps between statements: only issuers that skip idle statements leave them.
+    for (let i = 1; issuer && i < segs.length; i++) {
       const prev = segs[i - 1]!;
       const cur = segs[i]!;
       // A credit balance (> 0) isn't paid off by the bank; it would carry into a statement.
@@ -162,6 +177,11 @@ export function proveIdleWindows(
     while (paid !== last.closing && n < after.length) paid += after[n++]!.amountCents;
     if (paid !== last.closing) continue;
     const payoff = after.slice(0, n);
+    if (!issuer) {
+      // A closed card is settled on the payoff's day (nothing to settle when it ended at $0).
+      if (payoff.length) report.proven.push({ accountId: card.id, from, to: payoff.at(-1)!.date, payerIds, trailing: true, openingCents: last.closing, payoff: payoffOf(payoff) });
+      continue;
+    }
     const stray = after[n];
     if (stray) limit = addDays(stray.date, -1);
     let to: string | null = null;

@@ -154,7 +154,8 @@ export function checkStatements(book: Book, c: Collector) {
       });
     }
     if (gaps === 0) c.pass("statement.gap", whole(`no gaps ${t.firstDay} – ${t.lastDay}`));
-    for (const w of book.idle.proven.filter((x) => x.accountId === a.id)) {
+    // An owner-closed card's payoff is part of its closure (below), not an idle cycle.
+    for (const w of book.idle.proven.filter((x) => x.accountId === a.id && a.closedByOwner == null)) {
       const payers = w.payerIds.map(nameOf).join(" and ");
       const paidOff = w.payoff.length
         ? `The last statement left ${money(-w.openingCents)} owing, paid off by ${payers} (${w.payoff.map((p) => `${p.date} ${money(p.amountCents)}`).join(", ")})`
@@ -173,13 +174,21 @@ export function checkStatements(book: Book, c: Collector) {
 
     // Closed by the owner's word, not by a $0 closing statement.
     if (a.closedByOwner != null) {
-      const last = segs.at(-1)!;
+      const last = segs.filter((s) => !s.idle).at(-1)!;
+      const lastDay = fromDayNumber(last.end);
+      const payoff = book.idle.proven.find((w) => w.accountId === a.id && w.trailing);
+      const owner = `the owner marked the account closed${a.closedByOwner ? ` (${a.closedByOwner})` : ""}`;
+      const beyond = `A payment to ${institutionOf(a.id)} after that statement that no other card received${payoff ? " and that the payoff doesn't account for" : ""} is counted as spending on a closing statement that isn't on file.`;
       c.infer({
-        id: `statement.closed:${ref}:${t.lastDay}`,
+        id: `statement.closed:${ref}:${lastDay}`,
         check: "statement.overdue",
-        title: `${a.name}: closed after ${t.lastDay} (owner) — no statements expected`,
-        detail: `Its last statement closed at ${money(last.closing)}, not $0; the owner marked the account closed${a.closedByOwner ? ` (${a.closedByOwner})` : ""}. A payment to ${institutionOf(a.id)} after that statement that no other card received is counted as spending on its closing statement, which isn't on file.`,
-        scope: { accountId: a.id, from: t.lastDay!, to: t.lastDay! },
+        title: payoff
+          ? `${a.name}: closed after ${lastDay} (owner), paid off ${payoff.to} — no statements expected`
+          : `${a.name}: closed after ${lastDay} (owner) — no statements expected`,
+        detail: payoff
+          ? `Its last statement left ${money(-payoff.openingCents)} owing, paid off by ${payoff.payerIds.map(nameOf).join(" and ")} (${payoff.payoff.map((p) => `${p.date} ${money(p.amountCents)}`).join(", ")}), so it ends at $0; ${owner}. ${beyond}`
+          : `Its last statement closed at ${money(last.closing)}, not $0; ${owner}. ${beyond}`,
+        scope: { accountId: a.id, from: lastDay, to: t.lastDay! },
       });
     }
 

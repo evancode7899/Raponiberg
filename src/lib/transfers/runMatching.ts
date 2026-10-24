@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient, TransactionLane } from "@prisma/client";
 import { ensureCategories } from "../classifier/persist.ts";
 import { householdPatterns } from "../household/householdFile.ts";
 import { addDays } from "../dates/isoDate.ts";
-import { declaredClosure, readClosedAccounts } from "../ledger/closedAccounts.ts";
+import { declaredClosure, readClosedAccounts, settlement } from "../ledger/closedAccounts.ts";
 import { getMergeDate } from "../ledger/householdSettings.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { applyTransferDecisions } from "./applyDecisions.ts";
@@ -122,7 +122,8 @@ async function relabel(
   db: Db,
   id: string,
   prefix: string,
-  data: { lane: TransactionLane; categoryId: string | null; counterpartyKind: string },
+  /** categoryId left out keeps the row's category. */
+  data: { lane: TransactionLane; categoryId?: string | null; counterpartyKind: string },
 ): Promise<void> {
   const row = await db.transaction.findUnique({
     where: { id },
@@ -149,7 +150,10 @@ async function relabel(
  *     card payments"), when the institution's cards are on file for that date (it paid a
  *     card we don't track) or the payment predates them (it paid charges never on file).
  *     Payments after the latest card statement stay transfers: the next statement will
- *     show them arriving;
+ *     show them arriving. For a card the owner marked closed, the payments after its
+ *     last statement that add up to what it left owing settle it and stay transfers
+ *     (idleCards.ts books the card's side); any others paid a closing statement that
+ *     isn't on file and become spending;
  *   - a payment on the partner's card that no tracked bank account sent becomes partner
  *     money (the partner paid it from their own account).
  */
@@ -213,30 +217,33 @@ export async function runTransferMatching(
     select: {
       institution: true,
       aliases: { select: { identifier: true } },
-      statementImports: { where: { isSummary: false }, select: { periodStart: true, periodEnd: true } },
+      statementImports: { where: { isSummary: false }, select: { periodStart: true, periodEnd: true, closingBalanceCents: true } },
     },
   });
   // Per card: its statements, and the window it could receive payments in (from its
   // first statement until shortly after its latest one). A card the owner marked closed
-  // receives nothing on file after its last statement: a payment in that window paid its
-  // closing statement, which isn't on file.
+  // receives nothing on file after its last statement: a payment in that window settled
+  // what the last statement left owing, or paid a closing statement that isn't on file.
   const closures = readClosedAccounts().accounts;
   const cards = new Map<string, { periods: { start: string; end: string }[]; first: string; activeUntil: string }[]>();
-  const closedCards = new Map<string, { lastEnd: string; until: string }[]>();
+  const closedCards = new Map<string, { lastEnd: string; until: string; owingCents: number }[]>();
   for (const a of cardInstitutions) {
     if (!a.institution || a.statementImports.length === 0) continue;
-    const periods = a.statementImports
-      .map((s) => ({ start: s.periodStart.toISOString().slice(0, 10), end: s.periodEnd.toISOString().slice(0, 10) }))
-      .sort((x, y) => x.start.localeCompare(y.start));
+    const statements = [...a.statementImports].sort((x, y) => x.periodStart.getTime() - y.periodStart.getTime());
+    const periods = statements.map((s) => ({ start: s.periodStart.toISOString().slice(0, 10), end: s.periodEnd.toISOString().slice(0, 10) }));
     const lastEnd = periods.at(-1)!.end;
     const closed = declaredClosure(closures, a.institution, a.aliases.map((x) => x.identifier));
     cards.set(a.institution, [
       ...(cards.get(a.institution) ?? []),
       { periods, first: periods[0]!.start, activeUntil: closed ? lastEnd : addDays(lastEnd, 45) },
     ]);
-    if (closed) closedCards.set(a.institution, [...(closedCards.get(a.institution) ?? []), { lastEnd, until: addDays(lastEnd, 45) }]);
+    if (closed) {
+      const owingCents = Math.max(0, -statements.at(-1)!.closingBalanceCents);
+      closedCards.set(a.institution, [...(closedCards.get(a.institution) ?? []), { lastEnd, until: addDays(lastEnd, 45), owingCents }]);
+    }
   }
-  let untrackedCardPayments = 0;
+  // Bank payments to an institution that none of its cards received.
+  const unreceived: { leg: Leg; closing: boolean }[] = [];
   for (const l of legs) {
     if (matchedIds.has(l.id) || l.role !== "TRANSFER" || l.amountCents >= 0) continue;
     if (l.subtype !== "CHECKING" && l.subtype !== "SAVINGS") continue;
@@ -257,7 +264,27 @@ export async function runTransferMatching(
     };
     const everyCandidateCovered = candidates.every((c) => coversArrival(c.periods));
     if (!everyCandidateCovered) continue; // a candidate's next statement isn't in yet: still in flight
-    const closing = closedCards.get(l.counterpartyInstitution!)?.some((c) => c.lastEnd < l.date && l.date <= c.until);
+    const closing = closedCards.get(l.counterpartyInstitution!)?.some((c) => c.lastEnd < l.date && l.date <= c.until) ?? false;
+    unreceived.push({ leg: l, closing });
+  }
+  // A closed card's first payments that add up to what it left owing settled it.
+  const settling = new Set<string>();
+  for (const [institution, closed] of closedCards) {
+    for (const c of closed) {
+      const after = unreceived
+        .filter((u) => u.closing && u.leg.counterpartyInstitution === institution && c.lastEnd < u.leg.date && u.leg.date <= c.until && !settling.has(u.leg.id))
+        .map((u) => u.leg)
+        .sort((x, y) => x.date.localeCompare(y.date));
+      const payoff = settlement(after, c.owingCents);
+      for (const l of payoff) settling.add(l.id);
+    }
+  }
+  let untrackedCardPayments = 0;
+  for (const { leg: l, closing } of unreceived) {
+    if (settling.has(l.id)) {
+      await relabel(db, l.id, RELABEL.CLOSED_CARD_PAYOFF, { lane: "TRANSFER", counterpartyKind: "OWN_ACCOUNT" });
+      continue;
+    }
     await relabel(db, l.id, closing ? RELABEL.CLOSED_CARD : RELABEL.UNTRACKED_CARD, {
       lane: "EXPENSE",
       categoryId: categoryIds.get("Untracked card payments") ?? null,

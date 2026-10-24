@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { declaredClosure, readClosedAccounts, saveClosedAccount } from "./closedAccounts";
+import { declaredClosure, readClosedAccounts, saveClosedAccount, settlement } from "./closedAccounts";
 import { refreshLedgerStatus, type Ledger, type LedgerAccount } from "./loadLedger";
 import type { AccountTimeline } from "./timeline";
 
@@ -63,5 +63,20 @@ describe("refreshLedgerStatus", () => {
     refreshLedgerStatus(ledger, "2024-10-01");
     expect(ledger.accounts[1]!.closed).toBe(true);
     expect(ledger.completeThrough).toBe("2024-09-10");
+  });
+});
+
+describe("settlement", () => {
+  const pay = (id: string, cents: number) => ({ id, amountCents: cents });
+
+  it("is the first payments that add up to what was owing", () => {
+    expect(settlement([pay("a", -70_00), pay("b", -30_00), pay("c", -5_00)], 100_00).map((p) => p.id)).toEqual(["a", "b"]);
+    expect(settlement([pay("a", -100_00)], 100_00).map((p) => p.id)).toEqual(["a"]);
+  });
+
+  it("is none when nothing was owing (a credit or $0) or no run of payments adds up to it", () => {
+    expect(settlement([pay("a", -12_00)], 0)).toEqual([]);
+    expect(settlement([pay("a", -60_00), pay("b", -60_00)], 100_00)).toEqual([]);
+    expect(settlement([pay("a", -40_00)], 100_00)).toEqual([]);
   });
 });
