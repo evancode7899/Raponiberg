@@ -53,6 +53,24 @@ export function CoveragePanel({ r, onGo }: { r: BookReport; onGo: (tab: "issues"
         <div title={title(i, c)} className={`h-3.5 w-3.5 rounded-[3px] ${CELL[c].cls}`} />
       </td>
     ));
+  const groupHeader = (label: string) => (
+    <tr key={`group-${label}`}>
+      {/* The cell spans the whole table, so the label (not the cell) sticks while the months scroll. */}
+      <td colSpan={data.months.length + 1} className="pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-muted">
+        <span className="sticky left-0">{label}</span>
+      </td>
+    </tr>
+  );
+  // One section per account type, A–Z within each. The report already lists accounts in the
+  // app's group order (cash first, cards last); cards known only from payments sit with the
+  // other credit cards.
+  const byName = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: "base", numeric: true });
+  const rows = [
+    ...data.accounts.map((a) => ({ group: a.group, name: a.name, row: { kind: "account" as const, a } })),
+    ...data.untrackedCards.map((c) => ({ group: "Credit cards", name: c.name, row: { kind: "untracked" as const, c } })),
+  ];
+  const groups = [...new Set(rows.map((r) => r.group))];
+  rows.sort((x, y) => groups.indexOf(x.group) - groups.indexOf(y.group) || byName(x.name, y.name));
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,26 +105,26 @@ export function CoveragePanel({ r, onGo }: { r: BookReport; onGo: (tab: "issues"
               </tr>
             </thead>
             <tbody>
-              {data.accounts.map((a) => (
-                <tr key={a.accountId}>
-                  {rowLabel(a.name, `${a.statementCount} · ${a.cadenceDays >= 80 ? "quarterly" : "monthly"}${a.closed ? " · closed" : ""}`)}
-                  {cells(a.months, (i, c) => `${data.months[i]}: ${CELL[c].label}`)}
-                </tr>
-              ))}
-              {data.untrackedCards.map((c) => (
-                <tr key={c.name}>
-                  {rowLabel(c.name, <span className="text-neg">0 statements · closed after {c.lastPayment}</span>)}
-                  {cells(c.months, (i, cell) => `${data.months[i]}: ${CELL[cell].label}`)}
-                </tr>
-              ))}
-              {(data.paystubSources ?? []).length > 0 && (
-                <tr>
-                  <td colSpan={data.months.length + 1} className="sticky left-0 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-muted">
-                    Pay stubs
-                  </td>
-                </tr>
-              )}
-              {(data.paystubSources ?? []).map((p) => (
+              {groups.map((g) => [
+                groupHeader(g),
+                ...rows
+                  .filter((r) => r.group === g)
+                  .map(({ row }) =>
+                    row.kind === "account" ? (
+                      <tr key={row.a.accountId}>
+                        {rowLabel(row.a.name, `${row.a.statementCount} · ${row.a.cadenceDays >= 80 ? "quarterly" : "monthly"}${row.a.closed ? " · closed" : ""}`)}
+                        {cells(row.a.months, (i, c) => `${data.months[i]}: ${CELL[c].label}`)}
+                      </tr>
+                    ) : (
+                      <tr key={`untracked-${row.c.name}`}>
+                        {rowLabel(row.c.name, <span className="text-neg">0 statements · closed after {row.c.lastPayment}</span>)}
+                        {cells(row.c.months, (i, cell) => `${data.months[i]}: ${CELL[cell].label}`)}
+                      </tr>
+                    ),
+                  ),
+              ])}
+              {(data.paystubSources ?? []).length > 0 && groupHeader("Pay stubs")}
+              {[...(data.paystubSources ?? [])].sort((x, y) => byName(x.employer, y.employer)).map((p) => (
                 <tr key={`stub-${p.employer}`}>
                   {rowLabel(p.employer, `${p.stubCount} stubs · last ${p.lastPayDate}`)}
                   {cells(p.months, (i, cell) => `${data.months[i]}: ${cell === "FULL" ? "Pay stub on file" : CELL[cell].label.replace("statement", "pay stub")}`)}

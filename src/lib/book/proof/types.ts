@@ -14,9 +14,13 @@ import type { ProofDescriptor } from "./index.ts";
  *  - chain: how a derived figure is worked out, line by line, each line marked by where
  *    it stands: read off statements (proven), typed by the owner (assumption), set by tax
  *    law, or estimated. Projections (the forecast and everything built on it) are chains.
+ *  - facts: words as a document prints them or as the app files them (a row's description
+ *    and the rule that filed it, a statement's file and reader): labelled text that wraps.
  *
- * Any breakdown item or chain line can link to another figure's proof, so a forecast's
- * starting balance opens the net-worth proof behind it.
+ * Any breakdown item, chain line or fact can link to another figure's proof, so a
+ * forecast's starting balance opens the net-worth proof behind it. Rows and statements
+ * that are the Book's own (rowId, importId) open the row's and the statement's proof:
+ * the bottom of every chain, what the document itself prints.
  */
 
 export type ProofLink = { label: string; descriptor: ProofDescriptor };
@@ -41,6 +45,8 @@ export type ProofRow = {
   precision: "EXACT" | "PERIOD";
   /** A further piece of a bill payment split across bank payments. */
   piece?: boolean;
+  /** The Book row it is (BookRow.id), when it is one: the drawer opens its row proof. Filled in centrally (proof/index.ts). */
+  rowId?: string;
 };
 
 export type ProofStatement = {
@@ -51,6 +57,8 @@ export type ProofStatement = {
   periodEnd: string;
   documentTitle: string;
   status: string;
+  /** The Book statement it is (BookStatement.id), when it is one: the drawer opens its statement proof. Filled in centrally (proof/index.ts). */
+  importId?: string;
 };
 
 export type ProofGroup = { statement: ProofStatement; subtotalCents: number; rows: ProofRow[] };
@@ -79,7 +87,11 @@ export type ProofBlock =
       note?: string;
     }
   | { kind: "breakdown"; title: string; items: { label: string; value: ProofValue; sub?: string; link?: ProofLink }[]; note?: string }
-  | { kind: "chain"; title: string; lines: ChainLine[]; note?: string };
+  | { kind: "chain"; title: string; lines: ChainLine[]; note?: string }
+  | { kind: "facts"; title: string; items: ProofFact[]; note?: string };
+
+/** One labelled fact: text as printed or filed, never a figure to add up. `tone` marks one that needs the owner (warn) or settles a question (good). */
+export type ProofFact = { label: string; text: string; link?: ProofLink; tone?: "warn" | "good" };
 
 export type ProofCheck = {
   id: CheckId;

@@ -10,6 +10,9 @@ import type { FinancialProfileSettings } from "@/lib/profile/settings";
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { pct, usd } from "./profileUi";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofTarget } from "@/components/ui/proof/context";
+import type { AnnualCashLine } from "@/lib/book/proof/annualProof";
 
 /**
  * One-off expenses: the big charges that aren't part of a normal year (a wedding, a move,
@@ -17,6 +20,9 @@ import { pct, usd } from "./profileUi";
  * from "living" to "one-off" so the living-cost trend, and the FIRE plan built on it,
  * reflect a normal year. Each tick saves straight away; the figures recalculate after.
  */
+/** An Annual cash line's proof (book/proof/annualProof), as the Annual statement opens it. */
+const cashP = (year: number, line: AnnualCashLine, shown: number): ProofTarget => ({ descriptor: { report: "annual", figure: "cash", year, line }, shownCents: shown });
+
 export function OneOffsTab({
   r,
   onSave,
@@ -82,11 +88,13 @@ export function OneOffsTab({
         <StatCell
           label={`Marked one-off in ${full?.year ?? "—"}`}
           value={full?.cash ? usd(full.cash.waterfall.nonRecurring) : "—"}
+          proof={full?.cash ? cashP(full.year, "one-offs", full.cash.waterfall.nonRecurring) : undefined}
           sub={full?.cash ? `${full.oneOffTagged.count} expenses` : undefined}
         />
         <StatCell
           label={`Living expenses ${full?.year ?? ""}`}
           value={full?.cash ? usd(full.cash.waterfall.living) : "—"}
+          proof={full?.cash ? cashP(full.year, "living", full.cash.waterfall.living) : undefined}
           sub={full?.cash ? "one-offs left out" : undefined}
         />
         <StatCell
@@ -119,7 +127,9 @@ export function OneOffsTab({
         </div>
         {y?.cash && (
           <p className="mb-2 text-xs text-muted">
-            {y.label}: living expenses {usd(y.cash.waterfall.living)} · one-offs {usd(y.cash.waterfall.nonRecurring)} · saved incl. retirement {usd(y.cash.waterfall.saved)} (unchanged by tags)
+            {y.label}: living expenses <ProofValue proof={cashP(y.year, "living", y.cash.waterfall.living)}>{usd(y.cash.waterfall.living)}</ProofValue> · one-offs{" "}
+            <ProofValue proof={cashP(y.year, "one-offs", y.cash.waterfall.nonRecurring)}>{usd(y.cash.waterfall.nonRecurring)}</ProofValue> · saved incl. retirement{" "}
+            <ProofValue proof={cashP(y.year, "saved", y.cash.waterfall.saved)}>{usd(y.cash.waterfall.saved)}</ProofValue> (unchanged by tags)
           </p>
         )}
         {!y || y.oneOffCandidates.length === 0 ? (
@@ -161,7 +171,9 @@ export function OneOffsTab({
                         {c.payee}
                       </td>
                       <td className={`${table.td} whitespace-nowrap text-muted`}>{c.category}</td>
-                      <td className={`${table.tdR} whitespace-nowrap`}>{usd(c.cents)}</td>
+                      <td className={`${table.tdR} whitespace-nowrap`}>
+                        <ProofValue proof={{ descriptor: { report: "row", rowId: c.rowId }, shownCents: -c.cents }}>{usd(c.cents)}</ProofValue>
+                      </td>
                       <td className={table.td}>
                         {tagged ? (
                           <input

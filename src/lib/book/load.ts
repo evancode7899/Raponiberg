@@ -55,6 +55,8 @@ export type BookStatement = {
   checks?: { label: string; expectedCents: number; actualCents: number; toleranceCents: number }[];
   /** Its market change isn't printed: it's what the balances leave after the listed flows (ParsedAccountSection.growthFromBalances). */
   growthDerived?: boolean;
+  /** The balances and totals exactly as the statement prints them (before the ledger moves a lossy transfer's shortfall into fees). */
+  printed?: { openingCents: number; closingCents: number; growthCents: number; feesCents: number };
 };
 
 /** A committed, non-summary ledger row. */
@@ -86,6 +88,8 @@ export type BookRow = {
   payee: string;
   /** The statement's second line for the row, when it prints one (Amex: the merchant's category or phone). */
   detail?: string | null;
+  /** The statement section it was read from ("Payments", "Exchanges Out"…), when the reader names one. */
+  section?: string | null;
   merchantKey: string | null;
   category: string;
   categoryGroup: string | null;
@@ -229,6 +233,7 @@ type RawRow = {
   accountId: string;
   payee: string | null;
   detail: string | null;
+  section: string | null;
   merchantKey: string | null;
   counterpartyKind: string | null;
   counterpartyInstitution: string | null;
@@ -272,6 +277,10 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
         periodStart: true,
         periodEnd: true,
         reconciliationDeltaCents: true,
+        openingBalanceCents: true,
+        closingBalanceCents: true,
+        growthCents: true,
+        feesCents: true,
         checksJson: true,
         document: { select: { title: true, originalFileName: true, createdAt: true } },
       },
@@ -279,7 +288,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     // One join rather than findMany with nested selects: same rows, about 7x faster
     // (Prisma's per-row relation handling was most of the Book's load time).
     db.$queryRaw<RawRow[]>`
-      SELECT t.id, t.date, t.datePrecision, s.periodStart, s.periodEnd, t.amountCents, t.lane, t.accountId, t.payee, t.detail,
+      SELECT t.id, t.date, t.datePrecision, s.periodStart, s.periodEnd, t.amountCents, t.lane, t.accountId, t.payee, t.detail, t.section,
              t.merchantKey, t.counterpartyKind, t.counterpartyInstitution, t.counterpartyAccountHint, t.classifiedBy, t.needsReview,
              c.name AS categoryName, c.groupName AS categoryGroup, l.matchId,
              s.id AS statementImportId, s.documentId
@@ -333,6 +342,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       accountId: r.accountId,
       payee: r.payee ?? "",
       detail: r.detail,
+      section: r.section,
       merchantKey: r.merchantKey,
       category: r.categoryName ?? "Uncategorized",
       categoryGroup: r.categoryGroup ?? null,
@@ -429,6 +439,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       deltaCents: s.reconciliationDeltaCents,
       checks: storedChecks(s.checksJson),
       growthDerived: Array.isArray(s.checksJson) && s.checksJson.some((k) => (k as { derived?: unknown } | null)?.derived === true),
+      printed: { openingCents: s.openingBalanceCents, closingCents: s.closingBalanceCents, growthCents: s.growthCents, feesCents: s.feesCents },
     })),
     rows: bookRows,
     rowById: new Map(bookRows.map((r) => [r.id, r])),

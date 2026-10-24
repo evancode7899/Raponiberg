@@ -23,6 +23,7 @@ import type { BonusesDescriptor } from "./bonusesProof.ts";
 import type { CarFigureDescriptor } from "./carProof.ts";
 import { LEDGER_LINES, ledgerValue, type LedgerLine } from "./forecastProof.ts";
 import type { ProofDescriptor } from "./index.ts";
+import type { Book } from "../load.ts";
 import type { ProofValue } from "./types.ts";
 
 /**
@@ -33,7 +34,13 @@ import type { ProofValue } from "./types.ts";
  * proof sweep (sweep.ts) walks it on the owner's own Book, so a figure that drifts from
  * its proof is caught whether or not anyone clicks it.
  */
-export type PageFigure = { page: string; descriptor: ProofDescriptor; shown: ProofValue | null };
+export type PageFigure = {
+  page: string;
+  descriptor: ProofDescriptor;
+  shown: ProofValue | null;
+  /** A document as it prints (a statement, a row, a stub): viewers always show it, so a finding over its days withholds what's built from it, never it. */
+  asPrinted?: boolean;
+};
 
 const cents = (c: number | null | undefined): ProofValue | null => (c == null ? null : { cents: c });
 
@@ -387,5 +394,23 @@ export function forecastFigures(f: Forecast, r: AnnualProfileReport): PageFigure
       const through = p.through.slice(0, 7);
       out.push({ page: "Forecast", descriptor: { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line }, shown: { cents: v } });
     }
+  return out;
+}
+
+// ------------------------------------------------------------------ Sources
+
+/**
+ * Every source as it prints, under every figure above: each committed statement's closing
+ * balance, each ledger row's amount (a bill payment booked in pieces is its pieces added
+ * back) and each pay stub's net pay. The page is the document itself.
+ */
+export function sourceFigures(book: Book): PageFigure[] {
+  const out: PageFigure[] = [];
+  for (const s of book.statements.filter((x) => x.status === "COMMITTED"))
+    out.push({ page: "Statements", descriptor: { report: "statement", statementId: s.id }, shown: s.printed ? { cents: s.printed.closingCents } : null, asPrinted: true });
+  const printed = new Map(book.rows.map((r) => [r.id, r.amountCents]));
+  for (const r of book.rows) if (r.partOf) printed.set(r.partOf, (printed.get(r.partOf) ?? 0) + r.amountCents);
+  for (const r of book.rows) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });
+  for (const s of book.stubs) out.push({ page: "Pay stubs", descriptor: { report: "stub", stubId: s.id }, shown: s.printed.netCurrent == null ? null : { cents: s.printed.netCurrent }, asPrinted: true });
   return out;
 }
