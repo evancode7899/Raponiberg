@@ -263,7 +263,12 @@ export function checkLicense(root = ROOT): Report {
 }
 
 const PAYMENT_PACKAGES = /^(stripe|@stripe\/.+|paypal.*|@paypal\/.+|braintree.*|@lemonsqueezy\/.+|lemonsqueezy.*|@paddle\/.+|paddle.*|razorpay|square|squareup|@square\/.+|gumroad.*|@revenuecat\/.+|@polar-sh\/.+|mollie.*|@mollie\/.+|adyen.*|@adyen\/.+|authorizenet|react-adsense|react-google-adsense|buymeacoffee.*|react-kofi.*)$/i;
-const MONEY_HOSTS = /(?:js|api|checkout)\.stripe\.com|paypal\.com\/sdk|paypalobjects\.com|googlesyndication\.com|doubleclick\.net|adsbygoogle|buymeacoffee\.com|ko-fi\.com|patreon\.com|github\.com\/sponsors|gumroad\.com|lemonsqueezy\.com|paddle\.com|opencollective\.com|liberapay\.com|polar\.sh/i;
+/** A link, with or without its scheme ("https://www." or "//"): a name in plain text, like a statement line, is not one. */
+const LINK = String.raw`(?:https?:)?\/\/(?:[\w-]+\.)*`;
+const MONEY_HOSTS = new RegExp(
+  `${LINK}(?:(?:js|api|checkout)\\.stripe\\.com|paypal\\.com\\/sdk|paypalobjects\\.com|googlesyndication\\.com|doubleclick\\.net|buymeacoffee\\.com|ko-fi\\.com|patreon\\.com|github\\.com\\/sponsors|gumroad\\.com|lemonsqueezy\\.com|paddle\\.com|opencollective\\.com|liberapay\\.com|polar\\.sh)|adsbygoogle`,
+  "i",
+);
 /**
  * The name with something added: a label ("Raponiberg Pro"), a version ("Raponiberg v2"), an
  * edition ("Raponiberg - Pat's edition"), a mark ("Raponiberg (TM)"), or stuck to a word
