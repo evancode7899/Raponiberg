@@ -68,4 +68,4 @@ jobs:
             next="v${major}.${minor}.$((patch + 1))"
           fi
           echo "Releasing $SHA as $next (previous: ${last:-none})"
-          gh release create "$next" --target "$SHA" --title "Raponiberg $next" --generate-notes
+          gh release create "$next" --target "$SHA" --title "$next" --generate-notes

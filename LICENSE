@@ -11,12 +11,18 @@ furnished to do so, subject to the following conditions:
    copies or substantial portions of the Software, and every copy, modification and
    derivative work is distributed only under this license.
 
-2. Name. The Software is named "Raponiberg". Every copy, modification, fork and
-   derivative work of the Software must keep "Raponiberg" as its name wherever the
-   Software presents its name, including its user interface, page and window titles, logo
-   text, desktop shortcut, launcher and documentation. You may not rename or rebrand the
-   Software, or present it under any other name. You may add words alongside the name
-   (for example "Raponiberg - Pat's edition") as long as "Raponiberg" remains the name.
+2. Name. The Software is named "Raponiberg", exactly. Every copy, modification, fork and
+   derivative work of the Software must keep "Raponiberg", written exactly like that, as
+   its name wherever the Software presents its name, including its user interface, page
+   and window titles, logo text, desktop shortcut, launcher and documentation. You may not
+   rename, rebrand, abbreviate, translate or restyle the Software, or present it under any
+   other name, and you may not add anything to the name: no words, owner names, labels,
+   editions, version numbers or marks (so not "Raponiberg Pro", "Raponiberg v2",
+   "Raponiberg - Pat's edition" or "Raponiberg(TM)"), and no name that contains or is
+   derived from it. Text shown beside the name that is not part of it, such as a page name
+   ("Dashboard" before the name in a window title), and plain sentences that say what a
+   copy is ("a fork of Raponiberg"), are fine. Version numbers belong in release tags and
+   in separate version information, never attached to the name.
 
 3. No commercial use. Nobody may make money from the Software or from any modification or
    derivative work of it. In particular, you may not:

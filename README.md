@@ -142,8 +142,9 @@ doesn't take contributions back (see [CONTRIBUTING.md](CONTRIBUTING.md)).
   runs before every `git push`. It stops the push if your own names, account numbers or
   amounts appear in the code. Use made-up values in tests, and screenshots from demo mode.
   When in doubt, keep the repository private.
-- **The license still applies to your copy:** keep the name Raponiberg, and don't make
-  money from it. AI coding assistants pick up these rules from [AGENTS.md](AGENTS.md).
+- **The license still applies to your copy:** the name stays exactly Raponiberg, with
+  nothing added (no "Pro", no "v2", no "Pat's edition"), and don't make money from it. AI
+  coding assistants pick up these rules from [AGENTS.md](AGENTS.md).
 
 ## Demo mode
 

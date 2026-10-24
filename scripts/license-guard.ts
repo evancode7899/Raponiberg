@@ -264,6 +264,21 @@ export function checkLicense(root = ROOT): Report {
 
 const PAYMENT_PACKAGES = /^(stripe|@stripe\/.+|paypal.*|@paypal\/.+|braintree.*|@lemonsqueezy\/.+|lemonsqueezy.*|@paddle\/.+|paddle.*|razorpay|square|squareup|@square\/.+|gumroad.*|@revenuecat\/.+|@polar-sh\/.+|mollie.*|@mollie\/.+|adyen.*|@adyen\/.+|authorizenet|react-adsense|react-google-adsense|buymeacoffee.*|react-kofi.*)$/i;
 const MONEY_HOSTS = /(?:js|api|checkout)\.stripe\.com|paypal\.com\/sdk|paypalobjects\.com|googlesyndication\.com|doubleclick\.net|adsbygoogle|buymeacoffee\.com|ko-fi\.com|patreon\.com|github\.com\/sponsors|gumroad\.com|lemonsqueezy\.com|paddle\.com|opencollective\.com|liberapay\.com|polar\.sh/i;
+/**
+ * The name with something added: a label ("Raponiberg Pro"), a version ("Raponiberg v2"), an
+ * edition ("Raponiberg - Pat's edition"), a mark ("Raponiberg (TM)"), or stuck to a word
+ * ("RaponibergPlus"). Capitalized labels only, so prose like "Raponiberg needs Node" is left
+ * alone. A heuristic that catches the obvious; the LICENSE and AGENTS.md carry the rule.
+ */
+const DECORATED_NAME = [
+  /Raponiberg[ _-]?(?:Pro|Plus|Lite|Premium|Max|Ultra|Mini|Enterprise|Cloud|Studio|Suite|Deluxe|Classic|Reloaded|Terminal|Edition|Personal|Business|Team)\b/,
+  /Raponiberg\s*[-\u2013\u2014\u00b7]?\s*v?\d/,
+  /Raponiberg\s*[-\u2013\u2014:\u00b7]\s*[^\n"]{0,30}\b(?:edition|version|remix|fork|build)\b/i,
+  /Raponiberg\s*(?:\((?:TM|R|C)\)|[\u2122\u00ae\u00a9])/,
+  /Raponiberg[A-Z][a-z]/,
+];
+/** Where the name is shown to people: the app, the launcher scripts, the workflows and the docs. */
+const SHOWS_NAME = /^(src|scripts|\.github)\/|^(README|SETUP|CONTRIBUTING|SECURITY)\.md$/;
 const SKIP_SCAN = /(^|\/)(license-guard|license-seal)\.ts$|\.test\.ts$/;
 
 function* walk(root: string, rel: string): Generator<string> {
@@ -297,15 +312,21 @@ export function checkRules(root = ROOT): string[] {
       if (PAYMENT_PACKAGES.test(name)) out.push(`package.json depends on ${name}, a payment, advertising or donation package (LICENSE §3).`);
 
   const layout = read(root, "src/app/layout.tsx");
-  if (layout === null || !/title:[^\n]*Raponiberg/.test(layout)) out.push('src/app/layout.tsx no longer titles the app "Raponiberg" (LICENSE §2).');
+  if (layout === null || !/title:\s*\{\s*default:\s*"Raponiberg"/.test(layout) || !/template:\s*"%s\s*\S\s*Raponiberg"/.test(layout))
+    out.push('src/app/layout.tsx must title the app exactly "Raponiberg", with nothing added to it (LICENSE §2).');
   for (const f of NAME_FILES) if (!read(root, f)?.includes("Raponiberg")) out.push(`${f} is missing or no longer says "Raponiberg" (LICENSE §2).`);
   for (const f of [".github/FUNDING.yml", "FUNDING.yml"]) if (read(root, f) !== null) out.push(`${f} asks for sponsorship (LICENSE §3c).`);
 
-  const files = ["package.json", "next.config.ts", ...["src", "scripts", ".github"].flatMap((d) => [...walk(root, d)])];
+  const docs = ["README.md", "SETUP.md", "CONTRIBUTING.md", "SECURITY.md"];
+  const files = ["package.json", "next.config.ts", ...docs, ...["src", "scripts", ".github"].flatMap((d) => [...walk(root, d)])];
   for (const f of files) {
-    if (SKIP_SCAN.test(f) || !/\.(tsx?|mjs|cjs|js|json|ya?ml|ps1|css)$/.test(f)) continue;
-    const hit = read(root, f)?.match(MONEY_HOSTS)?.[0];
+    if (SKIP_SCAN.test(f) || !/\.(tsx?|mjs|cjs|js|json|ya?ml|ps1|vbs|bat|css|md)$/.test(f)) continue;
+    const text = read(root, f);
+    if (!text) continue;
+    const hit = f.endsWith(".md") ? undefined : text.match(MONEY_HOSTS)?.[0];
     if (hit) out.push(`${f} mentions ${hit}: payments, ads and donation links aren't allowed (LICENSE §3).`);
+    const decorated = SHOWS_NAME.test(f) ? DECORATED_NAME.map((re) => text.match(re)?.[0]).find(Boolean) : undefined;
+    if (decorated) out.push(`${f} writes the name as "${decorated}": it is exactly "Raponiberg", with nothing added (LICENSE §2).`);
   }
   return out;
 }
