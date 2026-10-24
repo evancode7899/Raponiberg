@@ -1,4 +1,3 @@
-import { loadProfileSettings } from "../../profile/settings.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
 import type { CheckLine, CheckStatus } from "../../tax/filedCheck.ts";
 import { yearDocs } from "../../tax/documents.ts";
@@ -107,10 +106,8 @@ const cents = (dollars: number) => Math.round(dollars * 100);
 
 /** The tab's line for this key, as the tax engine compares it; null when the year's report is withheld. */
 async function compared(ctx: ProofContext, d: FiledReturnDescriptor): Promise<CheckLine | null> {
-  // Birth years set the 401(k) catch-up limit, as on the Taxes page (api/tax). A filed
-  // year is a finished one, so the forecast the page passes for the current year doesn't apply.
-  const { birthYears } = await loadProfileSettings(ctx.db);
-  const report = buildTaxReport(ctx.book, d.year, { birthYears });
+  // A filed year is a finished one, so the forecast the page passes for the current year doesn't apply.
+  const report = buildTaxReport(ctx.book, d.year);
   if (report.blocked) return null;
   const lines = report.documents?.check?.[JURISDICTION[d.jurisdiction].doc] ?? [];
   return lines.find((l) => l.key === d.key) ?? null;

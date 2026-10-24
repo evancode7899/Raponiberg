@@ -5,7 +5,6 @@ import { buildTaxAccounts } from "@/lib/book/reports/taxAccounts";
 import { prisma } from "@/lib/db";
 import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
-import { loadProfileSettings } from "@/lib/profile/settings";
 import { loadJsonSetting, saveJsonSetting } from "@/lib/settingsStore";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "@/lib/taxAccounts/settings";
 import { TAX_YEARS } from "@/lib/tax/params";
@@ -25,9 +24,9 @@ export async function GET(request: NextRequest) {
       // No year asked: the Book's year (book.today), the one every figure is built as of.
       const thisYear = Number(book.today.slice(0, 4));
       const year = years.includes(asked) ? asked : years.includes(thisYear) ? thisYear : years.at(-1)!;
-      const [settings, profile, { forecast }] = await Promise.all([loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadProfileSettings(prisma), loadForecast(prisma, book)]);
+      const [settings, { forecast }] = await Promise.all([loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadForecast(prisma, book)]);
       // The year in progress uses the shared forecast's pay and bonuses, as the Taxes page does.
-      const report = buildTaxAccounts(book, year, settings, profile.birthYears, forecast ? taxLink(forecast) : null);
+      const report = buildTaxAccounts(book, year, settings, forecast ? taxLink(forecast) : null);
       return { report, settings, years, persons: book.persons.map((p) => ({ id: p.id, name: p.name })) };
     }),
   );

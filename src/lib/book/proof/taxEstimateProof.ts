@@ -1,7 +1,6 @@
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import { taxLink } from "../../forecast/forecast.ts";
 import { loadForecast } from "../../forecast/load.ts";
-import { loadProfileSettings } from "../../profile/settings.ts";
 import { buildTaxReport, type AccountIncome, type InvestmentFigures, type PersonReport, type TaxReport } from "../../tax/buildTaxReport.ts";
 import type { PersonIncome, W2 } from "../../tax/computeReturn.ts";
 import { yearDocs } from "../../tax/documents.ts";
@@ -835,11 +834,11 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
 
 // ---------------------------------------------------------------- the proof
 
-/** The page's report for the year, built as api/tax builds it: the forecast's link for the year in progress, birth years for the 401(k) catch-up. */
+/** The page's report for the year, built as api/tax builds it: the forecast's link for the year in progress. */
 async function reportFor(ctx: ProofContext, year: number) {
   const current = Number(ctx.book.today.slice(0, 4)) === year;
-  const [{ birthYears }, forecast] = await Promise.all([loadProfileSettings(ctx.db), current ? loadForecast(ctx.db, ctx.book).then((f) => f.forecast) : Promise.resolve(null)]);
-  return buildTaxReport(ctx.book, year, { forecast: forecast ? taxLink(forecast) : null, birthYears });
+  const forecast = current ? (await loadForecast(ctx.db, ctx.book)).forecast : null;
+  return buildTaxReport(ctx.book, year, { forecast: forecast ? taxLink(forecast) : null });
 }
 
 export async function buildTaxEstimateProof(ctx: ProofContext, d: TaxEstimateDescriptor): Promise<Proof> {

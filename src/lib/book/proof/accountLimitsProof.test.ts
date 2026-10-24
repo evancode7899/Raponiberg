@@ -136,7 +136,7 @@ function makeBook(findings: Finding[] = []): Book {
 const db = { appSetting: { findUnique: async () => null } } as never;
 const ctx = () => ({ book: makeBook(), db });
 const settings = normalizeRetirementSettings(null);
-const reportFor = (year: number, birthYears: Record<string, number> = {}) => buildTaxAccounts(makeBook(), year, settings, birthYears);
+const reportFor = (year: number, birthYears: Record<string, number> = {}) => buildTaxAccounts({ ...makeBook(), birthYears }, year, settings);
 
 const cents = (p: Proof) => ("cents" in p.figure ? p.figure.cents : NaN);
 const links = (p: Proof): ProofLink[] =>
@@ -270,7 +270,7 @@ describe("account-limits proofs", () => {
 
   it("counts every open pre-tax step's room with no marginal rate known, and calls the tax saved unknown", async () => {
     const book = makeBook([NO_TAX]);
-    const r = buildTaxAccounts(book, 2025, settings, {});
+    const r = buildTaxAccounts(book, 2025, settings);
     expect(r.marginalRate).toEqual({ rate: null, source: "NONE" });
     const open = r.steps.filter((s) => s.pretax && !s.done);
     // Pat has HSA and 401(k) room; Sam deferred past the limit. Before the fix, no rate meant no step counted.

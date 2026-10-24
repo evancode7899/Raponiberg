@@ -10,7 +10,7 @@ import { defaultFunds, linkHome, type FundsBook, type FundsConfig, type HomeLink
 import { employerKey } from "../../ingest/payroll/types.ts";
 import { taxOnPay, type OutlookSeeds, type PayForTax } from "../../profile/basePay.ts";
 import { projectOutlook, retirementTax, walkAwayTable, type OutlookPlan, type WalkAwayRow } from "../../profile/outlook.ts";
-import { loadProfileSettings, type LivingBasis, type OutlookAssumptions } from "../../profile/settings.ts";
+import { type LivingBasis, type OutlookAssumptions } from "../../profile/settings.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import { buildTaxReport, type PersonReport } from "../../tax/buildTaxReport.ts";
 import { TAX_YEARS } from "../../tax/params.ts";
@@ -1177,10 +1177,10 @@ function buildHome(c: HomeCtx): Built {
 
 async function buildTaxes(ctx: ProofContext, d: Extract<PlanningDescriptor, { page: "taxes" }>): Promise<Built> {
   // As api/tax: the year in progress follows the shared forecast.
-  const [data, { birthYears }] = await Promise.all([loadForecastData(ctx.db, ctx.book), loadProfileSettings(ctx.db)]);
+  const data = await loadForecastData(ctx.db, ctx.book);
   const b = baseFrom(ctx.book, data);
   if (!TAX_YEARS[d.year]) return notFound(`No ${d.year} tax law in the app.`);
-  const r = buildTaxReport(ctx.book, d.year, { forecast: b ? taxLink(b.f) : null, birthYears });
+  const r = buildTaxReport(ctx.book, d.year, { forecast: b ? taxLink(b.f) : null });
   if (r.blocked) return notFound(`${d.year} taxes are withheld.`);
   const p = r.people.find((x) => x.id === d.personId);
   if (!p) return notFound(`No one in the household has the id ${d.personId}.`);
