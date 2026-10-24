@@ -1,6 +1,8 @@
 "use client";
 
 import { Badge, btn, Card, Segmented } from "@/components/ui/kit";
+import { useProof, type ProofTarget } from "@/components/ui/proof/context";
+import type { Granularity } from "@/lib/dates/isoDate";
 import type { BlockerTimeline, TimelineCell, TimelineFinding, TimelineLane, TimelinePeriod } from "@/lib/book/reports/timeline";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { Fragment, useMemo, useState, type ReactElement } from "react";
@@ -242,8 +244,28 @@ function YearBlock({ y, months, quarters, cell }: { y: TimelinePeriod; months: T
   );
 }
 
+/** A period as months: 1 a month, 3 a quarter, 12 a year. */
+function granularityOf(p: TimelinePeriod): Granularity {
+  const months = (Number(p.end.slice(0, 4)) - Number(p.start.slice(0, 4))) * 12 + Number(p.end.slice(5, 7)) - Number(p.start.slice(5, 7)) + 1;
+  return months >= 12 ? "year" : months >= 3 ? "quarter" : "month";
+}
+
+/** The figures a period's cell vouches for, each opening its proof (with every check over it, passed or open). */
+function laneProofs(lane: TimelineLane, p: TimelinePeriod): { label: string; target: ProofTarget }[] {
+  const granularity = granularityOf(p);
+  if (lane === "cashFlow") return [{ label: "Net cash flow", target: { descriptor: { report: "cash-flow", metric: "net", granularity, start: p.start, end: p.end }, shownCents: null } }];
+  if (lane === "netWorth")
+    return [
+      { label: `Net worth on ${date(p.end)}`, target: { descriptor: { report: "net-worth", metric: "balance", date: p.end }, shownCents: null } },
+      { label: "How it moved", target: { descriptor: { report: "net-worth", metric: "change", granularity, start: p.start, end: p.end }, shownCents: null } },
+    ];
+  return [];
+}
+
 function CellDetail({ sel, byId, onFocus, onClose }: { sel: NonNullable<Selection>; byId: Map<string, TimelineFinding>; onFocus: (id: string) => void; onClose: () => void }) {
   const c = sel.period[sel.lane];
+  const openProof = useProof();
+  const proofs = c.state === "pending" || !openProof ? [] : laneProofs(sel.lane, sel.period);
   const fs = c.blockers.map((id) => byId.get(id)!).sort((a, b) => (a.status === b.status ? 0 : a.status === "FAIL" ? -1 : 1));
   const edge = c.edge.map((id) => byId.get(id)!);
   return (
@@ -260,6 +282,19 @@ function CellDetail({ sel, byId, onFocus, onClose }: { sel: NonNullable<Selectio
         </button>
       </div>
       {c.state === "proven" && <p className="mt-1 text-pos">Proven: nothing withholds it.</p>}
+      {proofs.length > 0 && (
+        <p className="mt-1 text-muted">
+          {c.state === "proven" ? "See the rows and checks behind it: " : "See what it would rest on, and the checks that withhold it: "}
+          {proofs.map((x, i) => (
+            <span key={x.label}>
+              {i > 0 && " · "}
+              <button type="button" className={btn.link} onClick={() => openProof!(x.target)}>
+                {x.label}
+              </button>
+            </span>
+          ))}
+        </p>
+      )}
       {c.awaiting.length > 0 && (
         <div className="mt-1.5">
           <div className="font-medium text-fg">Awaiting statements</div>

@@ -1,5 +1,6 @@
 /**
- * Holds every figure every page shows to its proof, on the Book as it is now: the same
+ * Holds every figure every page shows to its proof, and every statement, row and pay stub
+ * to what it prints, on the Book as it is now: the same
  * sweep Statements → Checks runs (lib/book/proof/sweep.ts). Prints each page's count and
  * every problem; exits 1 when there is any (each one is a bug in the app).
  *
