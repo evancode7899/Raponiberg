@@ -1,8 +1,19 @@
 #!/bin/sh
 # Runs before every git push (npm run setup turns it on: git config core.hooksPath .githooks).
-# Stops the push when npm run privacy:check finds this computer's personal data (names,
+# Stops the push when npm run license:check finds the license or its safeguards tampered
+# with, or when npm run privacy:check finds this computer's personal data (names,
 # account numbers, real amounts) in the files being published. A copy with no data/ yet
 # has nothing personal to look for, so it passes quickly.
+echo "Checking the license safeguards before pushing (npm run license:check)..."
+# Also compare the owner key with the last published one: it may only change by a rotation
+# signed with the old key (skipped when there is no origin/main yet).
+since=""
+if git rev-parse -q --verify origin/main >/dev/null 2>&1; then since="--since origin/main"; fi
+if ! npm run --silent license:check -- --quiet $since; then
+  echo ""
+  echo "Push stopped: the license safeguards failed (above)."
+  exit 1
+fi
 echo "Checking for personal data before pushing (npm run privacy:check)..."
 if ! npm run --silent privacy:check; then
   echo ""

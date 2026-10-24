@@ -3,7 +3,12 @@
   "version": "0.2.0",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
+  "raponiberg": {
+    "licenseSha256": "71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c",
+    "licenseSigner": "3d545368c8e3c6ad"
+  },
   "scripts": {
+    "predev": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/license-guard.ts --quiet",
     "dev": "next dev -H 127.0.0.1",
     "dev:webpack": "next dev --webpack -H 127.0.0.1",
     "build": "prisma generate && next build",
@@ -11,6 +16,7 @@
     "start": "next start -H 127.0.0.1",
     "lint": "eslint",
     "test": "vitest run",
+    "pretest": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/license-guard.ts --quiet",
     "test:watch": "vitest",
     "preinstall": "node scripts/check-node.mjs",
     "postinstall": "prisma generate",
@@ -22,6 +28,10 @@
     "db:backup": "node scripts/backup-database.mjs",
     "backup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/backup.ts",
     "restore": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/restore-backup.ts",
+    "license:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/license-guard.ts",
+    "license:restore": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/license-guard.ts --restore",
+    "license:keygen": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/license-seal.ts keygen",
+    "license:seal": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/license-seal.ts seal",
     "privacy:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/privacy-check.ts",
     "proof:sweep": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/proof-sweep.ts",
     "publish:export": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/publish-export.ts",
