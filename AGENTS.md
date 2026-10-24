@@ -77,5 +77,5 @@ owner's private key counts, and that key is never in this repository or in your 
 The LICENSE's expected hash and the owner-key fingerprint are pinned here and in several
 other places, and `npm run license:check` compares them all:
 
-- license-sha256: 71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c
+- license-sha256: 3e664d3a9dea1feb8bf3677de3d9db9837f5b708831bda409093b2429d9116ae
 - license-signer: 3d545368c8e3c6ad

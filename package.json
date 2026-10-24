@@ -4,7 +4,7 @@
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "raponiberg": {
-    "licenseSha256": "71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c",
+    "licenseSha256": "3e664d3a9dea1feb8bf3677de3d9db9837f5b708831bda409093b2429d9116ae",
     "licenseSigner": "3d545368c8e3c6ad"
   },
   "scripts": {

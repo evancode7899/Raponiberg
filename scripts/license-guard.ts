@@ -33,7 +33,7 @@ const UPSTREAM = "https://raw.githubusercontent.com/evancode7899/Raponiberg/main
 
 // Pins: `npm run license:seal` rewrites these with every other pin. The copies are in
 // HASH_PINS / SIGNER_PINS below.
-export const BUILT_IN_LICENSE_SHA256 = "71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c";
+export const BUILT_IN_LICENSE_SHA256 = "3e664d3a9dea1feb8bf3677de3d9db9837f5b708831bda409093b2429d9116ae";
 export const BUILT_IN_LICENSE_SIGNER = "3d545368c8e3c6ad";
 
 export const SEAL_FILE = ".license-seal.json";

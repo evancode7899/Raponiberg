@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      LICENSE_PIN: "license-sha256: 71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c"
+      LICENSE_PIN: "license-sha256: 3e664d3a9dea1feb8bf3677de3d9db9837f5b708831bda409093b2429d9116ae"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: LICENSE is the author's
