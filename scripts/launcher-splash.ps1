@@ -42,7 +42,7 @@ $SplashWindowScript = {
     $form.BackColor = $color.Bg
     $form.ForeColor = $color.Fg
     $form.ShowInTaskbar = $true
-    $form.Text = "Raponiberg - starting"
+    $form.Text = "Raponiberg"
     $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
     if ($iconPath -and (Test-Path $iconPath)) { $form.Icon = New-Object System.Drawing.Icon $iconPath }
     $form.Add_Paint({

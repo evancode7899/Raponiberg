@@ -5,7 +5,7 @@ import { PREFERENCE_BOOTSTRAP_SCRIPT } from "@/components/shell/preferenceBootst
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Raponiberg Terminal", template: "%s · Raponiberg" },
+  title: { default: "Raponiberg", template: "%s · Raponiberg" },
   description: "Local personal finance workspace",
 };
 

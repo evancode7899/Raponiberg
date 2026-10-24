@@ -226,7 +226,7 @@ describe("handing the owner role to a new key", () => {
 describe("the name and no-commercial-use tripwires", () => {
   function rulesRepo() {
     put("package.json", JSON.stringify({ name: "raponiberg", dependencies: { next: "^16" } }));
-    put("src/app/layout.tsx", 'export const metadata = { title: { default: "Raponiberg Terminal" } };\n');
+    put("src/app/layout.tsx", 'export const metadata = { title: { default: "Raponiberg", template: "%s · Raponiberg" } };\n');
     for (const f of ["README.md", "SETUP.md", "scripts/start-local-server.ps1", "scripts/create-desktop-shortcut.ps1"]) put(f, "Raponiberg\n");
   }
   beforeEach(rulesRepo);
@@ -237,12 +237,33 @@ describe("the name and no-commercial-use tripwires", () => {
 
   it("catches a rename in package.json, the page title, or the docs", () => {
     put("package.json", JSON.stringify({ name: "moneyvault" }));
-    put("src/app/layout.tsx", 'export const metadata = { title: { default: "MoneyVault" } };\n');
+    put("src/app/layout.tsx", 'export const metadata = { title: { default: "MoneyVault", template: "%s · MoneyVault" } };\n');
     put("README.md", "MoneyVault\n");
     const problems = checkRules(root).join("\n");
     expect(problems).toMatch(/package\.json names the app "moneyvault"/);
-    expect(problems).toMatch(/layout\.tsx no longer titles the app/);
+    expect(problems).toMatch(/layout\.tsx must title the app exactly "Raponiberg"/);
     expect(problems).toMatch(/README\.md is missing or no longer says "Raponiberg"/);
+  });
+
+  it("catches anything added to the name: a label, a version, an edition, a mark", () => {
+    put("src/app/layout.tsx", 'export const metadata = { title: { default: "Raponiberg Terminal", template: "%s · Raponiberg" } };\n');
+    put("README.md", "Raponiberg Pro is here\n");
+    put("SETUP.md", "Raponiberg v2\n");
+    put("scripts/start-local-server.ps1", 'Show-Message "Raponiberg - Pat\'s edition"\n');
+    put("scripts/create-desktop-shortcut.ps1", "Raponiberg(TM)\n");
+    put("src/components/Logo.tsx", "export const L = () => <b>RaponibergPlus</b>;\n");
+    const problems = checkRules(root).join("\n");
+    expect(problems).toMatch(/layout\.tsx must title the app exactly "Raponiberg"/);
+    expect(problems).toMatch(/README\.md writes the name as "Raponiberg Pro"/);
+    expect(problems).toMatch(/SETUP\.md writes the name as "Raponiberg v2"/);
+    expect(problems).toMatch(/start-local-server\.ps1 writes the name as "Raponiberg - Pat's edition"/);
+    expect(problems).toMatch(/create-desktop-shortcut\.ps1 writes the name as "Raponiberg\(TM\)"/);
+    expect(problems).toMatch(/Logo\.tsx writes the name as "RaponibergPlus"/);
+  });
+
+  it("leaves prose, page titles and possessives alone", () => {
+    put("README.md", "Raponiberg needs Node.js 22.18. A fork of Raponiberg keeps Raponiberg's name. Dashboard · Raponiberg\n");
+    expect(checkRules(root)).toEqual([]);
   });
 
   it("catches payment packages, funding links, and sponsor or ad hosts in source", () => {
