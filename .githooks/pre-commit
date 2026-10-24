@@ -1,0 +1,9 @@
+#!/bin/sh
+# Runs before every git commit (npm run setup turns it on: git config core.hooksPath .githooks).
+# Stops the commit when npm run license:check finds the LICENSE, its pins or copies, the
+# name "Raponiberg" or the no-commercial-use safeguards tampered with.
+if ! npm run --silent license:check -- --quiet; then
+  echo ""
+  echo "Commit stopped: the license safeguards failed (above)."
+  exit 1
+fi

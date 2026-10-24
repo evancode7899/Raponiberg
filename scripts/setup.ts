@@ -4,8 +4,8 @@
  *   2. restores the newest snapshot from the OneDrive backup folder, if there's no
  *      database here yet (an existing database is left alone)
  *   3. brings the database up to the current schema (npm run db:refresh)
- *   4. turns on the repository's git hooks (.githooks/pre-push: the privacy check before
- *      every push)
+ *   4. turns on the repository's git hooks (.githooks: the license check before every
+ *      commit, and the license and privacy checks before every push)
  *   5. puts the Raponiberg shortcut on the Desktop
  *
  * Usage:
@@ -31,7 +31,7 @@ try {
   }
   process.loadEnvFile(env);
 
-  if (existsSync(path.join(ROOT, ".git")) && run("git config core.hooksPath .githooks")) console.log("Turned on the privacy check before every git push (.githooks/pre-push).");
+  if (existsSync(path.join(ROOT, ".git")) && run("git config core.hooksPath .githooks")) console.log("Turned on the git hooks (.githooks): the license check before every commit, and the license and privacy checks before every push.");
 
   let migrated = false;
   if (existsSync(databaseFilePath())) {

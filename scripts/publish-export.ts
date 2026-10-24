@@ -74,6 +74,8 @@ if (why) fail(why);
 const npm = (args: string[]) => spawnSync(["npm", ...args].join(" "), { cwd: ROOT, stdio: "inherit", shell: true }).status === 0;
 console.log("Checking this repository for personal data…");
 if (!npm(["run", "privacy:check"])) fail("Make the code generic where it's flagged above, commit, and export again.");
+console.log("Checking the license safeguards…");
+if (!npm(["run", "license:check"])) fail("Restore the license safeguards flagged above (npm run license:restore), commit, and export again.");
 
 // ---- copy HEAD's files through a throwaway index, so this repository's own index and
 // working tree are never touched
@@ -88,6 +90,7 @@ try {
 
 console.log(`\nChecking the exported copy in ${target}…`);
 if (!npm(["run", "privacy:check", "--", "--dir", `"${target}"`])) fail(`The copy has personal data. Delete ${target}, fix what's flagged, and export again.`);
+if (!npm(["run", "license:check", "--", "--dir", `"${target}"`])) fail(`The copy's license safeguards failed. Delete ${target}, fix what's flagged, and export again.`);
 
 const inTarget = (args: string[]) => execFileSync("git", args, { cwd: target, stdio: "inherit" });
 inTarget(["init", "--quiet", "--initial-branch=main"]);

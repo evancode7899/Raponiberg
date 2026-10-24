@@ -296,4 +296,6 @@ using it, including:
 - loss or exposure of your data
 
 The full terms, which control, are in [LICENSE](LICENSE). AI coding assistants follow the
-same rules through [AGENTS.md](AGENTS.md).
+same rules through [AGENTS.md](AGENTS.md), and `npm run license:check` verifies that the
+license, the name and the no-commercial-use rules are intact
+([how it's protected](docs/license-protection.md)).

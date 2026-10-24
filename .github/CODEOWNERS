@@ -1,0 +1,14 @@
+# The owner reviews any change to the license and the files that protect it. (Turn on
+# "Require review from Code Owners" in the branch protection rule: docs/license-protection.md.)
+/LICENSE                          @evancode7899
+/AGENTS.md                        @evancode7899
+/CLAUDE.md                        @evancode7899
+/GEMINI.md                        @evancode7899
+/.cursor/                         @evancode7899
+/.githooks/                       @evancode7899
+/.github/workflows/ci.yml        @evancode7899
+/.github/CODEOWNERS               @evancode7899
+/.license-seal.json               @evancode7899
+/scripts/license-guard.ts         @evancode7899
+/scripts/license-seal.ts          @evancode7899
+/src/lib/provenance.ts            @evancode7899

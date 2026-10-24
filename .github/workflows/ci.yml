@@ -29,6 +29,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: "false"
 
+  # The LICENSE must still be the author's. The first step compares a pinned hash in plain
+  # shell, so it holds even if scripts/license-guard.ts is gutted; the second runs the full
+  # guard (pins, copies, the owner's signature, the name and no-commercial-use tripwires).
+  license:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LICENSE_PIN: "license-sha256: 71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: LICENSE is the author's
+        run: |
+          actual="license-sha256: $(sha256sum LICENSE | cut -d' ' -f1)"
+          if [ "$actual" != "$LICENSE_PIN" ]; then
+            echo "::error::LICENSE is not the author's ($actual, pinned: $LICENSE_PIN)"; exit 1
+          fi
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: License guard
+        run: npm run license:check
+
   fresh-clone:
     runs-on: windows-latest
     timeout-minutes: 30
