@@ -304,7 +304,7 @@ function FindingRow({ f, onAccept }: { f: Finding; onAccept: OnAccept }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const affects = f.scope.affects.map((a) => ({ CASH_FLOW: "cash flow", NET_WORTH: "net worth", PAY: "pay", TAX: "taxes" })[a]).join(", ");
+  const affects = f.scope.affects.map((a) => ({ CASH_FLOW: "cash flow", NET_WORTH: "net worth", PAY: "pay", TAX: "taxes", HOLDINGS: "positions", BONUS: "bonus letters" })[a]).join(", ");
   return (
     <li className="rounded-md bg-surface-2 px-2.5 py-2 text-xs">
       <div className="flex flex-wrap items-start gap-2">

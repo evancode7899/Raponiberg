@@ -55,8 +55,8 @@ const FIGURES: Record<LimitAccount, LimitFigure[]> = {
 };
 
 /** Statement problems that make IRA and CHET contributions unprovable. */
-const STATEMENT_CHECKS: CheckId[] = ["statement.held", "statement.chain", "statement.gap", "statement.history", "transfer.unmatched", "ledger.consistency", "ledger.freshness"];
-const PAY_LIMIT_CHECKS: CheckId[] = [...STUB_CHECKS, "retirement.contributions"];
+const STATEMENT_CHECKS: CheckId[] = ["contributions.custodian", "statement.held", "statement.chain", "statement.gap", "statement.history", "transfer.unmatched", "ledger.consistency", "ledger.freshness"];
+const PAY_LIMIT_CHECKS: CheckId[] = [...STUB_CHECKS, "retirement.contributions", "contributions.hsa"];
 
 export function parseAccountLimitsDescriptor(d: Record<string, unknown>): AccountLimitsDescriptor | { error: string } {
   if (typeof d.year !== "number" || !Number.isInteger(d.year) || d.year < 1900 || d.year > 2999) return { error: "year must be a calendar year." };

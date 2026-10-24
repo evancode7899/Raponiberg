@@ -1,6 +1,4 @@
-import { readAwards } from "../../bonuses/awardStore.ts";
-import { readReviews } from "../../bonuses/reviewStore.ts";
-import { buildGarage } from "../../car/report.ts";
+import { garagePage } from "../../car/page.ts";
 import { CAR_KEY, normalizeGarage } from "../../car/settings.ts";
 import { buildHomeSummary } from "../../dashboard/homeSummary.ts";
 import { taxLink } from "../../forecast/forecast.ts";
@@ -15,7 +13,7 @@ import { loadJsonSetting } from "../../settingsStore.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
 import { TAX_YEARS } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxAccounts/settings.ts";
-import { buildBonuses } from "../reports/bonuses.ts";
+import { bonusesOf } from "../reports/bonuses.ts";
 import { buildGoals, goalForecastOf } from "../reports/goals.ts";
 import { buildInvestments } from "../reports/investments.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
@@ -108,9 +106,9 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
   await page("Cash flow", () => cashFlowFigures(buildSpendingReport(book, profileSettings).months));
   await page("Investments", async () => investmentsFigures(buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings))));
   await page("Annual", () => annualFigures(buildAnnualProfile(book, profileSettings, book.taxProfile.dependents), buildAccountRollforwards(book)));
-  await page("Bonuses", () => bonusesFigures(buildBonuses(book, readAwards(), book.today, readReviews().reviews)));
+  await page("Bonuses", () => bonusesFigures(bonusesOf(book)));
   await page("HSA", async () => hsaFigures(await loadHsaReport(db)));
-  await page("Car", async () => carFigures(buildGarage(await loadJsonSetting(db, CAR_KEY, normalizeGarage), book.rows, book.today, { statementsThrough: book.horizon.cashFlow })));
+  await page("Car", async () => carFigures(garagePage(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage))));
   await page("Goals", async () => goalsFigures(buildGoals(book, await loadJsonSetting(db, GOALS_KEY, normalizeGoals), forecast ? goalForecastOf(forecast) : null, data.profile.settings)));
   if (forecast) await page("Forecast", () => forecastFigures(forecast, data.profile));
   const retirement = await loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);

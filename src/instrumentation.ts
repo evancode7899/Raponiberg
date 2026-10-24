@@ -14,6 +14,11 @@ export async function register() {
     // The desktop app (next start) backs up to OneDrive; dev servers only when asked; the demo never.
     const backs = process.env.NODE_ENV === "production" || process.env.BACKUP_AUTO === "1";
     if (process.env.BACKUP_AUTO !== "0" && process.env.APP_PROFILE !== "demo" && backs) startAutoBackup(prisma);
+    // Bonus letter reviews move into the permanent exceptions list (once; the old file is kept, renamed).
+    void import("@/lib/bonuses/migrateReviews")
+      .then(({ migrateBonusReviews }) => migrateBonusReviews())
+      .then((n) => n > 0 && console.log(`Moved ${n} bonus letter review(s) into the integrity exceptions`))
+      .catch((e) => console.error("Moving bonus letter reviews failed:", e instanceof Error ? e.message : e));
     // Statements an updated parser reads differently are read again, then facts stored by
     // an older extractor (FACTS_VERSION) are re-extracted, so either change reaches the
     // figures on the next launch (the Book rebuilds once they're in). The facts step runs

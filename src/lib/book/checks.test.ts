@@ -8,6 +8,8 @@ import { buildTimeline, type SegmentInput } from "../ledger/timeline";
 import { blockersFor, netWorthAtBlockers, netWorthBlockers, passesFor } from "./blockers";
 import { runChecksWithPasses } from "./checks/index";
 import { Collector } from "./checks/collector";
+import { checkHoldings } from "./checks/holdings";
+import { checkHsaContributions } from "./checks/hsa";
 import { staleEvidence } from "./exceptions";
 import { cashFlowThrough, type Book, type BookAccount, type BookRow, type BookStub } from "./load";
 import { estimatesFor } from "./proof/common";
@@ -610,5 +612,67 @@ describe("tax documents agree with the ledger", () => {
     expect(f.every((x) => x.status === "MISSING")).toBe(true);
     expect(f[0]!.scope).toMatchObject({ from: "2025-01-01", to: "2025-12-31", affects: ["PAY", "TAX"] });
     expect(blockersFor(b, { affects: "TAX", from: "2025-06-01", to: "2025-06-30" }).some((x) => x.check === "tax.documents-tie")).toBe(true);
+  });
+});
+
+describe("holdings.ties", () => {
+  const book = () =>
+    makeBook({ accounts: [{ id: "brk", name: "Brokerage ••5678", subtype: "BROKERAGE", institution: "Bank", idents: ["5678"], segs: [{ start: "2025-01-01", end: "2025-03-31", open: 0, close: 1_000_000 }] }] });
+  const snap = (b: Book, cents: number[], printed: number | null) =>
+    ({ ...b, holdings: [{ id: "h", documentId: "d", institution: "Bank", accountNumber: "5678", accountId: "brk", asOf: "2025-03-31", positions: cents.map((v, i) => ({ symbol: `EX${i}`, name: "Example fund", kind: "FUND", quantity: null, price: null, valueCents: v, costBasisCents: null, expenseRatio: null })), printedTotalCents: printed, totalCents: cents.reduce((s, v) => s + v, 0) }] }) as Book;
+  const run = (b: Book) => {
+    const c = new Collector();
+    checkHoldings(b, c);
+    return c.report();
+  };
+
+  it("passes positions that add up to the balance and the printed total", () => {
+    const r = run(snap(book(), [600_000, 400_000], 1_000_000));
+    expect(r.findings).toEqual([]);
+    expect(r.checks.find((c) => c.id === "holdings.ties")!.passed).toBe(1);
+  });
+
+  it("fails a list a row is missing from, on positions only", () => {
+    const r = run(snap(book(), [600_000], null));
+    expect(r.findings).toMatchObject([{ check: "holdings.ties", status: "FAIL", scope: { accountId: "brk", affects: ["HOLDINGS"] } }]);
+    expect(r.findings[0]!.title).toContain("$10,000.00");
+  });
+});
+
+describe("contributions.hsa", () => {
+  const hsaStub = (date: string, employee: number, employer: number): BookStub => ({
+    ...stub(date, 100_000, 100_000, null),
+    id: `h-${date}`,
+    lines: [
+      { name: "Regular", kind: "REGULAR", current: 100_000, ytd: null },
+      { name: "HSA", kind: "HSA", current: employee, ytd: null },
+      { name: "Employer HSA", kind: "EMPLOYER_HSA", current: employer, ytd: null },
+    ],
+  });
+  const stubs = ["2024-12-31", "2025-01-15", "2025-01-31", "2025-02-14", "2025-02-28", "2025-03-14", "2025-03-31", "2025-04-15"].map((d) => hsaStub(d, 10_000, 2_500));
+  const book = (rows: Seg["rows"]) => {
+    const b = makeBook({
+      stubs,
+      accounts: [{ id: "hsa", name: "HSA ••9012", subtype: "HSA", institution: "Bank", idents: ["9012"], segs: [{ start: "2025-02-01", end: "2025-02-28", open: 50_000, close: 50_000 + (rows ?? []).reduce((s, r) => s + r.cents, 0), rows }] }],
+    });
+    return { ...b, statements: [{ id: "st-hsa", accountId: "hsa", documentId: "d", documentTitle: "hsa.pdf", importedAt: "", status: "COMMITTED", isSummary: false, periodStart: "2025-02-01", periodEnd: "2025-02-28", deltaCents: 0 }] } as Book;
+  };
+  const run = (b: Book) => {
+    const c = new Collector();
+    checkHsaContributions(b, c);
+    return c.report();
+  };
+  const dep = (date: string, cents: number) => ({ date, cents, lane: "CONTRIBUTION_EMPLOYEE" as Lane, payee: "Payroll contribution" });
+
+  it("ties a period's payroll deposits to a run of paychecks, allowing for posting lag", () => {
+    // Jan 31's money posts Feb 3; Feb 28's posts in March: the period holds two paychecks' worth.
+    const r = run(book([dep("2025-02-03", 12_500), dep("2025-02-18", 12_500)]));
+    expect(r.findings).toEqual([]);
+    expect(r.checks.find((c) => c.id === "contributions.hsa")!.passed).toBe(1);
+  });
+
+  it("fails a period whose deposits no run of paychecks explains", () => {
+    const r = run(book([dep("2025-02-03", 12_500), dep("2025-02-18", 9_000)]));
+    expect(r.findings).toMatchObject([{ check: "contributions.hsa", status: "FAIL", scope: { accountId: "hsa", affects: ["PAY", "TAX"] } }]);
   });
 });

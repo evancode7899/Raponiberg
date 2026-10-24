@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { checkCustodianContributions } from "./checks/custodian";
+import { Collector } from "./checks/collector";
 import { taxYearParams } from "../tax/params";
 import { DEFAULT_PROFILE } from "../tax/profile";
 import type { Book, BookAccount, BookBrokerage, BookRow, BookStatement } from "./load";
@@ -154,6 +156,19 @@ describe("IRA contributions and conversions", () => {
     const rows = [row("ro", "2026-01-05", 50_000, "Check received IRA direct rollover")];
     expect(iraYear(book({ accounts: [rollover], rows, brokerage: [snap("RO1", "2026-03-31", 50_000)] }), "pat", 2026)).toMatchObject({ contributions: [], mismatches: [] });
     expect(iraYear(book({ accounts: [rollover], rows: [], brokerage: [snap("RO1", "2026-03-31", 50_000)] }), "pat", 2026).mismatches[0]).toMatch(/\$50,000\.00 deposited.*\$0\.00/);
+  });
+
+  it("raises a custodian whose contributions line disagrees with the deposits as a finding that withholds the year's taxes", () => {
+    const run = (b: Book) => {
+      const c = new Collector();
+      checkCustodianContributions(b, c);
+      return c.report();
+    };
+    const ties = run(book({ accounts: [rollover], rows: [row("ro", "2026-01-05", 50_000, "Check received IRA direct rollover")], brokerage: [snap("RO1", "2026-03-31", 50_000)] }));
+    expect(ties.findings).toEqual([]);
+    expect(ties.checks.find((c) => c.id === "contributions.custodian")!.passed).toBe(1);
+    const off = run(book({ accounts: [rollover], rows: [], brokerage: [snap("RO1", "2026-03-31", 50_000)] }));
+    expect(off.findings).toMatchObject([{ check: "contributions.custodian", status: "FAIL", scope: { accountId: "ro", from: "2026-01-01", affects: ["TAX"] } }]);
   });
 
   it("applies the pro-rata rule when pre-tax IRA money is left at year end", () => {

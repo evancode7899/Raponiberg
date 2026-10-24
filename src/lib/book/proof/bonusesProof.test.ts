@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AwardsFile } from "../../bonuses/awardStore";
-import type { BonusReview } from "../../bonuses/reviewStore";
 import { buildForecast } from "../../forecast/forecast";
 import { bonusFacts } from "../../forecast/bonusSchedule";
 import { NO_HOUSEHOLD } from "../../household/patterns";
@@ -13,7 +12,10 @@ import { DEFAULT_OUTLOOK } from "../../profile/settings";
 import { taxYearParams } from "../../tax/params";
 import type { Book, BookStub } from "../load";
 import { personPayYear } from "../pay";
-import { buildBonuses, type BonusesReport } from "../reports/bonuses";
+import { bonusFindingId, buildBonuses, type BonusesReport } from "../reports/bonuses";
+import { checkBonusLetters } from "../checks/bonuses";
+import { Collector } from "../checks/collector";
+import type { StandingException } from "../types";
 import { buildEstimateProof, type BonusesDescriptor } from "./bonusesProof";
 import { bonusesFigures } from "./figures";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
@@ -65,7 +67,7 @@ const STUBS: { payDate: string; bonus: number }[] = [2024, 2025].flatMap((y) =>
 function makeBook(): Book {
   n = 0;
   const stubs = STUBS.map((s) => stub(s.payDate, s.bonus));
-  return {
+  const book = {
     today: TODAY,
     horizon: { cashFlow: "2025-12-31", netWorth: "2025-12-31" },
     ledger: { accounts: [], mergeDate: "2024-01-01", completeThrough: null, firstDay: "2024-01-01" },
@@ -88,7 +90,12 @@ function makeBook(): Book {
     idle: { proven: [], unproven: [] },
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
     passes: [],
+    bonusAwards: AWARDS,
   } as unknown as Book;
+  // The owner's exception for the reviewed gap, applied by the bonus.letters check as loadBook would.
+  const c = new Collector([REVIEW_EXCEPTION]);
+  checkBonusLetters(book, c);
+  return { ...book, integrity: c.report() };
 }
 
 const AWARDS: AwardsFile = {
@@ -118,25 +125,28 @@ const AWARDS: AwardsFile = {
   stubOnly: [],
 };
 
-const REVIEW: BonusReview = { id: "ex|2025-08|2025-08|paid", gapCents: 6_700, warning: "Aug 2025 paid more than scheduled", note: "Employer rounding, in my favor", reviewedAt: "2026-01-10T12:00:00.000Z" };
+const REVIEW = { id: "ex|2025-08|2025-08|paid", gapCents: 6_700, warning: "Aug 2025 paid more than scheduled", note: "Employer rounding, in my favor", reviewedAt: "2026-01-10T12:00:00.000Z" };
+const REVIEW_EXCEPTION: StandingException = {
+  id: bonusFindingId(REVIEW),
+  check: "bonus.letters",
+  note: REVIEW.note,
+  acceptedAt: REVIEW.reviewedAt,
+  finding: { status: "FAIL", title: REVIEW.warning, detail: "", scope: { from: "2025-08-01", to: "2025-08-31", affects: ["BONUS"] } },
+};
 
 let dir = "";
 beforeAll(() => {
   dir = mkdtempSync(path.join(tmpdir(), "bonuses-proof-"));
   const awards = path.join(dir, "bonus-awards.json");
-  const reviews = path.join(dir, "bonus-awards.reviews.json");
   writeFileSync(awards, JSON.stringify(AWARDS));
-  writeFileSync(reviews, JSON.stringify({ version: 1, reviews: [REVIEW], reopened: [] }));
   process.env.BONUS_AWARDS_FILE = awards;
-  process.env.BONUS_REVIEWS_FILE = reviews;
 });
 afterAll(() => {
   delete process.env.BONUS_AWARDS_FILE;
-  delete process.env.BONUS_REVIEWS_FILE;
   rmSync(dir, { recursive: true, force: true });
 });
 
-const report = (book: Book) => buildBonuses(book, AWARDS, TODAY, [REVIEW]);
+const report = (book: Book) => buildBonuses(book, AWARDS, TODAY);
 const ctx = (book: Book) => ({ book, db: {} as never });
 const bon = (d: Record<string, unknown>) => ({ report: "bonuses", ...d }) as BonusesDescriptor;
 const cents = (p: Proof) => ("cents" in p.figure ? p.figure.cents : NaN);

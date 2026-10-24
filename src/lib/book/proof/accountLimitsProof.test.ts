@@ -222,6 +222,17 @@ describe("account-limits proofs", () => {
     expect(chainReAdds(chain)).toEqual([]);
   });
 
+  it("uses a typed match formula only while the stubs bear it out", () => {
+    const withMatch = (matchRate: number, matchUpTo: number) =>
+      buildTaxAccounts(makeBook(), 2025, { ...settings, people: { pat: { hsaCoverage: null, matchRate, matchUpTo } } }).people.find((p) => p.id === "pat")!;
+    // 100% up to 4% of $10,000 a month is the $400 a month the stubs show.
+    expect(withMatch(1, 0.04).k401.match).toMatchObject({ rate: 1, upTo: 0.04 });
+    // 50% up to 6% would be $300 a month: the stubs say otherwise, so the formula isn't used.
+    const r = buildTaxAccounts(makeBook(), 2025, { ...settings, people: { pat: { hsaCoverage: null, matchRate: 0.5, matchUpTo: 0.06 } } });
+    expect(r.people.find((p) => p.id === "pat")!.k401.match).toBeNull();
+    expect(r.warnings.join(" ")).toMatch(/isn't used/);
+  });
+
   it("adds age catch-ups by law, from the birth year the owner typed", () => {
     const fp = taxYearParams(2026).federal;
     const r = reportFor(2026, { pat: 1971 });

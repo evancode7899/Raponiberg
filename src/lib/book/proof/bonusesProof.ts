@@ -1,13 +1,12 @@
 import { grow } from "../../profile/outlook.ts";
-import { readAwards, type PaymentKind } from "../../bonuses/awardStore.ts";
-import { readReviews } from "../../bonuses/reviewStore.ts";
+import type { PaymentKind } from "../../bonuses/awardStore.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
 import { monthKey, type BonusFacts } from "../../forecast/bonusSchedule.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
 import type { OutlookSeeds } from "../../profile/basePay.ts";
 import type { Book } from "../load.ts";
-import { buildBonuses, type AwardRow, type BonusesReport, type BonusPayment, type Tranche, type VestWindow, type WindowStatus } from "../reports/bonuses.ts";
+import { bonusesOf, type AwardRow, type BonusesReport, type BonusPayment, type Tranche, type VestWindow, type WindowStatus } from "../reports/bonuses.ts";
 import { checksFor, perBook, sumCheck } from "./common.ts";
 import { PAY_CHECKS, type PayDescriptor } from "./payProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofEstimate, ProofKind, ProofLink } from "./types.ts";
@@ -205,7 +204,13 @@ type Ctx = { book: Book; r: BonusesReport };
 
 function base(ctx: Ctx, d: BonusesDescriptor, describes: string, figureCents: number, partsCents: number, explain: string, blocks: ProofBlock[], scope: { personId?: string; from: string; to: string }, estimates: ProofEstimate[] = []): Proof {
   const to = scope.to < ctx.book.today ? scope.to : ctx.book.today;
-  const { checks, withheld } = checksFor(ctx.book, { affects: "PAY", from: scope.from, to: to < scope.from ? scope.from : to, ...(scope.personId ? { personId: scope.personId } : {}) }, PAY_CHECKS);
+  const until = to < scope.from ? scope.from : to;
+  const pay = checksFor(ctx.book, { affects: "PAY", from: scope.from, to: until, ...(scope.personId ? { personId: scope.personId } : {}) }, PAY_CHECKS);
+  // What the letter says against itself and the stubs: listed, never withholding (the page
+  // shows the letter and the stubs side by side, with the warning, for exactly this).
+  const letters = checksFor(ctx.book, { affects: "BONUS", from: scope.from, to: until }, ["bonus.letters"]);
+  const checks = [...pay.checks, ...letters.checks];
+  const withheld = pay.withheld;
   return {
     report: "bonuses",
     descriptor: d,
@@ -661,8 +666,8 @@ export function buildBonusesProof(book: Book, r: BonusesReport, d: Exclude<Bonus
   }
 }
 
-/** The report exactly as /api/bonuses builds it: the letters and the owner's reviews from their files. */
-export const bonusesReport = (book: Book): BonusesReport => buildBonuses(book, readAwards(), book.today, readReviews().reviews);
+/** The report exactly as /api/bonuses builds it (the letters the Book read, its exceptions). */
+export const bonusesReport = (book: Book): BonusesReport => bonusesOf(book);
 
 export const bonusesKind: ProofKind<BonusesDescriptor> = {
   report: "bonuses",

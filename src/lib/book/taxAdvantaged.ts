@@ -179,6 +179,8 @@ export type IraYear = {
   pretaxAccounts: { name: string; cents: number }[];
   /** Where the custodian's year-to-date contributions line disagrees with the ledger. */
   mismatches: string[];
+  /** Every IRA whose statements print a contributions-this-year line, with both sides (the contributions.custodian check). */
+  custodian: CustodianTie[];
 };
 
 /**
@@ -203,6 +205,7 @@ export function iraYear(book: Book, personId: string, year: number): IraYear {
   const iras = book.accounts.filter((a) => IRA_SUBTYPES.includes(a.subtype ?? "") && accountOwner(book, a.id) === personId);
   const contributions: IraYear["contributions"] = [];
   const mismatches: string[] = [];
+  const custodian: CustodianTie[] = [];
   let conversions = 0;
   for (const a of iras) {
     let contributed = 0;
@@ -222,6 +225,7 @@ export function iraYear(book: Book, personId: string, year: number): IraYear {
     // The custodian's "contributions" line counts every deposit (rollovers and conversions
     // in too), so it checks that no deposit is missing; which kind each is comes from the rows.
     const stated = statementContributionsYtd(snapshotsOf(book, a).filter((s) => s.periodEnd <= through), year);
+    if (stated != null) custodian.push({ accountId: a.id, name: a.name, year, through, statement: stated, ledger: deposited });
     if (stated != null && stated !== deposited) {
       mismatches.push(`${a.name}: the ${year} statements show ${dollars(stated)} deposited, but the ledger's deposits into it add up to ${dollars(deposited)}.`);
     }
@@ -234,7 +238,7 @@ export function iraYear(book: Book, personId: string, year: number): IraYear {
       return { name: a.name, cents: t?.lastDay ? valueAt(t, minIso(through, t.lastDay)).cents : 0 };
     })
     .filter((x) => x.cents !== 0);
-  return { contributions, conversions, traditionalContributions, pretaxAccounts, mismatches };
+  return { contributions, conversions, traditionalContributions, pretaxAccounts, mismatches, custodian };
 }
 
 // ---------------------------------------------------------------------------- CHET 529
@@ -252,7 +256,12 @@ export type ChetYear = {
   }[];
   total: number;
   mismatches: string[];
+  /** Every account with both a statement line and ledger deposits (the contributions.custodian check). */
+  custodian: CustodianTie[];
 };
+
+/** A custodian's contributions-this-year line beside the deposits the ledger shows into the account. */
+export type CustodianTie = { accountId: string; name: string; year: number; through: string; statement: number; ledger: number };
 
 /**
  * Contributions to CHET (Connecticut's 529) for the year, per account: the statements'
@@ -275,7 +284,8 @@ export function chetYear(book: Book, year: number): ChetYear {
     if (statement != null && ledger != null && statement !== ledger) {
       mismatches.push(`${name}: the ${year} statements show ${dollars(statement)} contributed, but the ledger's deposits into it add up to ${dollars(ledger)}.`);
     }
-    return { accountNumber: n, name, cents: statement ?? ledger ?? 0, statement, ledger, rowIds: deposits?.map((r) => r.id) ?? [] };
+    return { accountNumber: n, accountId: acct?.id ?? null, name, cents: statement ?? ledger ?? 0, statement, ledger, rowIds: deposits?.map((r) => r.id) ?? [] };
   });
-  return { accounts, total: accounts.reduce((s, a) => s + a.cents, 0), mismatches };
+  const custodian = accounts.flatMap((a) => (a.accountId && a.statement != null && a.ledger != null ? [{ accountId: a.accountId, name: a.name, year, through, statement: a.statement, ledger: a.ledger }] : []));
+  return { accounts: accounts.map(({ accountId: _, ...a }) => a), total: accounts.reduce((s, a) => s + a.cents, 0), mismatches, custodian };
 }

@@ -310,6 +310,8 @@ export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
 export function carFigures(g: GarageReport): PageFigure[] {
   const out: PageFigure[] = [];
   const page = "Car";
+  // The page withholds every money figure while a finding covers the car charges.
+  if (g.blockers?.length) return out;
   for (const r of g.cars) {
     if (!r.configured) continue;
     const fig = (x: Partial<CarFigureDescriptor>): CarFigureDescriptor => ({ report: "car", carId: r.carId, basis: "accrued", span: "toDate", ...x });

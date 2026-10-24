@@ -63,7 +63,7 @@ const METRICS: HsaMetric[] = ["balance", "contributions", "distributions", "reim
 export const HSA_STATEMENT_CHECKS: CheckId[] = ["statement.held", "statement.chain", "statement.gap", "statement.history", "statement.overdue", "transfer.unmatched", "ledger.consistency", "ledger.freshness", "networth.reconciles"];
 
 /** The checks over pay-stub HSA money. */
-export const HSA_PAY_CHECKS: CheckId[] = ["paystub.arithmetic", "paystub.person", "pay.continuity", "pay.year-gap"];
+export const HSA_PAY_CHECKS: CheckId[] = ["contributions.hsa", "paystub.arithmetic", "paystub.person", "pay.continuity", "pay.year-gap"];
 
 export function parseHsaDescriptor(d: Record<string, unknown>): HsaDescriptor | { error: string } {
   if (!METRICS.includes(d.metric as HsaMetric)) return { error: `metric must be one of: ${METRICS.join(", ")}.` };

@@ -76,3 +76,20 @@ export function retireException(id: string, reason: string, file = exceptionsFil
   write(file, data, { op: "retire", id, reason: retired.reason });
   return data;
 }
+
+/**
+ * Adds exceptions (and retired ones) kept somewhere else until now, in one write: those
+ * whose id the list already holds, live or retired, are left as they are. Returns how many
+ * were added. Used to bring the bonus letter reviews into this list (bonuses/migrateReviews.ts).
+ */
+export function importExceptions(entries: StandingException[], retired: RetiredException[], source: string, file = exceptionsFilePath()): number {
+  const data = readExceptions(file);
+  const known = new Set([...data.exceptions, ...data.retired].map((e) => e.id));
+  const add = entries.filter((e) => !known.has(e.id) && e.note.trim());
+  const addRetired = retired.filter((e) => !known.has(e.id));
+  if (!add.length && !addRetired.length) return 0;
+  data.exceptions.push(...add);
+  data.retired.push(...addRetired);
+  write(file, data, { op: "import", source, ids: [...add, ...addRetired].map((e) => e.id) });
+  return add.length + addRetired.length;
+}

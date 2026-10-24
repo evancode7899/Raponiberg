@@ -1,10 +1,14 @@
 import { staleEvidence } from "../exceptions.ts";
 import type { Book } from "../load.ts";
 import type { CheckPass, IntegrityReport, StandingException } from "../types.ts";
+import { checkBonusLetters } from "./bonuses.ts";
 import { Collector } from "./collector.ts";
 import { checkConsistency } from "./consistency.ts";
 import { checkDecisions } from "./decisions.ts";
+import { checkCustodianContributions } from "./custodian.ts";
 import { checkFreshness } from "./freshness.ts";
+import { checkHoldings } from "./holdings.ts";
+import { checkHsaContributions } from "./hsa.ts";
 import { checkNetWorth } from "./networth.ts";
 import { checkPay } from "./pay.ts";
 import { checkRetirement } from "./retirement.ts";
@@ -28,6 +32,10 @@ export function runChecksWithPasses(book: Book, exceptions: StandingException[] 
   checkDecisions(book, c);
   checkPay(book, c);
   checkRetirement(book, c);
+  checkHsaContributions(book, c);
+  checkCustodianContributions(book, c);
+  checkHoldings(book, c);
+  checkBonusLetters(book, c);
   checkTaxCoverage(book, c);
   checkTaxParams(book, c);
   checkTaxDocuments(book, c);

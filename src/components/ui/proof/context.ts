@@ -28,10 +28,11 @@ export const ProofContext = createContext<((t: ProofTarget) => void) | null>(nul
  * descriptor key (proof/key.ts), with what's wrong: pages withhold them, as they withhold
  * a figure an open finding covers. Empty until the sweep's answer arrives.
  */
-export const ProofFlagsContext = createContext<ReadonlyMap<string, string>>(new Map());
+export type ProofFlag = { kind: "WITHHELD" | "BUG"; detail: string };
+export const ProofFlagsContext = createContext<ReadonlyMap<string, ProofFlag>>(new Map());
 
-/** What's wrong with this figure's proof, or null when the sweep found nothing. */
-export function useProofFlag(t: ProofTarget | undefined): string | null {
+/** What the sweep found about this figure's proof, or null when nothing. */
+export function useProofFlag(t: ProofTarget | undefined): ProofFlag | null {
   const flags = useContext(ProofFlagsContext);
   return t && flags.size ? (flags.get(descriptorKey(t.descriptor)) ?? null) : null;
 }

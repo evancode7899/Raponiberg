@@ -8,6 +8,7 @@ import type { BrokerageFacts, HoldingsFacts } from "../ingest/types.ts";
 import { groupFor, loadLedger, type AccountGroup, type Ledger } from "../ledger/loadLedger.ts";
 import { loadTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.ts";
 import { loadProfileSettings } from "../profile/settings.ts";
+import { readAwards, type AwardsFile } from "../bonuses/awardStore.ts";
 import { readTaxDocs } from "../taxdocs/store.ts";
 import type { TaxDocsFile } from "../taxdocs/types.ts";
 import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts";
@@ -16,6 +17,7 @@ import { EMPTY_REIMBURSEMENTS, resolveReimbursements, type ReimbursementState, t
 import { billAccountIds, transferDifferenceAdjustments } from "../ledger/transferFees.ts";
 import { bookedOn } from "./booking.ts";
 import { readExceptions } from "./exceptionStore.ts";
+import { reviewExceptions } from "../bonuses/migrateReviews.ts";
 import { applyIdleWindows, type IdleReport } from "./idleCards.ts";
 import { addDays, localToday, startOfMonth } from "../dates/isoDate.ts";
 import { findingStart } from "./checks/collector.ts";
@@ -198,6 +200,12 @@ export type Book = {
    * tax rule reads (catch-up limits, the 65+ deduction). Absent on a Book built without them (tests).
    */
   birthYears?: Record<string, number>;
+  /**
+   * The bonus award letters (data/bonus-awards.json), as read with the rest of the Book: the
+   * bonus.letters check, the Bonuses page, its proofs and the forecast read this one copy. A
+   * damaged file is an error the readers report, never an empty list.
+   */
+  bonusAwards?: AwardsFile | { error: string };
   /** The tax documents folder as last scanned (lib/taxdocs): filed returns, W-2s, 1099s, K-1s. Null before the first scan. */
   taxDocs: TaxDocsFile | null;
   persons: TaxPerson[];
@@ -510,13 +518,23 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     classifiedWithHousehold,
     taxProfile,
     birthYears: profileSettings.birthYears,
+    bonusAwards: (() => {
+      try {
+        return readAwards();
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    })(),
     taxDocs: readTaxDocs(),
     persons,
     idle,
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
     passes: [],
   };
-  const checked = runChecksWithPasses(book, exceptions.exceptions);
+  // Bonus letter reviews not yet carried into the exceptions file (bonuses/migrateReviews.ts,
+  // run at launch) count as the exceptions they become, so none shows as open meanwhile.
+  const pending = reviewExceptions().exceptions.filter((e) => !exceptions.exceptions.some((x) => x.id === e.id) && !exceptions.retired.some((x) => x.id === e.id));
+  const checked = runChecksWithPasses(book, [...exceptions.exceptions, ...pending]);
   book.integrity = { ...checked.report, retired: exceptions.retired };
   book.passes = checked.passes;
   book.horizon.cashFlow = cashFlowThrough(book);

@@ -26,6 +26,7 @@ function book(stubs: BookStub[], deposits: { id: string; date: string; cents: nu
     rowById: new Map(rows.map((r) => [r.id, r])),
     stubs,
     brokerage: [],
+    holdings: [],
     matches: [],
     documents: [],
     decisions: { version: 1, confirmed: [], rejected: [] },
