@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient, TransactionLane } from "@prisma/client";
 import { ensureCategories } from "../classifier/persist.ts";
 import { householdPatterns } from "../household/householdFile.ts";
 import { addDays } from "../dates/isoDate.ts";
+import { declaredClosure, readClosedAccounts } from "../ledger/closedAccounts.ts";
 import { getMergeDate } from "../ledger/householdSettings.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { applyTransferDecisions } from "./applyDecisions.ts";
@@ -209,20 +210,31 @@ export async function runTransferMatching(
   for (const c of confirmed) matchedIds.add(c.transactionId);
   const cardInstitutions = await db.account.findMany({
     where: { type: "CREDIT_CARD" },
-    select: { institution: true, statementImports: { where: { isSummary: false }, select: { periodStart: true, periodEnd: true } } },
+    select: {
+      institution: true,
+      aliases: { select: { identifier: true } },
+      statementImports: { where: { isSummary: false }, select: { periodStart: true, periodEnd: true } },
+    },
   });
   // Per card: its statements, and the window it could receive payments in (from its
-  // first statement until shortly after its latest one).
+  // first statement until shortly after its latest one). A card the owner marked closed
+  // receives nothing on file after its last statement: a payment in that window paid its
+  // closing statement, which isn't on file.
+  const closures = readClosedAccounts().accounts;
   const cards = new Map<string, { periods: { start: string; end: string }[]; first: string; activeUntil: string }[]>();
+  const closedCards = new Map<string, { lastEnd: string; until: string }[]>();
   for (const a of cardInstitutions) {
     if (!a.institution || a.statementImports.length === 0) continue;
     const periods = a.statementImports
       .map((s) => ({ start: s.periodStart.toISOString().slice(0, 10), end: s.periodEnd.toISOString().slice(0, 10) }))
       .sort((x, y) => x.start.localeCompare(y.start));
+    const lastEnd = periods.at(-1)!.end;
+    const closed = declaredClosure(closures, a.institution, a.aliases.map((x) => x.identifier));
     cards.set(a.institution, [
       ...(cards.get(a.institution) ?? []),
-      { periods, first: periods[0]!.start, activeUntil: addDays(periods.at(-1)!.end, 45) },
+      { periods, first: periods[0]!.start, activeUntil: closed ? lastEnd : addDays(lastEnd, 45) },
     ]);
+    if (closed) closedCards.set(a.institution, [...(closedCards.get(a.institution) ?? []), { lastEnd, until: addDays(lastEnd, 45) }]);
   }
   let untrackedCardPayments = 0;
   for (const l of legs) {
@@ -245,7 +257,8 @@ export async function runTransferMatching(
     };
     const everyCandidateCovered = candidates.every((c) => coversArrival(c.periods));
     if (!everyCandidateCovered) continue; // a candidate's next statement isn't in yet: still in flight
-    await relabel(db, l.id, RELABEL.UNTRACKED_CARD, {
+    const closing = closedCards.get(l.counterpartyInstitution!)?.some((c) => c.lastEnd < l.date && l.date <= c.until);
+    await relabel(db, l.id, closing ? RELABEL.CLOSED_CARD : RELABEL.UNTRACKED_CARD, {
       lane: "EXPENSE",
       categoryId: categoryIds.get("Untracked card payments") ?? null,
       counterpartyKind: "UNTRACKED_CARD",

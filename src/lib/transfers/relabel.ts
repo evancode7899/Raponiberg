@@ -8,6 +8,8 @@ export const RELABEL = {
   PROMOTED: "transfer-match:",
   /** A card payment no tracked card received: paid a card we don't have statements for. */
   UNTRACKED_CARD: "untracked-card:",
+  /** A payment to a card the owner marked closed, after its last statement: it paid charges on a closing statement that isn't on file. */
+  CLOSED_CARD: "closed-card:",
   /** A payment on the partner's card that no tracked bank account sent: the partner's own money. */
   PARTNER_PAID: "partner-paid:",
   /** A bank rent payment that paid a landlord's bill on file: a transfer to the bill, whose charges are the spending. */

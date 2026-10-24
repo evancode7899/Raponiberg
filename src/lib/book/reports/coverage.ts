@@ -7,10 +7,14 @@ import type { Book } from "../load.ts";
  * household member they belong to.
  */
 export function buildCoverage(book: Book): CoverageReport {
-  // Payments to the closed Amex Platinum: Chase paid it, but it has no statement folder.
-  const payments = book.rows
-    .filter((r) => r.classifiedBy?.startsWith("untracked-card:") && r.counterpartyInstitution === "American Express")
-    .map((r) => ({ date: r.date, amountCents: r.amountCents }));
+  // Cards known only from the payments made to them (no statements on file), one row per
+  // institution paid.
+  const untracked = new Map<string, { date: string; amountCents: number }[]>();
+  for (const r of book.rows) {
+    if (!r.classifiedBy?.startsWith("untracked-card:")) continue;
+    const name = `Untracked ${r.counterpartyInstitution ?? "card"} card`;
+    untracked.set(name, [...(untracked.get(name) ?? []), { date: r.date, amountCents: r.amountCents }]);
+  }
   const byEmployer = new Map<string, { label: string; payDates: string[] }>();
   for (const s of book.stubs) {
     const person = book.persons.find((p) => p.id === s.personId)?.name;
@@ -20,5 +24,5 @@ export function buildCoverage(book: Book): CoverageReport {
     byEmployer.set(s.employerKey, g);
   }
   const paystubs = [...byEmployer.values()].map((g) => ({ employer: g.label, payDates: g.payDates }));
-  return buildCoverageReport(book.ledger, book.today, [{ name: "Amex Platinum", payments }], paystubs);
+  return buildCoverageReport(book.ledger, book.today, [...untracked].map(([name, payments]) => ({ name, payments })), paystubs);
 }

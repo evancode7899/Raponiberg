@@ -171,6 +171,18 @@ export function checkStatements(book: Book, c: Collector) {
       });
     }
 
+    // Closed by the owner's word, not by a $0 closing statement.
+    if (a.closedByOwner != null) {
+      const last = segs.at(-1)!;
+      c.infer({
+        id: `statement.closed:${ref}:${t.lastDay}`,
+        check: "statement.overdue",
+        title: `${a.name}: closed after ${t.lastDay} (owner) — no statements expected`,
+        detail: `Its last statement closed at ${money(last.closing)}, not $0; the owner marked the account closed${a.closedByOwner ? ` (${a.closedByOwner})` : ""}. A payment to ${institutionOf(a.id)} after that statement that no other card received is counted as spending on its closing statement, which isn't on file.`,
+        scope: { accountId: a.id, from: t.lastDay!, to: t.lastDay! },
+      });
+    }
+
     // Overdue: the next statement should exist by now.
     if (!a.closed) {
       const real = segs.filter((s) => !s.derived && !s.idle);

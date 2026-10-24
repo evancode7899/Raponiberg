@@ -3,6 +3,7 @@ import type { Lane } from "../classifier/taxonomy.ts";
 import { daysBetween, localToday } from "../dates/isoDate.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { bookBill, type BillRowBooking, type BillStatement } from "./billBooking.ts";
+import { declaredClosure, readClosedAccounts } from "./closedAccounts.ts";
 import { getMergeDate } from "./householdSettings.ts";
 import { buildTimeline, type AccountTimeline, type SegmentInput } from "./timeline.ts";
 import { billAccountIds, transferDifferenceAdjustments } from "./transferFees.ts";
@@ -66,8 +67,10 @@ export type LedgerAccount = {
   isInvestment: boolean;
   timeline: AccountTimeline;
   statementCount: number;
-  /** Closed: last statement ended at zero and nothing newer arrived. */
+  /** Closed: last statement ended at zero and nothing newer arrived, or the owner says so. */
   closed: boolean;
+  /** The owner's note when they marked it closed without a $0 closing statement (closedAccounts.ts). */
+  closedByOwner?: string;
 };
 
 export type Ledger = {
@@ -90,7 +93,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise<Ledger> {
   const [accounts, imports, mergeDate] = await Promise.all([
     // Archived accounts included: archiving hides an account from pickers, never its history from figures.
-    db.account.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
+    db.account.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }], include: { aliases: { select: { identifier: true } } } }),
     db.statementImport.findMany({
       where: { status: "COMMITTED" },
       orderBy: { periodStart: "asc" },
@@ -199,11 +202,13 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
     byAccount.set(accountId, bucket);
   }
 
+  const closures = readClosedAccounts().accounts;
   const out: LedgerAccount[] = [];
   for (const a of accounts) {
     const data = byAccount.get(a.id);
     if (!data || data.statements.length === 0) continue;
     const timeline = buildTimeline(a.id, data.statements, data.summaries);
+    const closure = declaredClosure(closures, a.institution, a.aliases.map((x) => x.identifier));
     out.push({
       id: a.id,
       name: a.name,
@@ -215,6 +220,7 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
       timeline,
       statementCount: data.statements.length,
       closed: false,
+      ...(closure ? { closedByOwner: closure.note } : {}),
     });
   }
   const ledger: Ledger = { accounts: out, mergeDate, completeThrough: null, firstDay: null, billRows };
@@ -229,7 +235,7 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
 export function refreshLedgerStatus(ledger: Ledger, today: string) {
   for (const a of ledger.accounts) {
     const last = a.timeline.segments.at(-1)!;
-    a.closed = last.closing === 0 && daysBetween(a.timeline.lastDay!, today) > 45;
+    a.closed = a.closedByOwner != null || (last.closing === 0 && daysBetween(a.timeline.lastDay!, today) > 45);
   }
   const open = ledger.accounts.filter((a) => !a.closed);
   ledger.completeThrough = open.length ? open.map((a) => a.timeline.lastDay!).sort()[0]! : null;
