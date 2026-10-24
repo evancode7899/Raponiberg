@@ -2,7 +2,7 @@ import { endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import { LANE_LABELS } from "../../classifier/taxonomy.ts";
 import { RELABEL } from "../../transfers/relabel.ts";
-import type { Book, BookRow } from "../load.ts";
+import type { Book, BookAccount, BookRow, BookStatement, BookStub, BookTransferMatch } from "../load.ts";
 import { dayOfFor } from "../reports/cashFlow.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor } from "./common.ts";
@@ -31,6 +31,44 @@ export function parseRowDescriptor(d: Record<string, unknown>): RowDescriptor | 
 }
 
 const money = (c: number) => (c === 0 ? "$0.00" : formatUsdFromCents(c));
+
+type Link = NonNullable<Book["reimbursements"]>["links"][number];
+/** What a row's proof looks up, by id, built once per Book: the sweep opens every row, and a scan of the whole Book for each made it quadratic. */
+type RowLookups = {
+  accounts: Map<string, BookAccount>;
+  statements: Map<string, BookStatement>;
+  pieces: Map<string, BookRow[]>;
+  matches: Map<string, BookTransferMatch>;
+  stubs: Map<string, BookStub[]>;
+  links: Map<string, Link[]>;
+};
+const lookups = new WeakMap<Book, RowLookups>();
+const push = <T,>(m: Map<string, T[]>, k: string | null | undefined, v: T) => {
+  if (!k) return;
+  const list = m.get(k);
+  if (list) list.push(v);
+  else m.set(k, [v]);
+};
+function lookupsFor(book: Book): RowLookups {
+  let l = lookups.get(book);
+  if (l) return l;
+  l = {
+    accounts: new Map(book.accounts.map((a) => [a.id, a])),
+    statements: new Map(book.statements.map((s) => [s.id, s])),
+    pieces: new Map(),
+    matches: new Map(book.matches.map((m) => [m.id, m])),
+    stubs: new Map(),
+    links: new Map(),
+  };
+  for (const x of book.rows) push(l.pieces, x.partOf, x);
+  for (const s of book.stubs) push(l.stubs, s.depositTransactionId, s);
+  for (const k of book.reimbursements?.links ?? []) {
+    push(l.links, k.expense.rowId, k);
+    if (k.source.rowId !== k.expense.rowId) push(l.links, k.source.rowId, k);
+  }
+  lookups.set(book, l);
+  return l;
+}
 
 /** A row by id: a statement's, or one a reimbursement link books. */
 export function findRow(book: Book, id: string): BookRow | undefined {
@@ -79,13 +117,14 @@ export function buildRowProof(book: Book, d: RowDescriptor): Proof {
     throw new Error(
       "That row isn't in the ledger: its statement isn't committed (or is a summary), or it was deleted or re-imported since the page loaded. Only committed statements count in figures.",
     );
-  const name = (id: string) => book.accounts.find((a) => a.id === id)?.name ?? "Account";
-  const st = book.statements.find((s) => s.id === r.statementImportId);
+  const at = lookupsFor(book);
+  const name = (id: string) => at.accounts.get(id)?.name ?? "Account";
+  const st = at.statements.get(r.statementImportId);
   // A bill payment booked in pieces: the row the statement prints keeps the first piece, the rest point back at it.
   const whole = r.partOf ? book.rowById.get(r.partOf) : undefined;
-  const pieces = book.rows.filter((x) => x.partOf === (r.partOf ?? r.id));
+  const pieces = at.pieces.get(r.partOf ?? r.id) ?? [];
   const printedCents = (r.partOf ? (whole?.amountCents ?? 0) : r.amountCents) + pieces.reduce((t, x) => t + x.amountCents, 0);
-  const isBill = book.accounts.find((a) => a.id === r.accountId)?.subtype === "BILL";
+  const isBill = at.accounts.get(r.accountId)?.subtype === "BILL";
   const statementLink: ProofLink | undefined = st
     ? {
         label: `${name(r.accountId)} statement ending ${st.periodEnd}`,
@@ -230,7 +269,7 @@ export function buildRowProof(book: Book, d: RowDescriptor): Proof {
   ];
 
   // The other side of a transfer.
-  const match = r.transferMatchId ? book.matches.find((m) => m.id === r.transferMatchId) : undefined;
+  const match = r.transferMatchId ? at.matches.get(r.transferMatchId) : undefined;
   if (match) {
     const others = match.legs.filter((l) => l.transactionId !== r.id);
     blocks.push({
@@ -270,7 +309,7 @@ export function buildRowProof(book: Book, d: RowDescriptor): Proof {
     });
 
   // A paycheck: the stub behind it.
-  const stubs = book.stubs.filter((s) => s.depositTransactionId === r.id);
+  const stubs = at.stubs.get(r.id) ?? [];
   if (stubs.length)
     blocks.push({
       kind: "facts",
@@ -287,7 +326,7 @@ export function buildRowProof(book: Book, d: RowDescriptor): Proof {
     });
 
   // "Paid back" links on it.
-  const links = (book.reimbursements?.links ?? []).filter((l) => l.expense.rowId === r.id || l.source.rowId === r.id);
+  const links = at.links.get(r.id) ?? [];
   if (links.length)
     blocks.push({
       kind: "facts",

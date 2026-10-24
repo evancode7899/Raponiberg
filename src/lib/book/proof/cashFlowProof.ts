@@ -1,8 +1,8 @@
 import type { Granularity } from "../../dates/isoDate.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { Book, BookRow } from "../load.ts";
-import { countsOn, rentPayments } from "../rent.ts";
-import { buildCashFlowReport, cashFlowContributions, type CashFlowPeriod } from "../reports/cashFlow.ts";
+import { countsOn, rentCovers } from "../rent.ts";
+import { buildCashFlowReport, cashFlowContributions, type CashFlowContribution, type CashFlowPeriod, type CashFlowReport } from "../reports/cashFlow.ts";
 import { detectRecurring, merchantKeyOf, merchantName, merchantsIn, oneOffTest, spendingRows } from "../reports/spending.ts";
 import { loadProfileSettings } from "../../profile/settings.ts";
 import type { CheckId } from "../types.ts";
@@ -134,15 +134,31 @@ const PARTS: Record<"income" | "spending" | "external", Part> = {
   external: { lane: "EXTERNAL_TRANSFER", label: "Outside money", sign: 1, pick: (p) => p.externalByCategory.reduce((t, c) => t + c.cents, 0), cats: (p) => p.externalByCategory },
 };
 
+type View = { report: CashFlowReport; contributions?: readonly CashFlowContribution[] };
+const views = new WeakMap<Book, Map<string, View>>();
+
+/**
+ * The report and its rows over a figure's periods, worked out once per Book: every figure
+ * of a month (each category, income, spending, net) and every row linking to it share
+ * them, and each is a pass over the whole ledger. Read-only (frozen): proofs only pick from them.
+ */
+function viewFor(book: Book, d: CashFlowDescriptor, withRows: boolean): { report: CashFlowReport; contributions: readonly CashFlowContribution[] } {
+  let byKey = views.get(book);
+  if (!byKey) views.set(book, (byKey = new Map()));
+  const key = [d.granularity, d.start, d.end, ...(d.accountIds ?? [])].join("|");
+  let v = byKey.get(key);
+  if (!v) byKey.set(key, (v = { report: buildCashFlowReport(book, { granularity: d.granularity, from: d.start, to: d.end, accountIds: d.accountIds }) }));
+  if (withRows && !v.contributions) v.contributions = Object.freeze(cashFlowContributions(book, v.report.periods, d.accountIds?.length ? new Set(d.accountIds) : null));
+  return { report: v.report, contributions: (withRows && v.contributions) || [] };
+}
+
 export function buildCashFlowProof(book: Book, d: CashFlowDescriptor, isOneOff: (r: BookRow) => boolean = () => false): CashFlowProof {
   const dropOneOffs = d.oneOffs === "exclude";
-  const report = buildCashFlowReport(book, { granularity: d.granularity, from: d.start, to: d.end, accountIds: d.accountIds });
+  const { report, contributions } = viewFor(book, d, !d.merchantKey);
   const periods = report.periods;
-  const accountFilter = d.accountIds?.length ? new Set(d.accountIds) : null;
-  const contributions = d.merchantKey ? [] : cashFlowContributions(book, periods, accountFilter);
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
   const statementById = new Map(book.statements.map((s) => [s.id, s]));
-  const rent = new Set(rentPayments(book.rows, book.accounts, book.household.merchantRules).map((p) => p.rowId));
+  const rent = rentCovers(book.rows, book.accounts, book.household.merchantRules);
   const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
 
   // A merchant's figure reads the spending report's own rows (reversed pairs left out,

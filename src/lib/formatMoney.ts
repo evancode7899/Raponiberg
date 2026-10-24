@@ -1,13 +1,24 @@
 /** Em dash for exact numeric zero in displays (not rounded-to-zero values). */
 export const EM_DASH = "\u2014";
 
+/**
+ * Formatters made once per option set: making an Intl.NumberFormat costs far more than
+ * using one, and tables and proofs format thousands of amounts.
+ */
+const formatters = new Map<string, Intl.NumberFormat>();
+function formatter(key: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  let f = formatters.get(key);
+  if (!f) formatters.set(key, (f = new Intl.NumberFormat("en-US", options)));
+  return f;
+}
+
 function formatCurrencyAccounting(
   amountAbs: number,
   isNegative: boolean,
   minFrac: number,
   maxFrac: number,
 ): string {
-  const formatted = new Intl.NumberFormat("en-US", {
+  const formatted = formatter(`usd:${minFrac}:${maxFrac}`, {
     style: "currency",
     currency: "USD",
     signDisplay: "never",
@@ -100,7 +111,7 @@ export function formatPercentRatio(ratio: number, maxFractionDigits = 2): string
   }
   const neg = ratio < 0;
   const abs = Math.abs(ratio);
-  const formatted = new Intl.NumberFormat("en-US", {
+  const formatted = formatter(`pct:${maxFractionDigits}`, {
     style: "percent",
     maximumFractionDigits: maxFractionDigits,
     signDisplay: "never",

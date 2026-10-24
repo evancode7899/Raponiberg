@@ -181,6 +181,20 @@ function rebalance(full: RentPayment[]): void {
 
 const cache = new WeakMap<BookRow[], Map<string, string>>();
 
+/** The month each rent payment covers, by row id (rentPayments), worked out once per set of rows. */
+export function rentCovers(
+  rows: BookRow[],
+  accounts: Pick<BookAccount, "id" | "type" | "subtype">[] = [],
+  merchantRules: MerchantRule[] = MERCHANT_RULES,
+): ReadonlyMap<string, string> {
+  let covers = cache.get(rows);
+  if (!covers) {
+    covers = new Map(rentPayments(rows, accounts, merchantRules).map((p) => [p.rowId, p.covers]));
+    cache.set(rows, covers);
+  }
+  return covers;
+}
+
 /**
  * The day spending figures count a row on: the first of the month a rent payment covers;
  * a landlord's bill charge on the day it prints (the 1st of the month it covers, although
@@ -192,12 +206,7 @@ export function countsOn(
   accounts: Pick<BookAccount, "id" | "type" | "subtype">[] = [],
   merchantRules: MerchantRule[] = MERCHANT_RULES,
 ): (r: BookRow) => string {
-  let covers = cache.get(rows);
-  if (!covers) {
-    covers = new Map(rentPayments(rows, accounts, merchantRules).map((p) => [p.rowId, p.covers]));
-    cache.set(rows, covers);
-  }
-  const m = covers;
+  const m = rentCovers(rows, accounts, merchantRules);
   const bills = new Set(accounts.filter((a) => a.subtype === "BILL").map((a) => a.id));
   return (r) => m.get(r.id) ?? (bills.has(r.accountId) && r.precision === "EXACT" ? r.date : r.bookedOn);
 }
