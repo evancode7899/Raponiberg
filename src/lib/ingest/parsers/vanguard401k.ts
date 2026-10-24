@@ -99,7 +99,7 @@ export function parseVanguard401k(text: string): ParsedDocument {
   // The fund table's "Total Invested" row is the statement's own tie-out of the quarter.
   const total = ls.find((l) => l.startsWith("Total Invested"));
   if (total) {
-    const v = [...total.matchAll(/-?\s?\$[\d,]+\.\d{2}/g)].map((x) => parseMoney(x[0].replace(/\s+/g, "").replace(/^-\$/, "-$"))!);
+    const v = [...total.matchAll(/-?\s?\$[\d,]+\.\d{2}/g)].map((x) => parseMoney(x[0].replace(/\s+/g, ""))!);
     if (v.length === 5) {
       quarter.checks.push(
         { label: "Fund table opening = account summary opening", expectedCents: v[0]!, actualCents: quarter.openingBalanceCents },
