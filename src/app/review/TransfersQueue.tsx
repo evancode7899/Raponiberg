@@ -3,9 +3,10 @@
 import type { Api } from "@/components/ledger/useApi";
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { btn, Card, ErrorNote, Loading, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatUsdFromCents } from "@/lib/formatMoney";
 import { useCallback, useEffect, useState } from "react";
-import type { ReviewRow } from "./CategorizeQueue";
+import { rowProof, type ReviewRow } from "./CategorizeQueue";
 
 type Transfers = {
   unmatched: ReviewRow[];
@@ -30,7 +31,9 @@ function Legs({ legs, pick }: { legs: ReviewRow[]; pick?: { selected: Set<string
               {r.payee}
               {r.counterpartyInstitution && <span className="ml-1 text-faint">→ {r.counterpartyInstitution}</span>}
             </td>
-            <td className={`${table.tdR} font-medium ${r.amountCents > 0 ? "text-pos" : ""}`}>{formatUsdFromCents(r.amountCents)}</td>
+            <td className={`${table.tdR} font-medium ${r.amountCents > 0 ? "text-pos" : ""}`}>
+              <ProofValue proof={rowProof(r)}>{formatUsdFromCents(r.amountCents)}</ProofValue>
+            </td>
           </tr>
         ))}
       </tbody>

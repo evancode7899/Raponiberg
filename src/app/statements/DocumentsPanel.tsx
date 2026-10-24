@@ -3,6 +3,7 @@
 import { LaneBadge } from "@/components/ledger/TransactionTable";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table, type Tone } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { Lane } from "@/lib/classifier/taxonomy";
 import { formatUsdFromCents } from "@/lib/formatMoney";
@@ -189,6 +190,8 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
   // Statement order until a header is clicked.
   const { sort, toggle: toggleSort } = useSort(null);
   const failed = s.checksJson?.filter((c) => !c.passed) ?? [];
+  // Only a committed statement is in the Book: it (and its rows) open their proofs.
+  const inBook = s.status === "COMMITTED";
 
   const toggle = async () => {
     setOpen(!open);
@@ -204,7 +207,8 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
         <Badge tone={STATUS[s.status].tone}>{STATUS[s.status].label}</Badge>
         <span className="font-medium text-fg">{s.account.name}</span>
         <span className="num text-muted">
-          {d10(s.periodStart)} → {d10(s.periodEnd)} · {formatUsdFromCents(s.openingBalanceCents)} → {formatUsdFromCents(s.closingBalanceCents)}
+          {d10(s.periodStart)} → {d10(s.periodEnd)} · {formatUsdFromCents(s.openingBalanceCents)} →{" "}
+          <ProofValue proof={inBook ? { descriptor: { report: "statement", statementId: s.id }, shownCents: s.closingBalanceCents } : undefined}>{formatUsdFromCents(s.closingBalanceCents)}</ProofValue>
           {(s.growthCents !== 0 || s.feesCents !== 0) && ` · market ${formatUsdFromCents(s.growthCents)} · fees ${formatUsdFromCents(s.feesCents)}`}
         </span>
         <button type="button" className={btn.link} onClick={() => void toggle()}>
@@ -252,7 +256,9 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
                     {r.needsReview && <span className="ml-1 text-warn">· review</span>}
                   </td>
                   <td className={`${table.td} text-fg-2`}>{r.category?.name ?? "—"}</td>
-                  <td className={table.tdR}>{formatUsdFromCents(r.amountCents)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={inBook && !s.isSummary ? { descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents } : undefined}>{formatUsdFromCents(r.amountCents)}</ProofValue>
+                  </td>
                 </tr>
               ))}
             </tbody>

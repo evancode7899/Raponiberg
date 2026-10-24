@@ -3,7 +3,7 @@
 import { lastDataStamp } from "@/components/ledger/useApi";
 import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
-import type { ChainLine, ProofCheck, ProofGroup, ProofRow, ProofStatement, ProofValue } from "@/lib/book/proof/types";
+import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue } from "@/lib/book/proof/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, formatUsdFromCents, usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
@@ -63,12 +63,15 @@ export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofE
 
 function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?: string }; shownCents: number | null; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
   const stamp = p.stamp;
-  const statements = uniqueStatements(p.blocks);
+  const self = selfOf(p);
+  // A statement proof is its own statement: nothing else to list.
+  const statements = p.report === "statement" ? [] : uniqueStatements(p.blocks);
   const figureCents = "cents" in p.figure ? p.figure.cents : null;
   return (
     <div className="flex flex-col gap-5">
       <section>
-        <div className="num text-3xl font-semibold tracking-tight text-fg">{valueText(p.figure, true)}</div>
+        {/* A source (a statement, a row, a stub) shows its figure to the cent, as printed. */}
+        <div className="num text-3xl font-semibold tracking-tight text-fg">{valueText(p.figure, !(self.statementId || self.rowId || p.report === "stub"))}</div>
         {figureCents != null && perMonths && perMonths > 1 ? (
           <div className="mt-0.5 text-xs text-muted">
             Shown as {usd0(figureCents / perMonths)} a month: this total ÷ {perMonths} months.
@@ -108,17 +111,19 @@ function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?
       </section>
 
       {p.blocks.map((b, i) => (
-        <BlockView key={`${b.kind}:${b.title}:${i}`} b={b} onFollow={onFollow} />
+        <BlockView key={`${b.kind}:${b.title}:${i}`} b={b} self={self} onFollow={onFollow} />
       ))}
 
       {statements.length > 0 && (
         <section>
-          <SectionTitle sub={`${statements.length} statement${statements.length === 1 ? "" : "s"}`}>Statements behind it</SectionTitle>
+          <SectionTitle sub={`${statements.length} statement${statements.length === 1 ? "" : "s"} · open one for what it prints and how it ties`}>Statements behind it</SectionTitle>
           <ul className="flex flex-col divide-y divide-line text-[13px]">
             {statements.map((s) => (
               <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5">
                 <span className="min-w-0">
-                  <span className="font-medium text-fg">{s.account}</span>
+                  <FollowLink link={statementLink(s, self)} onFollow={onFollow} className="font-medium text-fg">
+                    {s.account}
+                  </FollowLink>
                   <span className="text-muted">
                     {" "}
                     · {date(s.periodStart)} – {date(s.periodEnd)}
@@ -192,7 +197,19 @@ function FollowLink({ link, onFollow, children, className = "" }: { link?: Proof
   );
 }
 
-function BlockView({ b, onFollow }: { b: ProofBlock; onFollow: (d: ProofDescriptor) => void }) {
+function BlockView({ b, self, onFollow }: { b: ProofBlock; self: Self; onFollow: (d: ProofDescriptor) => void }) {
+  if (b.kind === "facts")
+    return (
+      <section>
+        <SectionTitle>{b.title}</SectionTitle>
+        <dl className="grid grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] gap-x-4 gap-y-1 text-[13px]">
+          {b.items.map((f, i) => (
+            <FactRow key={`${f.label}:${i}`} f={f} onFollow={onFollow} />
+          ))}
+        </dl>
+        {b.note && <p className="mt-1.5 text-xs text-muted">{b.note}</p>}
+      </section>
+    );
   if (b.kind === "breakdown")
     return (
       <section>
@@ -231,7 +248,7 @@ function BlockView({ b, onFollow }: { b: ProofBlock; onFollow: (d: ProofDescript
       {b.groups.length === 0 && <p className="text-[13px] text-muted">No rows: nothing was counted here.</p>}
       <ul className="flex flex-col gap-1">
         {b.groups.map((g) => (
-          <GroupView key={g.statement.id} g={g} />
+          <GroupView key={g.statement.id} g={g} self={self} onFollow={onFollow} />
         ))}
       </ul>
       {b.note && <p className="mt-1.5 text-xs text-muted">{b.note}</p>}
@@ -264,24 +281,37 @@ function ChainRow({ l, onFollow }: { l: ChainLine; onFollow: (d: ProofDescriptor
   );
 }
 
-function GroupView({ g }: { g: ProofGroup }) {
+function GroupView({ g, self, onFollow }: { g: ProofGroup; self: Self; onFollow: (d: ProofDescriptor) => void }) {
   const [open, setOpen] = useState(false);
   const showCategory = new Set(g.rows.map((r) => r.category)).size > 1;
+  const statement = statementLink(g.statement, self);
   return (
     <li className="rounded-md border border-line">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-baseline gap-2 px-3 py-2 text-left text-[13px] hover:bg-surface-2">
-        <span aria-hidden className="w-3 shrink-0 text-faint">
-          {open ? "▾" : "▸"}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="font-medium text-fg">{g.statement.account}</span>
-          <span className="text-muted">
-            {" "}
-            · statement {date(g.statement.periodStart)} – {date(g.statement.periodEnd)} · {g.rows.length} row{g.rows.length === 1 ? "" : "s"}
+      <div className="flex items-stretch">
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-w-0 flex-1 items-baseline gap-2 px-3 py-2 text-left text-[13px] hover:bg-surface-2">
+          <span aria-hidden className="w-3 shrink-0 text-faint">
+            {open ? "▾" : "▸"}
           </span>
-        </span>
-        <span className="num shrink-0 font-medium">{cents(g.subtotalCents)}</span>
-      </button>
+          <span className="min-w-0 flex-1">
+            <span className="font-medium text-fg">{g.statement.account}</span>
+            <span className="text-muted">
+              {" "}
+              · statement {date(g.statement.periodStart)} – {date(g.statement.periodEnd)} · {g.rows.length} row{g.rows.length === 1 ? "" : "s"}
+            </span>
+          </span>
+          <span className="num shrink-0 font-medium">{cents(g.subtotalCents)}</span>
+        </button>
+        {statement && (
+          <button
+            type="button"
+            onClick={() => onFollow(statement.descriptor)}
+            title="Open this statement: every row it prints, its balances, and how they tie"
+            className="shrink-0 border-l border-line px-2.5 text-xs font-medium text-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          >
+            Statement
+          </button>
+        )}
+      </div>
       {open && (
         <div className={`${table.wrap} border-t border-line`}>
           <table className={table.table}>
@@ -290,7 +320,11 @@ function GroupView({ g }: { g: ProofGroup }) {
                 <tr key={r.id} className={table.tr}>
                   <td className={`${table.td} whitespace-nowrap text-muted`}>{date(r.date)}</td>
                   <td className={table.td}>
-                    <div className="text-fg">{r.payee || "—"}</div>
+                    <div className="text-fg">
+                      <FollowLink link={r.rowId && r.rowId !== self.rowId ? { label: r.payee || "this row", descriptor: { report: "row", rowId: r.rowId } } : undefined} onFollow={onFollow}>
+                        {r.payee || "—"}
+                      </FollowLink>
+                    </div>
                     <RowNotes r={r} />
                   </td>
                   {showCategory && <td className={`${table.td} text-xs text-muted`}>{r.category}</td>}
@@ -389,4 +423,30 @@ function uniqueStatements(blocks: ProofBlock[]): ProofStatement[] {
   const m = new Map<string, ProofStatement>();
   for (const b of blocks) if (b.kind === "rows") for (const g of b.groups) m.set(g.statement.id, g.statement);
   return [...m.values()].sort((a, b) => a.account.localeCompare(b.account) || a.periodStart.localeCompare(b.periodStart));
+}
+
+/** The source a proof is the proof of, so it never links to itself. */
+type Self = { statementId?: string; rowId?: string };
+const selfOf = (p: Proof): Self => (p.descriptor.report === "statement" ? { statementId: p.descriptor.statementId } : p.descriptor.report === "row" ? { rowId: p.descriptor.rowId } : {});
+
+/** The statement proof a listed statement opens, when it is one the Book holds (and not the one open). */
+function statementLink(s: ProofStatement, self: Self): ProofLink | undefined {
+  return s.importId && s.importId !== self.statementId ? { label: `${s.account} statement ending ${s.periodEnd}`, descriptor: { report: "statement", statementId: s.importId } } : undefined;
+}
+
+const FACT_TONE: Record<NonNullable<ProofFact["tone"]>, string> = { warn: "text-warn", good: "text-pos" };
+
+/** A labelled fact: words as printed or filed, wrapping rather than cut off. */
+function FactRow({ f, onFollow }: { f: ProofFact; onFollow: (d: ProofDescriptor) => void }) {
+  return (
+    <>
+      <dt className="text-muted">{f.label}</dt>
+      <dd className={`min-w-0 break-words ${f.tone ? FACT_TONE[f.tone] : "text-fg"}`}>
+        {f.tone === "good" && <span aria-hidden>✓ </span>}
+        <FollowLink link={f.link} onFollow={onFollow}>
+          {f.text}
+        </FollowLink>
+      </dd>
+    </>
+  );
 }

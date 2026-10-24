@@ -1,4 +1,3 @@
-import { endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import { CASH_EARNING_KINDS, WITHHELD_KINDS, type StubLineKind } from "../../ingest/payroll/types.ts";
 import { stubRef } from "../findingKeys.ts";
@@ -6,7 +5,7 @@ import type { Book, BookRow, BookStub } from "../load.ts";
 import { netYtd, stubGroups, UNKNOWN_PERSON } from "../pay.ts";
 import type { CheckId, Inference } from "../types.ts";
 import { checksFor, isIsoDate, sumCheck } from "./common.ts";
-import type { ChainLine, Proof, ProofBlock, ProofEstimate, ProofGroup, ProofKind, ProofLink } from "./types.ts";
+import type { ChainLine, Proof, ProofBlock, ProofEstimate, ProofGroup, ProofKind } from "./types.ts";
 
 /**
  * The proof behind a pay figure: the pay stubs it is read from, line by line, the bank
@@ -226,10 +225,8 @@ export function buildPayProof(book: Book, d: PayDescriptor): Proof {
           note: `${x.jump!.title}. Taken from the ${x.date} stub's year-to-date figures${x.jump!.partial ? " (partial)" : ""}.`,
         });
       if (!listed(x)) continue;
-      const stubNote = x.stubs
-        .filter((s) => x.stubs.length === 1 || payAmount(s, d.lines, "current") !== 0)
-        .map((s) => lineItems(s, d.lines))
-        .join(" · ");
+      const paying = x.stubs.filter((s) => x.stubs.length === 1 || payAmount(s, d.lines, "current") !== 0);
+      const stubNote = paying.map((s) => lineItems(s, d.lines)).join(" · ");
       const dep = x.stubs.map((s) => deposits.get(s.id)).filter((r): r is BookRow => !!r);
       const depNote = dep.length
         ? `deposited ${dep.map((r) => `${r.date} ${money(r.amountCents)} to ${accountName.get(r.accountId) ?? "an account"}`).join(", ")}`
@@ -242,7 +239,8 @@ export function buildPayProof(book: Book, d: PayDescriptor): Proof {
         value: { cents: x.paidCents },
         source: "proven",
         note: [stubNote, ytd ? `year to date ${money(x.ytdCents)}` : "", depNote].filter(Boolean).join(" · "),
-        ...(dep[0] ? { link: depositLink(dep[0]) } : {}),
+        // The stub itself, line by line; it links on to the bank deposit it was matched to.
+        link: { label: `${employerName(c.employer)} stub ${x.date}`, descriptor: { report: "stub", stubId: paying[0]!.id } },
       });
     }
     const last = c.days.at(-1)!;
@@ -271,7 +269,7 @@ export function buildPayProof(book: Book, d: PayDescriptor): Proof {
       title: "Bank deposits the stubs were matched to",
       figureCents: depositRows.reduce((t, r) => t + r.amountCents, 0),
       groups: groupRows(book, depositRows),
-      note: "The net pay each stub deposited, as the bank statement prints it. Each opens that month's paychecks from the stub line above.",
+      note: "The net pay each stub deposited, as the bank statement prints it. Open a row for its statement; open a stub line above for the stub itself.",
     });
 
   // An employer filter scopes the checks to the stub chains it took (a base key takes every payroll code).
@@ -321,16 +319,6 @@ function lineItems(s: BookStub, lines: PayLine[]): string {
   const kinds = new Set(lines.flatMap(kindsOf));
   const items = s.lines.filter((l) => kinds.has(l.kind) && (l.current ?? 0) !== 0).map((l) => `${l.name} ${money(l.current!)}`);
   return items.join(", ") || "nothing this check";
-}
-
-/** The cash-flow proof of the deposit's month and category: the paychecks the bank received. */
-function depositLink(r: BookRow): ProofLink | undefined {
-  if (r.lane !== "INCOME") return undefined;
-  const month = r.bookedOn.slice(0, 7);
-  return {
-    label: `${r.category} deposits, ${month}`,
-    descriptor: { report: "cash-flow", metric: "income", granularity: "month", start: startOfMonth(r.bookedOn), end: endOfMonth(r.bookedOn), category: r.category },
-  };
 }
 
 export function groupRows(book: Book, rows: BookRow[]): ProofGroup[] {
