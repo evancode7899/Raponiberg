@@ -5,7 +5,7 @@ import { bookedShare } from "../booking.ts";
 import type { Book, BookRow } from "../load.ts";
 import { withReimbursements } from "../reimbursements.ts";
 import { countsOn } from "../rent.ts";
-import { savingsRate } from "../definitions.ts";
+import { savedFromTakeHome, savingsRate } from "../definitions.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 
 export type CategoryAmount = { category: string; group: string | null; cents: number };
@@ -150,7 +150,7 @@ export function buildCashFlowReport(book: Book, opts: { granularity: Granularity
   for (const { p, income, spending, external } of periods) {
     p.incomeCents = Math.round(p.incomeCents);
     p.spendingCents = Math.round(p.spendingCents);
-    p.netCents = p.incomeCents - p.spendingCents;
+    p.netCents = savedFromTakeHome(p.incomeCents, p.spendingCents);
     p.unreviewed.cents = Math.round(p.unreviewed.cents);
     p.savingsRate = savingsRate(p.incomeCents, p.netCents);
     p.incomeByCategory = sorted(income);

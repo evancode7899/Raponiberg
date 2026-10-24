@@ -139,7 +139,8 @@ const CADENCES: { id: Cadence; lo: number; hi: number; perYear: number }[] = [
  * for varying amounts (coffee, lunch, rides). Detected over the whole window; totals are
  * the last twelve months.
  */
-export function detectRecurring(rows: BookRow[], windowEnd: string, last12From: string): RecurringCharge[] {
+/** Each merchant's expense charges, oldest first. */
+function chargesByMerchant(rows: BookRow[]): Map<string, BookRow[]> {
   const byKey = new Map<string, BookRow[]>();
   for (const r of rows) {
     if (r.lane !== "EXPENSE" || r.amountCents >= 0) continue;
@@ -148,25 +149,35 @@ export function detectRecurring(rows: BookRow[], windowEnd: string, last12From: 
     list.push(r);
     byKey.set(k, list);
   }
+  for (const list of byKey.values()) list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return byKey;
+}
+
+/** Whether one merchant's charges (oldest first, three or more) are a bill, a habit, or neither. */
+function merchantKind(list: BookRow[]) {
+  const amounts = list.map((r) => -r.amountCents);
+  const monthsSeen = new Set(list.map((r) => r.date.slice(0, 7))).size;
+  const typical = median(amounts);
+  const spread = typical > 0 ? median(amounts.map((a) => Math.abs(a - typical))) / typical : 1;
+  const gaps = list.slice(1).map((r, i) => daysBetween(list[i]!.date, r.date)).filter((g) => g > 0);
+  const gap = median(gaps);
+  const cadence = CADENCES.find((c) => gap >= c.lo && gap <= c.hi) ?? null;
+  const steady = cadence != null && gaps.filter((g) => Math.abs(g - gap) <= Math.max(4, gap * 0.4)).length >= gaps.length * 0.75;
+  // Weekly charges for varying amounts are a routine (a lunch order), not a bill.
+  const weekly = cadence?.id === "weekly" || cadence?.id === "biweekly";
+  const isBill = steady && spread <= (weekly ? 0.05 : 0.3) && monthsSeen >= 3;
+  const isHabit = !isBill && monthsSeen >= 3 && list.length >= 6;
+  return { amounts, typical, cadence, gap, monthsSeen, isBill, isHabit };
+}
+
+export function detectRecurring(rows: BookRow[], windowEnd: string, last12From: string): RecurringCharge[] {
   const out: RecurringCharge[] = [];
-  for (const [key, list] of byKey) {
+  for (const [key, list] of chargesByMerchant(rows)) {
     if (list.length < 3) continue;
-    list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    const amounts = list.map((r) => -r.amountCents);
-    const monthsSeen = new Set(list.map((r) => r.date.slice(0, 7))).size;
-    const typical = median(amounts);
-    const spread = typical > 0 ? median(amounts.map((a) => Math.abs(a - typical))) / typical : 1;
-    const gaps = list.slice(1).map((r, i) => daysBetween(list[i]!.date, r.date)).filter((g) => g > 0);
-    const gap = median(gaps);
-    const cadence = CADENCES.find((c) => gap >= c.lo && gap <= c.hi) ?? null;
-    const steady = cadence != null && gaps.filter((g) => Math.abs(g - gap) <= Math.max(4, gap * 0.4)).length >= gaps.length * 0.75;
+    const { amounts, typical, cadence, gap, monthsSeen, isBill, isHabit } = merchantKind(list);
     const last12 = list.filter((r) => r.date >= last12From).reduce((s, r) => s - r.amountCents, 0);
     const first = list[0]!;
     const last = list.at(-1)!;
-    // Weekly charges for varying amounts are a routine (a lunch order), not a bill.
-    const weekly = cadence?.id === "weekly" || cadence?.id === "biweekly";
-    const isBill = steady && spread <= (weekly ? 0.05 : 0.3) && monthsSeen >= 3;
-    const isHabit = !isBill && monthsSeen >= 3 && list.length >= 6;
     if ((!isBill && !isHabit) || last12 <= 0) continue;
     // A price change: the charges before the latest were the same amount (a subscription
     // or premium), and the latest differs. Bills that vary every month (utilities) never flag.
@@ -301,29 +312,59 @@ export const oneOffTest = (settings: Pick<FinancialProfileSettings, "oneOffs" | 
   };
 };
 
+const billMemo = new WeakMap<Book, { bills: Set<string>; rent: Set<string> }>();
+
+/** Merchants whose charges, over all history, come on a steady cadence for a steady amount; and the rows that are rent. */
+function billsAndRent(book: Book) {
+  let m = billMemo.get(book);
+  if (!m) {
+    const bills = new Set<string>();
+    for (const [key, list] of chargesByMerchant(book.rows)) if (list.length >= 3 && merchantKind(list).isBill) bills.add(key);
+    m = { bills, rent: new Set(rentPayments(book.rows, [], book.household.merchantRules).map((r) => r.rowId)) };
+    billMemo.set(book, m);
+  }
+  return m;
+}
+
+/**
+ * The one test for a one-off, on Annual and Cash flow alike (and the spending chart's "big
+ * charges" band): `tagged` is an expense the owner marked one-off (or filed in a
+ * non-recurring category); `candidate` is one to offer for marking: tagged, or a single
+ * charge of ONE_OFF_MIN_CENTS or more that isn't rent and isn't from a merchant that bills
+ * on a steady cadence (judged over all history, so a year's list doesn't depend on the
+ * window it's seen in). A reimbursement credit is never a candidate: it counts the way its
+ * charge does.
+ */
+export function oneOffRules(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">) {
+  const tagged = oneOffTest(settings, book.rowById);
+  const { bills, rent } = billsAndRent(book);
+  const candidate = (r: BookRow) =>
+    r.lane === "EXPENSE" && !r.reimbursement && (tagged(r) || (-r.amountCents >= ONE_OFF_MIN_CENTS && !rent.has(r.id) && !bills.has(merchantKeyOf(r))));
+  return { tagged, candidate };
+}
+
 export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
   const { report, window, current, withheldAfter, withheldBefore, from, to, windowEnd, dayOf, inScope, windowRows, last12From } = spendingRows(book, opts.accountIds);
   const accountFilter = opts.accountIds?.length ? new Set(opts.accountIds) : null;
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
   const recurring = windowEnd ? detectRecurring(windowRows, windowEnd, last12From) : [];
   const bills = new Set(recurring.filter((c) => c.kind === "bill").map((c) => c.key));
-  const isOneOff = oneOffTest(settings, book.rowById);
+  const { tagged: isOneOff, candidate } = oneOffRules(book, settings);
 
   const enrich = (p: CashFlowPeriod): SpendingMonth => {
     let oneOffCents = 0;
     for (const r of inScope) if (r.lane === "EXPENSE" && dayOf(r) >= p.start && dayOf(r) <= p.end && isOneOff(r)) oneOffCents -= r.amountCents;
-    return { ...p, ...merchantsIn(inScope, p, dayOf), oneOffCents, ...spendingShape(inScope, p, bills, isOneOff, dayOf) };
+    return { ...p, ...merchantsIn(inScope, p, dayOf), oneOffCents, ...spendingShape(inScope, p, bills, candidate, dayOf) };
   };
 
   const months = window.map(enrich);
-  // Candidates: anything already counted as one-off, and big charges that aren't a bill.
+  // Candidates (oneOffRules): anything already counted as one-off, and big charges that aren't rent or a bill.
   const oneOffs: OneOffExpense[] = [];
   for (const r of windowRows) {
-    if (r.lane !== "EXPENSE" || r.reimbursement) continue;
+    if (!candidate(r)) continue;
     const fp = expenseFingerprint(r);
     const viaCategory = settings.nonRecurringCategories.includes(r.category);
-    const tagged = viaCategory || fp in settings.oneOffs;
-    if (!tagged && (-r.amountCents < ONE_OFF_MIN_CENTS || bills.has(merchantKeyOf(r)))) continue;
+    const tagged = isOneOff(r);
     oneOffs.push({
       fingerprint: fp,
       date: r.date,
@@ -362,7 +403,8 @@ export function spendingShape(
   rows: BookRow[],
   p: Pick<CashFlowPeriod, "start" | "end" | "spendingCents">,
   bills: Set<string>,
-  isOneOff: (r: BookRow) => boolean,
+  /** A one-off candidate (oneOffRules): the "big charges" band. */
+  isBig: (r: BookRow) => boolean,
   /** The day a row counts on (rent counts in the month it pays for; see rent.ts). */
   dayOf: (r: BookRow) => string = (r) => r.bookedOn,
 ): Pick<SpendingMonth, "kinds" | "daily" | "chargeSizes"> {
@@ -381,7 +423,7 @@ export function spendingShape(
     if (bills.has(merchantKeyOf(r))) {
       billCents += cents;
       daily.billCents[d]! += cents;
-    } else if (Math.abs(cents) >= ONE_OFF_MIN_CENTS || isOneOff(r)) bigCents += cents;
+    } else if (isBig(r)) bigCents += cents;
     else daily.everydayCents[d]! += cents;
     if (cents > 0) {
       const b = chargeSizes[CHARGE_BUCKETS.findIndex((hi) => cents < hi)]!;

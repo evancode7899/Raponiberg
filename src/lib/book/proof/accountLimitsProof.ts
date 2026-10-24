@@ -465,12 +465,12 @@ function stepsProof(r: TaxAccountsReport, d: AccountLimitsDescriptor): Built {
       title: "The rate",
       lines: [
         rate == null
-          ? { label: "Federal + state on the next pre-tax dollar", value: { text: "unknown" }, source: "assumption", note: "No rate typed on Inputs and no provable tax estimate for this year or last, so the tax saved can't be worked out." }
+          ? { label: "Income tax (federal + state + city) on the next pre-tax dollar", value: { text: "unknown" }, source: "assumption", note: "No rate typed on Inputs and no provable tax estimate for this year or last, so the tax saved can't be worked out." }
           : {
-              label: "Federal + state on the next pre-tax dollar",
+              label: "Income tax (federal + state + city) on the next pre-tax dollar",
               value: { ratio: rate },
               source: r.marginalRate.source === "SETTING" ? "assumption" : "derived",
-              note: r.marginalRate.source === "SETTING" ? "Typed on Inputs." : r.marginalRate.source === "PRIOR_YEAR" ? `${r.year - 1}'s tax estimate (this year's isn't provable yet).` : "The tax estimate's marginal rates.",
+              note: r.marginalRate.source === "SETTING" ? "Typed on Inputs." : r.marginalRate.source === "PRIOR_YEAR" ? `${r.year - 1}'s tax estimate (this year's isn't provable yet).` : "The tax estimate's marginal rates: federal (with the Medicare surtax) + Connecticut + New York.",
             },
       ],
     });

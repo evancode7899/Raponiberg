@@ -1,3 +1,4 @@
+import { savedInclRetirement } from "../book/definitions.ts";
 import { BUCKETS, type NetWorthBucket } from "./settings.ts";
 
 /**
@@ -36,11 +37,11 @@ export type CashWaterfall = CashWaterfallInput & {
   savingsOfNet: number | null;
 };
 
-/** Gross pay → taxes → deductions → + employer money → − living → cash saved. */
+/** Gross pay → taxes → deductions → + employer money → − living → saved incl. retirement (book/definitions.ts). */
 export function cashWaterfall(i: CashWaterfallInput): CashWaterfall {
   const grossCash = i.salary + i.bonus + i.otherIncome;
   const netCash = grossCash - i.withholding - i.additionalTaxes + i.refunds - i.otherDeductions + i.employer;
-  const saved = netCash - i.living - i.nonRecurring;
+  const saved = savedInclRetirement(netCash, i.living, i.nonRecurring);
   const ratio = (a: number, b: number) => (b > 0 ? a / b : null);
   return {
     ...i,
@@ -136,7 +137,7 @@ export type Bridge = {
 
 /**
  * Explains a year's change in net worth starting from the paycheck math:
- *   cash saved + growth + outside money + balances first on file + in transit
+ *   saved incl. retirement + growth + outside money + balances first on file + in transit
  *   + (statements − paycheck math) = change in net worth.
  */
 export function netWorthBridge(i: BridgeInput): Bridge {

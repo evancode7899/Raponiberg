@@ -234,13 +234,16 @@ const LOG: HsaFile = {
   },
 };
 
-function report(book: Book, file = LOG): HsaReport {
+/** The Taxes page's rates, proven (the HSA page withholds its growth figures without them). */
+const TAX_RATES = { year: 2025, incomeRate: 0.3, payrollRate: 0.0765, source: "TAX_REPORT" as const };
+
+function report(book: Book, file = LOG, taxMarginal: typeof TAX_RATES | null = TAX_RATES): HsaReport {
   return buildHsaReport({
     today: "2025-03-15",
     file,
     ...hsaLedger(book),
     marginalRate: null,
-    taxMarginal: null,
+    taxMarginal,
   });
 }
 
@@ -253,6 +256,14 @@ const linksOf = (p: Proof): ProofLink[] =>
 describe("buildHsaProof", () => {
   const book = makeBook(rows());
   const r = report(book);
+
+  it("withholds the growth figures, page and proof alike, with no proven tax rate and none typed", () => {
+    const bare = report(book, LOG, null);
+    expect(bare.growth.withheld).toMatch(/No proven income tax rate/);
+    expect(hsaFigures(bare).map((f) => (f.descriptor as HsaDescriptor).metric)).not.toContain("future");
+    expect(buildHsaProof(book, bare, { report: "hsa", metric: "future" }).withheld).toBe(true);
+    expect(r.growth.withheld).toBeNull();
+  });
 
   it("proves every figure the page shows, its parts re-adding exactly", () => {
     expect(r.hsa.balanceCents).toBe(237_099);

@@ -42,7 +42,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
         />
         <StatCell label="Net saved" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={`over ${t.n} month${t.n === 1 ? "" : "s"}`} />
         <StatCell
-          label="Savings rate"
+          label="Savings rate (take-home)"
           value={t.savingsRate == null ? "—" : formatPercentRatio(t.savingsRate, 1)}
           tone={t.savingsRate == null ? "neutral" : t.savingsRate >= 0.2 ? "pos" : t.savingsRate < 0 ? "neg" : "neutral"}
           sub={p?.savingsRate != null ? `was ${formatPercentRatio(p.savingsRate, 0)} before` : "net ÷ income"}

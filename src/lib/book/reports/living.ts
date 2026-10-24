@@ -4,11 +4,10 @@ import type { LivingTrail } from "../../profile/basePay.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import type { Book, BookRow } from "../load.ts";
 import { oneOffSubject } from "../reimbursements.ts";
-import { countsOn, rentPayments } from "../rent.ts";
+import { countsOn } from "../rent.ts";
 import { taxRows } from "../taxPayments.ts";
 import { cashFlowContributions } from "./cashFlow.ts";
-import { ONE_OFF_MIN_CENTS } from "../definitions.ts";
-import { provenMonths } from "./spending.ts";
+import { oneOffRules, provenMonths } from "./spending.ts";
 
 /**
  * Living cost: the one definition every page uses (the Annual report, the forecast's
@@ -31,15 +30,13 @@ export type OneOffRow = {
   label: string;
 };
 
-/** What every window over one Book shares (rent detection reads every row): worked out once per Book. */
-const memo = new WeakMap<Book, { accountName: Map<string, string>; rentIds: Set<string>; dayOf: (r: BookRow) => string }>();
+/** What every window over one Book shares (rent timing reads every row): worked out once per Book. */
+const memo = new WeakMap<Book, { accountName: Map<string, string>; dayOf: (r: BookRow) => string }>();
 function perBook(book: Book) {
   let m = memo.get(book);
   if (!m) {
     m = {
       accountName: new Map(book.accounts.map((a) => [a.id, a.name])),
-      // Rent is a big charge every month, never a one-off: left out of the candidates (as on Cash flow).
-      rentIds: new Set(rentPayments(book.rows, [], book.household.merchantRules).map((p) => p.rowId)),
       dayOf: countsOn(book.rows, book.accounts, book.household.merchantRules),
     };
     memo.set(book, m);
@@ -73,7 +70,8 @@ export type CashRows = {
 // much, and the bridge to net worth shows it.
 export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, from: string, to: string, taxIds: Set<string>): CashRows {
   const nonRecurringCats = new Set(settings.nonRecurringCategories);
-  const { accountName, rentIds, dayOf } = perBook(book);
+  const { accountName, dayOf } = perBook(book);
+  const rules = oneOffRules(book, settings);
   let interest = 0;
   let other = 0;
   let reimbursements = 0;
@@ -120,11 +118,12 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
     // A reimbursement credit counts the way its charge does (living or one-off).
     const subject = oneOffSubject(r, book.rowById);
     const fp = expenseFingerprint({ accountId: subject.accountId, date: subject.date, amountCents: subject.amountCents, payee: subject.payee });
-    const viaCategory = nonRecurringCats.has(r.category);
-    const tagged = viaCategory || fp in settings.oneOffs;
+    const viaCategory = nonRecurringCats.has(subject.category);
+    const tagged = rules.tagged(r);
     if (tagged) nonRecurring -= cents;
     else spending.set(r.category, (spending.get(r.category) ?? 0) - cents);
-    if (!r.reimbursement && (tagged || (-r.amountCents >= ONE_OFF_MIN_CENTS && !rentIds.has(r.id)))) {
+    // Offered for marking by the same test as Cash flow's list (spending.ts oneOffRules).
+    if (rules.candidate(r)) {
       candidates.push({ fingerprint: fp, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
     }
   }

@@ -12,7 +12,7 @@ import type { Forecast } from "./forecast.ts";
  *   − living − bonus spent − one-offs = saved;  saved + growth = change in net worth.
  *
  * Actual columns come from the annual profile (pay stubs, ledger rows, statements); growth
- * there is everything besides cash saved (markets, outside money, gaps). Forecast columns
+ * there is everything besides what was saved incl. retirement (markets, outside money, gaps). Forecast columns
  * come from the forecast's months; growth there is returns only. Money is cents; null =
  * not proven (a blocked section of an actual year).
  */

@@ -40,7 +40,7 @@ const ROWS: Row[] = [
   { line: "living", label: "Living cost", help: "Everything spent except tagged one-offs.", get: (x) => x.living, out: true },
   { line: "bonusSpent", label: "Bonus spent", help: "The part of bonuses kept after tax that isn't saved (the Bonus saved driver).", get: (x) => x.bonusSpent, out: true, optional: true },
   { line: "oneOffs", label: "One-offs", help: "Actual: tagged one-off expenses. Forecast: planned one-offs.", get: (x) => x.oneOffs, out: true, optional: true },
-  { line: "saved", label: "Saved", help: "Income − taxes & deductions + employer money − spending.", get: (x) => x.saved, kind: "sum" },
+  { line: "saved", label: "Saved incl. retirement", help: "Income − taxes & deductions + employer money − spending (as Annual's; Cash flow's saved from take-home leaves out deferrals and employer money).", get: (x) => x.saved, kind: "sum" },
   { line: "toRetirement", label: "to retirement", help: "Your 401(k)/HSA deferrals + employer money.", get: (x) => x.toRetirement, kind: "sub" },
   {
     line: "toLiquid",
@@ -50,7 +50,7 @@ const ROWS: Row[] = [
     kind: "sub",
     warnNegative: true,
   },
-  { line: "growth", label: "Growth & other", help: "Actual: the change in net worth not explained by cash saved (markets, outside money, gaps). Forecast: investment returns.", get: (x) => x.growth },
+  { line: "growth", label: "Growth & other", help: "Actual: the change in net worth not explained by what was saved incl. retirement (markets, outside money, gaps). Forecast: investment returns.", get: (x) => x.growth },
   { line: "change", label: "Change in net worth", help: "Saved + growth = closing − opening net worth.", get: (x) => x.change, kind: "sum" },
   { line: "netWorth", label: "Net worth, end", help: "Balances at the end of the column: Dec 31, or the month shown.", get: (x) => x.close?.netWorth ?? null, kind: "total" },
   { line: "liquid", label: "liquid", help: "Cash and brokerage, less card balances.", get: (x) => x.close?.liquid ?? null, kind: "sub", warnNegative: true },
