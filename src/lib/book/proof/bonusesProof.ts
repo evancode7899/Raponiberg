@@ -8,7 +8,7 @@ import { employerKey } from "../../ingest/payroll/types.ts";
 import type { OutlookSeeds } from "../../profile/basePay.ts";
 import type { Book } from "../load.ts";
 import { buildBonuses, type AwardRow, type BonusesReport, type BonusPayment, type Tranche, type VestWindow, type WindowStatus } from "../reports/bonuses.ts";
-import { checksFor, sumCheck } from "./common.ts";
+import { checksFor, perBook, sumCheck } from "./common.ts";
 import { PAY_CHECKS, type PayDescriptor } from "./payProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofEstimate, ProofKind, ProofLink } from "./types.ts";
 
@@ -667,14 +667,15 @@ export const bonusesReport = (book: Book): BonusesReport => buildBonuses(book, r
 export const bonusesKind: ProofKind<BonusesDescriptor> = {
   report: "bonuses",
   parse: parseBonusesDescriptor,
-  build: async ({ book, db }, d) => {
+  build: async (ctx, d) => {
+    const { book, db } = ctx;
     if (d.figure === "estimate") {
       // The forecast on the saved assumptions, as /api/forecast's data runs it (loaded lazily: it reads settings).
       const { loadForecast } = await import("../../forecast/load.ts");
-      const { forecast, data } = await loadForecast(db, book);
+      const { forecast, data } = await perBook(ctx, "forecast", () => loadForecast(db, book));
       if (!forecast || !data.profile.seeds) return missing(book, d, "The forecast has no proven starting point, so it expects no bonuses yet.");
       return buildEstimateProof(book, { forecast, seeds: data.profile.seeds, facts: data.bonusFacts }, d);
     }
-    return buildBonusesProof(book, bonusesReport(book), d);
+    return buildBonusesProof(book, await perBook(ctx, "bonuses-report", () => bonusesReport(book)), d);
   },
 };

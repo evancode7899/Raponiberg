@@ -1,6 +1,7 @@
 "use client";
 
 import type { ProofDescriptor } from "@/lib/book/proof";
+import { descriptorKey } from "@/lib/book/proof/key";
 import { createContext, useContext } from "react";
 
 /**
@@ -21,6 +22,19 @@ export type ProofTarget = {
 };
 
 export const ProofContext = createContext<((t: ProofTarget) => void) | null>(null);
+
+/**
+ * Figures the proof sweep found disagreeing with their proofs (lib/book/proof/sweep.ts), by
+ * descriptor key (proof/key.ts), with what's wrong: pages withhold them, as they withhold
+ * a figure an open finding covers. Empty until the sweep's answer arrives.
+ */
+export const ProofFlagsContext = createContext<ReadonlyMap<string, string>>(new Map());
+
+/** What's wrong with this figure's proof, or null when the sweep found nothing. */
+export function useProofFlag(t: ProofTarget | undefined): string | null {
+  const flags = useContext(ProofFlagsContext);
+  return t && flags.size ? (flags.get(descriptorKey(t.descriptor)) ?? null) : null;
+}
 
 /** Opens the proof drawer for a figure; null outside the app shell (figures then render as plain text). */
 export function useProof() {

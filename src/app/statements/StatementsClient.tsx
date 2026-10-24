@@ -71,7 +71,7 @@ export function StatementsClient({ requiresApiSecret }: { requiresApiSecret: boo
             ) : tab === "coverage" ? (
               <CoveragePanel r={r} onGo={setTab} />
             ) : (
-              <ChecksPanel r={r} onRetire={book.retire} />
+              <ChecksPanel r={r} onRetire={book.retire} api={api} />
             )}
           </>
         )}

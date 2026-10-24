@@ -9,6 +9,8 @@ import type { Book, BookAccount, BookBrokerage, BookRow, BookStub } from "../loa
 import type { Finding } from "../types";
 import { buildTaxAccounts, type TaxAccountsReport } from "../reports/taxAccounts";
 import { buildAccountLimitsProof, parseAccountLimitsDescriptor, type AccountLimitsDescriptor } from "./accountLimitsProof";
+import { chainReAdds } from "./common";
+import { accountLimitsFigures } from "./figures";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 
 // An invented household: Pat Example (Acme Widgets: 401(k) pre-tax and Roth, HSA, an
@@ -143,38 +145,9 @@ const links = (p: Proof): ProofLink[] =>
   p.blocks.flatMap((b) => (b.kind === "breakdown" ? b.items.flatMap((i) => (i.link ? [i.link] : [])) : b.kind === "chain" ? b.lines.flatMap((l) => (l.link ? [l.link] : [])) : []));
 
 /** Every figure the page makes clickable, with the value the page shows. */
-function pageFigures(r: TaxAccountsReport): { d: AccountLimitsDescriptor; cents: number }[] {
-  const f = (x: Omit<AccountLimitsDescriptor, "report" | "year">, c: number) => ({ d: { report: "account-limits" as const, year: r.year, ...x }, cents: c });
-  const out = [f({ account: "steps", figure: "room" }, r.pretax.roomCents), f({ account: "chet", figure: "used" }, r.household.chet.contributed), f({ account: "chet", figure: "limit" }, r.household.chet.deductionLimit), f({ account: "chet", figure: "room" }, r.steps.find((s) => s.id === "chet")!.roomCents)];
-  if (r.pretax.taxSavedCents != null) out.push(f({ account: "steps", figure: "tax-saved" }, r.pretax.taxSavedCents));
-  for (const p of r.people) {
-    const personId = p.id;
-    out.push(
-      f({ account: "k401", personId, figure: "used" }, p.k401.total.ytd),
-      f({ account: "k401", personId, figure: "projected" }, p.k401.total.projected),
-      f({ account: "k401", personId, figure: "limit" }, p.k401.limit),
-      f({ account: "k401", personId, figure: "room" }, p.k401.room),
-      f({ account: "hsa", personId, figure: "used" }, p.hsa.total.ytd),
-      f({ account: "hsa", personId, figure: "projected" }, p.hsa.total.projected),
-      f({ account: "hsa", personId, figure: "limit" }, p.hsa.limit),
-      f({ account: "hsa", personId, figure: "room" }, p.hsa.room),
-      f({ account: "hsa", personId, figure: "used", part: "employee" }, p.hsa.employee.ytd),
-      f({ account: "hsa", personId, figure: "projected", part: "employer" }, p.hsa.employer.projected),
-      f({ account: "ira", personId, figure: "used" }, p.ira.total),
-      f({ account: "ira", personId, figure: "limit" }, p.ira.limit),
-      f({ account: "ira", personId, figure: "room" }, p.ira.room),
-    );
-    if (p.k401.excess) out.push(f({ account: "k401", personId, figure: "excess" }, p.k401.excess));
-    for (const e of p.k401.employers)
-      out.push(
-        f({ account: "k401", personId, figure: "used", employer: e.employer, part: "employee" }, e.employee.ytd),
-        f({ account: "k401", personId, figure: "projected", employer: e.employer, part: "employee" }, e.employee.projected),
-        f({ account: "k401", personId, figure: "used", employer: e.employer, part: "employer" }, e.employer$.ytd),
-        f({ account: "k401", personId, figure: "projected", employer: e.employer, part: "employer" }, e.employer$.projected),
-      );
-  }
-  return out;
-}
+/** Every figure the Account limits page shows for the year (figures.ts, the list the live sweep walks too). */
+const pageFigures = (r: TaxAccountsReport): { d: AccountLimitsDescriptor; cents: number }[] =>
+  accountLimitsFigures(r).map((f) => ({ d: f.descriptor as AccountLimitsDescriptor, cents: f.shown && "cents" in f.shown ? f.shown.cents : NaN }));
 
 describe("account-limits proofs", () => {
   for (const year of [2025, 2026]) {
@@ -239,7 +212,14 @@ describe("account-limits proofs", () => {
     expect(ex.blocks.map((b) => b.title)).toEqual(["The excess", "Its return"]);
     const room = await buildProof(ctx(), { report: "account-limits", year: 2025, account: "k401", personId: "sam", figure: "room" });
     expect(cents(room)).toBe(0);
-    expect(room.blocks[0]!.kind === "chain" && room.blocks[0]!.lines.at(-1)!.label).toBe("Over the limit: no room");
+    const chain = room.blocks[0]!.kind === "chain" ? room.blocks[0]!.lines : [];
+    expect(chain.map((l) => [l.label, l.value])).toEqual([
+      ["Limit", { cents: limit }],
+      [expect.stringContaining("401(k) deferrals"), { cents: 12 * 300_000 }],
+      ["Over the limit by", { cents: limit - 12 * 300_000 }],
+      ["Room left (none once over)", { cents: 0 }],
+    ]);
+    expect(chainReAdds(chain)).toEqual([]);
   });
 
   it("adds age catch-ups by law, from the birth year the owner typed", () => {

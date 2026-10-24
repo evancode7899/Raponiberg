@@ -1,9 +1,11 @@
 "use client";
 
-import { apiSecretHeaders } from "@/components/ledger/useApi";
+import { apiSecretHeaders, onDataStamp } from "@/components/ledger/useApi";
 import type { Proof, ProofDescriptor } from "@/lib/book/proof";
-import { useCallback, useRef, useState, type ReactNode } from "react";
-import { ProofContext, type ProofTarget } from "./context";
+import { descriptorKey } from "@/lib/book/proof/key";
+import type { SweepReport } from "@/lib/book/proof/sweep";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ProofContext, ProofFlagsContext, type ProofTarget } from "./context";
 import { ProofPanel } from "./ProofPanel";
 
 /** One proof in the drawer: what was asked for, and the answer once it arrives. */
@@ -39,10 +41,36 @@ export function ProofProvider({ children }: { children: ReactNode }) {
   const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
   const close = useCallback(() => setStack([]), []);
 
+  // The proof sweep's verdict on every figure: read now, and again whenever the data changes.
+  const [flags, setFlags] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    let live = true;
+    const read = () =>
+      fetch("/api/proof/sweep", { headers: apiSecretHeaders() })
+        .then((r) => (r.ok ? (r.json() as Promise<SweepReport>) : null))
+        .then((r) => {
+          if (!live || !r) return;
+          const m = new Map<string, string>();
+          for (const p of r.problems) if (p.descriptor) m.set(descriptorKey(p.descriptor), p.detail);
+          setFlags(m);
+        })
+        .catch(() => {
+          /* the sweep is a second line of defence; pages work without it */
+        });
+    read();
+    const stop = onDataStamp(() => void read());
+    return () => {
+      live = false;
+      stop();
+    };
+  }, []);
+
   return (
     <ProofContext.Provider value={open}>
-      {children}
-      <ProofPanel stack={stack} onFollow={follow} onBack={back} onClose={close} />
+      <ProofFlagsContext.Provider value={flags}>
+        {children}
+        <ProofPanel stack={stack} onFollow={follow} onBack={back} onClose={close} />
+      </ProofFlagsContext.Provider>
     </ProofContext.Provider>
   );
 }

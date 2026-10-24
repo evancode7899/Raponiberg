@@ -15,7 +15,7 @@ import { buildNetWorth } from "../reports/netWorth.ts";
 import { taxRows } from "../taxPayments.ts";
 import type { CheckId } from "../types.ts";
 import { CASH_FLOW_CHECKS, type CashFlowDescriptor } from "./cashFlowProof.ts";
-import { checksFor, estimatesFor, sumCheck } from "./common.ts";
+import { checksFor, estimatesFor, perBook, sumCheck } from "./common.ts";
 import { buildNetWorthProof, NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { buildPayProof, groupRows, PAY_CHECKS, type PayDescriptor, type PayLine } from "./payProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstimate, ProofKind, ProofLink } from "./types.ts";
@@ -165,18 +165,20 @@ function chainProof(describes: string, figureCents: number, title: string, lines
 }
 
 /** A ratio worked out from two proven figures. */
-function ratioProof(describes: string, ratio: number | null, num: ChainLine[], den: ChainLine, rest: Omit<Built, "describes" | "figure" | "selfCheck" | "blocks">): Built {
+/** `noRatio`: why the page shows no ratio though the parts would give one (a rule, such as too little money to measure a return on). */
+function ratioProof(describes: string, ratio: number | null, num: ChainLine[], den: ChainLine, rest: Omit<Built, "describes" | "figure" | "selfCheck" | "blocks">, noRatio?: string): Built {
   const n = partsBeforeTotal([...num, line("=", "", 0, "derived")]);
   const d = "cents" in den.value ? den.value.cents : 0;
   const recomputed = d > 0 ? n / d : null;
   const lines: ChainLine[] = [...num];
   if (num.length > 1) lines.push(line("=", "Numerator", n, "derived"));
   lines.push({ ...den, op: "÷" }, { op: "=", label: describes, value: ratio == null ? { text: "—" } : { ratio }, source: "derived" });
-  const ok = recomputed === ratio || (recomputed != null && ratio != null && Math.abs(recomputed - ratio) < 1e-12);
+  const ok = recomputed === ratio || (recomputed != null && ratio != null && Math.abs(recomputed - ratio) < 1e-12) || (ratio == null && noRatio != null);
+  const worked = recomputed == null ? "The denominator is zero: no ratio" : `${money(n)} ÷ ${money(d)} = ${pct(recomputed)}`;
   return {
     describes,
     figure: ratio == null ? { text: "—" } : { ratio },
-    selfCheck: { ok, deltaCents: 0, explain: recomputed == null ? "The denominator is zero: no ratio" : `${money(n)} ÷ ${money(d)} = ${pct(recomputed)}` },
+    selfCheck: { ok, deltaCents: 0, explain: ratio == null && noRatio != null ? `${worked}, but ${noRatio}` : worked },
     blocks: [{ kind: "chain", title: describes, lines }],
     ...rest,
   };
@@ -769,6 +771,7 @@ function rollforwardProof(c: Ctx, a: AccountRollforward, x: RollYear, ln: RollLi
       [line(undefined, "Gain: closing − opening − money moved in or out", gainCents, estimated ? "estimate" : "proven")],
       line(undefined, "Capital: opening + money moved, each weighted by the share of the year it was invested", capitalCents, "derived"),
       base,
+      "under $1,000 invested the page shows no return (too little to measure)",
     );
     return {
       ...r,
@@ -818,7 +821,7 @@ function rollTotalProof(c: Ctx, year: number, ln: RollTotalLine, accounts: Accou
 // -------------------------------------------------------------------
 
 export async function loadAnnualProfile(ctx: ProofContext): Promise<AnnualProfileReport> {
-  return buildAnnualProfile(ctx.book, await loadProfileSettings(ctx.db), ctx.book.taxProfile.dependents);
+  return perBook(ctx, "annual-profile", async () => buildAnnualProfile(ctx.book, await loadProfileSettings(ctx.db), ctx.book.taxProfile.dependents));
 }
 
 /** `profile`: the annual profile (roll-forwards don't need it). */

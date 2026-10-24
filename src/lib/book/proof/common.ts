@@ -1,7 +1,8 @@
 import { acceptedFor, blockersFor, passesFor, type BlockerQuery } from "../blockers.ts";
 import type { Book } from "../load.ts";
 import { CHECKS, type CheckId } from "../types.ts";
-import type { ProofCheck, ProofEstimate } from "./types.ts";
+import { deepFreeze } from "../freeze.ts";
+import type { ChainLine, ProofCheck, ProofContext, ProofEstimate } from "./types.ts";
 
 /** What a pass list shows per check before "… and N more". */
 const SUBJECT_CAP = 200;
@@ -82,4 +83,50 @@ export const isIsoDate = (v: unknown): v is string => typeof v === "string" && /
 /** Whether parts re-added on their own come to the figure. */
 export function sumCheck(figureCents: number, partsCents: number, explain: string) {
   return { ok: figureCents === partsCents, deltaCents: partsCents - figureCents, explain };
+}
+
+/**
+ * Where a chain's money steps don't re-add: every line up to an "=" adds or subtracts into
+ * a running total that must equal the "=" line exactly. A step with a × or ÷, a line in
+ * words, or a list (a second line with no op) isn't a sum, so it isn't held to one.
+ */
+export function chainReAdds(lines: ChainLine[]): string[] {
+  const bad: string[] = [];
+  let acc: number | null = null;
+  let additive = true;
+  for (const l of lines) {
+    const c = "cents" in l.value ? l.value.cents : null;
+    if (l.op === "=") {
+      if (additive && acc != null && c != null && acc !== c) bad.push(`${l.label}: parts ${acc} ≠ ${c}`);
+      acc = c;
+      additive = true;
+    } else if (l.op === "×" || l.op === "÷" || c == null) additive = false;
+    else if (l.op === "−") acc = (acc ?? 0) - c;
+    else if (l.op === "+" || acc == null) acc = (acc ?? 0) + c;
+    else additive = false; // a second line without an op: a list, not a sum
+  }
+  return bad;
+}
+
+const memos = new WeakMap<object, WeakMap<object, Map<string, Promise<unknown>>>>();
+
+/**
+ * What a proof reads besides the Book (a page's report, the forecast, a year's tax return),
+ * worked out once per Book and settings database and shared by every proof built on them:
+ * the drawer opens figures in a row and the sweep opens thousands, and each would otherwise
+ * rebuild the same report. A new Book (any change to the data or settings) starts afresh.
+ * The value is frozen, so a proof that tried to change what the next one reads throws.
+ */
+export function perBook<T>(ctx: ProofContext, key: string, work: () => T | Promise<T>): Promise<T> {
+  let byDb = memos.get(ctx.book);
+  if (!byDb) memos.set(ctx.book, (byDb = new WeakMap()));
+  let byKey = byDb.get(ctx.db);
+  if (!byKey) byDb.set(ctx.db, (byKey = new Map()));
+  if (!byKey.has(key)) {
+    const p = Promise.resolve().then(work).then((v) => deepFreeze(v));
+    // A failed load isn't kept: the next proof tries again.
+    p.catch(() => byKey!.delete(key));
+    byKey.set(key, p);
+  }
+  return byKey.get(key) as Promise<T>;
 }

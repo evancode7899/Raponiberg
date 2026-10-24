@@ -23,7 +23,7 @@ import { taxBlockers, taxYearThrough } from "../blockers.ts";
 import type { Book, BookRow } from "../load.ts";
 import { personPayYear } from "../pay.ts";
 import type { CheckId } from "../types.ts";
-import { checksFor, sumCheck, unreviewedEstimate } from "./common.ts";
+import { checksFor, perBook, sumCheck, unreviewedEstimate } from "./common.ts";
 import { groupRows, type PayLine } from "./payProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofContext, ProofEstimate, ProofKind, ProofLink, ProofValue } from "./types.ts";
 
@@ -837,8 +837,10 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
 /** The page's report for the year, built as api/tax builds it: the forecast's link for the year in progress. */
 async function reportFor(ctx: ProofContext, year: number) {
   const current = Number(ctx.book.today.slice(0, 4)) === year;
-  const forecast = current ? (await loadForecast(ctx.db, ctx.book)).forecast : null;
-  return buildTaxReport(ctx.book, year, { forecast: forecast ? taxLink(forecast) : null });
+  return perBook(ctx, `tax-report|${year}`, async () => {
+    const forecast = current ? (await loadForecast(ctx.db, ctx.book)).forecast : null;
+    return buildTaxReport(ctx.book, year, { forecast: forecast ? taxLink(forecast) : null });
+  });
 }
 
 export async function buildTaxEstimateProof(ctx: ProofContext, d: TaxEstimateDescriptor): Promise<Proof> {

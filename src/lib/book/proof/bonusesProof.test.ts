@@ -15,6 +15,7 @@ import type { Book, BookStub } from "../load";
 import { personPayYear } from "../pay";
 import { buildBonuses, type BonusesReport } from "../reports/bonuses";
 import { buildEstimateProof, type BonusesDescriptor } from "./bonusesProof";
+import { bonusesFigures } from "./figures";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 
 // An invented household: Pat Example, paid monthly by Example Partners LP, with one award
@@ -144,40 +145,8 @@ const links = (p: Proof): ProofLink[] =>
 const chainLines = (p: Proof) => p.blocks.flatMap((b) => (b.kind === "chain" ? b.lines : []));
 
 /** Every figure the Bonuses page wires to this kind, with the value the page shows. */
-function pageFigures(r: BonusesReport): [BonusesDescriptor, number][] {
-  const t = r.totals;
-  const out: [BonusesDescriptor, number][] = [
-    [bon({ figure: "totals", measure: "headline" }), t.headlineCents],
-    [bon({ figure: "totals", measure: "upfront" }), t.upfrontCents],
-    [bon({ figure: "totals", measure: "deferred" }), t.deferredCents],
-    [bon({ figure: "totals", measure: "deferredPaid" }), t.deferredPaidCents],
-    [bon({ figure: "totals", measure: "forfeited" }), t.forfeitedCents],
-    [bon({ figure: "totals", measure: "outstanding" }), t.outstandingCents],
-  ];
-  for (const a of r.awards) {
-    const aw = (measure: string, v: number) => out.push([bon({ figure: "award", letterId: a.letterId, year: a.year, measure }), v]);
-    aw("scheduled", a.upfrontCents + a.deferredCents + a.oneOffCents);
-    if (a.totalBonusCents != null) aw("headline", a.totalBonusCents);
-    if (a.totalComp) aw("totalComp", a.totalComp.cents);
-    aw("upfront", a.upfrontCents);
-    aw("deferred", a.deferredCents + a.planDeferredCents);
-    aw("paid", a.paidCents);
-    aw("forfeited", a.forfeitedCents);
-    aw("outstanding", a.outstandingCents);
-    for (const tr of a.tranches) out.push([bon({ figure: "tranche", letterId: a.letterId, year: a.year, window: tr.window, kind: tr.kind }), tr.amountCents]);
-  }
-  for (const w of r.windows) {
-    out.push([bon({ figure: "window", window: w.key, measure: "scheduled" }), w.scheduledCents]);
-    out.push([bon({ figure: "window", window: w.key, measure: "paid" }), w.paidCents]);
-  }
-  for (const l of r.letters) {
-    const ws = r.windows.filter((w) => w.letterId === l.id);
-    out.push([bon({ figure: "letter", letterId: l.id, measure: "scheduled" }), ws.reduce((s, w) => s + w.scheduledCents, 0)]);
-    out.push([bon({ figure: "letter", letterId: l.id, measure: "paid" }), ws.reduce((s, w) => s + w.paidCents, 0)]);
-  }
-  for (const y of r.byYear) out.push([bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }), y.explainedCents]);
-  return out;
-}
+/** Every figure the Bonuses page shows (figures.ts, the list the live sweep walks too). */
+const pageFigures = (r: BonusesReport): [BonusesDescriptor, number][] => bonusesFigures(r).map((f) => [f.descriptor as BonusesDescriptor, f.shown && "cents" in f.shown ? f.shown.cents : NaN]);
 
 describe("the bonuses proof kind", () => {
   it("the fixture exercises every status the proofs explain", () => {

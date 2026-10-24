@@ -15,6 +15,7 @@ import type { Book, BookRow, BookStatement, BookStub } from "../load";
 import { buildForecastProof, LEDGER_LINES, ledgerValue, parseForecastDescriptor, type ForecastDescriptor, type LedgerLine } from "./forecastProof";
 import { monthPeriods, yearPeriods, type Period } from "../../forecast/periods";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
+import { chainReAdds } from "./common";
 import type { ChainLine } from "./types";
 
 // An invented household: Pat Example, paid every other Friday by Example Partners LP into
@@ -266,24 +267,7 @@ const links = (p: Proof): (ProofLink & { value?: ChainLine["value"]; source?: Ch
         : [],
   );
 
-/** Every money step of a chain (lines up to each "=") re-adds to the "=" line. */
-function reAdds(lines: ChainLine[]): string[] {
-  const bad: string[] = [];
-  let acc: number | null = null;
-  let additive = true;
-  for (const l of lines) {
-    const cents = "cents" in l.value ? l.value.cents : null;
-    if (l.op === "=") {
-      if (additive && acc != null && cents != null && acc !== cents) bad.push(`${l.label}: parts ${acc} ≠ ${cents}`);
-      acc = cents;
-      additive = true;
-    } else if (l.op === "×" || l.op === "÷" || cents == null) additive = false;
-    else if (l.op === "−") acc = (acc ?? 0) - cents;
-    else if (l.op === "+" || acc == null) acc = (acc ?? 0) + cents;
-    else additive = false; // a second line without an op: a list, not a sum
-  }
-  return bad;
-}
+const reAdds = chainReAdds;
 
 describe("forecast seed proofs", () => {
   const book = makeBook();

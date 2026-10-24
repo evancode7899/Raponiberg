@@ -5,7 +5,7 @@ import { formatUsdFromCents } from "../../formatMoney.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import type { Book, BookRow } from "../load.ts";
 import { buildCashFlowProof, CASH_FLOW_CHECKS } from "./cashFlowProof.ts";
-import { checksFor, estimatesFor, sumCheck } from "./common.ts";
+import { checksFor, estimatesFor, perBook, sumCheck } from "./common.ts";
 import type { ChainLine, Proof, ProofBlock, ProofGroup, ProofKind, ProofLink } from "./types.ts";
 
 /**
@@ -162,8 +162,9 @@ function garageFor(book: Book, settings: GarageSettings): GarageReport {
 }
 
 /** The proof behind a Car page figure, from the Book and the garage as stored. */
-export function buildCarProof(book: Book, settings: GarageSettings, d: CarDescriptor): Proof {
-  const ctx: Ctx = { book, settings, garage: garageFor(book, settings) };
+/** `garage`: the report built from these settings, when the caller has it already (the drawer's kind keeps one per Book). */
+export function buildCarProof(book: Book, settings: GarageSettings, d: CarDescriptor, garage = garageFor(book, settings)): Proof {
+  const ctx: Ctx = { book, settings, garage };
   return "itemId" in d ? itemProof(ctx, d) : d.per ? rateProof(ctx, d) : figureProof(ctx, d);
 }
 
@@ -577,5 +578,11 @@ function itemProof(ctx: Ctx, d: CarItemDescriptor): Proof {
 export const carKind: ProofKind<CarDescriptor> = {
   report: "car",
   parse: parseCarDescriptor,
-  build: async ({ book, db }, d) => buildCarProof(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage), d),
+  build: async (ctx, d) => {
+    const { settings, garage } = await perBook(ctx, "car", async () => {
+      const settings = await loadJsonSetting(ctx.db, CAR_KEY, normalizeGarage);
+      return { settings, garage: garageFor(ctx.book, settings) };
+    });
+    return buildCarProof(ctx.book, settings, d, garage);
+  },
 };

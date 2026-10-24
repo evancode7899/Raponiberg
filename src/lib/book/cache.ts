@@ -3,6 +3,7 @@ import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import { localToday } from "../dates/isoDate.ts";
+import { deepFreeze } from "./freeze.ts";
 import { loadBook, type Book } from "./load.ts";
 
 type Db = Parameters<typeof loadBook>[0];
@@ -72,22 +73,7 @@ export function dataStamp(): string {
   return parts.join("|");
 }
 
-/** Recursively freezes objects, arrays and Map/Set contents. */
-export function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
-  if (value === null || typeof value !== "object" || seen.has(value as object)) return value;
-  seen.add(value as object);
-  if (value instanceof Map) {
-    for (const [k, v] of value) {
-      deepFreeze(k, seen);
-      deepFreeze(v, seen);
-    }
-  } else if (value instanceof Set) {
-    for (const v of value) deepFreeze(v, seen);
-  } else if (!ArrayBuffer.isView(value)) {
-    for (const v of Object.values(value as object)) deepFreeze(v, seen);
-  }
-  return Object.freeze(value);
-}
+export { deepFreeze };
 
 /**
  * The Book for the data as it is now. Concurrent callers share one build; a failed build

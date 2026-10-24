@@ -47,6 +47,8 @@ export async function register() {
         "/api/bonuses",
         "/api/home-budget/funds",
         "/api/dashboard/net-worth/accounts",
+        // Last: it opens every figure's proof, so the reports above are cached by then.
+        "/api/proof/sweep",
       ],
     });
   }
