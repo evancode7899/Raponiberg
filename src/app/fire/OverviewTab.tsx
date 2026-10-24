@@ -48,7 +48,7 @@ export function OverviewTab({
             </>
           }
         />
-        <StatCell label="Savings rate" value={pct(f.savingsRate, 0)} proof={pf("savings-rate", null)} sub="of take-home + employer money, this year's plan" />
+        <StatCell label="Planned savings rate" value={pct(f.savingsRate, 0)} proof={pf("savings-rate", null)} sub="of take-home + employer money, this year's plan" />
         <StatCell label="Years of spending saved" value={now.yearsOfSpending.toFixed(1)} proof={pf("years-saved", null)} sub={`net worth ÷ ${short(now.livingCost)} a year`} />
         <StatCell label="Runway (liquid)" value={`${now.liquidYears.toFixed(1)} yrs`} proof={pf("runway", null)} sub="taxable money ÷ a year's living cost" />
         <StatCell

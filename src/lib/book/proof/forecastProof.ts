@@ -85,7 +85,7 @@ export const LEDGER_LINES: Record<LedgerLine, string> = {
   living: "Living cost",
   bonusSpent: "Bonus spent",
   oneOffs: "One-offs",
-  saved: "Saved",
+  saved: "Saved incl. retirement",
   toRetirement: "Saved to retirement",
   toLiquid: "Saved to liquid",
   growth: "Growth & other",
@@ -876,7 +876,7 @@ function projectedMonth(x: CellCtx, m: OutlookMonth): Built {
       break;
     }
     case "saved": {
-      const s = sumChain(`Saved, ${word}`, savedParts(x), { label: "Saved", cents: figure });
+      const s = sumChain(`Saved incl. retirement, ${word}`, savedParts(x), { label: "Saved incl. retirement", cents: figure });
       blocks.push(s.block);
       parts = s.sum;
       break;
@@ -1121,7 +1121,7 @@ function actualColumn(x: CellCtx, cols: Period[]): Built {
       break;
     }
     case "saved":
-      push(sumChain(`Saved, ${word}`, savedParts(x), { label: "Saved", cents: figure }));
+      push(sumChain(`Saved incl. retirement, ${word}`, savedParts(x), { label: "Saved incl. retirement", cents: figure }));
       break;
     case "toRetirement":
       push(sumChain(`Saved to retirement, ${word}`, [...perPerson((p) => p.deferrals, { note: "401(k) and HSA deferrals on the stubs, year to date." }).map((l) => ({ ...l, label: `${l.label}: deferrals` })), partOf(x, "employer", "+")], { label: "Saved to retirement", cents: figure }));
@@ -1130,7 +1130,7 @@ function actualColumn(x: CellCtx, cols: Period[]): Built {
       push(sumChain(`Saved to liquid, ${word}`, [partOf(x, "saved", undefined), partOf(x, "toRetirement", "−")], { label: "Saved to liquid", cents: figure }));
       break;
     case "growth":
-      push(sumChain(`Growth & other, ${word}`, [partOf(x, "change", undefined), partOf(x, "saved", "−")], { label: "Growth & other", cents: figure }, "Everything that moved net worth besides cash saved: markets, outside money, gaps."));
+      push(sumChain(`Growth & other, ${word}`, [partOf(x, "change", undefined), partOf(x, "saved", "−")], { label: "Growth & other", cents: figure }, "Everything that moved net worth besides what was saved incl. retirement: markets, outside money, gaps."));
       break;
     case "change": {
       const openV = col.flows.open ?? 0;

@@ -194,6 +194,12 @@ export type HsaReport = {
     marginalRate: number;
     marginalSource: "SETTING" | "RETIREMENT" | "TAX_REPORT" | "DEFAULT";
     payrollSource: "SETTING" | "PAY_STUBS" | "TAX_REPORT" | "DEFAULT";
+    /**
+     * Why the growth and strategy figures are withheld, or null: with no proven tax rate (the
+     * Taxes page's, or the pay stubs' for payroll tax) and none typed, they'd rest on a
+     * built-in guess. The comparison is still worked out, so typing a rate shows it at once.
+     */
+    withheld: string | null;
     /** The assumptions behind the comparison, defaults filled in. */
     assumptions: StrategyAssumptions;
     planYear: number;
@@ -221,10 +227,11 @@ const AUTO_MATCH_DAYS = 10;
 const CANDIDATE_DAYS = 45;
 const REFUND_DAYS = 90;
 const DEFAULT_RATE = 0.07;
+/** Stand-ins so the comparison can still be worked out; with either in use the page withholds it (growth.withheld). */
 const DEFAULT_MARGINAL = 0.32;
 const DEFAULT_DIVIDEND_YIELD = 0.015;
 const DEFAULT_TAXABLE_RATE = 0.2;
-/** Medicare's 1.45% applies to every wage dollar; Social Security's 6.2% only below its wage base. */
+/** Medicare's 1.45% applies to every wage dollar; Social Security's 6.2% only below its wage base. Withheld like DEFAULT_MARGINAL. */
 const DEFAULT_PAYROLL_RATE = 0.0145;
 const DAYS_PER_YEAR = 365.25;
 
@@ -541,6 +548,10 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       marginalRate: marginal,
       marginalSource,
       payrollSource: payroll.source,
+      withheld:
+        marginalSource === "DEFAULT" || payroll.source === "DEFAULT"
+          ? `No proven ${marginalSource === "DEFAULT" ? "income tax" : "payroll tax"} rate: the Taxes page's figures for this year and last are withheld and none is typed under Settings, so these figures would rest on a built-in guess.`
+          : null,
       assumptions,
       planYear,
       years,

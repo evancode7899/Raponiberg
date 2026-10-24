@@ -92,7 +92,7 @@ function Dashboard({ d }: { d: Summary }) {
         <StatCell label="Income · 12 mo" proof={proofOf(cf.last12?.proofs.income, cf.last12?.incomeCents)} value={cf.last12 ? usdCompact(cf.last12.incomeCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.incomeCents / cf.last12.months)} a month` : undefined} />
         <StatCell label="Spending · 12 mo" proof={proofOf(cf.last12?.proofs.spending, cf.last12?.spendingCents)} value={cf.last12 ? usdCompact(cf.last12.spendingCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.spendingCents / cf.last12.months)} a month` : undefined} />
         <StatCell
-          label="Saved from cash flow"
+          label="Saved from take-home"
           proof={proofOf(cf.last12?.proofs.net, cf.last12?.netCents)}
           value={cf.last12 ? usdCompact(cf.last12.netCents) : <BlockedValue blockers={cf.blockers} />}
           tone={cf.last12 ? (cf.last12.netCents >= 0 ? "pos" : "neg") : undefined}

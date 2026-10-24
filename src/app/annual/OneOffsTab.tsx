@@ -128,7 +128,7 @@ export function OneOffsTab({
         {y?.cash && (
           <p className="mb-2 text-xs text-muted">
             {y.label}: living expenses <ProofValue proof={cashP(y.year, "living", y.cash.waterfall.living)}>{usd(y.cash.waterfall.living)}</ProofValue> · one-offs{" "}
-            <ProofValue proof={cashP(y.year, "one-offs", y.cash.waterfall.nonRecurring)}>{usd(y.cash.waterfall.nonRecurring)}</ProofValue> · cash saved{" "}
+            <ProofValue proof={cashP(y.year, "one-offs", y.cash.waterfall.nonRecurring)}>{usd(y.cash.waterfall.nonRecurring)}</ProofValue> · saved incl. retirement{" "}
             <ProofValue proof={cashP(y.year, "saved", y.cash.waterfall.saved)}>{usd(y.cash.waterfall.saved)}</ProofValue> (unchanged by tags)
           </p>
         )}
@@ -220,7 +220,7 @@ function Explainer({ basis, wr }: { basis: string | null; wr: number }) {
   const rows: [React.ReactNode, React.ReactNode][] = [
     [
       "Annual report › Statement",
-      <>Moves the expense from <em>Living expenses</em> to <em>One-off expenses</em>. Cash saved and the net worth bridge are unchanged.</>,
+      <>Moves the expense from <em>Living expenses</em> to <em>One-off expenses</em>. What you saved and the net worth bridge are unchanged.</>,
     ],
     [
       <Link key="f" href="/fire" className={btn.link}>
@@ -258,7 +258,7 @@ function Explainer({ basis, wr }: { basis: string | null; wr: number }) {
       </div>
       <div className="mt-3">
         <Callout tone="good" title="It never changes a total">
-          Total spending, cash saved, savings rate, net worth, taxes, budgets, goals and the integrity checks are exactly the same either way — the expense is only
+          Total spending, what was saved, savings rates, net worth, taxes, budgets, goals and the integrity checks are exactly the same either way — the expense is only
           relabeled, so averages and the FIRE plan reflect a normal year.
         </Callout>
       </div>

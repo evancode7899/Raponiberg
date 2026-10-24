@@ -182,7 +182,7 @@ export function LongTermView({
     row("Total saved", (c) => c.w?.saved ?? null, (y) => y.saved, { strong: true, help: "Actual years: the whole paycheck-to-savings waterfall. Plan: base pay saved + the saved share of bonuses kept." }),
     row("Investment growth & other changes", (c) => (c.change && c.w ? c.change.cents - c.w.saved : null), (y) => y.growth, {
       indent: true,
-      help: "Actual years: everything besides cash saved (markets, outside money, gaps — see the annual statement). Plan: returns only.",
+      help: "Actual years: everything besides what was saved incl. retirement (markets, outside money, gaps — see the annual statement). Plan: returns only.",
     }),
     text("Return", () => pct(plan.returnRate), { indent: true }),
     row("Net worth, Dec 31", (c) => c.nw.netWorth, (y) => y.netWorth, { total: true, sum: "balance" }),

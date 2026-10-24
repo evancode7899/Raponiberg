@@ -24,7 +24,7 @@ import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstim
  * The proof behind a line of the Annual statement (Annual › Statement) and of Net worth ›
  * Account roll-forwards. Those pages show the annual profile's own arithmetic: a year's
  * cash waterfall (gross pay → taxes → deductions → living → saved), year-end net worth by
- * bucket, the bridge from cash saved to the change in net worth, and each investment
+ * bucket, the bridge from what was saved to the change in net worth, and each investment
  * account's year. Each proof re-derives its line through buildAnnualProfile (or
  * buildAccountRollforwards) and lays it out as a chain that re-adds exactly, every part
  * linking to the proof it is read from: pay to the pay stubs, spending and income to Cash
@@ -359,9 +359,9 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
         line("+", "Total net cash", w.netCash, "derived", { link: cashLink("Net cash", yr, "net-cash") }),
         line("−", "Living expenses", w.living, "derived", { link: cashLink("Living expenses", yr, "living") }),
         line("−", "One-off expenses", w.nonRecurring, "proven", { link: cashLink("One-offs", yr, "one-offs") }),
-        line("=", "Total cash saved", w.saved, "derived"),
+        line("=", "Saved incl. retirement", w.saved, "derived"),
       ]);
-      return chainProof(`Total cash saved · ${label}`, w.saved, "Net cash − living − one-offs", lines, base);
+      return chainProof(`Saved incl. retirement · ${label}`, w.saved, "Net cash − living − one-offs", lines, base);
     }
     case "living": {
       const t = cash.livingTrail;
@@ -399,7 +399,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
       lines.push(line("=", "One-off expenses", w.nonRecurring, "derived"));
       return chainProof(`One-off expenses · ${label}`, w.nonRecurring, "Charges tagged one-off", startChain(lines), {
         ...base,
-        note: "Tagged on Annual › One-off expenses or Cash flow › Spending. They count toward cash saved, only not toward living expenses.",
+        note: "Tagged on Annual › One-off expenses or Cash flow › Spending. They count toward what was saved, only not toward living expenses.",
       });
     }
     case "reimbursements": {
@@ -441,7 +441,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
       return ratioProof(
         `Savings % of ${gross ? "gross" : "net"} pay · ${label}`,
         gross ? w.savingsOfGross : w.savingsOfNet,
-        [line(undefined, "Total cash saved", w.saved, "derived", { link: cashLink("Cash saved", yr, "saved") })],
+        [line(undefined, "Saved incl. retirement", w.saved, "derived", { link: cashLink("Saved incl. retirement", yr, "saved") })],
         gross
           ? line(undefined, "Total gross cash paid", w.grossCash, "derived", { link: cashLink("Gross cash", yr, "gross") })
           : line(undefined, "Total net cash", w.netCash, "derived", { link: cashLink("Net cash", yr, "net-cash") }),
@@ -618,7 +618,7 @@ function bridgeProof(c: NwCtx, ln: AnnualBridgeLine): Built {
   const base = { ...cashChecks(c, y, [changeQ], NET_WORTH_CHECKS), through: y.netWorthAsOf };
   const estimated = h.quality !== "EXACT";
   const LABEL: Record<AnnualBridgeLine, string> = {
-    cashSaved: "Cash saved",
+    cashSaved: "Saved incl. retirement",
     investmentGrowth: "Investment growth, net of fees",
     outsideMoney: "Money from outside the tracked accounts",
     newlyTracked: "Balances first on file",
@@ -638,7 +638,7 @@ function bridgeProof(c: NwCtx, ln: AnnualBridgeLine): Built {
   const describes = `${LABEL[ln]} · ${y.label}`;
   switch (ln) {
     case "cashSaved":
-      return chainProof(describes, b.cashSaved, "From the paycheck math", [line(undefined, "Total cash saved", cash.waterfall.saved, "derived", { link: cashLink("Cash saved", yr, "saved") }), line("=", LABEL[ln], b.cashSaved, "derived")], { ...base, blocks: [whole] });
+      return chainProof(describes, b.cashSaved, "From the paycheck math", [line(undefined, "Saved incl. retirement", cash.waterfall.saved, "derived", { link: cashLink("Saved incl. retirement", yr, "saved") }), line("=", LABEL[ln], b.cashSaved, "derived")], { ...base, blocks: [whole] });
     case "investmentGrowth":
       return chainProof(
         describes,
@@ -682,7 +682,7 @@ function bridgeProof(c: NwCtx, ln: AnnualBridgeLine): Built {
         line("+", "Employer retirement contributions", h.retirementEmployerCents, "proven"),
         line("=", "Saved according to statements", b.savedPerStatements, "derived"),
         line("+", "Brokerage dividends (income on brokerage statements, not bank rows)", dividends, "proven", { link: cashLink("Investment & other income", yr, "other-income") }),
-        line("−", "Cash saved by the paycheck math", b.cashSaved, "derived", { link: cashLink("Cash saved", yr, "saved") }),
+        line("−", "Saved incl. retirement, by the paycheck math", b.cashSaved, "derived", { link: cashLink("Saved incl. retirement", yr, "saved") }),
         line("=", LABEL[ln], b.unexplainedSavings, "derived"),
       ]);
       const timing = cash.timing ?? 0;

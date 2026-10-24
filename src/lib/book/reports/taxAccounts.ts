@@ -1,7 +1,7 @@
 import { projectPayroll, w2FromAmounts, type PaycheckBasis, type PayrollAmounts } from "../../tax/facts/payroll.ts";
 import { taxYearParams, type FilingStatus } from "../../tax/params.ts";
 import { yearInputs } from "../../tax/profile.ts";
-import { buildTaxReport } from "../../tax/buildTaxReport.ts";
+import { buildTaxReport, incomeTaxMarginal } from "../../tax/buildTaxReport.ts";
 import { EMPTY_PERSON, type HsaCoverage, type RetirementSettings } from "../../taxAccounts/settings.ts";
 import { taxYearThrough } from "../blockers.ts";
 import type { Book } from "../load.ts";
@@ -335,9 +335,9 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
     settings.marginalRate != null
       ? { rate: settings.marginalRate, source: "SETTING" as const }
       : !tax.blocked
-        ? { rate: tax.marginal.federal + tax.marginal.ct, source: "TAX_REPORT" as const }
+        ? { rate: incomeTaxMarginal(tax), source: "TAX_REPORT" as const }
         : prior && !prior.blocked
-          ? { rate: prior.marginal.federal + prior.marginal.ct, source: "PRIOR_YEAR" as const }
+          ? { rate: incomeTaxMarginal(prior), source: "PRIOR_YEAR" as const }
           : { rate: null, source: "NONE" as const };
 
   // ------------------------------------------------------------ household

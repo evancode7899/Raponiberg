@@ -527,7 +527,7 @@ function savingsRateProof(c: FireCtx): Built {
           projected("−", "Living cost", y.livingCost, yr("living"), sum),
           projected("−", "Planned one-offs", y.planned, yr("oneOffs"), `Typed on the Forecast page. ${sum}`),
           projected("−", "Bonus spent (kept, not saved)", bonusSpent, yr("bonusSpent"), sum),
-          { op: "=", label: "Saved", value: { cents: y.saved }, source: "derived" },
+          { op: "=", label: "Saved incl. retirement", value: { cents: y.saved }, source: "derived" },
           { op: "÷", label: "Income", value: { cents: income }, source: "derived" },
           { op: "=", label: "Savings rate", value: { ratio: c.fa.savingsRate }, source: "derived" },
         ],

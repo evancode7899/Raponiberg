@@ -260,8 +260,13 @@ export function hsaFigures(r: HsaReport): PageFigure[] {
     [{ report: "hsa", metric: "reimbursed" }, r.totals.reimbursedCents],
     [{ report: "hsa", metric: "logged" }, r.totals.loggedCents],
     [{ report: "hsa", metric: "growth" }, r.totals.growthCents],
-    [{ report: "hsa", metric: "future" }, r.growth.futureValueCents],
-    [{ report: "hsa", metric: "future-growth" }, r.growth.futureValueCents - r.totals.unreimbursedCents],
+    // The growth figures, unless the page withholds them for want of a proven tax rate.
+    ...(r.growth.withheld
+      ? []
+      : ([
+          [{ report: "hsa", metric: "future" }, r.growth.futureValueCents],
+          [{ report: "hsa", metric: "future-growth" }, r.growth.futureValueCents - r.totals.unreimbursedCents],
+        ] as [ProofDescriptor, number][])),
   ];
   return list.filter(([, v]) => v != null).map(([descriptor, v]) => ({ page, descriptor, shown: cents(v) }));
 }

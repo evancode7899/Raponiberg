@@ -119,7 +119,7 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
           label="Tax it would save"
           value={saved == null ? "Unknown" : usd0(saved)}
           proof={saved == null ? { descriptor: { report: "account-limits", year: r.year, account: "steps", figure: "tax-saved" }, shownCents: null } : lim(r, { account: "steps", figure: "tax-saved" }, saved)}
-          sub={r.marginalRate.rate == null ? "set a marginal rate on Inputs" : `at ${formatPercentRatio(r.marginalRate.rate, 1)} federal + state${r.marginalRate.source === "PRIOR_YEAR" ? ` (${r.year - 1}'s rate)` : ""}`}
+          sub={r.marginalRate.rate == null ? "set a marginal rate on Inputs" : `at ${formatPercentRatio(r.marginalRate.rate, 1)} income tax (federal + state + city)${r.marginalRate.source === "PRIOR_YEAR" ? ` (${r.year - 1}'s rate)` : ""}`}
         />
         <StatCell
           label="Household MAGI"

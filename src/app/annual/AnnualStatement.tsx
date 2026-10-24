@@ -85,7 +85,7 @@ export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () 
           proof={latest?.netWorth ? nwP(latest, "liquid", latest.netWorth.liquid) : undefined} sub="cash + taxable investments − card debt" />
         <StatCell label={`Change ${cur ? `${cur.year} YTD` : ""}`} value={value(cur?.change?.cents, cur?.blockers.change)}
           proof={cur?.change ? nwP(cur, "change", cur.change.cents) : undefined} sub={cur?.change?.pct != null ? `${pct(cur.change.pct)} since Dec 31` : undefined} />
-        <StatCell label={`Cash saved ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.saved, full?.blockers.cash)}
+        <StatCell label={`Saved incl. retirement ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.saved, full?.blockers.cash)}
           proof={full?.cash ? cashP(full, "saved", full.cash.waterfall.saved) : undefined} sub={full?.cash ? `${pct(full.cash.waterfall.savingsOfGross)} of gross pay` : undefined} />
         <StatCell label={`Cash tax rate ${full?.year ?? ""}`} value={value(full?.cash?.waterfall.cashTaxRate, full?.blockers.cash, (n) => pct(n))}
           proof={full?.cash ? cashP(full, "tax-rate", null) : undefined} sub="withheld + paid − refunds, ÷ gross" />
@@ -186,8 +186,8 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
     help: "Every expense on bank and card statements except income-tax payments and one-offs, net of reimbursements received (Zelle/Venmo and on pay stubs). The FIRE plan starts from the latest full year of this line.",
     cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.living, cashP(y, "living", c.waterfall.living)))),
   });
-  rows.push({ label: "Less: one-off expenses", indent: true, help: "Expenses marked one-off (a wedding, a move, a car) on the One-off expenses tab or Cash flow › Spending. They still count toward cash saved; they're only kept out of living expenses.", cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.nonRecurring, cashP(y, "one-offs", c.waterfall.nonRecurring)))) });
-  rows.push({ label: "Total cash saved", total: true, cells: per((y) => cashCell(y, (c) => fig(c.waterfall.saved, cashP(y, "saved", c.waterfall.saved)))) });
+  rows.push({ label: "Less: one-off expenses", indent: true, help: "Expenses marked one-off (a wedding, a move, a car) on the One-off expenses tab or Cash flow › Spending. They still count toward what was saved; they're only kept out of living expenses.", cells: per((y) => cashCell(y, (c) => fig(-c.waterfall.nonRecurring, cashP(y, "one-offs", c.waterfall.nonRecurring)))) });
+  rows.push({ label: "Saved incl. retirement", total: true, cells: per((y) => cashCell(y, (c) => fig(c.waterfall.saved, cashP(y, "saved", c.waterfall.saved)))) });
   rows.push({ label: "Cash tax rate", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.cashTaxRate), proof: cashP(y, "tax-rate", null) }))) });
   rows.push({ label: "Savings % of gross pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfGross), proof: cashP(y, "savings-of-gross", null) }))) });
   rows.push({ label: "Savings % of net pay", muted: true, cells: per((y) => cashCell(y, (c) => ({ text: pct(c.waterfall.savingsOfNet), proof: cashP(y, "savings-of-net", null) }))) });
@@ -229,12 +229,12 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
   rows.push({ label: "Change in net worth (%)", muted: true, cells: per((y) => (y.change ? { text: pct(y.change.pct, 0), proof: nwP(y, "change-pct", null) } : blockedCell(y.blockers.change))) });
 
   // ------------------------------------------------------------ bridge
-  rows.push({ kind: "heading", label: "What changed net worth", sub: "from the cash saved above to the change in net worth" });
+  rows.push({ kind: "heading", label: "What changed net worth", sub: "from what was saved (incl. retirement) above to the change in net worth" });
   const bridgeBlockers = (y: YearProfile) => [...new Map([...y.blockers.cash, ...y.blockers.change].map((x) => [x.id, x])).values()];
   const bridgeP = (y: YearProfile, line: AnnualBridgeLine, shown: number) => proofOf({ report: "annual", figure: "bridge", year: y.year, line }, shown);
   const br = (k: Exclude<AnnualBridgeLine, "total">, label: string, help: string) =>
     rows.push({ label, indent: true, help, cells: per((y) => (y.bridge ? fig(y.bridge[k], bridgeP(y, k, y.bridge[k])) : blockedCell(bridgeBlockers(y)))) });
-  br("cashSaved", "Cash saved", "Total cash saved, from the paycheck math above.");
+  br("cashSaved", "Saved incl. retirement", "Pay less taxes and deductions, plus employer money, less spending: from the paycheck math above (Cash flow's saved from take-home leaves out deferrals and employer money).");
   br("investmentGrowth", "Investment growth, net of fees", "Market change in every account (dividends already counted as income above are taken out).");
   br("outsideMoney", "Money from outside the tracked accounts", "Partner money before finances merged, international transfers.");
   br("newlyTracked", "Balances first on file", "What an account already held when its first statement begins.");
@@ -242,7 +242,7 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
   br(
     "unexplainedSavings",
     "Statements vs. paycheck math (timing)",
-    "Saved according to statements (income − spending + retirement money) minus the cash saved above. With every check passing this is timing: a 401(k) or HSA contribution posted after the year's last paycheck.",
+    "Saved according to statements (income − spending + retirement money) minus the saved incl. retirement above. With every check passing this is timing: a 401(k) or HSA contribution posted after the year's last paycheck.",
   );
   rows.push({ label: "Change in net worth", total: true, cells: per((y) => (y.bridge ? fig(y.bridge.total, bridgeP(y, "total", y.bridge.total)) : blockedCell(bridgeBlockers(y)))) });
   return rows;
@@ -251,7 +251,7 @@ function statementRows(r: AnnualProfileReport): TableRow[] {
 function BridgeChart({ years }: { years: YearProfile[] }) {
   const chart = useChartPalette();
   const keys = [
-    ["cashSaved", "Cash saved"],
+    ["cashSaved", "Saved incl. retirement"],
     ["investmentGrowth", "Investment growth"],
     ["outsideMoney", "Outside money"],
     ["newlyTracked", "First on file"],

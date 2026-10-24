@@ -278,6 +278,15 @@ const pos = (n: number) => Math.max(0, n);
 const minIso = (a: string, b: string) => (a < b ? a : b);
 const usd = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-US")}`;
 
+/**
+ * Income tax on one more dollar of the top earner's wages: federal (which already holds the
+ * 0.9% Additional Medicare surtax) + Connecticut + New York. The one "marginal rate" every
+ * page means by it (Account limits' pre-tax steps, the HSA's tax saved); payroll tax is
+ * `marginal.payroll`, apart. A 401(k) or HSA dollar avoids all three: New York follows the
+ * federal treatment of both.
+ */
+export const incomeTaxMarginal = (t: Pick<TaxReport, "marginal">): number => t.marginal.federal + t.marginal.ct + t.marginal.ny;
+
 export function buildTaxReport(
   book: Book,
   year: number,

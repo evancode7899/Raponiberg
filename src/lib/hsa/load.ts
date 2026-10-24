@@ -10,7 +10,7 @@ import { valueAt } from "../ledger/timeline.ts";
 import type { OutlookSeeds } from "../profile/basePay.ts";
 import { w2FromAmounts } from "../tax/facts/payroll.ts";
 import type { TaxForecastLink } from "../forecast/forecast.ts";
-import { buildTaxReport } from "../tax/buildTaxReport.ts";
+import { buildTaxReport, incomeTaxMarginal } from "../tax/buildTaxReport.ts";
 import { TAX_YEARS, taxYearParams, type FederalParams } from "../tax/params.ts";
 import { payrollTaxSaved, type HsaAccountIn, type LedgerAccountIn, type LedgerRowIn, type PayrollHsaIn, type TaxMarginalIn } from "./report.ts";
 
@@ -37,7 +37,7 @@ export function hsaTaxMarginal(book: Book, year: number, forecast: TaxForecastLi
   for (const [y, source] of [[year, "TAX_REPORT"], [year - 1, "PRIOR_YEAR"]] as const) {
     if (!TAX_YEARS[y]) continue;
     const t = buildTaxReport(book, y, { forecast: y === year ? forecast : null });
-    if (!t.blocked) return { year: y, incomeRate: t.marginal.federal + t.marginal.ct + t.marginal.ny, payrollRate: t.marginal.payroll, source };
+    if (!t.blocked) return { year: y, incomeRate: incomeTaxMarginal(t), payrollRate: t.marginal.payroll, source };
   }
   return null;
 }

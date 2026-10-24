@@ -2,7 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { Callout, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL, type ExpenseKind } from "@/lib/hsa/qualify";
 import type { Breakdown, HsaReport } from "@/lib/hsa/report";
@@ -19,6 +19,12 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   const edge = g.futureValueCents - g.taxableValueCents;
   const scale = r.totals.unreimbursedCents / 100_000;
   const taxableTerms = `${formatPercentRatio(a.dividendYield, 1)} dividends taxed yearly and ${formatPercentRatio(a.taxableRate, 0)} on the gain when sold`;
+  if (g.withheld)
+    return (
+      <Callout tone="info" title="Growth and strategy figures withheld">
+        {g.withheld} Type a rate under Settings to see them with it, labelled as yours.
+      </Callout>
+    );
   return (
     <>
       <StatGrid cols={3}>

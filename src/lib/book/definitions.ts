@@ -7,6 +7,22 @@ import type { AccountGroup } from "../ledger/loadLedger.ts";
  * spending outside housing) starts from these and says what it leaves out.
  */
 
+/**
+ * "Saved" means one of two things, always named for which (never plain "Saved"):
+ *
+ *  - Saved from take-home (Cash flow, Home): income that reached the household's accounts
+ *    less spending. Paycheck money is what was deposited; 401(k) and HSA deferrals and
+ *    employer money never pass through, so they're not in it.
+ *  - Saved incl. retirement (Annual, Forecast): pay as the stubs show it, less taxes and
+ *    deductions, plus employer retirement money, less living and one-off spending. Holds
+ *    deferrals and employer money, and pay the stubs show whichever account it reached.
+ *
+ * They differ by more than retirement money (pay to an account with no statements, pay
+ * known only from year-to-date totals), so neither is derived from the other.
+ */
+export const savedFromTakeHome = (incomeCents: number, spendingCents: number): number => incomeCents - spendingCents;
+export const savedInclRetirement = (netCashCents: number, livingCents: number, oneOffCents: number): number => netCashCents - livingCents - oneOffCents;
+
 /** Savings rate: what's left of income after spending, as a share of income (null without income). */
 export function savingsRate(incomeCents: number, netCents: number): number | null {
   return incomeCents > 0 ? netCents / incomeCents : null;

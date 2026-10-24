@@ -108,14 +108,14 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
         />
         <StatCell label="Income" value={usd0(a.income)} proof={ctx.proof("income", now, { shownCents: a.income })} sub={<Change now={a.income} then={b.income} proof={ctx.proof("income", then, { shownCents: b.income })} />} />
         <StatCell
-          label="Saved"
+          label="Saved from take-home"
           value={usd0(a.net)}
           proof={ctx.proof("net", now, { shownCents: a.net })}
           tone={a.net < 0 ? "neg" : "neutral"}
           sub={<Change now={a.net} then={b.net} proof={ctx.proof("net", then, { shownCents: b.net })} />}
         />
         <StatCell
-          label="Savings rate"
+          label="Savings rate (take-home)"
           value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
           sub={b.savingsRate == null ? "—" : `${formatPercentRatio(b.savingsRate, 0)} a year earlier`}
         />
@@ -211,7 +211,7 @@ const METRIC: Record<YearMetric, { label: string; f: (m: SpendingMonth) => numbe
   spending: { label: "Spending", f: (m) => m.spendingCents, goodWhenDown: true },
   everyday: { label: "Everyday spending", f: (m) => m.kinds.everydayCents, goodWhenDown: true },
   income: { label: "Income", f: (m) => m.incomeCents, goodWhenDown: false },
-  saved: { label: "Saved", f: (m) => m.netCents, goodWhenDown: false },
+  saved: { label: "Saved from take-home", f: (m) => m.netCents, goodWhenDown: false },
 };
 
 /** Proven months grouped by calendar year, oldest first; each year's months indexed by month (0 = Jan). */
@@ -288,7 +288,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
               { value: "spending", label: "Spending" },
               { value: "everyday", label: "Everyday" },
               { value: "income", label: "Income" },
-              { value: "saved", label: "Saved" },
+              { value: "saved", label: "Saved from take-home" },
             ]}
             value={metric}
             onChange={setMetric}
@@ -372,7 +372,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
     { label: "Income", f: (m) => m.incomeCents, proof: { metric: "income" }, strong: true },
     { label: "Spending", f: (m) => m.spendingCents, proof: { metric: "spending" }, goodWhenDown: true, strong: true },
     ...KINDS.map((k) => ({ label: k.label, f: (m: SpendingMonth) => m.kinds[k.id], goodWhenDown: true, indent: true })),
-    { label: "Saved", f: (m) => m.netCents, proof: { metric: "net" }, strong: true },
+    { label: "Saved from take-home", f: (m) => m.netCents, proof: { metric: "net" }, strong: true },
   ];
   const categoryRows: YearRow[] = SPEND_CATEGORIES.filter((c) => report.months.some((m) => m.spendingByCategory.some((x) => x.category === c && x.cents))).map((c) => ({
     label: c,

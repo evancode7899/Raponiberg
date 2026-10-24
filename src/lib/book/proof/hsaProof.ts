@@ -463,7 +463,7 @@ function futureProof(r: HsaReport, metric: "future" | "future-growth"): Built {
       describes: `Worth in ${g.planYear}: today's receipts left invested`,
       figure: { cents: g.futureValueCents },
       selfCheck: sumCheck(g.futureValueCents, worth, `Reimbursable today × the growth comes to ${formatUsdFromCents(worth)}`),
-      withheld: false,
+      withheld: g.withheld != null,
       blocks: [{ kind: "chain", title: "How it's worked out", lines, note: "A projection: what the receipts would be worth if left invested and taken out then." }],
       checks: [],
       estimates: [],
@@ -475,7 +475,7 @@ function futureProof(r: HsaReport, metric: "future" | "future-growth"): Built {
     describes: `Growth by ${g.planYear} on today's receipts`,
     figure: { cents: growth },
     selfCheck: sumCheck(growth, worth - base, `Worth in ${g.planYear} less reimbursable today comes to ${formatUsdFromCents(worth - base)}`),
-    withheld: false,
+    withheld: g.withheld != null,
     blocks: [
       {
         kind: "chain",

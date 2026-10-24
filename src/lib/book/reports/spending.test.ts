@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { BookRow } from "../load.ts";
-import { CHARGE_BUCKETS, detectRecurring, merchantName, reversals, spendingShape } from "./spending.ts";
+import { NO_HOUSEHOLD } from "../../household/patterns.ts";
+import { expenseFingerprint } from "../../profile/annualMath.ts";
+import type { Book } from "../load.ts";
+import { CHARGE_BUCKETS, detectRecurring, merchantName, oneOffRules, reversals, spendingShape } from "./spending.ts";
 
 let n = 0;
 const row = (date: string, cents: number, key: string, extra: Partial<BookRow> = {}): BookRow => ({
@@ -78,7 +81,8 @@ describe("spendingShape", () => {
     row("2026-04-22", 50000, "PAYCHECK", { lane: "INCOME" }),
   ];
   const spending = 200000 + 1250 + 4800 + 310000 - 1250 + 9900;
-  const shape = spendingShape(rows, { ...period, spendingCents: spending }, new Set(["LANDLORD"]), (r) => r.payee === "GIFT");
+  // As oneOffRules' candidate test: tagged (the gift), or a charge of $1,500 or more that isn't a bill.
+  const shape = spendingShape(rows, { ...period, spendingCents: spending }, new Set(["LANDLORD"]), (r) => r.payee === "GIFT" || -r.amountCents >= 150_000);
 
   it("splits spending into bills, big one-offs and everyday that add up to the total", () => {
     expect(shape.kinds).toEqual({ billCents: 200000, bigCents: 310000 + 9900, everydayCents: 1250 + 4800 - 1250 });
@@ -98,5 +102,25 @@ describe("spendingShape", () => {
     expect(at(1250)).toEqual({ count: 1, cents: 1250 });
     expect(at(310000).count).toBe(2);
     expect(shape.chargeSizes.reduce((s, b) => s + b.count, 0)).toBe(5);
+  });
+});
+
+describe("oneOffRules: the one test Annual and Cash flow both use", () => {
+  // An old premium billed every month in 2024 (none in the last year), a big one-off, a small tagged one, a refund.
+  const premium = [3, 4, 5, 6].map((m) => row(`2024-0${m}-05`, -180000, "EXAMPLE INSURANCE"));
+  const sofa = row("2026-03-14", -250000, "FURNITURE BARN");
+  const gift = row("2026-03-20", -9900, "GIFT SHOP");
+  const refund = row("2026-03-25", 250000, "FURNITURE BARN", { reimbursement: { source: "row" } as BookRow["reimbursement"] });
+  const rows = [...premium, sofa, gift, refund];
+  const book = { rows, rowById: new Map(rows.map((r) => [r.id, r])), household: NO_HOUSEHOLD } as unknown as Book;
+  const settings = { oneOffs: { [expenseFingerprint(gift)]: "Birthday" }, nonRecurringCategories: [] };
+  const { tagged, candidate } = oneOffRules(book, settings);
+
+  it("offers a big single charge and anything tagged, never a bill (judged over all history) or a reimbursement credit", () => {
+    expect(candidate(sofa)).toBe(true);
+    expect(candidate(gift) && tagged(gift)).toBe(true);
+    expect(tagged(sofa)).toBe(false);
+    expect(premium.some(candidate)).toBe(false);
+    expect(candidate(refund)).toBe(false);
   });
 });
