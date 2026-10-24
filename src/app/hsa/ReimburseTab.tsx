@@ -49,8 +49,7 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
     directSort.sort,
     byWithdrawal,
   );
-  const distCents = distributions.reduce((s, w) => s + w.amountCents, 0);
-  const directCents = direct.reduce((s, w) => s + w.amountCents, 0);
+  const { distributionCents: distCents, directCents } = r.withdrawalTotals;
 
   return (
     <>

@@ -1,7 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ledger/LedgerBits";
-import type { ReturnResult } from "@/lib/tax/computeReturn";
+import { allTaxes, type ReturnResult } from "@/lib/tax/computeReturn";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { balanceText, NumberTable, pct, usd, type Row } from "./taxUi";
 
@@ -15,7 +15,7 @@ export function TaxComparison({ r }: { r: TaxResponse }) {
   const v = (f: (x: ReturnResult) => number) => cols.map((c) => usd(c.r ? f(c.r) : (c.sum ?? []).reduce((s, x) => s + f(x), 0)));
   const raw = (f: (x: ReturnResult) => number) => cols.map((c) => (c.r ? f(c.r) : (c.sum ?? []).reduce((s, x) => s + f(x), 0)));
   const fedTax = (x: ReturnResult) => x.federal.totalTax - x.federal.refundableChildCredit;
-  const all = (x: ReturnResult) => fedTax(x) + x.ct.totalTax + (x.ny?.totalTax ?? 0) + x.fica.socialSecurity + x.fica.medicare + x.otherStateTax;
+  const all = allTaxes;
   const hasNy = !!r.scenarios.mfj.ny;
   const gross = (x: ReturnResult) => x.grossPay + x.federal.interest + x.federal.ordinaryDividends + Math.max(0, x.federal.capitalGainAllowed) + x.federal.retirementTaxable + x.federal.otherIncome;
   const ratio = (num: (x: ReturnResult) => number, den: (x: ReturnResult) => number) =>

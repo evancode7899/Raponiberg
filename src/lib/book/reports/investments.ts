@@ -1,4 +1,4 @@
-import { addDays, daysBetween } from "../../dates/isoDate.ts";
+import { addDays } from "../../dates/isoDate.ts";
 import type { Holding, HoldingKind } from "../../ingest/holdings/types.ts";
 import { ASSET_CLASSES, describeSecurity, securityKey, type AssetClass, type SecurityInfo, type Weights } from "../../investments/securities.ts";
 import type { InvestmentSettings } from "../../investments/settings.ts";
@@ -11,10 +11,13 @@ import { buildNetWorth } from "./netWorth.ts";
 
 /**
  * Holdings, allocation, fees, unrealized gains and money-in-versus-growth for every
- * investment account, from the Book. Each account is valued at its latest statement;
- * its positions come from the holdings that statement lists, used only when they add up
- * to the statement's balance to the cent. An account without such holdings is one
- * "whole account" line, so totals always equal the balances net worth uses.
+ * investment account, from the Book. Every account is valued at the proven-through date
+ * (book.horizon.netWorth), the day Net worth, Goals and Home budget value it on, so the
+ * pages can't show two totals for the same money; a statement past that day waits for
+ * the rest to catch up, as on every page. Positions come from the latest holdings on or
+ * before that day that add up to the balance on their own date to the cent. Whatever
+ * they don't explain is one "whole account" or "change since" line, so totals always
+ * equal the balances net worth uses.
  */
 
 export type TaxTreatment = "Taxable" | "Tax-deferred" | "Roth" | "HSA" | "529" | "Bank cash";
@@ -64,7 +67,7 @@ export type PositionRow = {
 export type HoldingsStatus =
   /** Positions on file add up to the statement balance. */
   | "TIES"
-  /** The latest positions on file are older than the latest statement (the difference is shown as one line). */
+  /** The latest positions that tie are older than the proven-through date (the difference is shown as one line). */
   | "STALE"
   /** Positions on file don't add up to the statement balance: not used. */
   | "MISMATCH"
@@ -77,7 +80,7 @@ export type AccountHoldings = {
   institution: string | null;
   group: AccountGroup;
   treatment: TaxTreatment;
-  /** Balance at the account's latest statement (what net worth uses). */
+  /** Balance at the proven-through date: exactly what Net worth shows for the account. */
   valueCents: number;
   asOf: string;
   status: HoldingsStatus;
@@ -142,7 +145,7 @@ function allocate(rows: PositionRow[]): ClassAmount[] {
 }
 
 /**
- * Each included account valued at its latest statement, and the positions that make up
+ * Each included account valued at the proven-through date, and the positions that make up
  * that value (with a balancing line for whatever the holdings on file don't explain).
  * The report and its proofs (book/proof/investmentsProof.ts) both start here.
  */
@@ -152,9 +155,10 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
   const byAccount = new Map<string, BookHoldings[]>();
   for (const h of book.holdings) if (h.accountId) byAccount.set(h.accountId, [...(byAccount.get(h.accountId) ?? []), h]);
 
-  const included = book.ledger.accounts.filter((a) => !a.closed && (a.isInvestment || (settings.includeBankCash && a.group === "Cash")));
+  const lastDay = book.horizon.netWorth;
+  // Closed or not today, an account counts when it held money on that day (as on Net worth).
+  const included = book.ledger.accounts.filter((a) => a.timeline.firstDay != null && a.timeline.firstDay <= lastDay && (a.isInvestment || (settings.includeBankCash && a.group === "Cash")));
   for (const a of included) {
-    const lastDay = a.timeline.lastDay!;
     const value = valueAt(a.timeline, lastDay).cents;
     if (value === 0) continue;
     const treatment = treatmentFor(a.subtype, a.group);
@@ -301,7 +305,7 @@ export function buildInvestments(book: Book, settings: InvestmentSettings): Inve
       .sort((x, y) => y.cents - x.cents)
       .slice(0, 12)
       .map((s) => ({ key: s.key, symbol: s.symbol, name: s.name, cents: s.cents, share: share(s.cents, totalCents), accounts: [...s.accounts] })),
-    growth: buildGrowth(book, included.filter((a) => a.isInvestment).map((a) => a.id)),
+    growth: buildGrowth(book, included.filter((a) => a.isInvestment && (!a.closed || accounts.some((x) => x.accountId === a.id))).map((a) => a.id)),
     unclassified: [...unclassified.values()].sort((x, y) => y.cents - x.cents),
     blockers: [...new Map(accounts.flatMap((a) => a.blockers).map((b) => [b.id, b])).values()],
   };
@@ -340,7 +344,3 @@ function buildGrowth(book: Book, accountIds: string[]): GrowthSeries[] {
   }
   return [household, ...[...series.values()].filter((s) => s.points.length)];
 }
-
-/** Days between the oldest and newest account valuations in the report (accounts close on different days). */
-export const valuationSpread = (r: InvestmentsReport) =>
-  r.accounts.length ? daysBetween(r.accounts.map((a) => a.asOf).sort()[0]!, r.accounts.map((a) => a.asOf).sort().at(-1)!) : 0;

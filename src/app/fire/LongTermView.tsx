@@ -4,6 +4,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card } from "@/components/ui/kit";
 import type { ScheduledBonus } from "@/lib/forecast/bonusSchedule";
+import { bonusesInYear } from "@/lib/forecast/forecast";
 import { formatUsd } from "@/lib/formatMoney";
 import type { OutlookSeeds, ResolvedBasePay } from "@/lib/profile/basePay";
 import type { CashWaterfall } from "@/lib/profile/annualMath";
@@ -138,8 +139,7 @@ export function LongTermView({
     ...opts,
     cells: [...actual.map(() => null), ...planCells((y, i) => ({ text: p(y, i) }), () => null)],
   });
-  const bonusOf = (y: OutlookYear, kinds: ScheduledBonus["source"][]) =>
-    schedule.filter((b) => b.counted && kinds.includes(b.source) && b.key.startsWith(`${y.year}-`)).reduce((t, b) => t + b.gross, 0);
+  const bonusOf = (y: OutlookYear, kinds: ScheduledBonus["source"][]) => bonusesInYear(schedule, y.year, kinds);
   const retired = full.years.some((y) => !y.working);
   const rows: TableRow[] = [];
   if (full.years.some((y) => y.age != null)) {

@@ -271,9 +271,7 @@ const daysSince = (iso: string, today: string) => (Date.parse(today) - Date.pars
 function Garage({ ctx }: { ctx: CarCtx }) {
   const { garage: g, car, selectCar } = ctx;
   if (g.cars.length < 2) return null;
-  const owned = g.cars.filter((c) => !c.sold && c.configured);
-  const nextYear = owned.reduce((s, c) => s + c.outlook12.total, 0);
-  const last12 = g.cars.reduce((s, c) => s + c.last12.total, 0);
+  const { tcoCents, last12Cents: last12, next12Cents: nextYear } = g.together;
   return (
     <Card title="Your cars" subtitle={`Together about ${usd0(nextYear / 12)} a month over the next 12 months (${usd0(nextYear)} a year, depreciation included). Shared costs are split between the cars owned at the time. Pick a car to see it below.`}>
       <div className={table.wrap}>
@@ -307,7 +305,7 @@ function Garage({ ctx }: { ctx: CarCtx }) {
               <td className={table.td}>All cars</td>
               <td className={table.tdR} />
               <td className={table.tdR} />
-              <td className={table.tdR}>{usd0(g.cars.reduce((s, c) => s + c.totals.tco, 0))}</td>
+              <td className={table.tdR}>{usd0(tcoCents)}</td>
               <td className={table.tdR} />
               <td className={table.tdR}>{usd0(last12)}</td>
               <td className={table.tdR}>{usd0(nextYear)}</td>

@@ -89,8 +89,8 @@ function Dashboard({ d }: { d: Summary }) {
       </div>
 
       <StatGrid cols={5}>
-        <StatCell label="Income · 12 mo" proof={proofOf(cf.last12?.proofs.income, cf.last12?.incomeCents)} value={cf.last12 ? usdCompact(cf.last12.incomeCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.incomeCents / 12)} a month` : undefined} />
-        <StatCell label="Spending · 12 mo" proof={proofOf(cf.last12?.proofs.spending, cf.last12?.spendingCents)} value={cf.last12 ? usdCompact(cf.last12.spendingCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.spendingCents / 12)} a month` : undefined} />
+        <StatCell label="Income · 12 mo" proof={proofOf(cf.last12?.proofs.income, cf.last12?.incomeCents)} value={cf.last12 ? usdCompact(cf.last12.incomeCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.incomeCents / cf.last12.months)} a month` : undefined} />
+        <StatCell label="Spending · 12 mo" proof={proofOf(cf.last12?.proofs.spending, cf.last12?.spendingCents)} value={cf.last12 ? usdCompact(cf.last12.spendingCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.spendingCents / cf.last12.months)} a month` : undefined} />
         <StatCell
           label="Saved from cash flow"
           proof={proofOf(cf.last12?.proofs.net, cf.last12?.netCents)}
@@ -326,15 +326,17 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
   const chart = useChartPalette();
   const lm = cf.lastMonth;
   const max = useMemo(() => Math.max(1, ...cf.categories.flatMap((c) => [c.lastMonthCents, c.avgCents])), [cf]);
-  if (!lm || cf.categories.length === 0) return null;
-  const avgTotal = cf.categories.reduce((s, c) => s + c.avgCents, 0);
+  if (!lm || !cf.last12 || cf.categories.length === 0) return null;
+  // The twelve months' spending ÷ its months, as the Spending tile works it out (its proof is that total).
+  const avgTotal = Math.round(cf.last12.spendingCents / cf.last12.months);
+  const avgProof: ProofTarget = { descriptor: cf.last12.proofs.spending, shownCents: cf.last12.spendingCents, perMonths: cf.last12.months };
   const diff = lm.spendingCents - avgTotal;
   return (
     <Card
       title={`Spending in ${lm.label} vs your 12-month average`}
       subtitle={
         <>
-          <ProofValue proof={proofOf(lm.proof, lm.spendingCents)}>{usd0(lm.spendingCents)}</ProofValue> spent, {diff >= 0 ? "above" : "below"} the {usd0(avgTotal)} monthly average by{" "}
+          <ProofValue proof={proofOf(lm.proof, lm.spendingCents)}>{usd0(lm.spendingCents)}</ProofValue> spent, {diff >= 0 ? "above" : "below"} the <ProofValue proof={avgProof}>{usd0(avgTotal)}</ProofValue> monthly average by{" "}
           <span className={diff > 0 ? "text-neg" : "text-pos"}>{usd0(Math.abs(diff))}</span>. Click a category for its transactions.
         </>
       }

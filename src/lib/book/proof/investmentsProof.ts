@@ -10,9 +10,9 @@ import { checksFor, estimatesFor } from "./common.ts";
 import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofKind } from "./types.ts";
 
 /**
- * The proof behind an Investments figure: the household total (every account at its
- * latest statement), one account's value, or one position in it. An account's value is
- * the balance its latest statement closed at (what net worth uses); its positions come
+ * The proof behind an Investments figure: the household total (every account at the
+ * proven-through date), one account's value, or one position in it. An account's value is
+ * its balance on that date (what Net worth shows); its positions come
  * from the holdings that statement (or an older one) lists, re-added here on their own
  * and set against the total the statement prints and the balance on the same day.
  * Whatever the positions don't explain is the page's one balancing line, shown as such.
@@ -26,7 +26,7 @@ export type InvestmentsDescriptor = {
   position?: string;
 };
 
-/** The checks that can withhold an account's value at its latest statement. */
+/** The checks that can withhold an account's value at the proven-through date. */
 export const INVESTMENTS_CHECKS: CheckId[] = [
   "statement.held",
   "statement.chain",
@@ -56,7 +56,7 @@ const positionLabel = (p: Pick<Holding, "symbol" | "name">) => p.symbol ?? p.nam
 
 type Ctx = { book: Book; accounts: AccountHoldings[]; positions: PositionRow[] };
 
-/** Every check over one account's value on its latest statement's last day (the page's own blocker query). */
+/** Every check over one account's value on the proven-through date (the page's own blocker query). */
 function accountChecks(book: Book, a: AccountHoldings) {
   return checksFor(book, { affects: "NET_WORTH", from: a.asOf, to: a.asOf, accountIds: [a.accountId] }, INVESTMENTS_CHECKS);
 }
@@ -153,7 +153,7 @@ function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: Investmen
     ];
     if (snap.asOf !== a.asOf && computed === onSnap)
       vs.push(
-        { label: `Net-worth balance at ${a.asOf}`, value: { cents: a.valueCents }, source: "proven", note: "the latest statement" },
+        { label: `Net-worth balance at ${a.asOf}`, value: { cents: a.valueCents }, source: "proven", note: "the proven-through date" },
         { op: "−", label: `Positions at ${snap.asOf}`, value: { cents: computed }, source: "derived" },
         { op: "=", label: plug?.name ?? "Change since holdings", value: { cents: a.valueCents - computed }, source: "derived" },
       );
@@ -171,7 +171,7 @@ function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: Investmen
   return {
     report: "investments",
     descriptor: d,
-    describes: `${a.name}: value at the statement ending ${a.asOf} (${STATUS_WORDS[a.status]})`,
+    describes: `${a.name}: value at ${a.asOf} (${STATUS_WORDS[a.status]})`,
     figure: { cents: a.valueCents },
     selfCheck: { ok: parts === a.valueCents, deltaCents: parts - a.valueCents, explain },
     withheld,
@@ -206,7 +206,7 @@ function positionProof({ book, positions }: Ctx, a: AccountHoldings, d: Investme
   blocks.push({
     kind: "breakdown",
     title: "Part of",
-    items: [{ label: a.name, value: { cents: a.valueCents }, sub: `statement ending ${a.asOf}`, link: { label: a.name, descriptor: { report: "investments", accountId: a.accountId } } }],
+    items: [{ label: a.name, value: { cents: a.valueCents }, sub: `as of ${a.asOf}`, link: { label: a.name, descriptor: { report: "investments", accountId: a.accountId } } }],
   });
   const { checks, withheld } = accountChecks(book, a);
   const first = mine[0];
@@ -228,12 +228,11 @@ function positionProof({ book, positions }: Ctx, a: AccountHoldings, d: Investme
 function householdProof({ book, accounts, positions }: Ctx, d: InvestmentsDescriptor): Proof {
   const total = positions.reduce((t, p) => t + p.valueCents, 0);
   const parts = accounts.reduce((t, a) => t + a.valueCents, 0);
-  const dates = accounts.map((a) => a.asOf).sort();
   const { checks, withheld } = mergeChecks(accounts.map((a) => accountChecks(book, a)));
   return {
     report: "investments",
     descriptor: d,
-    describes: `Invested: every account at its latest statement${dates.length ? ` (${dates[0]}${dates.at(-1) !== dates[0] ? ` – ${dates.at(-1)}` : ""})` : ""}`,
+    describes: `Invested: every account at ${book.horizon.netWorth}`,
     figure: { cents: total },
     selfCheck: { ok: parts === total, deltaCents: parts - total, explain: `The ${accounts.length} account${accounts.length === 1 ? "" : "s"} below add up to ${usd(parts)}` },
     withheld,
@@ -243,13 +242,13 @@ function householdProof({ book, accounts, positions }: Ctx, d: InvestmentsDescri
         title: "By account",
         items: [...accounts]
           .sort((x, y) => y.valueCents - x.valueCents)
-          .map((a) => ({ label: a.name, sub: `statement ending ${a.asOf} · ${STATUS_WORDS[a.status]}`, value: { cents: a.valueCents }, link: { label: a.name, descriptor: { report: "investments" as const, accountId: a.accountId } } })),
-        note: "Each account counts at the balance its latest statement closed at, the same balance net worth uses.",
+          .map((a) => ({ label: a.name, sub: `as of ${a.asOf} · ${STATUS_WORDS[a.status]}`, value: { cents: a.valueCents }, link: { label: a.name, descriptor: { report: "investments" as const, accountId: a.accountId } } })),
+        note: "Each account counts at its balance on the proven-through date, the same balance Net worth shows.",
       },
     ],
     checks,
-    estimates: [],
-    through: dates.at(-1) ?? book.horizon.netWorth,
+    estimates: estimatesFor(book, { rowIds: new Set(), from: book.horizon.netWorth, to: book.horizon.netWorth, accountIds: accounts.map((x) => x.accountId) }),
+    through: book.horizon.netWorth,
     today: book.today,
   };
 }

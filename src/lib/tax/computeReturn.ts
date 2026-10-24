@@ -255,7 +255,7 @@ export type ReturnResult = {
   ny: NyResult | null;
   fica: FicaResult;
   otherStateTax: number;
-  /** Federal income tax + CT + New York + FICA + other states. */
+  /** Federal income tax + CT + New York + FICA + other states (before the refundable child credit and CT paid leave: see allTaxes). */
   totalTax: number;
   effective: {
     /** Federal income tax (incl. NIIT, additional Medicare) ÷ AGI. */
@@ -313,6 +313,16 @@ export function bracketTax(income: number, upperBounds: number[]): number {
     lower = upper;
   }
   return r(tax);
+}
+
+/**
+ * Every tax a return costs the household, the one "total tax" every page and proof shows:
+ * federal income tax (with the 0.9% and 3.8% surtaxes) after every credit, refundable child
+ * credit included, + Social Security + Medicare + Connecticut + CT paid leave + New York
+ * State and City + other states.
+ */
+export function allTaxes(r: ReturnResult): number {
+  return r.totalTax - r.federal.refundableChildCredit + r.fica.ctPfml;
 }
 
 export function marginalRate(income: number, upperBounds: number[]): number {

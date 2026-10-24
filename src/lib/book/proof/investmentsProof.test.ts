@@ -6,6 +6,7 @@ import type { LedgerAccount } from "../../ledger/loadLedger";
 import { buildTimeline } from "../../ledger/timeline";
 import type { Book, BookHoldings, BookStatement } from "../load";
 import { buildInvestments } from "../reports/investments";
+import { buildNetWorth } from "../reports/netWorth";
 import type { CheckPass, Finding } from "../types";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 import { buildInvestmentsProof, type InvestmentsDescriptor } from "./investmentsProof";
@@ -23,7 +24,7 @@ type Def = { id: string; name: string; subtype: string; group: LedgerAccount["gr
 const DEFS: Def[] = [
   { id: "brk", name: "Pat's brokerage ••1234", subtype: "BROKERAGE", group: "Taxable investments", investment: true, closings: [["2025-01-01", "2025-01-31", 1_000_000], ["2025-02-01", "2025-02-28", 1_050_075]] },
   { id: "ira", name: "Pat's IRA ••5678", subtype: "ROTH_IRA", group: "Retirement", investment: true, closings: [["2025-01-01", "2025-01-31", 500_000], ["2025-02-01", "2025-02-28", 520_250]] },
-  { id: "k401", name: "Example Co 401(k)", subtype: "401K", group: "Retirement", investment: true, closings: [["2025-01-01", "2025-03-31", 300_000]] },
+  { id: "k401", name: "Example Co 401(k)", subtype: "401K", group: "Retirement", investment: true, closings: [["2025-01-01", "2025-02-28", 300_000]] },
   { id: "hsa", name: "Pat's HSA ••9012", subtype: "HSA", group: "Health savings", investment: true, closings: [["2025-02-01", "2025-02-28", 80_000]] },
   { id: "chk", name: "Pat's checking ••3456", subtype: "CHECKING", group: "Cash", investment: false, closings: [["2025-02-01", "2025-02-28", 42_000]] },
 ];
@@ -75,11 +76,11 @@ const HOLDINGS: BookHoldings[] = [
   },
   {
     id: "h-k401",
-    documentId: "doc-k401-2025-03-31",
+    documentId: "doc-k401-2025-02-28",
     institution: "Springfield Bank",
     accountNumber: "7777",
     accountId: "k401",
-    asOf: "2025-03-31",
+    asOf: "2025-02-28",
     positions: [pos(null, "Example Stable Value", 299_000)],
     printedTotalCents: 299_000,
     totalCents: 0,
@@ -113,7 +114,8 @@ function makeBook(extra: Partial<Pick<Book, "passes" | "integrity">> = {}): Book
   });
   return {
     today: "2025-04-15",
-    horizon: { cashFlow: "2025-03-31", netWorth: "2025-03-31" },
+    // The data edge: the last day every account's statements cover.
+    horizon: { cashFlow: "2025-02-28", netWorth: "2025-02-28" },
     ledger: { accounts: ledgerAccounts, mergeDate: "2024-12-01", completeThrough: "2025-02-28", firstDay: "2025-01-01" },
     accounts: DEFS.map((a) => ({ id: a.id, name: a.name, subtype: a.subtype, type: a.investment ? "INVESTMENT" : "CHECKING", institution: "Springfield Bank", group: a.group, identifiers: [] })),
     statements: STATEMENTS,
@@ -146,6 +148,18 @@ const links = (p: Proof): ProofLink[] =>
   p.blocks.flatMap((b) => (b.kind === "breakdown" ? b.items.flatMap((i) => (i.link ? [i.link] : [])) : b.kind === "chain" ? b.lines.flatMap((l) => (l.link ? [l.link] : [])) : []));
 
 describe("buildInvestmentsProof", () => {
+  it("values every account on Net worth's day, at Net worth's balance", () => {
+    const book = makeBook();
+    const r = buildInvestments(book, SETTINGS);
+    const nw = new Map(buildNetWorth(book, { granularity: "month" }).accounts.map((a) => [a.id, a.currentCents]));
+    expect(r.asOf).toBe(book.horizon.netWorth);
+    expect(r.accounts.length).toBeGreaterThan(0);
+    for (const a of r.accounts) {
+      expect(a.asOf, a.name).toBe(book.horizon.netWorth);
+      expect(a.valueCents, a.name).toBe(nw.get(a.accountId));
+    }
+  });
+
   it("proves every figure the page shows: the total, each account and each position", () => {
     for (const settings of [SETTINGS, { ...SETTINGS, includeBankCash: true }]) {
       const book = makeBook();
@@ -205,7 +219,7 @@ describe("buildInvestmentsProof", () => {
     expect(p.describes).toContain("don't tie");
     const shown = block(p, "What the page shows");
     expect(shown?.kind === "breakdown" && shown.items.map((i) => [i.label, i.value])).toEqual([["Whole account (no holdings on file)", { cents: 300_000 }]]);
-    expect(block(p, "Positions on file at 2025-03-31 (not used)")).toBeTruthy();
+    expect(block(p, "Positions on file at 2025-02-28 (not used)")).toBeTruthy();
     const nw = block(p, "Against the net-worth balance");
     expect(nw?.kind === "chain" && nw.lines.at(-1)).toMatchObject({ value: { cents: -1_000 }, note: "The positions come to $10.00 less than the balance: not used." });
   });

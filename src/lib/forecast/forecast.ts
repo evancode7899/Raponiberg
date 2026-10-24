@@ -181,6 +181,26 @@ export function homeForecast(f: Forecast, seeds: OutlookSeeds): HomeForecast {
   };
 }
 
+/** Counted bonus pay the schedule puts in `year`, of the given sources (every source by default): one sum for FIRE's table and the Forecast's feeds. */
+export function bonusesInYear(schedule: Pick<ScheduledBonus, "counted" | "source" | "key" | "gross">[], year: number, sources?: ScheduledBonus["source"][]): number {
+  return schedule.filter((b) => b.counted && (!sources || sources.includes(b.source)) && b.key.startsWith(`${year}-`)).reduce((t, b) => t + b.gross, 0);
+}
+
+/**
+ * What two pages read from the forecast, as the Forecast page's "Feeds" strip shows it,
+ * each read the way its page reads it: the bonus still to come this year (letters and
+ * estimates, the bonuses taxLink hands the Taxes page beyond what the stubs paid), and the
+ * average monthly change in liquid money over the next twelve months (the balances Goals
+ * reads through goalForecastOf: saving, growth and planned one-offs together).
+ */
+export function forecastFeeds(f: Pick<Forecast, "schedule" | "months" | "plan">, currentYear: number): { bonusToCome: number; liquidPerMonth: number } {
+  const year1 = f.months.slice(0, 12);
+  return {
+    bonusToCome: bonusesInYear(f.schedule, currentYear, ["LETTER", "ESTIMATE"]),
+    liquidPerMonth: year1.length ? Math.round((year1.at(-1)!.liquid - f.plan.start.liquid) / year1.length) : 0,
+  };
+}
+
 /** Investment growth on liquid money from the start through month `key` (for capital-gains estimates). */
 export function liquidGrowthThrough(f: Pick<Forecast, "months">, key: string): number {
   return f.months.filter((m) => m.key <= key).reduce((g, m) => g + m.liquidGrowth, 0);

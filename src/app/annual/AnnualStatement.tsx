@@ -55,8 +55,9 @@ export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () 
   const value = (v: number | null | undefined, blockers: BlockerRef[] | undefined, fmt: (n: number) => string = (n) => usd(n)) =>
     v != null ? fmt(v) : blockers?.length ? <BlockedValue blockers={blockers} /> : "—";
   const blockedYears = ys.filter((y) => Object.values(y.blockers).some((b) => b.length > 0));
+  // The largest few, named in the note; the count and total cover every one.
   const untagged = full?.cash ? full.oneOffCandidates.filter((c) => !c.tagged) : [];
-  const untaggedCents = untagged.reduce((s, c) => s + c.cents, 0);
+  const untaggedCents = full?.oneOffUntagged.cents ?? 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -96,7 +97,7 @@ export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () 
         />
       </StatGrid>
 
-      {full?.cash && untagged.length > 0 && (
+      {full?.cash && full.oneOffUntagged.count > 0 && (
         <Callout
           tone="info"
           title={`${full.year} living expenses include ${usd(untaggedCents)} in single charges of $1,500 or more`}
@@ -106,8 +107,8 @@ export function AnnualStatement({ r, onGo }: { r: AnnualProfileReport; onGo: () 
             </button>
           }
         >
-          {untagged.length} big charge{untagged.length === 1 ? "" : "s"} ({untagged.slice(0, 3).map((c) => c.payee).join(", ")}
-          {untagged.length > 3 ? "…" : ""}) count as a normal year&apos;s living cost. If any were one-offs, marking them moves them to the one-off line here and
+          {full.oneOffUntagged.count} big charge{full.oneOffUntagged.count === 1 ? "" : "s"} ({untagged.slice(0, 3).map((c) => c.payee).join(", ")}
+          {full.oneOffUntagged.count > 3 ? "…" : ""}) count as a normal year&apos;s living cost. If any were one-offs, marking them moves them to the one-off line here and
           lowers the spending your FIRE plan starts from.
         </Callout>
       )}

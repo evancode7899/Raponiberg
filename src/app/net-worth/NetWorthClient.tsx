@@ -123,17 +123,20 @@ const changeProof = (granularity: Granularity, start: string, end: string, shown
 /** Withheld figures open no proof: the page shows why instead. */
 const unless = (bs: BlockerRef[], t: ProofTarget) => (bs.length ? undefined : t);
 
-function trailing(r: NetWorthReport, months: number) {
-  const ps = r.periods.slice(-months);
-  const blockers = uniq(ps.flatMap((p) => p.blockers));
-  const sum = (f: (p: NetWorthPeriod) => number) => ps.reduce((s, p) => s + f(p), 0);
-  const change = (ps.at(-1)?.household.closingCents ?? 0) - (ps[0]?.household.openingCents ?? 0);
+/** The last twelve months' change and its sources, as the report adds them up (and Home shows them). */
+function trailing(r: NetWorthReport) {
+  const t = r.summary.trailing12;
+  const blockers = t?.blockers ?? [];
+  const ok = t && !blockers.length;
+  const driver = (figure: "saving" | "markets", shownCents: number): ProofTarget | undefined => (ok ? { descriptor: { report: "dashboard", figure, start: t.start, end: t.end }, shownCents } : undefined);
   return {
-    change,
-    proof: (shownCents: number | null) => (ps.length && !blockers.length ? changeProof("month", ps[0]!.start, ps.at(-1)!.end, shownCents) : undefined),
-    principal: sum((p) => p.household.principalCents + p.household.newlyTrackedCents),
-    growth: sum((p) => p.household.growthNetOfFeesCents),
-    transit: sum((p) => p.household.transferResidualCents + p.household.unexplainedCents),
+    change: t?.changeCents ?? 0,
+    changeProof: ok ? changeProof("month", t.start, t.end, t.changeCents) : undefined,
+    principal: t?.principalCents ?? 0,
+    principalProof: driver("saving", t?.principalCents ?? 0),
+    growth: t?.growthCents ?? 0,
+    growthProof: driver("markets", t?.growthCents ?? 0),
+    transit: t?.otherCents ?? 0,
     blockers,
   };
 }
@@ -176,9 +179,8 @@ function Overview({ r }: { r: NetWorthReport }) {
   const flagged = periods.filter((p) => p.household.quality === "INTERPOLATED" || p.household.quality === "STALE");
   const minY = Math.min(0, ...periods.map((p) => p.byGroup.filter((g) => g.closingCents < 0).reduce((s, g) => s + g.closingCents, 0) / 100));
   const yFloor = minY < 0 ? Math.floor((minY * 1.5) / 10_000) * 10_000 : 0;
-  const assets = r.accounts.reduce((s, a) => s + Math.max(0, a.currentCents), 0);
-  const debts = r.accounts.reduce((s, a) => s + Math.min(0, a.currentCents), 0);
-  const t12 = trailing(r, 12);
+  const { assetsCents: assets, debtsCents: debts } = r.summary;
+  const t12 = trailing(r);
   const mergeLabel = periods.find((p) => p.start <= r.mergeDate && r.mergeDate <= p.end)?.label;
   const byGroup = useMemo(() => {
     const m = new Map<(typeof groups)[number], NetWorthReport["accounts"]>();
@@ -208,12 +210,12 @@ function Overview({ r }: { r: NetWorthReport }) {
         <StatCell
           label="Last 12 months"
           value={shown(usdDelta(t12.change), t12.blockers)}
-          proof={t12.proof(t12.change)}
+          proof={t12.changeProof}
           tone={t12.blockers.length ? "neutral" : t12.change >= 0 ? "pos" : "neg"}
           sub={t12.blockers.length ? undefined : t12.transit ? `incl. ${usd0(t12.transit)} in transit` : "change"}
         />
-        <StatCell label="…from saving" value={shown(usdDelta(t12.principal), t12.blockers)} proof={t12.proof(null)} sub="saved & contributed" />
-        <StatCell label="…from markets" value={shown(usdDelta(t12.growth), t12.blockers)} proof={t12.proof(null)} sub="growth, net of fees" />
+        <StatCell label="…from saving" value={shown(usdDelta(t12.principal), t12.blockers)} proof={t12.principalProof} sub="saved & contributed" />
+        <StatCell label="…from markets" value={shown(usdDelta(t12.growth), t12.blockers)} proof={t12.growthProof} sub="growth, net of fees" />
       </StatGrid>
 
       <Card
@@ -272,7 +274,7 @@ function Overview({ r }: { r: NetWorthReport }) {
               </tr>
             </thead>
             {byGroup.map(([g, list]) => {
-              const sub = list.reduce((s, a) => s + a.currentCents, 0);
+              const sub = r.summary.groups.find((x) => x.group === g)?.cents ?? 0;
               const subBlockers = uniq(list.flatMap((a) => forAccount(cur, a.id)));
               return (
                 <tbody key={g}>

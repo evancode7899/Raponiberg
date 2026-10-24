@@ -116,11 +116,10 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
   const classified = r.allocation.filter((c) => c.cls !== "UNCLASSIFIED");
   const stocks = classified.filter((c) => c.cls === "US_STOCK" || c.cls === "INTL_STOCK").reduce((s, c) => s + c.share, 0);
   const unclassified = r.allocation.find((c) => c.cls === "UNCLASSIFIED");
-  const dates = [...new Set(r.accounts.map((a) => a.asOf))].sort();
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell label="Invested" value={usd0(r.totalCents)} proof={accountTarget(null, r.totalCents)}sub={dates.length > 1 ? `each account at its latest statement (${dates[0]} – ${dates.at(-1)})` : `as of ${dates[0]}`} />
+        <StatCell label="Invested" value={usd0(r.totalCents)} proof={accountTarget(null, r.totalCents)}sub={`as of ${r.asOf}, as on Net worth`} />
         <StatCell label="Stocks" value={pct(stocks)} sub="US + international, of all holdings" />
         <StatCell label="Fund costs" value={usd0(r.fees.annualCents)} sub={`a year · ${ratio(r.fees.weightedRatio)} weighted expense ratio`} />
         <StatCell label="Unrealized gain (taxable)" value={usdDelta(r.gains.taxable.unrealizedCents)} tone={r.gains.taxable.unrealizedCents < 0 ? "neg" : "pos"} sub="where cost basis is on the statement" />
@@ -256,8 +255,8 @@ function TargetCard({ data, save, saving }: { data: Data; save: (s: InvestmentSe
 // ---------------------------------------------------------------------------- holdings
 
 const STATUS: Record<string, { tone: "pos" | "warn" | "neg" | "neutral"; label: string; help: string }> = {
-  TIES: { tone: "pos", label: "ties", help: "The positions on the latest statement add up to its balance to the cent." },
-  STALE: { tone: "warn", label: "older holdings", help: "The latest statement lists no positions; positions are from an earlier one and the change since is one line." },
+  TIES: { tone: "pos", label: "ties", help: "The positions listed on that day add up to the balance to the cent." },
+  STALE: { tone: "warn", label: "older holdings", help: "No positions are listed on that day; they're from an earlier statement and the change since is one line." },
   MISMATCH: { tone: "neg", label: "doesn't tie", help: "The positions on file don't add up to the statement balance, so they aren't used." },
   NONE: { tone: "neutral", label: "no holdings", help: "This account's statements don't list positions; it counts as one line." },
 };
@@ -290,7 +289,7 @@ function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSett
             subtitle={
               <>
                 <ProofValue proof={accountTarget(a.accountId, a.valueCents)}>{usd0(a.valueCents)}</ProofValue>
-                {` at the statement ending ${a.asOf}${a.holdingsAsOf && a.holdingsAsOf !== a.asOf ? ` · holdings as of ${a.holdingsAsOf}` : ""}${a.differenceCents ? ` · positions off by ${usdDelta(a.differenceCents)}` : ""}`}
+                {` as of ${a.asOf}${a.holdingsAsOf && a.holdingsAsOf !== a.asOf ? ` · holdings as of ${a.holdingsAsOf}` : ""}${a.differenceCents ? ` · positions off by ${usdDelta(a.differenceCents)}` : ""}`}
               </>
             }
           >
@@ -468,7 +467,7 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
           </ul>
         </Card>
       )}
-      <Card title="Fees by account" subtitle="What each account's statements deducted over the 12 months to its latest statement.">
+      <Card title="Fees by account" subtitle="What each account's statements deducted over the 12 months to the proven-through date.">
         <div className={table.wrap}>
           <table className={table.table}>
             <tbody>
