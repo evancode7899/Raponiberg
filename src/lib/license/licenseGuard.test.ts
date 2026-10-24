@@ -276,8 +276,23 @@ describe("the name and no-commercial-use tripwires", () => {
     expect(problems).toMatch(/depends on @stripe\/stripe-js/);
     expect(problems).toMatch(/"funding" link/);
     expect(problems).toMatch(/FUNDING\.yml asks for sponsorship/);
-    expect(problems).toMatch(/Ad\.tsx mentions googlesyndication\.com/);
-    expect(problems).toMatch(/tip\.ts mentions ko-fi\.com/);
+    expect(problems).toMatch(/Ad\.tsx mentions https:\/\/pagead2\.googlesyndication\.com/);
+    expect(problems).toMatch(/tip\.ts mentions https:\/\/ko-fi\.com/);
+  });
+
+  it("flags links with or without a scheme, and ad identifiers", () => {
+    put("src/a.ts", 'export const s = "//www.paypal.com/sdk/js";\n');
+    put("src/b.ts", 'export const u = "https://github.com/sponsors/someone";\n');
+    put("src/c.tsx", "export const C = () => <ins className=\"adsbygoogle\" />;\n");
+    put("src/d.ts", 'export const u = "https://checkout.stripe.com/pay";\n');
+    const problems = checkRules(root).join("\n");
+    for (const f of ["a.ts", "b.ts", "c.tsx", "d.ts"]) expect(problems).toContain(`src/${f} mentions`);
+  });
+
+  it("leaves plain-text names alone: statement lines, merchant patterns, docs links", () => {
+    put("src/lib/ingest/parsers/example.ts", 'export const lines = ["PATREON.COM MEMBERSHIP", "KO-FI.COM SUPPORTER", "PADDLE.COM* TOOL", "// see patreon.com"];\n');
+    put("src/lib/ingest/parsers/docs.ts", "// Stripe payout format: https://stripe.com/docs/reports/payout-reconciliation\n");
+    expect(checkRules(root)).toEqual([]);
   });
 
   it("doesn't flag a merchant name in the classifier", () => {
