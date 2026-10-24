@@ -285,7 +285,7 @@ export const CHECKS: CheckDef[] = [
     id: "networth.reconciles",
     title: "Each month's net worth reconciles",
     description:
-      "For every month with nothing missing: opening net worth + income − spending + outside money + retirement contributions + market change = closing net worth, with nothing left unexplained and transfers netting to zero (except money in flight across the month's edges).",
+      "For every month with nothing missing: opening net worth + income − spending + outside money + retirement contributions + market change = closing net worth, with nothing left unexplained and transfers netting to zero (except money in flight across the month's edges). A month whose edge falls inside a quarterly statement passes for the money moved; its month-end value stays an estimate (the quarter's market change spread across its months).",
   },
   {
     id: "tax.brokerage-coverage",

@@ -76,16 +76,20 @@ export function checkNetWorth(book: Book, c: Collector) {
       );
     if (problems.length === 0) {
       // A month whose opening or closing value is an estimate (an investment statement's
-      // market change spread across its quarter) balances by construction: listed as an
-      // inference, never counted as a pass that proves anything.
+      // market change spread across its quarter): the money that moved is held to the same
+      // test as any month (nothing unexplained, transfers netting out but for what was in
+      // flight), so that part passes. How the quarter's market change splits across its
+      // months isn't provable: the month-end value stays an inference (and its badge says
+      // estimated), never a pass. Each statement period around it ties on its own (statement.held).
       if (h.quality !== "EXACT") {
         c.infer({
           id: `networth.reconciles:estimated:${p.start.slice(0, 7)}`,
           check: "networth.reconciles",
-          title: `${p.label}: balances on estimated values`,
-          detail: `At least one account's value at the month's edges falls between its statements (quality: ${h.quality.toLowerCase()}): its market change is spread across the statement's period, so the month adds up by construction. The statement periods around it are what's proven.`,
+          title: `${p.label}: month-end value estimated`,
+          detail: `At least one account's value at the month's edges falls between its statements (quality: ${h.quality.toLowerCase()}): its market change is spread across the statement's period. The money that moved this month reconciles; the split of market change between months is the estimate. The statement periods around it are what's proven.`,
           scope: { from: p.start, to: end },
         });
+        c.pass("networth.reconciles", { subject: `${p.label}: every dollar moved explained (month-end value estimated)`, from: p.start, to: end, affects: ["NET_WORTH", "CASH_FLOW"] });
         continue;
       }
       c.pass("networth.reconciles", { subject: `${p.label}: every dollar of change explained`, from: p.start, to: end, affects: ["NET_WORTH", "CASH_FLOW"] });

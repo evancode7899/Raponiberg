@@ -300,10 +300,10 @@ describe("net worth reconciles month by month", () => {
     plan.segs.push({ start: "2026-01-01", end: "2026-01-31", open: 0, close: 0 });
     const b = makeBook({ accounts: [plan, ira], matches: [{ id: "roll", status: "CONFIRMED", rowIds: ["out", "in"] }], today: "2026-02-10" });
     expect(findings(b, "networth.reconciles")).toEqual([]);
-    // Months whose edges fall inside the quarter are estimates there: listed, not passed.
+    // Months whose edges fall inside the quarter: the money moved passes, the month-end value stays an estimate.
     const estimated = b.integrity.inferences.filter((i) => i.id.startsWith("networth.reconciles:estimated:")).map((i) => i.id.slice(-7));
     expect(estimated).toEqual(["2025-10", "2025-11", "2025-12"]);
-    expect(passed(b, "networth.reconciles") + estimated.length).toBe(4);
+    expect(passed(b, "networth.reconciles")).toBe(4);
   });
 
   it("still catches a month whose transfers don't net out", () => {
