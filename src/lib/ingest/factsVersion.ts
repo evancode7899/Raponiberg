@@ -2,7 +2,9 @@
  * Bump when an extractor that feeds stored facts changes (pay stub lines, brokerage tax
  * figures, holdings): documents with an older version are re-extracted from their stored
  * file by refreshOutdatedFacts (documentFacts.ts), without touching their statements or
- * rows. Until then the Book reports them as read by an older extractor.
+ * rows. That happens at the next app launch (refreshOutdatedFactsOnLaunch, run from
+ * instrumentation.ts) and after any import or edit; until then the Book reports them as
+ * read by an older extractor.
  */
 /**
  * v2: ADP payroll company codes split an employer into separate year-to-date chains. v3: Vanguard brokerage tax figures.
