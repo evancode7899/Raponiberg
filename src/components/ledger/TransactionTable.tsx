@@ -2,6 +2,7 @@
 
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { Badge, btn, selectCls, table, type Tone } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { sortRows, SortTh, useSort, type Sort, type SortKey } from "@/components/ui/sort";
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import { CATEGORIES, LANE_LABELS, type Lane } from "@/lib/classifier/taxonomy";
@@ -224,7 +225,8 @@ function Row({
         {error && <div className="mt-1 text-xs text-neg">{error}</div>}
       </td>
       <td className={`${table.tdR} font-medium ${r.amountCents > 0 ? "text-pos" : "text-fg"}`}>
-        {formatUsdFromCents(r.amountCents)}
+        {/* The row as its statement prints it, how it is filed and where it counts (book/proof/rowProof). */}
+        <ProofValue proof={{ descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents }}>{formatUsdFromCents(r.amountCents)}</ProofValue>
         {r.lane === "EXPENSE" && r.amountCents < 0 && (
           <div className="mt-0.5 text-[11px] font-normal">
             {paidBackCents > 0 ? (

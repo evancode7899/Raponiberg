@@ -19,6 +19,8 @@ import { oneOffRules, provenMonths } from "./spending.ts";
 
 export type OneOffRow = {
   fingerprint: string;
+  /** The Book row (opens its row proof). */
+  rowId: string;
   date: string;
   payee: string;
   account: string;
@@ -124,7 +126,7 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
     else spending.set(r.category, (spending.get(r.category) ?? 0) - cents);
     // Offered for marking by the same test as Cash flow's list (spending.ts oneOffRules).
     if (rules.candidate(r)) {
-      candidates.push({ fingerprint: fp, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
+      candidates.push({ fingerprint: fp, rowId: r.id, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
     }
   }
   candidates.sort((a, b) => Number(b.tagged) - Number(a.tagged) || b.cents - a.cents);

@@ -12,6 +12,10 @@ import { planningKind, type PlanningDescriptor } from "./planningProof.ts";
 import { annualKind, type AnnualDescriptor } from "./annualProof.ts";
 import { dashboardKind, type DashboardDescriptor } from "./dashboardProof.ts";
 import { accountLimitsKind, type AccountLimitsDescriptor } from "./accountLimitsProof.ts";
+import { statementKind, type StatementDescriptor } from "./statementProof.ts";
+import { findRow, rowKind, type RowDescriptor } from "./rowProof.ts";
+import { stubKind, type StubDescriptor } from "./stubProof.ts";
+import type { Book } from "../load.ts";
 import type { Proof, ProofContext, ProofKind } from "./types.ts";
 
 /**
@@ -25,10 +29,13 @@ import type { Proof, ProofContext, ProofKind } from "./types.ts";
  *  2. Its descriptor in the ProofDescriptor union and its kind in KINDS, below.
  *  3. Tests with invented fixtures: the parts re-add to the figure (selfCheck.ok), and
  *     every link it emits parses and builds (see index.test.ts).
+ * Below every kind sit three that prove a source itself: one statement as it prints
+ * (statement), one ledger row (row), one pay stub (stub). Rows and statements listed in
+ * any proof open them (linkSources), so every figure can be followed to the printed line.
  * Checks over the figure come from checksFor (common.ts), with the list of checks that
  * can withhold that kind of figure.
  */
-export type ProofDescriptor = CashFlowDescriptor | NetWorthDescriptor | PayDescriptor | InvestmentsDescriptor | FiledReturnDescriptor | HsaDescriptor | CarDescriptor | ForecastDescriptor | TaxEstimateDescriptor | BonusesDescriptor | PlanningDescriptor | AnnualDescriptor | DashboardDescriptor | AccountLimitsDescriptor;
+export type ProofDescriptor = CashFlowDescriptor | NetWorthDescriptor | PayDescriptor | InvestmentsDescriptor | FiledReturnDescriptor | HsaDescriptor | CarDescriptor | ForecastDescriptor | TaxEstimateDescriptor | BonusesDescriptor | PlanningDescriptor | AnnualDescriptor | DashboardDescriptor | AccountLimitsDescriptor | StatementDescriptor | RowDescriptor | StubDescriptor;
 
 const KINDS: { [R in ProofDescriptor["report"]]: ProofKind<Extract<ProofDescriptor, { report: R }>> } = {
   "cash-flow": cashFlowKind,
@@ -45,6 +52,9 @@ const KINDS: { [R in ProofDescriptor["report"]]: ProofKind<Extract<ProofDescript
   annual: annualKind,
   dashboard: dashboardKind,
   "account-limits": accountLimitsKind,
+  statement: statementKind,
+  row: rowKind,
+  stub: stubKind,
 };
 
 const kindOf = (report: string) => (Object.hasOwn(KINDS, report) ? (KINDS[report as ProofDescriptor["report"]] as ProofKind<ProofDescriptor>) : null);
@@ -58,9 +68,33 @@ export function parseDescriptor(body: unknown): ProofDescriptor | { error: strin
   return kind.parse(d);
 }
 
-/** The proof behind the figure a descriptor names. */
-export function buildProof(ctx: ProofContext, d: ProofDescriptor): Promise<Proof> {
-  return Promise.resolve(kindOf(d.report)!.build(ctx, d));
+/** The proof behind the figure a descriptor names, every row and statement in it that is the Book's own marked so the drawer can open it. */
+export async function buildProof(ctx: ProofContext, d: ProofDescriptor): Promise<Proof> {
+  return linkSources(ctx.book, await kindOf(d.report)!.build(ctx, d));
+}
+
+/**
+ * Marks the rows and statements a proof lists that are the Book's own (rowId, importId),
+ * so each opens its row or statement proof: done here, once, so no kind can forget and
+ * any figure can be followed down to the printed line. A row id a kind made up (a
+ * balance line, a statement's market change) matches nothing and stays plain; a kind that
+ * lists a Book row under an id of its own sets rowId itself.
+ */
+export function linkSources(book: Book, p: Proof): Proof {
+  const statements = new Set(book.statements.map((s) => s.id));
+  const blocks = p.blocks.map((b) =>
+    b.kind !== "rows"
+      ? b
+      : {
+          ...b,
+          groups: b.groups.map((g) => ({
+            ...g,
+            statement: g.statement.importId || !statements.has(g.statement.id) ? g.statement : { ...g.statement, importId: g.statement.id },
+            rows: g.rows.map((r) => (r.rowId || !findRow(book, r.id) ? r : { ...r, rowId: r.id })),
+          })),
+        },
+  );
+  return { ...p, blocks };
 }
 
 export type { Proof, ProofBlock, ProofLink } from "./types.ts";
