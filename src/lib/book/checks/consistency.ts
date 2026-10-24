@@ -99,7 +99,7 @@ export function checkConsistency(book: Book, c: Collector) {
       fail(
         `rows:${month}`,
         `cash flow and net worth disagree from ${month!.slice(0, 7)}`,
-        `The account's rows and its statement timeline book different amounts: ${off.slice(0, 4).map((x) => `${x.k.replace("|", " ")} ${money(Math.round(x.d))}`).join("; ")}${off.length > 4 ? `; and ${off.length - 4} more` : ""}.`,
+        `The account's rows and its statement timeline book different amounts: ${off.slice(0, 4).map((x) => `${x.k.split("|").join(" ")} ${money(Math.round(x.d))}`).join("; ")}${off.length > 4 ? `; and ${off.length - 4} more` : ""}.`,
         month!,
         a.timeline.lastDay!,
       );
