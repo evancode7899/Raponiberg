@@ -1,8 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkLicense, checkRules, consensus, COPIES, HASH_PINS, read, restore, ROOT, SEAL_FILE, SEALED_FILES, sha256, writePins } from "../../../scripts/license-guard";
+import { checkLicense, checkRules, checkSince, consensus, COPIES, HASH_PINS, read, restore, ROOT, SEAL_FILE, SEALED_FILES, sha256, signerChainProblems, writePins } from "../../../scripts/license-guard";
 import { generateOwnerKey, seal } from "../../../scripts/license-seal";
 
 // A made-up license: the guard only cares that the text hashes the same everywhere.
@@ -151,13 +152,74 @@ describe("the owner's signature", () => {
     expect(checkLicense(root).problems.join(" ")).toMatch(/signature isn't valid/);
   });
 
-  it("won't sign with the wrong passphrase, or with a different key unless told to rotate", () => {
-    expect(() => seal(root, key.privateKey, "wrong passphrase!!")).toThrow();
-    seal(root, key.privateKey, PASS);
-    const other = generateOwnerKey("another made-up passphrase");
-    expect(() => seal(root, other.privateKey, "another made-up passphrase")).toThrow(/already pinned/);
-    expect(seal(root, other.privateKey, "another made-up passphrase", true)).toBe(other.signer);
-    expect(checkLicense(root).problems).toEqual([]);
+  it("won't sign with the wrong passphrase", () => {
+    expect(() => seal(root, key.privateKey, "wrong passphrase!!")).toThrow(/doesn't open the signing key/);
+  });
+});
+
+describe("handing the owner role to a new key", () => {
+  const PASS2 = "made-up passphrase 2";
+  const PASS3 = "made-up passphrase 3";
+  const a = generateOwnerKey(PASS);
+  const b = generateOwnerKey(PASS2);
+  const c = generateOwnerKey(PASS3);
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=Pat Example", "-c", "user.email=pat@example.com", ...args], { cwd: root, stdio: "ignore" });
+
+  it("needs the old key: a new key alone is refused, and so is the wrong old key", () => {
+    seal(root, a.privateKey, PASS);
+    expect(() => seal(root, b.privateKey, PASS2)).toThrow(/--old-key/);
+    expect(() => seal(root, b.privateKey, PASS2, { old: { pem: c.privateKey, passphrase: PASS3 } })).toThrow(/not the pinned owner key/);
+    expect(() => seal(root, b.privateKey, PASS2, { old: { pem: a.privateKey, passphrase: "wrong passphrase!!" } })).toThrow(/doesn't open/);
+  });
+
+  it("works with the old key, and the chain from the old key to the new one verifies", () => {
+    seal(root, a.privateKey, PASS);
+    expect(seal(root, b.privateKey, PASS2, { old: { pem: a.privateKey, passphrase: PASS } })).toBe(b.signer);
+    expect(checkLicense(root)).toMatchObject({ problems: [], signer: b.signer });
+    expect(signerChainProblems(root, a.signer)).toEqual([]);
+    expect(signerChainProblems(root, b.signer)).toEqual([]);
+  });
+
+  it("follows a chain of several hand-overs", () => {
+    seal(root, a.privateKey, PASS);
+    seal(root, b.privateKey, PASS2, { old: { pem: a.privateKey, passphrase: PASS } });
+    seal(root, c.privateKey, PASS3, { old: { pem: b.privateKey, passphrase: PASS2 } });
+    expect(signerChainProblems(root, a.signer)).toEqual([]);
+  });
+
+  it("flags a key swap that nothing vouches for, however consistently it was re-pinned", () => {
+    seal(root, a.privateKey, PASS);
+    seal(root, b.privateKey, PASS2, { replaceLostKey: true });
+    expect(checkLicense(root).problems).toEqual([]); // a local check can't tell...
+    expect(signerChainProblems(root, a.signer).join(" ")).toMatch(/without a rotation signed by the old key/); // ...an earlier commit can
+  });
+
+  it("flags removing the owner signature altogether", () => {
+    seal(root, a.privateKey, PASS);
+    rmSync(path.join(root, SEAL_FILE));
+    expect(signerChainProblems(root, a.signer).join(" ")).toMatch(/is missing/);
+  });
+
+  it("compares with an earlier commit (the way the hooks and CI use origin/main)", () => {
+    seal(root, a.privateKey, PASS);
+    git("init", "-q");
+    git("add", "-A");
+    git("commit", "-q", "-m", "sealed");
+    expect(checkSince(root, "HEAD")).toEqual({ problems: [], notes: [] });
+
+    seal(root, b.privateKey, PASS2, { replaceLostKey: true });
+    expect(checkSince(root, "HEAD").problems.join(" ")).toMatch(/^Compared with HEAD: The owner key changed/);
+
+    git("checkout", "--", "."); // undo the swap, then hand over properly
+    seal(root, b.privateKey, PASS2, { old: { pem: a.privateKey, passphrase: PASS } });
+    expect(checkSince(root, "HEAD").problems).toEqual([]);
+  });
+
+  it("has nothing to compare with before the first signature", () => {
+    git("init", "-q");
+    git("add", "-A");
+    git("commit", "-q", "-m", "unsigned");
+    expect(checkSince(root, "HEAD").notes.join(" ")).toMatch(/No owner signature in HEAD/);
   });
 });
 

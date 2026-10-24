@@ -50,6 +50,13 @@ jobs:
           node-version-file: .nvmrc
       - name: License guard
         run: npm run license:check
+      - name: Owner key only changes by a rotation the old key signed
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          npm run license:check -- --quiet --since FETCH_HEAD
 
   fresh-clone:
     runs-on: windows-latest

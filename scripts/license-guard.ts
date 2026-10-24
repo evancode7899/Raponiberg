@@ -12,11 +12,13 @@
  *      files, or who talks an assistant into believing they are the owner, can forge it;
  *   4. tripwires: the name "Raponiberg" in the places the app shows it, and no payment,
  *      advertising or donation packages, links or funding files;
- *   5. with --upstream, the LICENSE in the original repository on GitHub.
+ *   5. with --upstream, the LICENSE in the original repository on GitHub, and with --since
+ *      <rev> (the hooks and CI use origin/main), the owner key in an earlier commit: either
+ *      the same key, or one handed over by a rotation signed with the old private key.
  * Nothing here can stop a determined person who rewrites every layer; it makes casual and
  * AI-assisted tampering fail loudly in many places at once (docs/license-protection.md).
  *
- * Usage: npm run license:check [-- --quiet] [-- --upstream] [-- --dir <copy>]
+ * Usage: npm run license:check [-- --quiet] [-- --upstream] [-- --since <git rev>] [-- --dir <copy>]
  *        npm run license:restore   (rebuilds the LICENSE and its pins from a verified copy)
  */
 import { execFileSync } from "node:child_process";
@@ -152,10 +154,50 @@ export function writePins(root: string, license: string, signer = "none"): strin
 }
 
 // ---- the owner's signature
-export type Seal = { version: 1; licenseSha256: string; signer: string; publicKey: string; files: Record<string, string>; signature: string };
+/** The old key's signature handing the owner role to a new key (see signerChainProblems). */
+export type Rotation = { fromPublicKey: string; to: string; signature: string };
+export type Seal = { version: 1; licenseSha256: string; signer: string; publicKey: string; files: Record<string, string>; rotations?: Rotation[]; signature: string };
 export const signerOf = (publicKeyDerBase64: string) => createHash("sha256").update(Buffer.from(publicKeyDerBase64, "base64")).digest("hex").slice(0, 16);
 export const sealMessage = (files: Record<string, string>) =>
   "raponiberg-seal-v1\n" + Object.keys(files).sort().map((f) => `${f} ${files[f]}\n`).join("");
+
+export const rotationMessage = (from: string, to: string) => `raponiberg-rotation-v1\n${from} ${to}\n`;
+const spki = (b64: string) => createPublicKey({ key: Buffer.from(b64, "base64"), format: "der", type: "spki" });
+const parseSeal = (raw: string | null): Seal | null => {
+  try {
+    return raw ? (JSON.parse(raw) as Seal) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Whether this copy's owner key is the trusted one (from an earlier commit or the original
+ * repository) or is reached from it by rotations, each signed by the key it replaces.
+ * Pins can all be rewritten locally; a rotation can only be made with the old private key.
+ */
+export function signerChainProblems(root: string, trusted: string): string[] {
+  const mine = parseSeal(read(root, SEAL_FILE));
+  if (!mine) return [`${SEAL_FILE} is missing, though the owner's signature (key ${trusted}) is already there to compare with.`];
+  let current = trusted;
+  for (let moved = true; moved && current !== mine.signer; ) {
+    moved = false;
+    for (const r of mine.rotations ?? []) {
+      let ok = false;
+      try {
+        ok = signerOf(r.fromPublicKey) === current && verify(null, Buffer.from(rotationMessage(current, r.to)), spki(r.fromPublicKey), Buffer.from(r.signature, "base64"));
+      } catch {
+        /* an unparseable rotation counts as invalid */
+      }
+      if (ok) {
+        current = r.to;
+        moved = true;
+        break;
+      }
+    }
+  }
+  return current === mine.signer ? [] : [`The owner key changed from ${trusted} to ${mine.signer} without a rotation signed by the old key: only the key's owner can hand it over.`];
+}
 
 function sealProblems(root: string, raw: string, signerPin: string, license: string | null): string[] {
   const out: string[] = [];
@@ -279,14 +321,27 @@ export async function checkUpstream(root = ROOT): Promise<{ problems: string[]; 
     if (theirs === null) return { problems: [], notes: ["Couldn't compare with the original repository (GitHub didn't return its LICENSE)."] };
     const mine = read(root, "LICENSE");
     if (mine === null || sha256(mine) !== sha256(theirs)) return { problems: ["LICENSE differs from the one in the original repository (github.com/evancode7899/Raponiberg)."], notes: [] };
-    const theirSeal = await get(SEAL_FILE);
-    const mySeal = read(root, SEAL_FILE);
-    if (theirSeal && (!mySeal || (JSON.parse(mySeal) as Seal).signer !== (JSON.parse(theirSeal) as Seal).signer))
-      return { problems: ["The owner-signature key differs from the one in the original repository."], notes: [] };
+    const theirs2 = parseSeal(await get(SEAL_FILE));
+    if (theirs2) {
+      const chain = signerChainProblems(root, theirs2.signer);
+      if (chain.length) return { problems: chain.map((c) => `Compared with the original repository: ${c}`), notes: [] };
+    }
     return { problems: [], notes: ["LICENSE matches the original repository."] };
   } catch {
     return { problems: [], notes: ["Couldn't reach the original repository, so it wasn't compared."] };
   }
+}
+
+/** The owner key against the one in an earlier commit (for example origin/main): it may only change by a signed rotation. */
+export function checkSince(root: string, rev: string): { problems: string[]; notes: string[] } {
+  let earlier: Seal | null = null;
+  try {
+    earlier = parseSeal(execFileSync("git", ["show", `${rev}:${SEAL_FILE}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+  } catch {
+    return { problems: [], notes: [`No owner signature in ${rev} to compare with.`] };
+  }
+  if (!earlier) return { problems: [], notes: [`No owner signature in ${rev} to compare with.`] };
+  return { problems: signerChainProblems(root, earlier.signer).map((c) => `Compared with ${rev}: ${c}`), notes: [] };
 }
 
 // ---- restoring
@@ -333,6 +388,12 @@ async function main() {
     const r = checkLicense(dir);
     const problems = [...r.problems, ...checkRules(dir)];
     const notes = [...r.notes];
+    const since = args.indexOf("--since") >= 0 ? args[args.indexOf("--since") + 1] : undefined;
+    if (since) {
+      const c = checkSince(dir, since);
+      problems.push(...c.problems);
+      notes.push(...c.notes);
+    }
     if (args.includes("--upstream")) {
       const u = await checkUpstream(dir);
       problems.push(...u.problems);

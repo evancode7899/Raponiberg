@@ -8,6 +8,9 @@
  *   npm run license:seal     after any deliberate change to the LICENSE, the assistant rules
  *                            or the license scripts: refreshes every pin and copy, then signs
  *                            the hashes of the files the signature covers (.license-seal.json).
+ *                            To move to a new key (run keygen with --key <new file> first):
+ *                            license:seal -- --key <new file> --old-key <old file>. The old key
+ *                            signs the hand-over, so nobody else can take the owner role.
  *
  * Without the key, nobody can produce a signature the check accepts, however convincingly
  * they claim to be the owner.
@@ -19,7 +22,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import readline from "node:readline";
 import { Writable } from "node:stream";
-import { checkLicense, read, ROOT, SEAL_FILE, SEALED_FILES, sealMessage, sha256, signerOf, writePins, type Seal } from "./license-guard.ts";
+import { checkLicense, read, ROOT, rotationMessage, SEAL_FILE, SEALED_FILES, sealMessage, sha256, signerOf, writePins, type Rotation, type Seal } from "./license-guard.ts";
 
 const DEFAULT_KEY = path.join(os.homedir(), ".raponiberg", "license-signing-key.pem");
 
@@ -33,19 +36,44 @@ export function generateOwnerKey(passphrase: string) {
   return { privateKey, publicKey: publicKeyBase64, signer: signerOf(publicKeyBase64) };
 }
 
-/** Refreshes every pin and copy for the current LICENSE and writes the signed seal. Returns the signer. */
-export function seal(root: string, privatePem: string, passphrase: string, rotateKey = false): string {
-  let key;
+const openKey = (pem: string, passphrase: string) => {
   try {
-    key = createPrivateKey({ key: privatePem, passphrase });
+    return createPrivateKey({ key: pem, passphrase });
   } catch {
     throw new Error("That passphrase doesn't open the signing key (or the key file is damaged).");
   }
-  const publicKey = createPublicKey(key).export({ type: "spki", format: "der" }).toString("base64");
+};
+const publicOf = (key: ReturnType<typeof createPrivateKey>) => createPublicKey(key).export({ type: "spki", format: "der" }).toString("base64");
+
+type SealOptions = {
+  /** The key being replaced. Handing the owner role to a new key needs its signature. */
+  old?: { pem: string; passphrase: string };
+  /** The old key is gone: the new key starts a chain nothing vouches for, which --since and --upstream will flag until you merge it yourself on GitHub. */
+  replaceLostKey?: boolean;
+};
+
+/** Refreshes every pin and copy for the current LICENSE and writes the signed seal. Returns the signer. */
+export function seal(root: string, privatePem: string, passphrase: string, options: SealOptions = {}): string {
+  const key = openKey(privatePem, passphrase);
+  const publicKey = publicOf(key);
   const signer = signerOf(publicKey);
   const pinned = checkLicense(root).signer;
-  if (pinned && pinned !== "none" && pinned !== signer && !rotateKey)
-    throw new Error(`This key (${signer}) isn't the owner key already pinned (${pinned}). Pass --rotate-key only if you mean to replace it.`);
+  let rotations: Rotation[] = [];
+  try {
+    rotations = (JSON.parse(read(root, SEAL_FILE) ?? "{}") as Seal).rotations ?? [];
+  } catch {
+    /* no earlier seal to carry rotations from */
+  }
+  if (pinned && pinned !== "none" && pinned !== signer) {
+    if (options.replaceLostKey) rotations = [];
+    else if (!options.old) throw new Error(`This key (${signer}) isn't the owner key already pinned (${pinned}). To hand the role over, also pass --old-key <the old key file> and type its passphrase; if that key is lost, pass --replace-lost-key instead.`);
+    else {
+      const oldKey = openKey(options.old.pem, options.old.passphrase);
+      const oldPublic = publicOf(oldKey);
+      if (signerOf(oldPublic) !== pinned) throw new Error(`The old key is ${signerOf(oldPublic)}, not the pinned owner key ${pinned}.`);
+      rotations = [...rotations, { fromPublicKey: oldPublic, to: signer, signature: sign(null, Buffer.from(rotationMessage(pinned, signer)), oldKey).toString("base64") }];
+    }
+  }
   const license = read(root, "LICENSE");
   if (license === null) throw new Error("LICENSE is missing: run npm run license:restore first.");
   writePins(root, license, signer);
@@ -55,7 +83,7 @@ export function seal(root: string, privatePem: string, passphrase: string, rotat
     if (text === null) throw new Error(`${f} is missing, so it can't be sealed.`);
     files[f] = sha256(text);
   }
-  const body: Omit<Seal, "signature"> = { version: 1, licenseSha256: files.LICENSE, signer, publicKey, files };
+  const body: Omit<Seal, "signature"> = { version: 1, licenseSha256: files.LICENSE, signer, publicKey, files, ...(rotations.length ? { rotations } : {}) };
   const signature = sign(null, Buffer.from(sealMessage(files)), key).toString("base64");
   writeFileSync(path.join(root, SEAL_FILE), JSON.stringify({ ...body, signature }, null, 2) + "\n");
   return signer;
@@ -99,10 +127,15 @@ async function main() {
     console.log(`\nSigning key written to ${keyFile}\nOwner key fingerprint: ${key.signer}\n\nBack the file up somewhere private (and remember the passphrase): without it, nobody can\nchange the license ever again. Don't put it in this repository or on a shared drive.\nNext: npm run license:seal`);
   } else if (cmd === "seal") {
     if (!existsSync(keyFile)) throw new Error(`No signing key at ${keyFile}. Run npm run license:keygen first (or pass --key <file>).`);
-    const signer = seal(ROOT, readFileSync(keyFile, "utf8"), await askHidden("Signing key passphrase: "), args.includes("--rotate-key"));
+    const oldFlag = args.indexOf("--old-key");
+    const oldFile = oldFlag >= 0 ? path.resolve(args[oldFlag + 1] ?? "") : null;
+    if (oldFile && !existsSync(oldFile)) throw new Error(`No old signing key at ${oldFile}.`);
+    const pass = await askHidden("Signing key passphrase: ");
+    const old = oldFile ? { pem: readFileSync(oldFile, "utf8"), passphrase: await askHidden("OLD signing key passphrase: ") } : undefined;
+    const signer = seal(ROOT, readFileSync(keyFile, "utf8"), pass, { old, replaceLostKey: args.includes("--replace-lost-key") });
     console.log(`\nSealed with owner key ${signer}: every pin and copy refreshed, ${SEAL_FILE} written.\nCommit these changes, then run npm run license:check.`);
   } else {
-    throw new Error("Usage: npm run license:keygen, or npm run license:seal (-- --key <file>, -- --rotate-key)");
+    throw new Error("Usage: npm run license:keygen, or npm run license:seal (-- --key <file>; to replace the key: -- --old-key <file>, or -- --replace-lost-key)");
   }
 }
 
