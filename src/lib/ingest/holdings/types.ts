@@ -68,9 +68,14 @@ export function splitRow(line: string): { text: string; nums: Num[] } {
   return { text: toks.slice(0, i).join(" "), nums: toks.slice(i).map(num) };
 }
 
-/** Leading numeric run of a row and the text after it (Vanguard prints the name last). */
-export function splitRowLeading(line: string): { nums: Num[]; text: string } {
-  const toks = line.replace(/(^|\s)-\s+\$/g, "$1-$").trim().split(/\s+/);
+/**
+ * Leading numeric run of a row and the text after it (Vanguard prints the name last).
+ * "- $1.71" is read as one split negative unless `joinSplitNegatives` is false: a lone dash
+ * is also an empty column ("- $2,947.89": nothing at the start of the period, then the value).
+ */
+export function splitRowLeading(line: string, opts: { joinSplitNegatives?: boolean } = {}): { nums: Num[]; text: string } {
+  const joined = opts.joinSplitNegatives === false ? line : line.replace(/(^|\s)-\s+\$/g, "$1-$");
+  const toks = joined.trim().split(/\s+/);
   let i = 0;
   while (i < toks.length && isNumTok(toks[i]!)) i++;
   return { nums: toks.slice(0, i).map(num), text: toks.slice(i).join(" ") };

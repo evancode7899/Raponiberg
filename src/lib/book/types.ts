@@ -30,6 +30,10 @@ export type CheckId =
   | "pay.unexplained-deposits"
   | "pay.year-gap"
   | "retirement.contributions"
+  | "contributions.hsa"
+  | "contributions.custodian"
+  | "holdings.ties"
+  | "bonus.letters"
   | "tax.brokerage-coverage"
   | "tax.params"
   | "tax.documents-tie"
@@ -48,8 +52,11 @@ export type FindingScope = {
   /** Inclusive YYYY-MM-DD range the finding affects. */
   from: string;
   to: string;
-  /** Which kinds of figures it blocks. */
-  affects: ("CASH_FLOW" | "NET_WORTH" | "PAY" | "TAX")[];
+  /**
+   * Which kinds of figures it blocks. HOLDINGS: an investment account's positions (not its
+   * balance); BONUS: what a bonus letter says (not the pay the stubs show).
+   */
+  affects: ("CASH_FLOW" | "NET_WORTH" | "PAY" | "TAX" | "HOLDINGS" | "BONUS")[];
 };
 
 export type Finding = {
@@ -252,6 +259,27 @@ export const CHECKS: CheckDef[] = [
     id: "retirement.contributions",
     title: "401(k) contributions tie to pay stubs",
     description: "Employee deferrals and employer money on the stubs equal the contributions on the 401(k) statements.",
+  },
+  {
+    id: "contributions.hsa",
+    title: "HSA contributions tie to pay stubs",
+    description: "Payroll HSA money on the stubs (yours and your employer's) equals what the HSA statements show arriving from payroll, statement period by statement period.",
+  },
+  {
+    id: "contributions.custodian",
+    title: "Contributions the custodian reports tie to the ledger",
+    description: "Each IRA and 529 statement's contributions-this-year line equals the deposits the ledger shows going into the account that year.",
+  },
+  {
+    id: "holdings.ties",
+    title: "Positions add up to the balance",
+    description: "Every statement's list of positions adds up to the account's balance on that day (and to the total the statement prints), to the cent. A list that doesn't is a misread statement: its positions aren't used.",
+  },
+  {
+    id: "bonus.letters",
+    title: "Bonus letters agree with themselves and the pay stubs",
+    description:
+      "Each letter's parts add up to the bonus and total pay it states, its base salary matches the stubs, and every payment it scheduled is on the stubs at the amount it states. The stubs are what counts as pay, so a disagreement withholds nothing: the Bonuses page shows the letter and the stubs side by side with the warning, until the letter is corrected or the gap accepted with a note.",
   },
   {
     id: "networth.reconciles",

@@ -147,6 +147,29 @@ Account activity for Vanguard Brokerage Account—XXXX4321
     ]);
   });
 
+  it("reads a dash for a position opened this period as an empty column, not a minus on the value", () => {
+    // A position new this quarter: nothing at the start ("-"), and the table's first row prints "$".
+    const text = `Balances and holdings for Vanguard Brokerage Account—XXXX4321
+Sweep program
+Name 	Quantity
+22.5000 	$1.00 	- 	$22.50	VANGUARD FEDERAL MONEY
+MARKET FUND
+Total Sweep Balance 	$0.00 	$22.50
+ETFs
+Symbol 	Name
+EXWD 	-$12.00 	$812.00 	20.0000 	$40.0000 	- 	$800.00	EXAMPLE WORLD
+EX US ETF
+EXSP 	-3.00 	503.00 	1.0000 	500.0000 	- 	500.00	EXAMPLE 500
+INDEX ETF
+Account activity for Vanguard Brokerage Account—XXXX4321`;
+    const [acct] = extractVanguardBrokerageHoldings(text, "2026-06-30");
+    expect(acct!.positions.map((p) => [p.symbol, p.kind, p.valueCents, p.costBasisCents])).toEqual([
+      [null, "CASH", 2_250, null],
+      ["EXWD", "ETF", 80_000, 81_200],
+      ["EXSP", "ETF", 50_000, 50_300],
+    ]);
+  });
+
   it("reads Vanguard 401(k) funds, with names that wrap and start with a number", () => {
     const text = `ACCOUNT SUMMARY: 01/01/2026 - 03/31/2026
 Beginning 	Other 	Market 	Shares/ 	Ending

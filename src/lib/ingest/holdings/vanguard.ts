@@ -46,8 +46,15 @@ export function extractVanguardBrokerageHoldings(text: string, periodEnd: string
 
     // ETF/stock rows open with the symbol; sweep rows open with the quantity.
     const sym = /^([A-Z][A-Z0-9.]{0,9}) (?=[-$\d])/.exec(l);
-    const { nums, text } = splitRowLeading(sym ? l.slice(sym[0].length) : l);
-    const at = nums.length >= 4 ? locatePosition(nums) : null;
+    const rest = sym ? l.slice(sym[0].length) : l;
+    // "- $2,947.89" is an empty column then the value (a table's first row prints dollar
+    // signs), or a split negative: whichever reading makes quantity × price = value is the row.
+    let { nums, text } = splitRowLeading(rest);
+    let at = nums.length >= 4 ? locatePosition(nums) : null;
+    if (!at) {
+      ({ nums, text } = splitRowLeading(rest, { joinSplitNegatives: false }));
+      at = nums.length >= 4 ? locatePosition(nums) : null;
+    }
     if (!at) continue;
     const name = [text];
     for (let j = i + 1; j < ls.length && name.length < 4; j++) {

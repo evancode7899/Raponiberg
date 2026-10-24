@@ -64,10 +64,11 @@ function accountChecks(book: Book, a: AccountHoldings) {
   return checksFor(book, { affects: "NET_WORTH", from: a.asOf, to: a.asOf, accountIds: [a.accountId] }, INVESTMENTS_CHECKS);
 }
 
-/** Per-account check results merged into one list: the household total is withheld when any account's value is. */
+/** Check results merged into one list (each check once): the household total is withheld when any account's value is. */
 function mergeChecks(parts: { checks: ProofCheck[]; withheld: boolean }[]): { checks: ProofCheck[]; withheld: boolean } {
-  const checks = INVESTMENTS_CHECKS.map((id): ProofCheck => {
-    const mine = parts.map((p) => p.checks.find((c) => c.id === id)!);
+  const ids = [...new Set(parts.flatMap((p) => p.checks.map((c) => c.id)))];
+  const checks = ids.map((id): ProofCheck => {
+    const mine = parts.flatMap((p) => p.checks.filter((c) => c.id === id));
     const open = [...new Map(mine.flatMap((c) => c.open).map((f) => [f.id, f])).values()];
     const accepted = [...new Map(mine.flatMap((c) => c.accepted).map((f) => [f.id, f])).values()];
     const passed = mine.reduce((t, c) => t + c.passed, 0);
@@ -186,6 +187,9 @@ function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: Investmen
   };
 }
 
+/** The earliest day a position's lines were listed (the holdings date), else the account's. */
+const first0 = (mine: PositionRow[], a: AccountHoldings) => mine.map((p) => p.asOf).sort()[0] ?? a.asOf;
+
 function positionProof({ book, positions }: Ctx, a: AccountHoldings, d: InvestmentsDescriptor & { position: string }): Proof {
   const mine = positions.filter((p) => p.accountId === a.accountId && p.key === d.position && p.kind !== "ACCOUNT" && (d.lot == null || p.lot === d.lot));
   const snap = a.holdingsId ? (book.holdings.find((h) => h.id === a.holdingsId) ?? null) : null;
@@ -211,7 +215,8 @@ function positionProof({ book, positions }: Ctx, a: AccountHoldings, d: Investme
     title: "Part of",
     items: [{ label: a.name, value: { cents: a.valueCents }, sub: `as of ${a.asOf}`, link: { label: a.name, descriptor: { report: "investments", accountId: a.accountId } } }],
   });
-  const { checks, withheld } = accountChecks(book, a);
+  // The positions themselves: a list that doesn't add up to the balance (holdings.ties) isn't used.
+  const { checks, withheld } = mergeChecks([accountChecks(book, a), checksFor(book, { affects: "HOLDINGS", from: first0(mine, a), to: a.asOf, accountIds: [a.accountId] }, ["holdings.ties"])]);
   const first = mine[0];
   return {
     report: "investments",

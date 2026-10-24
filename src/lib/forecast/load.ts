@@ -1,8 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { readAwards } from "../bonuses/awardStore.ts";
 import { getBook } from "../book/cache.ts";
 import type { Book } from "../book/load.ts";
-import { buildBonuses } from "../book/reports/bonuses.ts";
+import { awardsOf, buildBonuses } from "../book/reports/bonuses.ts";
 import { buildAnnualProfile, type AnnualProfileReport } from "../profile/buildAnnualProfile.ts";
 import { loadProfileSettings } from "../profile/settings.ts";
 import { bonusFacts, type BonusFacts } from "./bonusSchedule.ts";
@@ -26,7 +25,8 @@ export async function loadForecastData(db: Db, book?: Book): Promise<ForecastDat
   let facts: BonusFacts = { scheduled: [], patterns: [] };
   let lettersError: string | null = null;
   try {
-    const awards = readAwards();
+    // The letters the Book read (Book.bonusAwards), as the Bonuses page reads them.
+    const awards = awardsOf(b);
     facts = bonusFacts(buildBonuses(b, awards, b.today), awards.letters);
   } catch (e) {
     lettersError = (e as Error).message;

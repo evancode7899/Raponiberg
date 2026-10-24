@@ -77,6 +77,8 @@ export type TaxEstimateDescriptor = {
 
 /** The checks that can withhold a tax figure: taxBlockers' pay, tax and bank-account findings. */
 export const TAX_ESTIMATE_CHECKS: CheckId[] = [
+  "contributions.custodian",
+  "contributions.hsa",
   "tax.params",
   "tax.documents-tie",
   "tax.brokerage-coverage",

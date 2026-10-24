@@ -5,8 +5,8 @@ import { useProof, useProofFlag, type ProofTarget } from "./context";
 
 /**
  * A figure that opens its proof when clicked; plain text without a proof (or outside the app
- * shell). A figure the proof sweep found disagreeing with its proof is withheld: a dash that
- * opens the proof, which says what's wrong.
+ * shell). A figure the proof sweep flagged is withheld: a dash that opens the proof. Either
+ * an open finding covers it (the page showed it anyway) or it disagrees with its proof (a bug).
  */
 export function ProofValue({ proof, children, className = "" }: { proof?: ProofTarget; children: ReactNode; className?: string }) {
   const open = useProof();
@@ -20,8 +20,12 @@ export function ProofValue({ proof, children, className = "" }: { proof?: ProofT
           e.stopPropagation();
           open(proof);
         }}
-        title={`Withheld: this figure disagrees with its proof, a bug in the app (not your documents). ${flag}`}
-        className={`cursor-pointer rounded-sm text-neg underline decoration-neg decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${className}`}
+        title={
+          flag.kind === "WITHHELD"
+            ? "Withheld: an open finding covers this figure (Statements → Issues says what to fetch or fix)."
+            : `Withheld: this figure disagrees with its proof, a bug in the app (not your documents). ${flag.detail}`
+        }
+        className={`cursor-pointer rounded-sm underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${flag.kind === "WITHHELD" ? "text-muted decoration-line-strong" : "text-neg decoration-neg"} ${className}`}
       >
         —
       </button>

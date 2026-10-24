@@ -242,16 +242,19 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
 
     const activeRow = empRows[0];
     const gross = active ? active.projected.gross : 0;
-    const match =
+    let match =
       inputs.matchRate != null && inputs.matchUpTo != null && activeRow
         ? { rate: inputs.matchRate, upTo: inputs.matchUpTo, fullMatchDeferral: Math.round(gross * inputs.matchUpTo), shortfall: pos(Math.round(gross * inputs.matchUpTo) - activeRow.employee.projected) }
         : null;
     // The typed match formula against what the stubs show the employer paid so far this year.
+    // The stubs are what was paid: a formula they contradict isn't used for anything.
     if (match && active && activeRow && active.ytd.gross > 0) {
       const predicted = Math.round(match.rate * Math.min(activeRow.employee.ytd, active.ytd.gross * match.upTo));
       const paid = activeRow.employer$.ytd;
-      if (Math.abs(predicted - paid) > Math.max(5_000, paid * 0.1))
-        warnings.push(`${person.name}: the match typed on Inputs (${Math.round(match.rate * 100)}% up to ${Math.round(match.upTo * 1000) / 10}% of pay) comes to ${dollars(predicted)} so far in ${year}, but the pay stubs show ${dollars(paid)} of employer 401(k) money. Check the formula against the plan (or the employer pays something besides the match).`);
+      if (Math.abs(predicted - paid) > Math.max(5_000, paid * 0.1)) {
+        warnings.push(`${person.name}: the match typed on Inputs (${Math.round(match.rate * 100)}% up to ${Math.round(match.upTo * 1000) / 10}% of pay) comes to ${dollars(predicted)} so far in ${year}, but the pay stubs show ${dollars(paid)} of employer 401(k) money, so it isn't used. Check the formula against the plan (or the employer pays something besides the match).`);
+        match = null;
+      }
     }
 
     // ---------------------------------------------------------- HSA

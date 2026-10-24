@@ -10,8 +10,10 @@
  * v2: ADP payroll company codes split an employer into separate year-to-date chains. v3: Vanguard brokerage tax figures.
  * v4: holdings (positions at each investment statement's period end). v5: Fidelity UTMA/UGMA accounts are CUSTODIAL.
  * v6: TriNet starred company-paid lines ("LTD*") are imputed income.
+ * v7: Vanguard holdings read a lone dash before a "$" amount as an empty column (a position
+ * new this period), not a minus on its value.
  */
-export const FACTS_VERSION = 6;
+export const FACTS_VERSION = 7;
 
 /** Parsers whose documents carry facts beyond statement rows. */
 export const FACT_PARSERS = [

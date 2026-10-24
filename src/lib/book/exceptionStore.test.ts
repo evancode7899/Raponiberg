@@ -68,7 +68,8 @@ describe("permanent exceptions file", () => {
       path.relative(root, p).split(path.sep).join("/"),
     );
     const using = (re: RegExp) => all.filter((rel) => re.test(readFileSync(path.join(root, rel), "utf8")));
-    expect(using(/\bretireException\(/)).toEqual(["src/app/api/integrity/route.ts", "src/lib/book/exceptionStore.ts"]);
+    // Statements → Issues, and the Bonuses page reopening a reviewed letter warning: both the owner, with a reason.
+    expect(using(/\bretireException\(/)).toEqual(["src/app/api/bonuses/route.ts", "src/app/api/integrity/route.ts", "src/lib/book/exceptionStore.ts"]);
     expect(using(/integrity-exceptions/)).toEqual(["src/lib/book/exceptionStore.ts"]);
   });
 });

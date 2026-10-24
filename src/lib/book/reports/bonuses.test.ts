@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { AwardsFile } from "../../bonuses/awardStore.ts";
 import { employerKey, type StubLine } from "../../ingest/payroll/types.ts";
 import type { Book, BookStub } from "../load.ts";
-import { buildBonuses, windowLabel } from "./bonuses.ts";
+import { Collector } from "../checks/collector.ts";
+import { checkBonusLetters } from "../checks/bonuses.ts";
+import type { StandingException } from "../types.ts";
+import { bonusFindingId, buildBonuses, windowLabel } from "./bonuses.ts";
 
 let n = 0;
 const stub = (employer: string, payDate: string, lines: StubLine[]): BookStub =>
@@ -30,8 +33,23 @@ const stub = (employer: string, payDate: string, lines: StubLine[]): BookStub =>
 const bonus = (dollars: number): StubLine[] => [{ name: "Bonus", kind: "BONUS", current: Math.round(dollars * 100), ytd: null }];
 const regular = (ytdDollars: number): StubLine[] => [{ name: "Regular", kind: "REGULAR", current: 100000, ytd: ytdDollars * 100 }];
 
-const book = (stubs: BookStub[]) =>
-  ({ stubs, persons: [{ id: "p1", name: "Alex", match: [] }], horizon: { netWorth: "2026-09-30", cashFlow: "2026-09-30" }, integrity: { findings: [], inferences: [] } }) as unknown as Book;
+const book = (stubs: BookStub[], bonusAwards?: AwardsFile) =>
+  ({
+    stubs,
+    today: "2026-10-06",
+    bonusAwards,
+    ledger: { firstDay: "2024-01-01" },
+    persons: [{ id: "p1", name: "Alex", match: [] }],
+    horizon: { netWorth: "2026-09-30", cashFlow: "2026-09-30" },
+    integrity: { findings: [], inferences: [], accepted: [], stale: [] },
+  }) as unknown as Book;
+
+/** The Book with its integrity checked by bonus.letters alone, against these exceptions. */
+const checked = (b: Book, exceptions: StandingException[] = []): Book => {
+  const c = new Collector(exceptions);
+  checkBonusLetters(b, c);
+  return { ...b, integrity: c.report() };
+};
 
 const OLD = "Old Firm LP";
 const letter: AwardsFile = {
@@ -178,24 +196,25 @@ describe("buildBonuses", () => {
     ]);
   });
 
-  it("hides a reviewed warning only while its gap is the one reviewed", () => {
+  it("raises each warning as a bonus.letters finding; an exception hides it only while its gap is the one accepted", () => {
     const stubs = [stub(OLD, "2024-03-07", bonus(80033)), stub(OLD, "2025-03-07", bonus(8333)), stub(OLD, "2026-09-30", regular(50000))];
-    const open = buildBonuses(book(stubs), letter, "2026-10-06");
-    const w = open.warnings.find((x) => x.text.startsWith("Feb/Mar 2024"))!;
-    expect(w).toMatchObject({ id: "old|2024-02|2024-03|paid", gapCents: 3300 });
+    const open = checked(book(stubs, letter));
+    const w = buildBonuses(open, letter, "2026-10-06").warnings.find((x) => x.text.startsWith("Feb/Mar 2024"))!;
+    expect(w).toMatchObject({ id: "old|2024-02|2024-03|paid", gapCents: 3300, from: expect.any(String), to: expect.any(String) });
+    expect(open.integrity.findings.find((f) => f.id === bonusFindingId(w))).toMatchObject({ check: "bonus.letters", status: "FAIL", scope: { affects: ["BONUS"] } });
 
-    const review = { id: w.id, gapCents: 3300, warning: w.text, note: "Rounding in my favor", reviewedAt: "2026-10-06T00:00:00.000Z" };
-    const reviewed = buildBonuses(book(stubs), letter, "2026-10-06", [review]);
+    const ex: StandingException = { id: bonusFindingId(w), check: "bonus.letters", note: "Rounding in my favor", acceptedAt: "2026-10-06T00:00:00.000Z", finding: { status: "FAIL", title: w.text, detail: "", scope: { from: w.from, to: w.to, affects: ["BONUS"] } } };
+    const reviewed = buildBonuses(checked(book(stubs, letter), [ex]), letter, "2026-10-06");
     expect(reviewed.warnings.map((x) => x.id)).not.toContain(w.id);
-    expect(reviewed.reviewed).toEqual([{ ...w, note: "Rounding in my favor", reviewedAt: review.reviewedAt }]);
+    expect(reviewed.reviewed).toEqual([{ ...w, note: "Rounding in my favor", reviewedAt: ex.acceptedAt }]);
     expect(reviewed.staleReviews).toEqual([]);
 
-    // The stubs change: the gap is no longer the one reviewed, so the warning opens again.
+    // The stubs change: the gap is no longer the one accepted, so the warning opens again and the exception goes stale.
     const changed = [stub(OLD, "2024-03-07", bonus(80100)), ...stubs.slice(1)];
-    const reopened = buildBonuses(book(changed), letter, "2026-10-06", [review]);
-    expect(reopened.warnings.map((x) => x.id)).toContain(w.id);
+    const reopened = buildBonuses(checked(book(changed, letter), [ex]), letter, "2026-10-06");
+    expect(reopened.warnings.find((x) => x.id === w.id)).toMatchObject({ gapCents: 10000 });
     expect(reopened.reviewed).toEqual([]);
-    expect(reopened.staleReviews).toMatchObject([{ id: w.id, gapCents: 3300, now: { id: w.id, gapCents: 10000 } }]);
+    expect(reopened.staleReviews).toEqual([{ id: ex.id, warning: w.text, note: ex.note, reviewedAt: ex.acceptedAt }]);
   });
 
   it("labels windows the way letters do", () => {

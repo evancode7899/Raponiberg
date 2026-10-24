@@ -457,7 +457,13 @@ function paymentChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[], su
     if (ct.amountOwed) check(`${y} Connecticut balance paid at filing`, docs.ct?.doc.file, ct.amountOwed, sum("CT", "BALANCE_DUE"));
     if (ct.refund) check(`${y} Connecticut refund received`, docs.ct?.doc.file, ct.refund, -sum("CT", "REFUND"));
   }
-  if (docs.ny?.state?.refund) check(`${y} New York refund received`, docs.ny.doc.file, docs.ny.state.refund, -sum("OTHER_STATE", "REFUND"));
+  // New York, as Connecticut: its estimates, a balance paid at filing and a refund all reach the bank (other-state tax rows).
+  const ny = docs.ny?.state;
+  if (ny) {
+    check(`${y} New York estimated payments`, docs.ny?.doc.file, ny.estimatedPayments ?? 0, sum("OTHER_STATE", "ESTIMATE"));
+    if (ny.amountOwed) check(`${y} New York balance paid at filing`, docs.ny?.doc.file, ny.amountOwed, sum("OTHER_STATE", "BALANCE_DUE"));
+    if (ny.refund) check(`${y} New York refund received`, docs.ny?.doc.file, ny.refund, -sum("OTHER_STATE", "REFUND"));
+  }
 
   // A federal estimate the bank paid but filed under another year: offer to re-attribute it.
   const fedEst = out.find((s) => s.label === `${y} federal estimated payments`);

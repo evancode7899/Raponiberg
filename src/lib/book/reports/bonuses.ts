@@ -1,5 +1,4 @@
 import type { AwardLetter, AwardsFile, ScheduledPayment } from "../../bonuses/awardStore.ts";
-import type { BonusReview } from "../../bonuses/reviewStore.ts";
 import { addDays, endOfMonth } from "../../dates/isoDate.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
 import { blockersFor } from "../blockers.ts";
@@ -135,11 +134,11 @@ export type BonusesReport = {
   stubOnly: (UnletteredEmployer & { note: string | null })[];
   /** Base and bonus by year, from the stubs, for each person paid by a stub-only employer. */
   payYears: PayYearRow[];
-  /** Places a letter contradicts itself or the stubs, not yet reviewed. */
+  /** Places a letter contradicts itself or the stubs: open bonus.letters findings (Statements → Issues lists them too). */
   warnings: BonusWarning[];
-  /** Warnings the owner reviewed and accepted, at the gap they reviewed. */
+  /** Warnings the owner accepted as exceptions, at the gap they accepted. */
   reviewed: ReviewedWarning[];
-  /** Reviews that no longer cover their warning: the gap changed (the warning is open again) or it no longer arises. */
+  /** Accepted exceptions whose warning no longer arises (the gap changed or it's gone): Statements → Issues reviews them. */
   staleReviews: StaleReview[];
   blockers: BlockerRef[];
 };
@@ -161,9 +160,35 @@ export type PayYearRow = {
 export type UnletteredEmployer ={ employer: string; personName: string; cents: number; count: number };
 
 /** A warning's id is stable across rebuilds (letter id, award year or vest window, check), so a review finds it again. */
-export type BonusWarning = { id: string; text: string; /** What's off, in cents (signed). A review covers only this gap. */ gapCents: number };
+export type BonusWarning = {
+  id: string;
+  text: string;
+  /** What's off, in cents (signed). An exception covers only this gap: a new gap is a new finding. */
+  gapCents: number;
+  /** The days it's about: a vesting window, or the award's year. */
+  from: string;
+  to: string;
+};
 export type ReviewedWarning = BonusWarning & { note: string; reviewedAt: string };
-export type StaleReview = BonusReview & { now: BonusWarning | null };
+
+/**
+ * The bonus.letters finding a warning raises (checks/bonuses.ts): one id per warning and
+ * gap, so an exception the owner accepted covers that gap only, as a review used to.
+ */
+/** The Book's award letters (Book.bonusAwards): none on a Book built without them; a damaged file throws its message. */
+export function awardsOf(book: Book): AwardsFile {
+  const a = book.bonusAwards;
+  if (!a) return { version: 1, letters: [] };
+  if ("error" in a) throw new Error(a.error);
+  return a;
+}
+
+/** The Bonuses page's report, as GET /api/bonuses, its proofs and the proof sweep build it. */
+export const bonusesOf = (book: Book): BonusesReport => buildBonuses(book, awardsOf(book), book.today);
+
+export type StaleReview = { id: string; warning: string; note: string; reviewedAt: string };
+
+export const bonusFindingId = (w: Pick<BonusWarning, "id" | "gapCents">) => `bonus.letters:${w.id}|${w.gapCents}`;
 
 const cents = (dollars: number) => Math.round(dollars * 100);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -182,7 +207,12 @@ const LATE_DAYS = 31;
 
 const sameEmployer = (stubKey: string, key: string) => stubKey === key || stubKey.startsWith(`${key} #`);
 
-export function buildBonuses(book: Book, file: AwardsFile, today: string, reviews: BonusReview[] = []): BonusesReport {
+/**
+ * `book.integrity` decides which warnings are open: the bonus.letters check raises one
+ * finding per warning (built here, so the page and the check can't differ), and the
+ * owner's exceptions cover them. While the checks run, nothing is accepted yet.
+ */
+export function buildBonuses(book: Book, file: AwardsFile, today: string): BonusesReport {
   const nameOf = (id: string) => book.persons.find((p) => p.id === id)?.name ?? "Unassigned";
   const payments: BonusPayment[] = book.stubs
     .flatMap((s: BookStub) =>
@@ -215,7 +245,9 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string, review
     const stubs = book.stubs.filter((s) => sameEmployer(s.employerKey, key)).sort((a, b) => a.payDate.localeCompare(b.payDate));
     const employment = employmentOf(book, stubs, nameOf);
     letters.push({ id: letter.id, title: letter.title, employer: letter.employer, terms: letter.terms ?? null, notes: letter.notes ?? [], employment });
-    if (!employment) warnings.push({ id: `${letter.id}|no-stubs`, gapCents: 0, text: `No pay stubs from ${letter.employer} are on file, so nothing on the letter "${letter.title}" can be checked against what was paid.` });
+    const years = letter.awards.map((a) => a.year).sort((a, b) => a - b);
+    const span = { from: `${years[0] ?? today.slice(0, 4)}-01-01`, to: `${years.at(-1) ?? today.slice(0, 4)}-12-31` };
+    if (!employment) warnings.push({ id: `${letter.id}|no-stubs`, gapCents: 0, ...span, text: `No pay stubs from ${letter.employer} are on file, so nothing on the letter "${letter.title}" can be checked against what was paid.` });
 
     const letterWindows = windowsOf(letter);
     for (const w of letterWindows) {
@@ -281,14 +313,14 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string, review
   for (const w of windows) {
     if (w.status === "PAID_DIFFERENT") {
       const text = `${w.label}: the letter schedules ${dollars(w.scheduledCents)} but the stubs show ${dollars(w.paidCents)} of bonus paid (${w.payments.map((p) => p.date).join(", ")}).`;
-      warnings.push({ id: `${w.key}|paid`, gapCents: w.paidCents - w.scheduledCents, text });
+      warnings.push({ id: `${w.key}|paid`, gapCents: w.paidCents - w.scheduledCents, from: w.from, to: w.to, text });
     }
     if (w.status === "NOT_ON_STUBS") {
       const text = `${w.label}: ${dollars(w.scheduledCents)} was due from ${letters.find((l) => l.id === w.letterId)?.employer} and no bonus line on the stubs pays it.`;
-      warnings.push({ id: `${w.key}|not-on-stubs`, gapCents: -w.scheduledCents, text });
+      warnings.push({ id: `${w.key}|not-on-stubs`, gapCents: -w.scheduledCents, from: w.from, to: w.to, text });
     }
   }
-  const review = applyReviews(warnings, reviews);
+  const review = applyExceptions(book, warnings);
 
   const byYearMap = new Map<string, BonusYear>();
   const lettered = new Set(file.letters.map((l) => employerKey(l.employer)));
@@ -432,21 +464,22 @@ function settle(w: VestWindow, payments: BonusPayment[], key: string, employment
 function letterChecks(letter: AwardLetter, a: AwardRow): BonusWarning[] {
   const out: BonusWarning[] = [];
   const id = (check: string) => `${letter.id}|${a.year}|${check}`;
+  const year = { from: `${a.year}-01-01`, to: `${a.year}-12-31` };
   // One-offs are outside the headline bonus, so only the cash, deferred and plan parts must add to it.
   const tol = 100 * Math.max(1, a.tranches.filter((t) => t.kind === "UPFRONT" || t.kind === "DEFERRED").length + (a.planDeferredCents ? 1 : 0));
   const parts = a.upfrontCents + a.deferredCents + a.planDeferredCents;
   if (!a.partial && a.totalBonusCents != null && Math.abs(parts - a.totalBonusCents) > tol) {
     const plan = a.planDeferredCents ? ` + to the deferral plan ${dollars(a.planDeferredCents)}` : "";
     const text = `${letter.title}, ${a.year}: up front ${dollars(a.upfrontCents)} + deferred ${dollars(a.deferredCents)}${plan} doesn't add up to the ${dollars(a.totalBonusCents)} bonus.`;
-    out.push({ id: id("bonus-adds-up"), gapCents: parts - a.totalBonusCents, text });
+    out.push({ id: id("bonus-adds-up"), gapCents: parts - a.totalBonusCents, ...year, text });
   }
   if (a.totalCompCents != null && a.baseCents != null && a.totalBonusCents != null && Math.abs(a.baseCents + a.totalBonusCents - a.totalCompCents) > 100) {
     const text = `${letter.title}, ${a.year}: base ${dollars(a.baseCents)} + bonus ${dollars(a.totalBonusCents)} doesn't add up to the ${dollars(a.totalCompCents)} total compensation.`;
-    out.push({ id: id("comp-adds-up"), gapCents: a.baseCents + a.totalBonusCents - a.totalCompCents, text });
+    out.push({ id: id("comp-adds-up"), gapCents: a.baseCents + a.totalBonusCents - a.totalCompCents, ...year, text });
   }
   if (a.baseCents != null && a.stubBaseCents != null && Math.abs(a.baseCents - a.stubBaseCents) > 100) {
     const text = `${letter.title}, ${a.year}: the letter's base salary is ${dollars(a.baseCents)}; regular pay on the stubs that year is ${dollars(a.stubBaseCents)}.`;
-    out.push({ id: id("base-vs-stubs"), gapCents: a.stubBaseCents - a.baseCents, text });
+    out.push({ id: id("base-vs-stubs"), gapCents: a.stubBaseCents - a.baseCents, ...year, text });
   }
   return out;
 }
@@ -482,12 +515,14 @@ function stubOnlyPayYears(book: Book, keys: string[], today: string, nameOf: (id
 }
 
 /** Splits warnings into open and reviewed. A review covers its warning only at the gap it was reviewed at. */
-function applyReviews(warnings: BonusWarning[], reviews: BonusReview[]): Pick<BonusesReport, "warnings" | "reviewed" | "staleReviews"> {
-  const byId = new Map(reviews.map((r) => [r.id, r]));
-  const covered = (w: BonusWarning) => byId.get(w.id)?.gapCents === w.gapCents;
+function applyExceptions(book: Book, warnings: BonusWarning[]): Pick<BonusesReport, "warnings" | "reviewed" | "staleReviews"> {
+  const accepted = new Map(book.integrity.accepted.filter((f) => f.check === "bonus.letters").map((f) => [f.id, f]));
   return {
-    warnings: warnings.filter((w) => !covered(w)),
-    reviewed: warnings.filter(covered).map((w) => ({ ...w, note: byId.get(w.id)!.note, reviewedAt: byId.get(w.id)!.reviewedAt })),
-    staleReviews: reviews.filter((r) => !warnings.some((w) => w.id === r.id && w.gapCents === r.gapCents)).map((r) => ({ ...r, now: warnings.find((w) => w.id === r.id) ?? null })),
+    warnings: warnings.filter((w) => !accepted.has(bonusFindingId(w))),
+    reviewed: warnings.flatMap((w) => {
+      const a = accepted.get(bonusFindingId(w));
+      return a ? [{ ...w, note: a.note, reviewedAt: a.acceptedAt }] : [];
+    }),
+    staleReviews: book.integrity.stale.filter((e) => e.check === "bonus.letters").map((e) => ({ id: e.id, warning: e.finding.title, note: e.note, reviewedAt: e.acceptedAt })),
   };
 }
