@@ -1,7 +1,7 @@
 # Raponiberg provenance record: a third copy of the LICENSE, kept so npm run license:check can
 # verify it and npm run license:restore can rebuild it. Do not edit, move or delete it.
 license-sha256: 71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c
-license-signer: none
+license-signer: 3d545368c8e3c6ad
 UmFwb25pYmVyZyBMaWNlbnNlCgpDb3B5cmlnaHQgKGMpIDIwMjYgZXZhbmNvZGU3ODk5ICh0aGUg
 YXV0aG9yIG9mIFJhcG9uaWJlcmcpCgpQZXJtaXNzaW9uIGlzIGhlcmVieSBncmFudGVkLCBmcmVl
 IG9mIGNoYXJnZSwgdG8gYW55IHBlcnNvbiBvYnRhaW5pbmcgYSBjb3B5IG9mIHRoaXMKc29mdHdh

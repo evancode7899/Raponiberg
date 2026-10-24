@@ -74,4 +74,4 @@ The LICENSE's expected hash and the owner-key fingerprint are pinned here and in
 other places, and `npm run license:check` compares them all:
 
 - license-sha256: 71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c
-- license-signer: none
+- license-signer: 3d545368c8e3c6ad

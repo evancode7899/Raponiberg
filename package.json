@@ -5,7 +5,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "raponiberg": {
     "licenseSha256": "71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c",
-    "licenseSigner": "none"
+    "licenseSigner": "3d545368c8e3c6ad"
   },
   "scripts": {
     "predev": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/license-guard.ts --quiet",

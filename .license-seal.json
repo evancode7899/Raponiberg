@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "licenseSha256": "71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c",
+  "signer": "3d545368c8e3c6ad",
+  "publicKey": "MCowBQYDK2VwAyEAMw/dzaQ06MVHA15yxZbvtFj9Fcv4IJkkEAs5CgRYUHA=",
+  "files": {
+    "LICENSE": "71d35d3c49bc0d9fc8f6ce147f1abb0b9fd4b370aaab28e21a72f0b6a75b2a7c",
+    "AGENTS.md": "5655a840a037c20a188fac895cac02b759acee1aeb3ee00447a97afad49fc5f3",
+    "CLAUDE.md": "14b3ec0ffa970a70961c2b96fd6bec8df22eed24421d2140a70d4b4e86202018",
+    "GEMINI.md": "45afefa83cad77f9563b861e2dbdb0b0c36d2b06507df848ea63e95c7974105b",
+    ".github/copilot-instructions.md": "d9e411639d3ddb1e489878a1016057c24b11cdb49266409d7fdad8c311a6657b",
+    ".cursor/rules/raponiberg.mdc": "bc8aa488570c39667a7e038f56ef00820d33bb4be5331c40a08af228a459f7db",
+    ".githooks/pre-commit": "a29c89b21d15c0fc03aa97088f1d100afefb1d80af19831abb4ba7c748511e50",
+    ".githooks/pre-push": "d6048d376150e8b97fa70b142e504f7c5ce2b0a305b27174585302d386ac1839",
+    "scripts/license-guard.ts": "b9b327d971bbf409a7507feed1c95e635b9906665ca41e2a0f1ac230b9d9a75d",
+    "scripts/license-seal.ts": "29526ca9228ad02dd59cb8a18bd2d08e6162ba0d5ef5ea1badcaf07e13d02286"
+  },
+  "signature": "nJBTghl8kaRx0e2Ncy4jrMx8oLC71UIPKJhnEox0H5lZDcmOi6EGFqaofbO5WCEEz+13Ls7FsOLxPEaatyc7CQ=="
+}
