@@ -6,6 +6,7 @@ import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table } from "@/components/ui/kit";
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import type { Lane } from "@/lib/classifier/taxonomy";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatUsdFromCents, usd0 } from "@/lib/formatMoney";
 import { useEffect, useMemo, useState } from "react";
 
@@ -25,6 +26,9 @@ export type ReviewRow = {
   category: { name: string } | null;
   statementImport: { status: string } | null;
 };
+
+/** A row's proof: as its statement prints it, why the classifier wasn't sure, and where it counts (book/proof/rowProof). */
+export const rowProof = (r: Pick<ReviewRow, "id" | "amountCents">) => ({ descriptor: { report: "row" as const, rowId: r.id }, shownCents: r.amountCents });
 
 type Group = { key: string; merchantKey: string | null; rows: ReviewRow[]; totalCents: number; accounts: string[] };
 
@@ -212,7 +216,9 @@ function GroupCard({ group, api, onDone }: { group: Group; api: Api; onDone: () 
                     {r.detail && <div className="text-[11px] text-muted">{r.detail}</div>}
                   </td>
                   <td className={`${table.td} whitespace-nowrap text-xs text-muted`}>{r.account.name}</td>
-                  <td className={table.tdR}>{formatUsdFromCents(r.amountCents)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={rowProof(r)}>{formatUsdFromCents(r.amountCents)}</ProofValue>
+                  </td>
                 </tr>
               ))}
             </tbody>

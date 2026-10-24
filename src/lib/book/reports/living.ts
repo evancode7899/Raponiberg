@@ -20,6 +20,8 @@ import { provenMonths } from "./spending.ts";
 
 export type OneOffRow = {
   fingerprint: string;
+  /** The Book row (opens its row proof). */
+  rowId: string;
   date: string;
   payee: string;
   account: string;
@@ -125,7 +127,7 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
     if (tagged) nonRecurring -= cents;
     else spending.set(r.category, (spending.get(r.category) ?? 0) - cents);
     if (!r.reimbursement && (tagged || (-r.amountCents >= ONE_OFF_MIN_CENTS && !rentIds.has(r.id)))) {
-      candidates.push({ fingerprint: fp, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
+      candidates.push({ fingerprint: fp, rowId: r.id, date: r.date, payee: r.payee, account: accountName.get(r.accountId) ?? "", category: r.category, cents: -r.amountCents, tagged, viaCategory, label: settings.oneOffs[fp] ?? "" });
     }
   }
   candidates.sort((a, b) => Number(b.tagged) - Number(a.tagged) || b.cents - a.cents);

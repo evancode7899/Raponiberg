@@ -20,6 +20,11 @@ export async function POST(request: NextRequest) {
   if ("error" in descriptor) return NextResponse.json({ error: descriptor.error }, { status: 400 });
   const stamp = dataStamp();
   const book = await getBook(prisma, stamp);
-  const proof = await buildProof({ book, db: prisma }, descriptor);
-  return NextResponse.json({ ...proof, stamp: stampTag(stamp) });
+  try {
+    const proof = await buildProof({ book, db: prisma }, descriptor);
+    return NextResponse.json({ ...proof, stamp: stampTag(stamp) });
+  } catch (e) {
+    // A kind that can't find what it was asked for (a row or statement re-imported since the page loaded) says so in words.
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 422 });
+  }
 }
