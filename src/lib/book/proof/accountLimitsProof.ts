@@ -1,7 +1,6 @@
 import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
 import { taxLink } from "../../forecast/forecast.ts";
 import { loadForecast } from "../../forecast/load.ts";
-import { loadProfileSettings } from "../../profile/settings.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import { taxYearParams, TAX_YEARS } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY, type RetirementSettings } from "../../taxAccounts/settings.ts";
@@ -508,8 +507,8 @@ export function buildAccountLimitsProof(book: Book, inputs: AccountLimitsInputs,
 
 /** The page's report for the year, built as GET /api/tax-accounts builds it. */
 export async function accountLimitsInputs(ctx: ProofContext, year: number): Promise<AccountLimitsInputs> {
-  const [settings, profile, { forecast }] = await Promise.all([loadJsonSetting(ctx.db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadProfileSettings(ctx.db), loadForecast(ctx.db, ctx.book)]);
-  return { report: buildTaxAccounts(ctx.book, year, settings, profile.birthYears, forecast ? taxLink(forecast) : null), birthYears: profile.birthYears, settings };
+  const [settings, { forecast }] = await Promise.all([loadJsonSetting(ctx.db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadForecast(ctx.db, ctx.book)]);
+  return { report: buildTaxAccounts(ctx.book, year, settings, forecast ? taxLink(forecast) : null), birthYears: ctx.book.birthYears ?? {}, settings };
 }
 
 export const accountLimitsKind: ProofKind<AccountLimitsDescriptor> = {

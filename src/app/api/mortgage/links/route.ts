@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       const a = profile.outlook;
       const year = Number(book.today.slice(0, 4));
       const params = TAX_YEARS[year] ?? null;
-      const tax = params ? buildTaxReport(book, year, { forecast: forecast ? taxLink(forecast) : null, birthYears: profile.birthYears }) : null;
+      const tax = params ? buildTaxReport(book, year, { forecast: forecast ? taxLink(forecast) : null}) : null;
       const ok = tax && !tax.blocked ? tax : null;
       const links: Record<string, MortgageLink | null> = {
         investReturn: { value: a.returnRate, from: "the Forecast's return" },

@@ -7,6 +7,7 @@ import { payrollCodeOf, type PayStubFacts, type PayStubSource, type StubLineKind
 import type { BrokerageFacts, HoldingsFacts } from "../ingest/types.ts";
 import { groupFor, loadLedger, type AccountGroup, type Ledger } from "../ledger/loadLedger.ts";
 import { loadTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.ts";
+import { loadProfileSettings } from "../profile/settings.ts";
 import { readTaxDocs } from "../taxdocs/store.ts";
 import type { TaxDocsFile } from "../taxdocs/types.ts";
 import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts";
@@ -192,6 +193,11 @@ export type Book = {
   /** The household file's fingerprint when the rows were last filed (null: never recorded). */
   classifiedWithHousehold: string | null;
   taxProfile: TaxProfile;
+  /**
+   * Each person's birth year (Settings → Household), by person id: the one copy every age-based
+   * tax rule reads (catch-up limits, the 65+ deduction). Absent on a Book built without them (tests).
+   */
+  birthYears?: Record<string, number>;
   /** The tax documents folder as last scanned (lib/taxdocs): filed returns, W-2s, 1099s, K-1s. Null before the first scan. */
   taxDocs: TaxDocsFile | null;
   persons: TaxPerson[];
@@ -249,7 +255,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     decisions = { error: e instanceof Error ? e.message : String(e) };
   }
   const household = householdPatterns();
-  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfile, documents, classifiedWith, classifiedWithHousehold] = await Promise.all([
+  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfile, documents, classifiedWith, classifiedWithHousehold, profileSettings] = await Promise.all([
     loadLedger(db, { today }),
     // Archived accounts included: archiving hides an account from pickers, never its history from figures.
     db.account.findMany({ include: { aliases: { select: { identifier: true } } } }),
@@ -305,6 +311,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     }),
     db.appSetting.findUnique({ where: { key: CLASSIFIER_VERSION_SETTING } }).then((s) => (s && Number.isFinite(Number(s.value)) ? Number(s.value) : null)),
     db.appSetting.findUnique({ where: { key: CLASSIFIER_HOUSEHOLD_SETTING } }).then((s) => s?.value ?? null),
+    loadProfileSettings(db),
   ]);
 
   const persons = taxProfile.persons;
@@ -502,6 +509,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     household,
     classifiedWithHousehold,
     taxProfile,
+    birthYears: profileSettings.birthYears,
     taxDocs: readTaxDocs(),
     persons,
     idle,

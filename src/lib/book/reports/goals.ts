@@ -50,6 +50,8 @@ export type GoalProgress = {
   accounts: GoalAccount[];
   /** SET_ASIDE: earlier goals that claimed money from this goal's accounts first. */
   claimedFirstBy: string[];
+  /** What the goals before this one took from its accounts, in all. */
+  claimedBeforeCents: number;
   /** Change in the funding accounts' balances per month over the pace window (deposits and growth). */
   pace: { monthlyCents: number; from: string; to: string; blockers: BlockerRef[] } | null;
   /** Per month from now to reach the target by its date. */
@@ -182,6 +184,7 @@ export function buildGoals(
       fundingCents,
       accounts,
       claimedFirstBy,
+      claimedBeforeCents: accounts.reduce((s, a) => s + a.claimedBeforeCents, 0),
       pace,
       neededMonthlyCents,
       projectedDate,

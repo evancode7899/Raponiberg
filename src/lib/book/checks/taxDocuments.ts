@@ -25,7 +25,7 @@ export function checkTaxDocuments(book: Book, c: Collector) {
   for (const year of years) {
     const docs = yearDocs(book.taxDocs, year, book.taxProfile.persons);
     if (!docs.w2s.length && !docs.brokerage.length && !docs.ints.length && !docs.federal && !docs.ct) continue;
-    const report = buildTaxReport(book, year, { estimatePriorYear: false, birthYears: {} });
+    const report = buildTaxReport(book, year, { estimatePriorYear: false });
     if (report.blocked) continue;
     // Statements never print the qualified share of dividends: the ledger side of that line
     // is the app's estimate, so it's no contradiction (the Filed return tab still shows it).

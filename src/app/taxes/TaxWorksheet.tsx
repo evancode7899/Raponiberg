@@ -2,7 +2,7 @@
 
 import { buttonSecondary, Card, Segmented } from "@/components/ledger/LedgerBits";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { computeReturn, type PersonIncome, type ReturnResult } from "@/lib/tax/computeReturn";
+import { allTaxes, computeReturn, type PersonIncome, type ReturnResult } from "@/lib/tax/computeReturn";
 import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateColumn, type EstimateKey } from "@/lib/tax/estimateLines";
 import { FILING_STATUS_LABEL, taxYearParams } from "@/lib/tax/params";
 import { applyWhatIf, hasWhatIf, NO_WHAT_IF, type WhatIf } from "@/lib/tax/scenarios";
@@ -234,10 +234,6 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
 
 function wages(p: PersonIncome): number {
   return p.w2s.reduce((s, w) => s + w.box5MedicareWages, 0);
-}
-
-function allTaxes(x: ReturnResult): number {
-  return x.totalTax - x.federal.refundableChildCredit + x.fica.ctPfml;
 }
 
 function WhatIfPanel({ r, whatIf, onChange, basis }: { r: TaxResponse; whatIf: WhatIf; onChange: (w: WhatIf) => void; basis: Basis }) {

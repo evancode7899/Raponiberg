@@ -314,7 +314,7 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
   const left = g.targetCents == null ? null : Math.max(0, g.targetCents - g.currentCents);
   /** Earlier goals took money this one needed. */
   const crowded = !track && g.claimedFirstBy.length > 0 && (g.currentCents === 0 || g.status === "BEHIND" || g.status === "NO_PACE");
-  const takenFirst = g.accounts.reduce((sum, a) => sum + a.claimedBeforeCents, 0);
+  const takenFirst = g.claimedBeforeCents;
 
   return (
     <Card

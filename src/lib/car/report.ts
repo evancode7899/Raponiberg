@@ -273,6 +273,11 @@ export type GarageReport = {
   blockers?: BlockerRef[];
   cars: CarReport[];
   /**
+   * Every car together, added up here once: cost of ownership to date and the last 12
+   * months over every car, and the next 12 months over the cars still owned and set up.
+   */
+  together: { tcoCents: number; last12Cents: number; next12Cents: number };
+  /**
    * The log: every counted cost (statement charges, entries paid outside the statements,
    * rent months) once at its full amount with the car it's for (or SHARED), and every log
    * entry that counts nothing, newest last.
@@ -569,10 +574,16 @@ export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: s
     toCheck: hints.filter((h) => h.confidence === "check").length,
   };
 
+  const owned = cars.filter((c) => !c.sold && c.configured);
   return {
     today,
     statementsThrough,
     cars,
+    together: {
+      tcoCents: cars.reduce((s, c) => s + c.totals.tco, 0),
+      last12Cents: cars.reduce((s, c) => s + c.last12.total, 0),
+      next12Cents: owned.reduce((s, c) => s + c.outlook12.total, 0),
+    },
     log,
     statements: {
       charges,

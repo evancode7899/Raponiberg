@@ -33,10 +33,10 @@ export type HsaLedger = {
  * York) and Social Security + Medicare. This year's, else last year's when this year's
  * figures aren't proven yet.
  */
-export function hsaTaxMarginal(book: Book, year: number, forecast: TaxForecastLink | null, birthYears: Record<string, number>): TaxMarginalIn | null {
+export function hsaTaxMarginal(book: Book, year: number, forecast: TaxForecastLink | null): TaxMarginalIn | null {
   for (const [y, source] of [[year, "TAX_REPORT"], [year - 1, "PRIOR_YEAR"]] as const) {
     if (!TAX_YEARS[y]) continue;
-    const t = buildTaxReport(book, y, { forecast: y === year ? forecast : null, birthYears });
+    const t = buildTaxReport(book, y, { forecast: y === year ? forecast : null });
     if (!t.blocked) return { year: y, incomeRate: t.marginal.federal + t.marginal.ct + t.marginal.ny, payrollRate: t.marginal.payroll, source };
   }
   return null;

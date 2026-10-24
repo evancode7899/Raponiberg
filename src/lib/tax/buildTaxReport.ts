@@ -281,7 +281,7 @@ const usd = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-US
 export function buildTaxReport(
   book: Book,
   year: number,
-  opts: { estimatePriorYear?: boolean; forecast?: TaxForecastLink | null; birthYears?: Record<string, number> } = {},
+  opts: { estimatePriorYear?: boolean; forecast?: TaxForecastLink | null } = {},
 ): TaxReport | TaxReportBlocked {
   const today = book.today;
   const params = taxYearParams(year);
@@ -510,7 +510,8 @@ export function buildTaxReport(
     // 401(k) deferrals above the limit (all employers together) are income for this year,
     // whether or not the plan hands the excess back; the return only decides whether it's
     // taxed a second time. Shared, word for word, with the Tax-advantaged accounts page.
-    const birthYear = opts.birthYears?.[person.id];
+    // Birth years come from the Book (Settings → Household), the copy every page's return reads.
+    const birthYear = book.birthYears?.[person.id];
     const { limit: k401Cap } = k401Limit(fp, birthYear ? year - birthYear : null);
     const deferred = (w: "w2Ytd" | "w2Projected") => payroll.reduce((s, p) => s + p[w].box12.D + p[w].box12.AA, 0);
     const k401Deferred = { ytd: deferred("w2Ytd"), projected: deferred("w2Projected") };
@@ -702,8 +703,6 @@ export function buildTaxReport(
   // Last year's filed return (tax documents folder) is the figure of record: it wins over
   // anything typed under Inputs, which counts only for a figure no filed return prints.
   let priorYearSource: TaxReport["priorYearSource"] = "NONE";
-  // Last year's filed return (tax documents folder) is the figure the safe harbor needs;
-  // anything typed under Inputs overrides it, figure by figure.
   const filedFederalTax = safeHarborTax(lastYearDocs.federal);
   const filedAgi = lastYearDocs.federal?.federal?.agi ?? null;
   const filedCt = lastYearDocs.ct?.state?.totalTax ?? null;
@@ -720,7 +719,7 @@ export function buildTaxReport(
     if (typed != null && filed != null && Math.abs(typed - filed) > 100)
       warnings.push(`${year - 1}'s ${what} typed under Inputs (${usd(typed)}) differs from the filed return in the tax documents folder (${usd(filed)}); the filed return is used. Clear the typed figure.`);
   if (priorYearSource === "NONE" && opts.estimatePriorYear !== false && TAX_YEARS[year - 1]) {
-    const prev = buildTaxReport(book, year - 1, { estimatePriorYear: false, birthYears: opts.birthYears });
+    const prev = buildTaxReport(book, year - 1, { estimatePriorYear: false });
     if (!prev.blocked) {
       const f = prev.scenarios.mfj.federal;
       priorFederal = { tax: f.totalTax - f.refundableChildCredit, agi: py.federalAgi ?? f.agi };

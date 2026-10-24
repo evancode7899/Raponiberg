@@ -89,7 +89,7 @@ export function OneOffsTab({
           label={`Marked one-off in ${full?.year ?? "—"}`}
           value={full?.cash ? usd(full.cash.waterfall.nonRecurring) : "—"}
           proof={full?.cash ? cashP(full.year, "one-offs", full.cash.waterfall.nonRecurring) : undefined}
-          sub={full?.cash ? `${full.oneOffCandidates.filter((c) => c.tagged).length} expenses` : undefined}
+          sub={full?.cash ? `${full.oneOffTagged.count} expenses` : undefined}
         />
         <StatCell
           label={`Living expenses ${full?.year ?? ""}`}

@@ -166,6 +166,8 @@ export type HsaReport = {
   expenses: ExpenseView[];
   suggestions: Suggestion[];
   withdrawals: Withdrawal[];
+  /** Every withdrawal by kind: distributions to the bank (which can reimburse receipts) and payments straight to a provider. */
+  withdrawalTotals: { distributionCents: number; directCents: number };
   totals: {
     count: number;
     loggedCents: number;
@@ -525,6 +527,10 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     expenses: expenses.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)),
     suggestions,
     withdrawals,
+    withdrawalTotals: {
+      distributionCents: withdrawals.filter((w) => w.kind === "DISTRIBUTION").reduce((s, w) => s + w.amountCents, 0),
+      directCents: withdrawals.filter((w) => w.kind === "DIRECT").reduce((s, w) => s + w.amountCents, 0),
+    },
     totals,
     hsa: { accounts: hsaAccounts, balanceCents: hsaBalance, asOf, measuredReturn: measured, blockers: input.blockers ?? { balance: [], rows: [] }, openedOn, openedFrom: settings.openedOn ? "SETTING" : openedOn ? "STATEMENTS" : null },
     growth: {

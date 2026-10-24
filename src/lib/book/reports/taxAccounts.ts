@@ -141,7 +141,7 @@ const add = (a: Amount, b: Amount): Amount => ({ ytd: a.ytd + b.ytd, projected: 
 const pos = (n: number) => Math.max(0, n);
 const phaseShare = (magi: number, r: { start: number; end: number }) => (magi <= r.start ? 1 : magi >= r.end ? 0 : (r.end - magi) / (r.end - r.start));
 
-export function buildTaxAccounts(book: Book, year: number, settings: RetirementSettings, birthYears: Record<string, number>, forecast: TaxForecastLink | null = null): TaxAccountsReport {
+export function buildTaxAccounts(book: Book, year: number, settings: RetirementSettings, forecast: TaxForecastLink | null = null): TaxAccountsReport {
   const params = taxYearParams(year);
   const fp = params.federal;
   const lim = fp.retirement;
@@ -155,12 +155,12 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
   const through = taxYearThrough(book, year);
 
   // ------------------------------------------------------------ the tax report, when provable
-  const tax = buildTaxReport(book, year, { forecast, birthYears });
-  const prior = tax.blocked && TAX_YEAR_EXISTS(year - 1) ? buildTaxReport(book, year - 1, { birthYears }) : null;
+  const tax = buildTaxReport(book, year, { forecast });
+  const prior = tax.blocked && TAX_YEAR_EXISTS(year - 1) ? buildTaxReport(book, year - 1) : null;
 
   const people: PersonAccounts[] = book.persons.map((person) => {
     const inputs = settings.people[person.id] ?? EMPTY_PERSON;
-    const birthYear = birthYears[person.id];
+    const birthYear = book.birthYears?.[person.id];
     const age = birthYear ? year - birthYear : null;
     const pay = personPayYear(book, person.id, year, through);
     const hard = pay.blockers.filter((b) => STUB_CHECKS.includes(b.check));

@@ -64,11 +64,14 @@ const LEDGER_TABLES = [
 const READ = new RegExp(`\\.(${LEDGER_TABLES.join("|")})\\.(findMany|findFirst|findUnique|findFirstOrThrow|findUniqueOrThrow|aggregate|groupBy|count)\\b`);
 /** Raw SQL, or table access by a computed name (the guard can't see which table). */
 const RAW = /\$queryRaw|\$queryRawUnsafe|\$executeRaw|as unknown as Record<string, \w+>\)\[/;
-/** A nested select of a ledger relation from some other table (sourceDocument → statementImports…). */
-const NESTED = /\b(statementImports|transactions|payStubs|lines|legs|transferLeg|holdingSnapshots)\s*:\s*\{\s*(select|where|include|orderBy)\b/;
+/** A nested read of a ledger relation from some other table (sourceDocument → statementImports…), as a sub-query or `relation: true`. */
+const NESTED = /\b(statementImports|transactions|payStubs|lines|legs|transferLeg|holdingSnapshots|brokerageTaxFacts|aliases)\s*:\s*(\{\s*(select|where|include|orderBy)\b|true\b)/;
+/** `_count: { select: { transactions: true } }` counts rows: a work count, never money. */
+const COUNT_ONLY = /_count\s*:\s*\{\s*select\s*:\s*\{[^}]*\}\s*\}/g;
 const ROOT = path.resolve(__dirname, "../../..");
 
 function files(dir: string): string[] {
+  if (statSync(dir).isFile()) return [dir];
   return readdirSync(dir).flatMap((f) => {
     const p = path.join(dir, f);
     return statSync(p).isDirectory() ? files(p) : /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$/.test(f) ? [p] : [];
@@ -93,18 +96,44 @@ const FIGURE_MODULES = [
   "src/lib/mortgage",
   "src/lib/goals",
   "src/lib/investments",
+  "src/lib/bonuses",
+  "src/lib/taxdocs",
+  "src/lib/taxAccounts",
+  "src/lib/reimbursements",
+  "src/lib/budget",
+  // The ledger engine the Book is built on (its loader and the row writers read the database; these don't).
+  "src/lib/ledger/netWorthReport.ts",
+  "src/lib/ledger/timeline.ts",
+  "src/lib/ledger/transferFees.ts",
+  "src/lib/ledger/billBooking.ts",
+  "src/lib/ledger/coverageReport.ts",
+  "src/lib/ledger/closedAccounts.ts",
 ];
 /** Settings stores (AppSetting) are inputs, not ledger figures; loaders join the cached Book to them. */
-const SETTINGS_STORES = /(profile\/settings|tax\/profile|forecast\/load|hsa\/loadReport|book\/proof\/types)\.ts$/;
+const SETTINGS_STORES = /(profile\/settings|tax\/profile|forecast\/load|hsa\/loadReport|book\/proof\/types|budget\/settings)\.ts$/;
+/** Modules that must not read the clock: the figure modules, and the ledger loader the Book passes its date to. */
+const CLOCK_FREE = [...FIGURE_MODULES, "src/lib/ledger/loadLedger.ts"];
+/** Stamping when something was saved (`savedAt: new Date().toISOString()`) isn't a figure's date. */
+const STAMP = /\b\w*[aA]t: new Date\(\)\.toISOString\(\)/;
 
 describe("single source of truth", () => {
+  it("the guard's patterns still catch what they're for", () => {
+    expect(READ.test("await prisma.transaction.findMany({})")).toBe(true);
+    expect(NESTED.test("include: { legs: true }")).toBe(true);
+    expect(NESTED.test("transactions: { select: { id: true } }")).toBe(true);
+    expect(NESTED.test("_count: { select: { transactions: true } }".replace(COUNT_ONLY, ""))).toBe(false);
+    expect(RAW.test("prisma.$queryRaw`select 1`")).toBe(true);
+    expect(STAMP.test("const saved = { ...entry, savedAt: new Date().toISOString() };")).toBe(true);
+    expect(STAMP.test("const year = new Date().getFullYear();")).toBe(false);
+  });
+
   it("only the Book and the row writers/editors/viewers read ledger tables", () => {
     const offenders = files(path.join(ROOT, "src"))
       .map(rel)
       .filter((r) => !(r in ALLOWED))
       .filter((r) => {
         const s = src(r);
-        return READ.test(s) || RAW.test(s) || (/prisma|\bdb\b|\btx\b/.test(s) && NESTED.test(s) && /\.(findMany|findFirst|findUnique)\(/.test(s));
+        return READ.test(s) || RAW.test(s) || (/prisma|\bdb\b|\btx\b/.test(s) && NESTED.test(s.replace(COUNT_ONLY, "")) && /\.(findMany|findFirst|findUnique)\(/.test(s));
       });
     expect(offenders, "Compute figures from a Book (src/lib/book) instead of querying ledger tables").toEqual([]);
   });
@@ -132,11 +161,12 @@ describe("single source of truth", () => {
   it("figure modules take the date from the Book, not the clock", () => {
     // book.today is the one "today": a figure built from the clock can disagree with the
     // Book it's built from (a request that crosses midnight, a test with a fixed date).
-    const offenders = FIGURE_MODULES.flatMap((d) => files(path.join(ROOT, d)))
+    const offenders = CLOCK_FREE.flatMap((d) => files(path.join(ROOT, d)))
       .map(rel)
-      // Settings and receipt stores stamp when something was saved; that's not a figure's date.
-      .filter((r) => !/settings\.ts$|tax\/profile\.ts$|hsa\/store\.ts$/.test(r))
-      .filter((r) => /new Date\(\)|Date\.now\(\)|localToday\(\)/.test(src(r)));
+      // Settings defaults (a new dependent's birth year, a horizon twenty years out) and the HSA
+      // receipt log's save time aren't figures' dates.
+      .filter((r) => !/profile\/settings\.ts$|tax\/profile\.ts$|hsa\/store\.ts$/.test(r))
+      .filter((r) => src(r).split("\n").some((line) => /new Date\(\)|Date\.now\(\)|localToday\(\)/.test(line) && !STAMP.test(line)));
     expect(offenders, "Use book.today (or a date passed in) instead of the clock").toEqual([]);
   });
 });

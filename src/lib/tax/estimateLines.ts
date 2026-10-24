@@ -1,5 +1,5 @@
 import type { PersonReport, TaxReport } from "./buildTaxReport.ts";
-import { computeReturn, type Dependent, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
+import { allTaxes, computeReturn, type Dependent, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
 import type { TaxAuthority, TaxPaymentRow } from "./facts/payments.ts";
 import { ZERO_AMOUNTS, type PayrollAmounts } from "./facts/payroll.ts";
 import { taxYearParams } from "./params.ts";
@@ -207,13 +207,8 @@ export function lineValue(key: EstimateKey, c: EstimateColumn, all: EstimateColu
   return ESTIMATE_LINES[key].value(c, all);
 }
 
-/** Every tax the worksheet totals: federal income tax, Medicare, NIIT, Social Security, Connecticut, PFML, other states, New York State and City. */
-function totalTaxes(c: EstimateColumn): number {
-  const f = c.r.federal;
-  return (
-    f.incomeTaxAfterCredits - f.refundableChildCredit + c.r.fica.medicare + f.additionalMedicareTax + f.niit + c.r.fica.socialSecurity + c.r.ct.totalTax + c.r.fica.ctPfml + c.r.otherStateTax + (c.r.ny?.stateTax ?? 0) + (c.r.ny?.cityTax ?? 0)
-  );
-}
+/** Every tax the worksheet totals (computeReturn.ts allTaxes, the one definition). */
+const totalTaxes = (c: EstimateColumn): number => allTaxes(c.r);
 
 function earnedPlusInvestment(c: EstimateColumn): number {
   const f = c.r.federal;

@@ -173,9 +173,9 @@ function Insights({ f, onGo }: { f: FireProps["f"]; onGo: (t: Tab) => void }) {
 function OneOffsNote({ f, r, s, livingLabel, livingTyped }: { f: FireProps["f"]; r: AnnualProfileReport; s: OutlookSeeds; livingLabel: string; livingTyped: boolean }) {
   const { plan } = f;
   const base = r.years.find((y) => y.year === s.baseYear);
-  const untagged = base?.oneOffCandidates.filter((c) => !c.tagged) ?? [];
-  if (livingTyped || !untagged.length) return null;
-  const cents = untagged.reduce((t, c) => t + c.cents, 0);
+  const untagged = base?.oneOffUntagged ?? { count: 0, cents: 0 };
+  if (livingTyped || !untagged.count) return null;
+  const cents = untagged.cents;
   return (
     <Callout
       tone="info"
@@ -186,7 +186,7 @@ function OneOffsNote({ f, r, s, livingLabel, livingTyped }: { f: FireProps["f"];
         </Link>
       }
     >
-      The plan starts from {usd(f.now.livingCost)} a year ({livingLabel.toLowerCase()}). {s.baseYear} living expenses include {usd(cents)} in {untagged.length} single charges of $1,500 or more not marked one-off. Each
+      The plan starts from {usd(f.now.livingCost)} a year ({livingLabel.toLowerCase()}). {s.baseYear} living expenses include {usd(cents)} in {untagged.count} single charges of $1,500 or more not marked one-off. Each
       $1,000 a year that won&apos;t recur lowers your FIRE number by about {short(fireNumber(plan, plan.start.year, 1_000_00))}.
     </Callout>
   );

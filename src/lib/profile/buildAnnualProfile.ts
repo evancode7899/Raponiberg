@@ -107,10 +107,17 @@ export type YearProfile = {
   netWorth: YearNetWorth | null;
   change: { cents: number; pct: number | null } | null;
   bridge: Bridge | null;
+  /** The largest one-off candidates (tagged first), at most 40: a list to review, not a total. */
   oneOffCandidates: OneOffRow[];
+  /** Every candidate not yet marked one-off, however many: what living cost may still hold. */
+  oneOffUntagged: { count: number; cents: number };
+  /** Every expense marked one-off this year, however many. */
+  oneOffTagged: { count: number; cents: number };
 };
 
 export type { OutlookSeeds };
+
+const tally = (rows: { cents: number }[]) => ({ count: rows.length, cents: rows.reduce((s, c) => s + c.cents, 0) });
 
 export type AnnualProfileReport = {
   today: string;
@@ -323,6 +330,8 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       change,
       bridge,
       oneOffCandidates: candidates.slice(0, 40),
+      oneOffUntagged: tally(candidates.filter((c) => !c.tagged)),
+      oneOffTagged: tally(candidates.filter((c) => c.tagged)),
     };
   };
   for (const year of years) out.push(yearProfile(year, year === currentYear ? minIso(book.horizon.cashFlow, `${year}-12-31`) : `${year}-12-31`, out.at(-1)));

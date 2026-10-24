@@ -490,7 +490,7 @@ function Schedule({ r }: { r: BonusesReport }) {
                     ))}
                     <tr className="border-t border-line-strong font-semibold">
                       <td className={table.td}>Due</td>
-                      <td className={table.tdR}><ProofValue proof={bon({ figure: "letter", letterId: l.id, measure: "scheduled" }, windows.reduce((s, w) => s + w.scheduledCents, 0))}>{usd0(windows.reduce((s, w) => s + w.scheduledCents, 0))}</ProofValue></td>
+                      <td className={table.tdR}><ProofValue proof={bon({ figure: "letter", letterId: l.id, measure: "scheduled" }, l.windowTotals.scheduledCents)}>{usd0(l.windowTotals.scheduledCents)}</ProofValue></td>
                       {windows.map((w) => (
                         <td key={w.key} className={table.tdR}>
                           <ProofValue proof={windowProof(w, "scheduled")}>{usd0(w.scheduledCents)}</ProofValue>
@@ -499,7 +499,7 @@ function Schedule({ r }: { r: BonusesReport }) {
                     </tr>
                     <tr className={table.tr}>
                       <td className={`${table.td} text-muted`}>On the stubs</td>
-                      <td className={table.tdR}><ProofValue proof={bon({ figure: "letter", letterId: l.id, measure: "paid" }, windows.reduce((s, w) => s + w.paidCents, 0))}>{usd0(windows.reduce((s, w) => s + w.paidCents, 0))}</ProofValue></td>
+                      <td className={table.tdR}><ProofValue proof={bon({ figure: "letter", letterId: l.id, measure: "paid" }, l.windowTotals.paidCents)}>{usd0(l.windowTotals.paidCents)}</ProofValue></td>
                       {windows.map((w) => (
                         <td key={w.key} className={table.tdR}>
                           <div>{w.paidCents ? <ProofValue proof={windowProof(w, "paid")}>{formatUsdCents(w.paidCents)}</ProofValue> : "—"}</div>
@@ -536,7 +536,7 @@ function Schedule({ r }: { r: BonusesReport }) {
                     {forfeited.length > 0 && l.employment && (
                       <>
                         {" "}
-                        <span className="num font-medium text-neg">{usd0(forfeited.reduce((s, w) => s + w.scheduledCents, 0))}</span> due {forfeited.map((w) => w.label).join(", ")} was forfeited. The last{" "}
+                        <span className="num font-medium text-neg">{usd0(l.windowTotals.forfeitedCents)}</span> due {forfeited.map((w) => w.label).join(", ")} was forfeited. The last{" "}
                         {l.employer} paycheck was {formatDisplayDateFromYmd(l.employment.last)} and pay moved to {l.employment.nextEmployer} before any of it vested. Under the letter&apos;s
                         terms, leaving forfeits every unvested deferral. Only a termination without cause would have vested it, and no such payout is on the stubs.
                       </>

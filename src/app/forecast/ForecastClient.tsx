@@ -5,7 +5,7 @@ import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { btn, Callout, ErrorNote, Loading, PageBody } from "@/components/ui/kit";
 import { fiYear } from "@/lib/fire/fire";
-import { balancesAt, buildForecast, type Forecast } from "@/lib/forecast/forecast";
+import { balancesAt, buildForecast, forecastFeeds, type Forecast } from "@/lib/forecast/forecast";
 import type { ForecastData } from "@/lib/forecast/load";
 import type { OutlookSeeds } from "@/lib/profile/basePay";
 import { DEFAULT_OUTLOOK, type FinancialProfileSettings, type OutlookAssumptions } from "@/lib/profile/settings";
@@ -139,9 +139,7 @@ function Body({ data, s, a, setA, onSave }: { data: ForecastData; s: OutlookSeed
 function Feeds({ f, s, dirty }: { f: Forecast; s: OutlookSeeds; dirty: boolean }) {
   const fi = useMemo(() => fiYear(f.plan), [f.plan]);
   const cy = s.currentYear;
-  const bonusLeft = f.schedule.filter((b) => b.counted && b.source !== "PAID" && b.key.startsWith(`${cy}-`)).reduce((t, b) => t + b.gross, 0);
-  const year1 = f.months.slice(0, 12);
-  const liquidPerMonth = year1.length ? Math.round(year1.reduce((t, m) => t + m.saved - m.deferrals - m.employerMatch, 0) / year1.length) : 0;
+  const { bonusToCome: bonusLeft, liquidPerMonth } = forecastFeeds(f, cy);
   const next = f.milestones.filter((m) => !m.reached && m.key).slice(0, 2);
   const ageAt = (key: string) => (f.plan.birthYear != null ? `age ${Number(key.slice(0, 4)) - f.plan.birthYear}` : "");
   const basis = f.pay.people.map((p) => `${p.name} ${p.basis === "LATEST" ? "latest" : "typical"} check`).join(" · ");
@@ -156,7 +154,7 @@ function Feeds({ f, s, dirty }: { f: Forecast; s: OutlookSeeds; dirty: boolean }
         <Feed href="/fire" page="FIRE · FI year" value={fi ?? "60+ yrs"} sub={`${fi && f.plan.birthYear != null ? `age ${fi - f.plan.birthYear} · ` : ""}this path + withdrawal rules`} />
         <Feed href="/taxes" page={`Taxes · bonus to come ${cy}`} value={short(bonusLeft)} sub={basis} />
         <Feed href="/home-budget" page={`Home budget · liquid Dec ${cy + 1}`} value={short(balancesAt(f, `${cy + 1}-12`).liquid)} sub="cash for a buy in any month" />
-        <Feed href="/goals" page="Goals · into liquid / mo" value={short(liquidPerMonth)} sub="average, next 12 months" negative={liquidPerMonth < 0} />
+        <Feed href="/goals" page="Goals · into liquid / mo" value={short(liquidPerMonth)} sub="average change, next 12 months" negative={liquidPerMonth < 0} />
         <Feed
           href="/fire"
           page={next[0] ? `Net worth ${next[0].label}` : "Milestones"}

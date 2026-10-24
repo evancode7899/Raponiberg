@@ -6,7 +6,6 @@ import { buildCashFlowReport } from "../book/reports/cashFlow.ts";
 import { buildNetWorth } from "../book/reports/netWorth.ts";
 import { latestProvenMonthEnd } from "../book/reports/spending.ts";
 import { addDays, endOfMonth, startOfMonth } from "../dates/isoDate.ts";
-import { GROUP_ORDER } from "../ledger/loadLedger.ts";
 import { isLiquid, liquidCents, savingsRate } from "../book/definitions.ts";
 import { homeEncouragement } from "./homeEncouragement.ts";
 
@@ -43,25 +42,14 @@ export function buildHomeSummary(book: Book) {
   };
   const yearEnd = periods.find((p) => p.end === `${Number(asOf.slice(0, 4)) - 1}-12-31`) ?? null;
 
-  const byGroup = new Map<string, { cents: number; accountIds: string[] }>();
-  for (const a of nw.accounts) {
-    const g = byGroup.get(a.group) ?? { cents: 0, accountIds: [] };
-    g.cents += a.currentCents;
-    g.accountIds.push(a.id);
-    byGroup.set(a.group, g);
-  }
-  const groups = GROUP_ORDER.filter((g) => byGroup.has(g) && byGroup.get(g)!.cents !== 0).map((g) => ({
-    group: g,
-    cents: byGroup.get(g)!.cents,
-    proof: balance({ accountIds: byGroup.get(g)!.accountIds }),
-  }));
+  // Assets, debts, group subtotals and the twelve months' drivers: the Net worth page's own (book/reports/netWorth.ts summary).
+  const groups = nw.summary.groups.filter((g) => g.cents !== 0).map((g) => ({ group: g.group, cents: g.cents, proof: balance({ accountIds: g.accountIds }) }));
   const liquidIds = nw.accounts.filter((a) => isLiquid(a.group)).map((a) => a.id);
 
   // Where the last twelve months of change came from.
-  const t12 = periods.slice(-12);
-  const t12Blockers = refs(netWorthBlockers(book, t12[0]?.start ?? asOf, asOf));
-  const sum = (f: (h: (typeof periods)[number]["household"]) => number) => t12.reduce((s, p) => s + f(p.household), 0);
-  const driver = (figure: "saving" | "markets"): ProofDescriptor => ({ report: "dashboard", figure, start: t12[0]?.start ?? asOf, end: asOf });
+  const t12 = nw.summary.trailing12;
+  const t12Blockers = t12?.blockers ?? [];
+  const driver = (figure: "saving" | "markets"): ProofDescriptor => ({ report: "dashboard", figure, start: t12?.start ?? asOf, end: asOf });
 
   // Twelve months of cash flow ending at the latest proven month (the month the Cash flow
   // page ends at), so a month still waiting on a statement doesn't withhold all of them.
@@ -106,8 +94,8 @@ export function buildHomeSummary(book: Book) {
       blockers: nwBlockers,
       quality: nw.current.quality,
       totalCents: known ? nw.current.totalCents : null,
-      assetsCents: known ? nw.accounts.reduce((s, a) => s + Math.max(0, a.currentCents), 0) : null,
-      debtsCents: known ? nw.accounts.reduce((s, a) => s + Math.min(0, a.currentCents), 0) : null,
+      assetsCents: known ? nw.summary.assetsCents : null,
+      debtsCents: known ? nw.summary.debtsCents : null,
       liquidCents: known ? liquidCents(nw.accounts.map((a) => ({ group: a.group, cents: a.currentCents }))) : null,
       proofs: known
         ? {
@@ -118,12 +106,12 @@ export function buildHomeSummary(book: Book) {
           }
         : null,
       change: { month: change(closingAt(-2)), year: change(closingAt(-13)), ytd: change(yearEnd), ytdYear: asOf.slice(0, 4) },
-      drivers: t12Blockers.length
+      drivers: !t12 || t12Blockers.length
         ? null
         : {
-            principalCents: sum((h) => h.principalCents + h.newlyTrackedCents),
-            growthCents: sum((h) => h.growthNetOfFeesCents),
-            otherCents: sum((h) => h.transferResidualCents + h.unexplainedCents),
+            principalCents: t12.principalCents,
+            growthCents: t12.growthCents,
+            otherCents: t12.otherCents,
             proofs: { principal: driver("saving"), growth: driver("markets") },
           },
       driversBlockers: t12Blockers,
@@ -146,6 +134,8 @@ export function buildHomeSummary(book: Book) {
       })),
       last12: cfKnown
         ? {
+            /** How many months the totals cover (twelve, or fewer while history is short): a month's average is total ÷ months. */
+            months: cf.periods.length,
             incomeCents: income12,
             spendingCents: spending12,
             netCents: income12 - spending12,

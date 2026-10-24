@@ -105,7 +105,16 @@ export type BonusYear = {
 
 export type BonusesReport = {
   today: string;
-  letters: { id: string; title: string; employer: string; terms: string | null; notes: string[]; employment: Employment | null }[];
+  letters: {
+    id: string;
+    title: string;
+    employer: string;
+    terms: string | null;
+    notes: string[];
+    employment: Employment | null;
+    /** Over the letter's vesting windows: what was due, what the stubs paid, and what leaving forfeited. */
+    windowTotals: { scheduledCents: number; paidCents: number; forfeitedCents: number };
+  }[];
   awards: AwardRow[];
   windows: VestWindow[];
   payments: BonusPayment[];
@@ -197,7 +206,7 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string, review
   const warnings: BonusWarning[] = [];
   const windows: VestWindow[] = [];
   const awards: AwardRow[] = [];
-  const letters: BonusesReport["letters"] = [];
+  const letters: Omit<BonusesReport["letters"][number], "windowTotals">[] = [];
   const blockers = new Map<string, BlockerRef>();
   const groups = stubGroups(book);
 
@@ -315,7 +324,18 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string, review
 
   return {
     today,
-    letters,
+    letters: letters.map((l) => {
+      const mine = windows.filter((w) => w.letterId === l.id);
+      const total = (ws: VestWindow[], f: (w: VestWindow) => number) => ws.reduce((s, w) => s + f(w), 0);
+      return {
+        ...l,
+        windowTotals: {
+          scheduledCents: total(mine, (w) => w.scheduledCents),
+          paidCents: total(mine, (w) => w.paidCents),
+          forfeitedCents: total(mine.filter((w) => w.status === "FORFEITED"), (w) => w.scheduledCents),
+        },
+      };
+    }),
     awards: awards.sort((a, b) => b.year - a.year || a.employer.localeCompare(b.employer)),
     windows: windows.sort((a, b) => a.from.localeCompare(b.from)),
     payments,

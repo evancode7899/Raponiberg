@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Lane } from "../classifier/taxonomy.ts";
-import { daysBetween, localToday } from "../dates/isoDate.ts";
+import { daysBetween } from "../dates/isoDate.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { bookBill, type BillRowBooking, type BillStatement } from "./billBooking.ts";
 import { declaredClosure, readClosedAccounts } from "./closedAccounts.ts";
@@ -88,9 +88,11 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
  * Loads committed statements (with their classified rows) into per-account timelines.
- * Only COMMITTED imports count; summaries are passed separately to fill gaps.
+ * Only COMMITTED imports count; summaries are passed separately to fill gaps. `today` is
+ * the Book's (book/load.ts): the ledger never reads the clock, so it can't disagree with
+ * the Book about the date.
  */
-export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise<Ledger> {
+export async function loadLedger(db: Db, opts: { today: string }): Promise<Ledger> {
   const [accounts, imports, mergeDate] = await Promise.all([
     // Archived accounts included: archiving hides an account from pickers, never its history from figures.
     db.account.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }], include: { aliases: { select: { identifier: true } } } }),
@@ -112,7 +114,7 @@ export async function loadLedger(db: Db, opts: { today?: string } = {}): Promise
     }),
     getMergeDate(db),
   ]);
-  const today = opts.today ?? localToday();
+  const today = opts.today;
 
   const lossy = await db.transferMatch.findMany({
     where: { status: "CONFIRMED", differenceCents: { not: 0 } },

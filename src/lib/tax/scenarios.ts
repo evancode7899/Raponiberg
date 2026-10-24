@@ -1,4 +1,4 @@
-import { computeReturn, type Dependent, type NyFiling, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
+import { allTaxes, computeReturn, type Dependent, type NyFiling, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
 import type { TaxYearParams } from "./params.ts";
 
 /**
@@ -43,7 +43,7 @@ export function bestSeparate(params: TaxYearParams, incomes: PersonIncome[], dep
         claimant,
         itemize,
         returns,
-        totalTax: rs.reduce((s, x) => s + x.totalTax - x.federal.refundableChildCredit, 0),
+        totalTax: rs.reduce((s, x) => s + allTaxes(x), 0),
         federalTax: rs.reduce((s, x) => s + x.federal.totalTax - x.federal.refundableChildCredit, 0),
         ctTax: rs.reduce((s, x) => s + x.ct.totalTax, 0),
         nyTax: rs.reduce((s, x) => s + (x.ny?.totalTax ?? 0), 0),

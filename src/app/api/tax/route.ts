@@ -3,7 +3,6 @@ import { prisma } from "@/lib/db";
 import { cachedReport, jsonBody } from "@/lib/book/cache";
 import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
-import { loadProfileSettings } from "@/lib/profile/settings";
 import { buildTaxReport } from "@/lib/tax/buildTaxReport";
 import { TAX_YEARS } from "@/lib/tax/params";
 import { NextRequest, NextResponse } from "next/server";
@@ -29,9 +28,9 @@ export async function GET(request: NextRequest) {
         // No year asked: the Book's year (book.today), the one every figure is built as of.
         const raw = supported.includes(asked) ? asked : Number(book.today.slice(0, 4));
         const year = supported.includes(raw) ? raw : Math.max(...supported);
-        const [{ forecast }, { birthYears }] = await Promise.all([loadForecast(prisma, book), loadProfileSettings(prisma)]);
-        // Birth years set the 401(k) catch-up limit, as on the Tax-advantaged accounts page.
-        return { ...buildTaxReport(book, year, { forecast: forecast ? taxLink(forecast) : null, birthYears }), supportedYears: supported };
+        const { forecast } = await loadForecast(prisma, book);
+        // Birth years (the 401(k) catch-up limit) come from the Book, as on every page.
+        return { ...buildTaxReport(book, year, { forecast: forecast ? taxLink(forecast) : null }), supportedYears: supported };
       }),
     );
   } catch (e) {
