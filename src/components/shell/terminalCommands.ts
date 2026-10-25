@@ -74,6 +74,14 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     keywords: ["car", "auto", "vehicle", "gas", "fuel", "mpg", "mileage", "odometer", "insurance", "parking", "maintenance", "service", "depreciation", "kbb", "tco", "cost per mile", "warranty"],
   },
   {
+    mnemonic: "INS",
+    href: "/insurance",
+    label: "Insurance",
+    description: "Each life insurance policy, read from its policy packet: coverage, premiums by year, key dates, terms and beneficiaries, with the premiums paid from the statements.",
+    group: "Money",
+    keywords: ["insurance", "life insurance", "term life", "policy", "premium", "death benefit", "face amount", "beneficiary", "conversion", "rider", "coverage"],
+  },
+  {
     mnemonic: "ANN",
     href: "/annual",
     label: "Annual report",

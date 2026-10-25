@@ -63,8 +63,10 @@ export function dataStamp(): string {
   try {
     // page-inputs.json holds calculator inputs and app-password.json the lock screen's
     // password; no figure reads either (lib/pageInputs.ts, lib/appPassword.ts), nor the
-    // HSA receipts log (lib/hsa/store.ts: the HSA page joins it to the Book per request).
-    json = readdirSync(dir).filter((f) => f.endsWith(".json") && f !== "page-inputs.json" && f !== "app-password.json" && f !== "hsa-expenses.json").sort().map((f) => path.join(dir, f));
+    // HSA receipts log (lib/hsa/store.ts: the HSA page joins it to the Book per request),
+    // nor the insurance documents read from the folder (lib/insurance/store.ts, same).
+    const unread = new Set(["page-inputs.json", "app-password.json", "hsa-expenses.json", "insurance-documents.json"]);
+    json = readdirSync(dir).filter((f) => f.endsWith(".json") && !unread.has(f)).sort().map((f) => path.join(dir, f));
   } catch {
     /* no data folder */
   }

@@ -28,7 +28,8 @@ export type AuditAction =
   | "retirement_accounts_updated"
   | "car_updated"
   | "hsa_expenses_updated"
-  | "hsa_expenses_exported";
+  | "hsa_expenses_exported"
+  | "insurance_notes_updated";
 
 /** Routes authenticated with `x-api-secret` (when secret is set). */
 export const AUDIT_ACTOR_API = "api";

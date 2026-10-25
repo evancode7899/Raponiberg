@@ -31,6 +31,7 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
   "src/app/hsa/FoundTab.tsx": { count: 1, why: "the rows the owner ticked" },
   "src/app/hsa/ReceiptsTab.tsx": { count: 4, why: "receipts the owner ticked or filtered to, and the receipts named in a callout" },
   "src/app/hsa/ReimburseTab.tsx": { count: 5, why: "the reimbursement plan for the amount the owner typed, and the receipts picked for one withdrawal" },
+  "src/app/insurance/InsuranceClient.tsx": { count: 1, why: "the beneficiary shares the owner is typing, checked to add up to 100% (percentages, not money)" },
   "src/app/investments/InvestmentsClient.tsx": { count: 2, why: "the target allocation the owner is typing, and the stock share (a ratio) of the report's classes" },
   "src/app/net-worth/AccountsTab.tsx": { count: 1, why: "roll-forward totals over accounts, each opening the annual rollforward-total proof (which re-derives it)" },
   "src/app/net-worth/NetWorthClient.tsx": { count: 1, why: "chart floor for debts" },

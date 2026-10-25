@@ -18,6 +18,7 @@ type UploadResponse = {
 
 const isDuplicate = (o: FileOutcome) => !o.ok && o.reason.startsWith("DUPLICATE");
 const isUnrecognized = (o: FileOutcome) => !o.ok && o.reason === "UNRECOGNIZED";
+const isInsurance = (o: FileOutcome) => !o.ok && o.reason === "INSURANCE";
 
 export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () => void; onGo: (tab: "issues" | "documents") => void }) {
   const [files, setFiles] = useState<File[]>([]);
@@ -81,11 +82,12 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
     }
   }, [api, hold, onChanged]);
 
-  // Re-downloads and files no parser reads yet are folded away, so a folder scan's
-  // results show what actually changed.
-  const shown = result?.outcomes.filter((o) => !isDuplicate(o) && !isUnrecognized(o)) ?? [];
+  // Re-downloads, files no parser reads yet and insurance documents (read on the
+  // Insurance page) are folded away, so a folder scan's results show what actually changed.
+  const shown = result?.outcomes.filter((o) => !isDuplicate(o) && !isUnrecognized(o) && !isInsurance(o)) ?? [];
   const duplicates = result?.outcomes.filter(isDuplicate) ?? [];
   const unrecognized = result?.outcomes.filter(isUnrecognized) ?? [];
+  const insurance = result?.outcomes.filter(isInsurance) ?? [];
   const imported = shown.filter((o) => o.ok).length;
   const failed = shown.length - imported;
   const summary = !result
@@ -96,6 +98,7 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
           failed > 0 && `${failed} couldn't be imported`,
           duplicates.length > 0 && `${duplicates.length} already on file`,
           unrecognized.length > 0 && `${unrecognized.length} not recognized`,
+          insurance.length > 0 && `${insurance.length} insurance document${insurance.length === 1 ? "" : "s"}`,
         ]
           .filter(Boolean)
           .join(" · ")
@@ -280,6 +283,13 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
               label={`${unrecognized.length} file${unrecognized.length === 1 ? "" : "s"} no parser recognizes yet`}
               note="Ask Claude to add a parser for these, or hand-parse them (scripts/commitParsedStatement.ts)."
               outcomes={unrecognized}
+            />
+          )}
+          {insurance.length > 0 && (
+            <SkippedList
+              label={`${insurance.length} life insurance document${insurance.length === 1 ? "" : "s"}`}
+              note="Policy packets and premium notices are read on the Insurance page, not imported as statements."
+              outcomes={insurance}
             />
           )}
           {duplicates.length > 0 && (
