@@ -15,6 +15,7 @@ import type { CashFlowPeriod } from "../reports/cashFlow.ts";
 import type { GoalsReport } from "../reports/goals.ts";
 import type { InvestmentsReport } from "../reports/investments.ts";
 import type { NetWorthReport } from "../reports/netWorth.ts";
+import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 import type { TaxAccountsReport } from "../reports/taxAccounts.ts";
 import type { buildHomeSummary } from "../../dashboard/homeSummary.ts";
 import type { AccountLimitsDescriptor } from "./accountLimitsProof.ts";
@@ -93,6 +94,26 @@ export function netWorthFigures(r: NetWorthReport): PageFigure[] {
     if (p.blockers.length) continue;
     out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: p.end }, shown: cents(p.household.closingCents) });
     out.push({ page, descriptor: { report: "net-worth", metric: "change", granularity: r.granularity, start: p.start, end: p.end }, shown: cents(p.household.closingCents - p.household.openingCents) });
+  }
+  return out;
+}
+
+/** Net worth › What changed: each period's opening, closing, change, saving, markets, income, spending, the steps with proofs of their own, and each category that moved. */
+export function netWorthChangeFigures(r: NetWorthChangesReport): PageFigure[] {
+  const page = "Net worth › What changed";
+  const out: PageFigure[] = [];
+  for (const p of r.periods) {
+    const f = p.proofs;
+    out.push(
+      { page, descriptor: f.opening, shown: cents(p.openingCents) },
+      { page, descriptor: f.closing, shown: cents(p.closingCents) },
+      { page, descriptor: f.change, shown: cents(p.changeCents) },
+      { page, descriptor: f.saved, shown: cents(p.savedCents) },
+      { page, descriptor: f.markets, shown: cents(p.marketsCents) },
+      { page, descriptor: f.income, shown: cents(p.incomeCents) },
+      { page, descriptor: f.spending, shown: cents(p.spendingCents) },
+    );
+    for (const m of [...p.spendingMovers, ...p.incomeMovers]) out.push({ page, descriptor: m.proof, shown: cents(m.cents) });
   }
   return out;
 }

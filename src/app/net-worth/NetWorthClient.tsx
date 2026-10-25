@@ -12,13 +12,15 @@ import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/fo
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { addDays } from "@/lib/dates/isoDate";
 import type { NetWorthPeriodWithBlockers as NetWorthPeriod, NetWorthReport } from "@/lib/book/reports/netWorth";
+import type { NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
 import type { RollforwardReport } from "@/lib/profile/rollforwards";
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { AccountsTab } from "./AccountsTab";
+import { ChangesTab } from "./ChangesTab";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 
-const TABS = ["overview", "built", "returns", "accounts"] as const;
+const TABS = ["overview", "changes", "built", "returns", "accounts"] as const;
 type Granularity = "month" | "quarter" | "year";
 
 /** `YYYY-MM-DD` -> `m/d/yy` (anything else is returned as-is). */
@@ -34,6 +36,8 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
   const [monthly, setMonthly] = useState(() => cachedResponse<NetWorthReport>("/api/dashboard/net-worth?granularity=month"));
   const [report, setReport] = useState<NetWorthReport | null>(null);
   const [rolls, setRolls] = useState(() => cachedResponse<RollforwardReport>("/api/dashboard/net-worth/accounts"));
+  const [changesGranularity, setChangesGranularity] = useState<Granularity>("month");
+  const [changes, setChanges] = useState(() => cachedResponse<NetWorthChangesReport>("/api/dashboard/net-worth/changes?granularity=month"));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,6 +56,13 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
       .catch((e: Error) => setError(e.message));
   }, [api, granularity, tab, monthly]);
   useEffect(() => {
+    if (!api.ready || tab !== "changes" || changes?.granularity === changesGranularity) return;
+    api
+      .call<NetWorthChangesReport>(`/api/dashboard/net-worth/changes?granularity=${changesGranularity}`)
+      .then(setChanges)
+      .catch((e: Error) => setError(e.message));
+  }, [api, tab, changes, changesGranularity]);
+  useEffect(() => {
     if (!api.ready || tab !== "accounts" || rolls) return;
     api
       .call<RollforwardReport>("/api/dashboard/net-worth/accounts")
@@ -66,6 +77,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
       <Tabs
         tabs={[
           { id: "overview", label: "Overview" },
+          { id: "changes", label: "What changed" },
           { id: "built", label: "How it was built" },
           { id: "returns", label: "Investment returns" },
           { id: "accounts", label: "Account roll-forwards" },
@@ -89,6 +101,8 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
           />
         ) : tab === "overview" ? (
           <Overview r={monthly} />
+        ) : tab === "changes" ? (
+          <ChangesTab r={changes} granularity={changesGranularity} setGranularity={setChangesGranularity} />
         ) : tab === "built" ? (
           <Built r={built?.granularity === granularity ? built : null} granularity={granularity} setGranularity={setGranularity} />
         ) : tab === "returns" ? (

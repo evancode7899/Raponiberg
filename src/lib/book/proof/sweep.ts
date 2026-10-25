@@ -17,6 +17,7 @@ import { bonusesOf } from "../reports/bonuses.ts";
 import { buildGoals, goalForecastOf } from "../reports/goals.ts";
 import { buildInvestments } from "../reports/investments.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
+import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
 import { buildSpendingReport } from "../reports/spending.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { chainReAdds } from "./common.ts";
@@ -31,6 +32,7 @@ import {
   homeFigures,
   hsaFigures,
   investmentsFigures,
+  netWorthChangeFigures,
   netWorthFigures,
   sourceFigures,
   taxEstimateFigures,
@@ -103,6 +105,7 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
 
   await page("Home", () => homeFigures(buildHomeSummary(book)));
   await page("Net worth", () => netWorthFigures(buildNetWorth(book, { granularity: "month" })));
+  for (const granularity of ["month", "quarter", "year"] as const) await page("Net worth › What changed", () => netWorthChangeFigures(buildNetWorthChanges(book, { granularity })));
   await page("Cash flow", () => cashFlowFigures(buildSpendingReport(book, profileSettings).months));
   await page("Investments", async () => investmentsFigures(buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings))));
   await page("Annual", () => annualFigures(buildAnnualProfile(book, profileSettings, book.taxProfile.dependents), buildAccountRollforwards(book)));
