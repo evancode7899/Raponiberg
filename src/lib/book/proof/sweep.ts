@@ -16,6 +16,7 @@ import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxA
 import { bonusesOf } from "../reports/bonuses.ts";
 import { buildGoals, goalForecastOf } from "../reports/goals.ts";
 import { buildInvestments } from "../reports/investments.ts";
+import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
 import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
 import { buildSpendingReport } from "../reports/spending.ts";
@@ -25,6 +26,7 @@ import {
   accountLimitsFigures,
   annualFigures,
   bonusesFigures,
+  calendarFigures,
   carFigures,
   cashFlowFigures,
   forecastFigures,
@@ -115,13 +117,26 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
   await page("Goals", async () => goalsFigures(buildGoals(book, await loadJsonSetting(db, GOALS_KEY, normalizeGoals), forecast ? goalForecastOf(forecast) : null, data.profile.settings)));
   if (forecast) await page("Forecast", () => forecastFigures(forecast, data.profile));
   const retirement = await loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);
-  for (const y of Object.keys(TAX_YEARS).map(Number).filter((y) => y <= year)) {
+  // The calendar reads the same two reports for its years: kept from here rather than built again.
+  const supported = Object.keys(TAX_YEARS).map(Number);
+  const onCalendar = calendarYears(book.today, supported);
+  const calendar: Partial<CalendarYear>[] = onCalendar.map((y) => ({ year: y }));
+  const keep = (y: number) => calendar.find((c) => c.year === y);
+  for (const y of supported.filter((y) => y <= year)) {
     await page(`Taxes ${y}`, () => {
       const r = buildTaxReport(book, y, { forecast: link });
+      const c = keep(y);
+      if (c) c.tax = r;
       return r.blocked ? [] : taxEstimateFigures(r);
     });
-    await page(`Account limits ${y}`, () => accountLimitsFigures(buildTaxAccounts(book, y, retirement, link)));
+    await page(`Account limits ${y}`, () => {
+      const r = buildTaxAccounts(book, y, retirement, link);
+      const c = keep(y);
+      if (c) c.accounts = r;
+      return accountLimitsFigures(r);
+    });
   }
+  await page("Calendar", () => calendarFigures(buildMoneyCalendar(book.today, calendar.filter((c): c is CalendarYear => Boolean(c.tax && c.accounts)))));
   // The sources under every figure: each statement, row and pay stub as it prints.
   await page("Sources", () => sourceFigures(book));
   return { figures, errors };

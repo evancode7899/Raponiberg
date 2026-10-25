@@ -98,6 +98,14 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     keywords: ["financial independence", "retire early", "fi", "coast", "lean", "fat", "4% rule", "safe withdrawal", "walk away", "savings rate"],
   },
   {
+    mnemonic: "CAL",
+    href: "/calendar",
+    label: "Money calendar",
+    description: "What to do by when, with the amounts: 401(k), HSA, IRA and 529 room before each deadline, estimated tax and W-4 changes, and what April's returns will owe. Estimates, not tax advice.",
+    group: "Planning",
+    keywords: ["calendar", "deadline", "due", "to do", "todo", "reminder", "april 15", "december 31", "year end", "estimated tax", "q4", "w-4", "w4"],
+  },
+  {
     mnemonic: "TAX",
     href: "/taxes",
     label: "Taxes",
