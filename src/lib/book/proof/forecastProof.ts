@@ -1122,6 +1122,12 @@ function actualColumn(x: CellCtx, cols: Period[]): Built {
     }
     case "saved":
       push(sumChain(`Saved incl. retirement, ${word}`, savedParts(x), { label: "Saved incl. retirement", cents: figure }));
+      if (!isYtd)
+        blocks.push({
+          kind: "facts",
+          title: "From Cash flow",
+          items: [{ label: "Saved from take-home", text: "The Annual statement's proof walks from Cash flow's saved from take-home to this figure, line by line.", link: { label: `Saved incl. retirement, ${y.year}`, descriptor: { report: "annual", figure: "cash", year: y.year, line: "saved" } } }],
+        });
       break;
     case "toRetirement":
       push(sumChain(`Saved to retirement, ${word}`, [...perPerson((p) => p.deferrals, { note: "401(k) and HSA deferrals on the stubs, year to date." }).map((l) => ({ ...l, label: `${l.label}: deferrals` })), partOf(x, "employer", "+")], { label: "Saved to retirement", cents: figure }));

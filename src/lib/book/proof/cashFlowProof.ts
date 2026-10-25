@@ -348,6 +348,22 @@ export function cashFlowToProof(p: CashFlowProof): Proof {
       });
     blocks.push({ kind: "rows", title: `How it adds up${net ? ` · ${s.label}` : ""}`, figureCents: s.figureCents, groups: s.groups, ...(s.note ? { note: s.note } : {}) });
   }
+  // A calendar year's saved from take-home is where the Annual statement's saved incl. retirement starts (profile/savedBridge.ts).
+  const whole = p.periods.length === 1 && d.granularity === "year" && d.start.endsWith("-01-01") && !d.category && !d.merchantKey && !d.accountIds?.length && !d.oneOffs;
+  if (d.metric === "net" && whole) {
+    const year = Number(d.start.slice(0, 4));
+    blocks.push({
+      kind: "facts",
+      title: "On the Annual statement",
+      items: [
+        {
+          label: "Saved incl. retirement",
+          text: "Starts from this figure, then adds 401(k) and HSA deferrals, employer money, brokerage dividends and pay that never reached a tracked account.",
+          link: { label: `Saved incl. retirement, ${year}`, descriptor: { report: "annual", figure: "cash", year, line: "saved" } },
+        },
+      ],
+    });
+  }
   return {
     report: "cash-flow",
     descriptor: d,

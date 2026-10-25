@@ -260,6 +260,33 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
       ),
     );
 
+  /** Cash flow's saved from take-home → this year's saved incl. retirement, line by line (profile/savedBridge.ts). */
+  const takeHomeBlock = (): ProofBlock => {
+    const b = cash.savedBridge;
+    const cf = cashFlowYear(c, y);
+    // Where the undeposited pay went: each stub's printed deposit account.
+    const notDeposited = new Map<string, number>();
+    for (const p of people)
+      for (const e of personPayYear(book, p.personId, yr, y.asOf).employers)
+        for (const s of e.stubs) if (!s.depositTransactionId) for (const d of s.deposits) notDeposited.set(d.last4 ?? "?", (notDeposited.get(d.last4 ?? "?") ?? 0) + 1);
+    const to = [...notDeposited].map(([last4, n]) => `••${last4} (${n} stub${n === 1 ? "" : "s"})`).join(", ");
+    const lines: ChainLine[] = [line(undefined, "Saved from take-home on Cash flow", b.takeHome, "proven", { link: { label: `Saved from take-home, ${label}`, descriptor: cf.d("net") } })];
+    for (const p of people) {
+      const d = personPayYear(book, p.personId, yr, y.asOf).totals.deferrals;
+      if (d) lines.push(line("+", `${p.name}: 401(k) and HSA deferrals`, d, "proven", { link: { label: `${p.name}'s deferrals`, descriptor: payD(p.personId, "deferrals") }, note: "Taken from pay before it's deposited." }));
+    }
+    if (b.employer) lines.push(line("+", "Employer retirement & HSA money", b.employer, "proven", { link: cashLink("Employer money", yr, "employer") }));
+    if (b.dividends) lines.push(line("+", "Brokerage dividends & distributions", b.dividends, "proven", { link: cashLink("Investment & other income", yr, "other-income"), note: "Income on brokerage statements, not bank rows." }));
+    if (b.payYtdOnly) lines.push(signed(b.payYtdOnly, "Net pay known only from year-to-date totals", "proven", { note: "Paychecks before the first stub on file, carried in the next stub's year-to-date figures." }));
+    if (b.payNotDeposited) lines.push(signed(b.payNotDeposited, "Net pay to accounts with no statements", "proven", { note: to ? `Deposited to ${to}.` : "Part of a paycheck deposited outside the tracked accounts." }));
+    if (b.payOtherYear) lines.push(signed(b.payOtherYear, "Net pay on this year's stubs, deposited in another year", "proven", { note: "Or the deposit is filed as other income, not as a paycheck." }));
+    if (b.depositsWithoutStub) lines.push(signed(-b.depositsWithoutStub, "Paycheck deposits with no stub this year", "proven"));
+    if (b.taxTiming) lines.push(signed(b.taxTiming, "Tax payments and refunds: bank date vs. Cash flow's month", "derived", { note: BOOKED_DAY }));
+    if (b.unexplained) lines.push(signed(b.unexplained, "Not explained by the lines above", "derived"));
+    lines.push(line("=", "Saved incl. retirement", b.saved, "derived"));
+    return { kind: "chain", title: "From Cash flow's saved from take-home", lines };
+  };
+
   switch (ln) {
     case "other-income": {
       const cf = cashFlowYear(c, y);
@@ -361,7 +388,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
         line("−", "One-off expenses", w.nonRecurring, "proven", { link: cashLink("One-offs", yr, "one-offs") }),
         line("=", "Saved incl. retirement", w.saved, "derived"),
       ]);
-      return chainProof(`Saved incl. retirement · ${label}`, w.saved, "Net cash − living − one-offs", lines, base);
+      return chainProof(`Saved incl. retirement · ${label}`, w.saved, "Net cash − living − one-offs", lines, { ...base, blocks: [takeHomeBlock()] });
     }
     case "living": {
       const t = cash.livingTrail;
