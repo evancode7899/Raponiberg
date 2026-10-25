@@ -37,9 +37,9 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     mnemonic: "NW",
     href: "/net-worth",
     label: "Net worth",
-    description: "Every account on the same month-ends, how it was built, investment returns, and each account's year-by-year roll-forward.",
+    description: "Every account on the same month-ends, what changed it each month, how it was built, investment returns, and each account's year-by-year roll-forward.",
     group: "Money",
-    keywords: ["networth", "wealth", "balance", "returns", "assets", "roll-forward", "rollforward", "contributions"],
+    keywords: ["networth", "wealth", "balance", "returns", "assets", "roll-forward", "rollforward", "contributions", "what changed", "month in review"],
   },
   {
     mnemonic: "CF",

@@ -3,7 +3,7 @@ import { NetWorthClient } from "./NetWorthClient";
 
 export const metadata: Metadata = {
   title: "Net worth",
-  description: "Net worth from statements: composition, how it was built, investment returns",
+  description: "Net worth from statements: composition, what changed it, how it was built, investment returns",
 };
 
 export const dynamic = "force-dynamic";
