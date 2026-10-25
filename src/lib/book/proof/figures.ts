@@ -14,6 +14,7 @@ import type { BonusesReport } from "../reports/bonuses.ts";
 import type { CashFlowPeriod } from "../reports/cashFlow.ts";
 import type { GoalsReport } from "../reports/goals.ts";
 import type { InvestmentsReport } from "../reports/investments.ts";
+import type { MoneyCalendarReport } from "../reports/moneyCalendar.ts";
 import type { NetWorthReport } from "../reports/netWorth.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 import type { TaxAccountsReport } from "../reports/taxAccounts.ts";
@@ -328,6 +329,13 @@ export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
       );
   }
   return out;
+}
+
+// ------------------------------------------------------------------ Calendar
+
+/** Each calendar item's amount that has a proof (the Account limits or Taxes figure it repeats). */
+export function calendarFigures(r: MoneyCalendarReport): PageFigure[] {
+  return r.items.flatMap((i) => (i.proof && i.cents != null ? [{ page: "Calendar", descriptor: i.proof, shown: { cents: i.cents } }] : []));
 }
 
 // ------------------------------------------------------------------ Car
