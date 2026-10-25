@@ -25,6 +25,7 @@ import {
   type CashWaterfall,
   type NetWorthSummary,
 } from "./annualMath.ts";
+import { savedBridge, type SavedBridge } from "./savedBridge.ts";
 import { BUCKETS, type FinancialProfileSettings, type NetWorthBucket } from "./settings.ts";
 
 /**
@@ -82,6 +83,8 @@ export type YearCash = {
    * booking day, so the bridge's timing line holds it.
    */
   timing: number;
+  /** From Cash flow's saved from take-home to the waterfall's saved incl. retirement, line by line. */
+  savedBridge: SavedBridge;
 };
 
 export type YearNetWorth = NetWorthSummary & {
@@ -200,8 +203,10 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
 
     // ------------------------------------------------------------ pay
     const payBlockers: BlockerRef[] = [];
+    const payYears: PersonPayYear[] = [];
     const people: PersonYear[] = persons.map((p) => {
       const pay = personPayYear(book, p.id, year, cashEnd);
+      payYears.push(pay);
       if (record) pays.set(`${p.id}|${year}`, pay);
       payBlockers.push(...refs(pay.blockers));
       const t = pay.totals;
@@ -233,7 +238,8 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       ...refs(blockersFor(book, { affects: "TAX", from: start, to: cashEnd })).filter((b) => b.id.startsWith("tax.brokerage-coverage")),
     ]);
     const taxes = taxRows(book, start, cashEnd);
-    const rows = cashRows(start, cashEnd, new Set(taxes.map((r) => r.id)));
+    const taxIds = new Set(taxes.map((r) => r.id));
+    const rows = cashRows(start, cashEnd, taxIds);
     const { interest, other, nonRecurring, spending, candidates, reimbursements: rowReimbursements } = rows;
     let reimbursements = rowReimbursements;
     let taxesPaid = 0;
@@ -294,6 +300,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
             taxRowsByCategory: { income: byCents(rows.taxByCategory.income), spending: byCents(rows.taxByCategory.spending) },
             livingTrail: livingTrail(start, cashEnd, rows, payReimbursements),
             timing: rows.timing,
+            savedBridge: savedBridge(book, { from: start, to: cashEnd, pays: payYears, dividends, taxIds, taxesPaid, refunds, saved: waterfall.saved }),
           }
         : null;
     const h = period?.household;

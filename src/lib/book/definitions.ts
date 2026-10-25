@@ -18,7 +18,9 @@ import type { AccountGroup } from "../ledger/loadLedger.ts";
  *    deferrals and employer money, and pay the stubs show whichever account it reached.
  *
  * They differ by more than retirement money (pay to an account with no statements, pay
- * known only from year-to-date totals), so neither is derived from the other.
+ * known only from year-to-date totals), so neither is derived from the other; the
+ * Annual statement's proof of saved incl. retirement walks from one to the other line by
+ * line (profile/savedBridge.ts).
  */
 export const savedFromTakeHome = (incomeCents: number, spendingCents: number): number => incomeCents - spendingCents;
 export const savedInclRetirement = (netCashCents: number, livingCents: number, oneOffCents: number): number => netCashCents - livingCents - oneOffCents;

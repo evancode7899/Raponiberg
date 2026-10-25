@@ -367,6 +367,45 @@ describe("annual statement proofs", () => {
     expect(chains(transit)[0]!.lines.some((l) => l.label.startsWith("Matched transfers in flight, 2025-12-31") && l.op === "−")).toBe(true);
   });
 
+  it("walks from Cash flow's saved from take-home to saved incl. retirement, to the cent", async () => {
+    for (const y of profile.years.filter((v) => v.cash)) {
+      const p = await buildProof(ctx, { report: "annual", figure: "cash", year: y.year, line: "saved" });
+      const walk = chains(p).find((c) => c.title === "From Cash flow's saved from take-home")!;
+      expect(reAdds(walk.lines), y.label).toEqual([]);
+      const cf = buildCashFlowReport(book, { granularity: "year", from: `${y.year}-01-01`, to: y.asOf }).periods[0]!;
+      expect(walk.lines[0]!.value, y.label).toEqual({ cents: cf.netCents });
+      expect(walk.lines.at(-1)!.value, y.label).toEqual({ cents: y.cash!.waterfall.saved });
+      expect(y.cash!.savedBridge.unexplained, y.label).toBe(0);
+    }
+    const lines = chains(await buildProof(ctx, { report: "annual", figure: "cash", year: 2025, line: "saved" })).find((c) => c.title.startsWith("From Cash flow"))!.lines;
+    expect(lines.find((l) => l.label === "Pat Example: 401(k) and HSA deferrals")?.link?.descriptor).toMatchObject({ report: "pay", lines: ["deferrals"] });
+    expect(lines.find((l) => l.label === "Brokerage dividends & distributions")).toMatchObject({ op: "+", value: { cents: 23_456 } });
+    expect(lines.some((l) => l.label.startsWith("Net pay"))).toBe(false);
+  });
+
+  it("names pay Cash flow never sees: year-to-date only, an account with no statements", () => {
+    // The year's first stub is missing (its pay lives on in the next stub's year to date), and
+    // one paycheck's stub says it went to ••9999, an account with no statements.
+    const first = stubs.find((s) => s.payDate.startsWith("2025"))!;
+    const elsewhere = stubs.find((s) => s.payDate === "2025-06-20")!;
+    const variant = { ...book, stubs: book.stubs.filter((s) => s !== first).map((s) => (s === elsewhere ? { ...s, depositTransactionId: null, deposits: [{ last4: "9999", amount: s.printed.netCurrent }] } : s)) } as Book;
+    const b = buildAnnualProfile(variant, SETTINGS).years.find((y) => y.year === 2025)!.cash!.savedBridge;
+    expect(b.payYtdOnly).toBe(first.printed.netCurrent);
+    expect(b.payNotDeposited).toBe(elsewhere.printed.netCurrent);
+    // Both deposits are still on Cash flow, now tied to no stub.
+    expect(b.depositsWithoutStub).toBe(first.printed.netCurrent + elsewhere.printed.netCurrent);
+    expect(b.unexplained).toBe(0);
+    expect(b.saved).toBe(profile.years.find((y) => y.year === 2025)!.cash!.waterfall.saved);
+  });
+
+  it("points a calendar year's saved from take-home on Cash flow to the Annual statement", async () => {
+    const year = await buildProof(ctx, { report: "cash-flow", metric: "net", granularity: "year", start: "2025-01-01", end: "2025-12-31" });
+    const facts = year.blocks.find((b) => b.kind === "facts" && b.title === "On the Annual statement");
+    expect(facts && facts.kind === "facts" && facts.items[0]!.link?.descriptor).toEqual({ report: "annual", figure: "cash", year: 2025, line: "saved" });
+    const month = await buildProof(ctx, { report: "cash-flow", metric: "net", granularity: "month", start: "2025-01-01", end: "2025-01-31" });
+    expect(month.blocks.some((b) => b.kind === "facts")).toBe(false);
+  });
+
   it("withholds a figure whose section is withheld, and says what's missing", () => {
     const p = buildAnnualProof(book, profile, { report: "annual", figure: "net-worth", year: 2024, line: "change" });
     expect(p.withheld).toBe(true);
