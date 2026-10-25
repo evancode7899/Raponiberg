@@ -46,10 +46,9 @@ import type { ChainLine, Proof, ProofBlock, ProofContext, ProofEstimate, ProofKi
  * The year in progress is a run-rate forecast (the W-4 / prepayment plan): whatever the
  * projection adds after the latest stub and statement is marked "estimate".
  *
- * TODO(forecast proof): the projected paychecks and bonuses come from the shared forecast
- * (lib/forecast: paycheck basis, scheduled bonuses). Once the "forecast" proof kind is
- * registered, the "after the latest stub" estimate lines link to its pay lines for the
- * person and year instead of only describing them.
+ * The projected paychecks and bonuses come from the shared forecast (lib/forecast: paycheck
+ * basis, scheduled bonuses): each "after the latest stub" line links to the forecast's
+ * paycheck for the person, and the forecast's bonus, on a line of its own, to its bonuses.
  *
  * Every figure is re-derived through the page's own code: buildTaxReport (with the same
  * forecast link and birth years as api/tax), estimateColumns and ESTIMATE_LINES
@@ -229,6 +228,40 @@ function projectionNote(x: X, p: PersonReport, e: PersonReport["payroll"][number
   return `${what ? `${what}. ` : ""}Projected after the ${e.latestPayDate} stub: 401(k) deferrals stop at the annual limit and Social Security at the wage base.`;
 }
 
+/** The forecast's base paycheck for a person, when the year's projection follows the forecast (its paycheck basis). */
+function forecastPayLink(x: X, p: PersonReport): ProofLink | undefined {
+  const f = p.fromForecast;
+  return f ? { label: `${p.name}'s paycheck in the forecast`, descriptor: { report: "forecast", figure: "seed", which: "pay", personId: p.id, paycheck: f.paycheck } } : undefined;
+}
+
+/** The forecast's bonuses, when it pays any after the latest stub. */
+const forecastBonusLink = (p: PersonReport): ProofLink | undefined =>
+  p.fromForecast?.bonus ? { label: "Bonuses in the forecast", descriptor: { report: "forecast", figure: "seed", which: "bonus" } } : undefined;
+
+/**
+ * A projected amount split into the forecast's bonus and the rest: `bonusAdded` is the bonus
+ * the projection added (the forecast's plus any typed under Inputs), so the forecast's part
+ * is at most what it pays. The two always add back to `total`.
+ */
+export function splitForecastBonus(total: number, bonusAdded: number, forecastBonus: number): { rest: number; bonus: number } {
+  const bonus = Math.max(0, Math.min(bonusAdded, forecastBonus));
+  return { rest: total - bonus, bonus };
+}
+
+/**
+ * The projection past the latest stub: the forecast's bonus on its own line (linked to the
+ * forecast's bonuses), the paychecks, and any bonus typed under Inputs, on another.
+ */
+function projectionLines(x: X, p: PersonReport, e: PersonReport["payroll"][number], total: number, bonusAdded: number): ChainLine[] {
+  const emp = shortEmployer(e.employer);
+  const { rest, bonus } = splitForecastBonus(total, bonusAdded, p.fromForecast?.bonus ?? 0);
+  const bonusLink = bonus ? forecastBonusLink(p) : undefined;
+  const out: ChainLine[] = [];
+  if (rest) out.push(ln("+", `${who(x, p)}${emp}: paychecks after ${e.latestPayDate}`, rest, "estimate", projectionNote(x, p, e), forecastPayLink(x, p)));
+  if (bonusLink) out.push(ln("+", `${who(x, p)}${emp}: bonus after ${e.latestPayDate}`, bonus, "estimate", `${p.fromForecast!.items.map((i) => i.label).join(", ")}, as the forecast pays it.`, bonusLink));
+  return out;
+}
+
 const PAY_FIELD: Partial<Record<keyof PayrollAmounts, { name: string; link?: PayLine; sign: 1 | -1 }>> = {
   regular: { name: "base pay", link: "base", sign: 1 },
   bonus: { name: "bonus", link: "bonus", sign: 1 },
@@ -257,7 +290,7 @@ function payrollLines(x: X, fields: (keyof PayrollAmounts)[]): ChainLine[] {
       }
       if (x.pick === "projected") {
         const diff = fields.reduce((t, f) => t + e.projected[f] - e.ytd[f], 0);
-        if (diff) out.push(ln("+", `${who(x, p)}${emp}: paychecks after ${e.latestPayDate}`, diff, "estimate", projectionNote(x, p, e)));
+        out.push(...projectionLines(x, p, e, diff, fields.includes("bonus") ? e.projected.bonus - e.ytd.bonus : 0));
       }
     }
   }
@@ -299,7 +332,9 @@ function w2Lines(x: X, fields: (keyof W2)[]): ChainLine[] {
             out.push(ln(def.sign < 0 ? "−" : "+", `${who(x, p)}${emp}: ${def.name}, year to date on the ${e.latestPayDate} stub`, a, "proven", undefined, def.link ? payLink(x, p, e, def.link) : undefined));
           }
         } else if (ytd) out.push(ln("+", `${who(x, p)}${emp}: ${BOX[field] ?? field}, year to date on the ${e.latestPayDate} stub`, ytd, "proven"));
-        if (v - ytd) out.push(ln("+", `${who(x, p)}${emp}: paychecks after ${e.latestPayDate}`, v - ytd, "estimate", projectionNote(x, p, e)));
+        // Wages carry the bonus whole; a withheld box mixes it with the paychecks', so it stays one line.
+        const wages = field === "box1Wages" || field === "box5MedicareWages";
+        out.push(...projectionLines(x, p, e, v - ytd, wages ? e.projected.bonus - e.ytd.bonus : 0));
       }
     });
   });

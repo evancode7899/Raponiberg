@@ -11,7 +11,7 @@ import type { FiledReturn, TaxDoc, TaxDocsFile } from "../../taxdocs/types";
 import type { Book, BookAccount, BookBrokerage, BookRow, BookStub } from "../load";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 import type { FiledJurisdiction } from "./filedReturnProof";
-import { evalChain, type TaxEstimateDescriptor } from "./taxEstimateProof";
+import { evalChain, splitForecastBonus, type TaxEstimateDescriptor } from "./taxEstimateProof";
 
 // An invented household: Pat Example (Acme Widgets) and Sam Example (Globex, which also
 // withholds New York tax), one child, a joint Springfield Bank account ••1234 earning
@@ -301,6 +301,8 @@ describe("the year in progress (2026): a run-rate forecast", () => {
     const main = p.blocks[0]!;
     if (main.kind !== "chain") throw new Error("no chain");
     expect(main.lines[1]).toMatchObject({ label: "Acme Widgets: paychecks after 2026-04-28", source: "estimate", value: { cents: 8 * 1_250_000 } });
+    // The projection is the forecast's: its line opens the forecast's paycheck for Pat, on the same basis.
+    expect(main.lines[1]!.link?.descriptor).toEqual({ report: "forecast", figure: "seed", which: "pay", personId: "pat", paycheck: "TYPICAL" });
     expect(p.estimates.map((e) => e.id)).toContain("tax-estimate:projected:2026");
   }, 120_000);
 });
@@ -359,5 +361,19 @@ describe("the Filed return tab's “This app” column", () => {
     expect(app?.link?.descriptor).toEqual({ report: "tax-estimate", year: 2025, basis: "filed", key: "fed.agi" });
     const q = await buildProof(ctx(book), app!.link!.descriptor);
     expect(q.figure).toEqual(app!.value);
+  });
+});
+
+describe("the forecast's bonus on its own line", () => {
+  it("takes out the forecast's bonus, never more than the projection added, and adds back to the whole", () => {
+    // $12,000 projected, of which a $3,000 bonus, all of it the forecast's.
+    expect(splitForecastBonus(1_200_000, 300_000, 300_000)).toEqual({ rest: 900_000, bonus: 300_000 });
+    // A $1,000 bonus typed under Inputs on top of the forecast's $3,000 stays with the paychecks.
+    expect(splitForecastBonus(1_300_000, 400_000, 300_000)).toEqual({ rest: 1_000_000, bonus: 300_000 });
+    // The forecast pays a bonus but this projection added less of it (or none, or a withheld box): capped.
+    expect(splitForecastBonus(1_000_000, 100_000, 300_000)).toEqual({ rest: 900_000, bonus: 100_000 });
+    expect(splitForecastBonus(50_000, 0, 300_000)).toEqual({ rest: 50_000, bonus: 0 });
+    // No forecast bonus: one line.
+    expect(splitForecastBonus(1_000_000, 200_000, 0)).toEqual({ rest: 1_000_000, bonus: 0 });
   });
 });
