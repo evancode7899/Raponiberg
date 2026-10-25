@@ -7,6 +7,8 @@ import { extractPdfText } from "../statements/extractPdfText.ts";
 import { hashFile } from "../statements/hashFile.ts";
 import { commitDocument, type CommitResult } from "./commitDocument.ts";
 import { householdPatterns } from "../household/householdFile.ts";
+import { insuranceKind } from "../insurance/parse.ts";
+import { insuranceHashes } from "../insurance/store.ts";
 import { PARSER_VERSIONS, parseStatementText } from "./parsers/index.ts";
 import type { ParsedDocument } from "./types.ts";
 
@@ -60,6 +62,11 @@ export async function importStatementFiles(
       continue;
     }
     const result = parseStatementText(text, householdPatterns());
+    if (!result.ok && result.reason === "UNRECOGNIZED" && insuranceKind(text)) {
+      // A policy packet or premium notice: the Insurance page reads it from the folder; it has no place in the ledger.
+      outcomes.push({ fileName: file.fileName, ok: false, reason: "INSURANCE", message: "A life insurance document: it is read on the Insurance page, not imported as a statement." });
+      continue;
+    }
     if (!result.ok) {
       outcomes.push({
         fileName: file.fileName,
@@ -142,7 +149,7 @@ export async function dropOutdatedReading(db: PrismaClient, bytes: Buffer, doc: 
 /**
  * PDFs in the statements folder (recursively) to import: those whose exact bytes aren't
  * imported yet, and those imported by an older version of their parser (read again, see
- * dropOutdatedReading). Files are named by their path relative to the folder, e.g.
+ * dropOutdatedReading). Life insurance documents the Insurance page has read are left out. Files are named by their path relative to the folder, e.g.
  * "1. Chase/2026-08.pdf".
  */
 export async function findNewFolderFiles(
@@ -162,12 +169,13 @@ export async function findNewFolderFiles(
     select: { fileHash: true, parserId: true, parserVersion: true },
   });
   const stored = new Map(known.map((k) => [k.fileHash, k]));
+  const insurance = insuranceHashes();
   const isOutdated = (hash: string) => {
     const k = stored.get(hash);
     return !!k && k.parserVersion < (PARSER_VERSIONS[k.parserId] ?? k.parserVersion);
   };
   const files = all
-    .filter((f) => (opts.outdatedOnly ? false : !stored.has(f.hash)) || isOutdated(f.hash))
+    .filter((f) => (opts.outdatedOnly ? false : !stored.has(f.hash) && !insurance.has(f.hash)) || isOutdated(f.hash))
     .sort((a, b) => a.fileName.localeCompare(b.fileName));
   return {
     folder,
@@ -175,6 +183,13 @@ export async function findNewFolderFiles(
     files: files.map(({ fileName, bytes }) => ({ fileName, bytes })),
     outdated: files.filter((f) => isOutdated(f.hash)).length,
   };
+}
+
+/** Which of these content hashes are imported documents (the Insurance page skips them unread). */
+export async function importedHashes(db: Pick<PrismaClient, "sourceDocument">, hashes: string[]): Promise<Set<string>> {
+  if (!hashes.length) return new Set();
+  const known = await db.sourceDocument.findMany({ where: { fileHash: { in: hashes } }, select: { fileHash: true } });
+  return new Set(known.map((d) => d.fileHash));
 }
 
 /**

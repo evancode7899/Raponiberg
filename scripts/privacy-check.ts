@@ -19,7 +19,11 @@
  *     the names on the forms, EINs, and each W-2's wages and each filed return's AGI and
  *     total tax;
  *   - data/hsa-expenses.json: the patients and providers in the HSA receipts log (providers
- *     of two words or more, so a one-word note like "Dental" doesn't flag the code).
+ *     of two words or more, so a one-word note like "Dental" doesn't flag the code);
+ *   - data/insurance-documents.json (the life insurance policies and premium notices as
+ *     read): policy numbers, the insured, owner and agent, and each face amount that isn't
+ *     a round multiple of $2,500; and the
+ *     beneficiaries typed in on the Insurance page (a saved setting).
  *
  * Usage: npm run privacy:check [-- --dir <exported copy>]
  */
@@ -31,6 +35,8 @@ import { householdFilePath, readHouseholdFile } from "../src/lib/household/house
 import { awardsFilePath, readAwards } from "../src/lib/bonuses/awardStore.ts";
 import { defaultHomeBudgetInputs } from "../src/lib/home-budget/homeBudgetModel.ts";
 import { hsaFilePath } from "../src/lib/hsa/store.ts";
+import { INSURANCE_NOTES_KEY } from "../src/lib/insurance/notes.ts";
+import { readInsuranceDocs } from "../src/lib/insurance/store.ts";
 import { defaultInputs as defaultMortgageInputs } from "../src/lib/mortgage/inputs.ts";
 import { pageInputsFilePath } from "../src/lib/pageInputs.ts";
 import { normalizeProfile, TAX_PROFILE_KEY } from "../src/lib/tax/profile.ts";
@@ -160,6 +166,7 @@ if (!existsSync(dbFile)) {
         if (typeof v === "number" && key.endsWith("Cents")) exact(v);
         else if (typeof v === "number" && s.key === TAX_PROFILE_KEY) dollars(v);
         else if (typeof v === "string" && ["make", "model", "trim"].includes(key)) word(v);
+        else if (typeof v === "string" && s.key === INSURANCE_NOTES_KEY && key === "name") word(v);
       });
     }
     db.close();
@@ -216,6 +223,18 @@ if (existsSync(hsaFilePath())) {
     }
   } catch {
     /* unreadable log: nothing to add */
+  }
+}
+
+// ---- the life insurance documents as read
+for (const e of Object.values(readInsuranceDocs()?.files ?? {})) {
+  const d = e.doc;
+  if (!d) continue;
+  word(d.policyNumber);
+  if (d.kind === "TERM_LIFE") {
+    [d.insured, d.owner ?? "", d.agent ?? ""].forEach(word);
+    // Face amounts are usually round ($500,000), which code uses by chance; the odd ones (a renewal face) are the policy's own.
+    for (const face of new Set([d.faceCents, ...d.schedule.map((r) => r.faceCents)])) dollars(face / 100);
   }
 }
 
