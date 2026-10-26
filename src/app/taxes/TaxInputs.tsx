@@ -2,7 +2,7 @@
 
 import { buttonPrimary, buttonSecondary, Card } from "@/components/ledger/LedgerBits";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { ACCOUNT_KIND_LABEL, ACCOUNT_TAX_KINDS, type AccountTaxKind } from "@/lib/tax/facts/investments";
+import { ACCOUNT_KIND_LABEL, ACCOUNT_TAX_KINDS, CHILD_KINDS, type AccountTaxKind } from "@/lib/tax/facts/investments";
 import {
   DEFAULT_PAY_FORECAST,
   EMPTY_EXTRAS,
@@ -249,7 +249,7 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
             <h3 className="mb-1 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">Investment accounts</h3>
             <p className="mb-2 text-xs text-muted">
               Type decides how an account&apos;s income is taxed; change it when the statement&apos;s wording isn&apos;t recognized. A UTMA/UGMA account&apos;s income is the
-              child&apos;s, not yours.
+              child&apos;s, not yours; a Trump Account is the child&apos;s too, and its income is untaxed until withdrawn.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {accounts.map((a) => {
@@ -278,7 +278,7 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
                           </option>
                         ))}
                       </select>
-                      {kind === "CUSTODIAL" ? (
+                      {CHILD_KINDS.includes(kind) ? (
                         <span className="px-2 text-xs text-muted">
                           {a.child ?? draft.dependents.find((d) => a.ownerLine.toUpperCase().includes(d.name.toUpperCase()))?.name ?? "Child"}&apos;s
                         </span>
