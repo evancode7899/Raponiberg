@@ -81,3 +81,16 @@ describe("merchant keywords on raw card-network descriptors", () => {
     expect(categorizeMerchant("SP ACME GADGETS MILPITAS CA")).toBeNull();
   });
 });
+
+describe("Trump Account deposits from the bank", () => {
+  it("pairs a debit-card deposit with the Trump Account, and leaves a look-alike merchant alone", () => {
+    const deposit = classifyTransaction(
+      { institution: "Chase", accountSubtype: "CHECKING", description: "Payment Sent 03/02 Trump Account Deposi Trumpaccounts FL Card 1111", amountCents: -2_500, date: "2026-03-02" },
+      ctx,
+    );
+    expect(deposit).toMatchObject({ lane: "TRANSFER", ruleId: "bank-trump-account" });
+    expect(deposit.counterparty).toMatchObject({ kind: "OWN_ACCOUNT", institution: "Trump Account" });
+    const trumpet = classifyTransaction({ institution: "Chase", accountSubtype: "CHECKING", description: "ACME TRUMPET SUPPLY 800-555-0100", amountCents: -2_500, date: "2026-03-02" }, ctx);
+    expect(trumpet.ruleId).not.toBe("bank-trump-account");
+  });
+});
