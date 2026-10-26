@@ -9,8 +9,12 @@ import { collapseSpaces, lines, parseMonthNameDate, resolveMonthDay, trailingAmo
  * re-reads the same stored text for what a tax return needs.
  */
 
-/** CUSTODIAL: a UTMA/UGMA account. The money is the child's, and so is its income (kiddie tax). */
-export type AccountTaxKind = "TAXABLE" | "ROTH_IRA" | "TRADITIONAL_IRA" | "ROLLOVER_IRA" | "529" | "HSA" | "CUSTODIAL" | "OTHER";
+/**
+ * CUSTODIAL: a UTMA/UGMA account. The money is the child's, and so is its income (kiddie tax).
+ * TRUMP_ACCOUNT: a child's §530A account. The money is the child's, but its income is
+ * tax-deferred: on nobody's return until it's withdrawn.
+ */
+export type AccountTaxKind = "TAXABLE" | "ROTH_IRA" | "TRADITIONAL_IRA" | "ROLLOVER_IRA" | "529" | "HSA" | "CUSTODIAL" | "TRUMP_ACCOUNT" | "OTHER";
 
 export const ACCOUNT_KIND_LABEL: Record<AccountTaxKind, string> = {
   TAXABLE: "Brokerage",
@@ -20,10 +24,14 @@ export const ACCOUNT_KIND_LABEL: Record<AccountTaxKind, string> = {
   "529": "529",
   HSA: "HSA",
   CUSTODIAL: "UTMA/UGMA",
+  TRUMP_ACCOUNT: "Trump Account",
   OTHER: "Account",
 };
 
-export const ACCOUNT_TAX_KINDS: readonly AccountTaxKind[] = ["TAXABLE", "ROTH_IRA", "TRADITIONAL_IRA", "ROLLOVER_IRA", "529", "HSA", "CUSTODIAL", "OTHER"];
+export const ACCOUNT_TAX_KINDS: readonly AccountTaxKind[] = ["TAXABLE", "ROTH_IRA", "TRADITIONAL_IRA", "ROLLOVER_IRA", "529", "HSA", "CUSTODIAL", "TRUMP_ACCOUNT", "OTHER"];
+
+/** Kinds whose money is a child's, not a parent's. */
+export const CHILD_KINDS: readonly AccountTaxKind[] = ["CUSTODIAL", "TRUMP_ACCOUNT"];
 
 export type IncomeRow = {
   date: string;

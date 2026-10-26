@@ -138,6 +138,14 @@ function structural(i: ClassifyInput, ctx: ClassifyContext, h: HouseholdPatterns
     if (i.institution === "HealthEquity" && section === "Withdrawals") {
       return expense("Health & fitness", "hsa-medical-spend", "high");
     }
+    // A Trump Account's government seed (the pilot program) is new money for the child;
+    // the household's own deposits come from a bank debit card.
+    if (i.institution === "Trump Account" && section === "Pilot Program Contribution") {
+      return income("Other income", "trump-account-pilot-program", "high");
+    }
+    if (i.institution === "Trump Account" && section === "Other Contribution") {
+      return own("TRANSFER", "Own-account transfers", { kind: "OWN_ACCOUNT", subtypes: ["CHECKING", "SAVINGS"] }, "trump-account-deposit");
+    }
     if (section === "Employee contributions") {
       return own("CONTRIBUTION_EMPLOYEE", "Retirement contributions", { kind: "EMPLOYER" }, "retirement-employee-contribution");
     }

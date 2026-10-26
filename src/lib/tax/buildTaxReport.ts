@@ -19,7 +19,7 @@ import {
   type DocRef,
   type YearDocs,
 } from "./documents.ts";
-import { ACCOUNT_KIND_LABEL, type AccountTaxKind, type DistributionRow } from "./facts/investments.ts";
+import { ACCOUNT_KIND_LABEL, CHILD_KINDS, type AccountTaxKind, type DistributionRow } from "./facts/investments.ts";
 import { taxPaymentsFrom, type FiledBalances, type TaxPaymentRow } from "./facts/payments.ts";
 import { amountsFromLines, projectPayroll, w2FromAmounts, ZERO_AMOUNTS, type PayrollAmounts, type PayrollProjection, type W2Boxes } from "./facts/payroll.ts";
 import { checkFiled, type FiledCheck } from "./filedCheck.ts";
@@ -1149,8 +1149,8 @@ export function investmentAccounts(
     // A type set under Inputs beats the statement; when the statement reads one, say they disagree.
     if (profile.accountKinds[acct] && latest.kind !== "OTHER" && profile.accountKinds[acct] !== latest.kind)
       warnings.push(`Account ••${acct.slice(-4)} is taxed as ${ACCOUNT_KIND_LABEL[kind]} (set under Inputs), though its statement reads ${ACCOUNT_KIND_LABEL[latest.kind]}.`);
-    // A custodial account is the child's: no parent owns its income.
-    const child = kind === "CUSTODIAL" ? (profile.dependents.find((d) => latest.ownerLine.toUpperCase().includes(d.name.toUpperCase()))?.name ?? latest.ownerLine) : null;
+    // A custodial account or Trump Account is the child's: no parent owns its income.
+    const child = CHILD_KINDS.includes(kind) ? (profile.dependents.find((d) => latest.ownerLine.toUpperCase().includes(d.name.toUpperCase()))?.name ?? latest.ownerLine) : null;
     const ownerId = child
       ? "CHILD"
       : (profile.accountOwners[acct] ?? (/JOINT/i.test(latest.ownerLine) ? "JOINT" : personFor(latest.ownerLine)?.id ?? profile.persons[0]!.id));
@@ -1249,7 +1249,8 @@ export function childIncome(
   assumptions: string[],
 ): ChildIncome[] {
   const byChild = new Map<string, AccountIncome[]>();
-  for (const a of accounts) if (a.child) byChild.set(a.child, [...(byChild.get(a.child) ?? []), a]);
+  // A Trump Account's income is tax-deferred: it's no one's until withdrawn.
+  for (const a of accounts) if (a.child && a.kind === "CUSTODIAL") byChild.set(a.child, [...(byChild.get(a.child) ?? []), a]);
   return [...byChild].map(([name, as]) => {
     const ytd = pos(as.reduce((s, a) => s + unearned(a.ytd), 0));
     const projected = pos(as.reduce((s, a) => s + unearned(a.projected), 0));

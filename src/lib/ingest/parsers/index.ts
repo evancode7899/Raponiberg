@@ -14,6 +14,7 @@ import { detectAdp, detectTrinet, detectVensure, parseAdp, parseTrinet, parseVen
 import { detectRentBill, parseRentBill, VERSION as RENT_BILL } from "./rentBill.ts";
 import { detectSlavic, parseSlavic, VERSION as SLAVIC } from "./slavic.ts";
 import { detectSupporting, parseSupporting, VERSION as SUPPORTING } from "./supporting.ts";
+import { detectTrumpAccount, parseTrumpAccount, VERSION as TRUMP_ACCOUNT } from "./trumpAccount.ts";
 import { detectVanguard401k, parseVanguard401k, VERSION as VANGUARD_401K } from "./vanguard401k.ts";
 import { detectVanguardBrokerage, parseVanguardBrokerage, VERSION as VANGUARD_BROKERAGE } from "./vanguardBrokerage.ts";
 
@@ -46,6 +47,7 @@ export const PARSERS: Parser[] = [
   { id: "slavic-401k", version: SLAVIC, detect: detectSlavic, parse: parseSlavic },
   { id: "vanguard-401k", version: VANGUARD_401K, detect: detectVanguard401k, parse: parseVanguard401k },
   { id: "vanguard-brokerage", version: VANGUARD_BROKERAGE, detect: detectVanguardBrokerage, parse: parseVanguardBrokerage },
+  { id: "trump-account", version: TRUMP_ACCOUNT, detect: detectTrumpAccount, parse: parseTrumpAccount },
   { id: "healthequity-hsa", version: HEALTHEQUITY, detect: detectHealthEquity, parse: parseHealthEquity },
   { id: "lp-capital-statement", version: LP_CAPITAL, detect: detectLpCapitalStatement, parse: parseLpCapitalStatement },
   { id: "trinet-paystub", version: PAYSTUBS, detect: detectTrinet, parse: parseTrinet },
