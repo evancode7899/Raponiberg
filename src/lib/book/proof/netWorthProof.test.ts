@@ -4,10 +4,11 @@ import { NO_HOUSEHOLD } from "../../household/patterns";
 import { groupFor, refreshLedgerStatus, type LedgerAccount } from "../../ledger/loadLedger";
 import { buildTimeline, valueAt, withIdleWindows, type SegmentInput } from "../../ledger/timeline";
 import type { Book, BookRow, BookStatement } from "../load";
-import { buildNetWorth } from "../reports/netWorth";
+import { buildNetWorth, netWorthSpanQuality } from "../reports/netWorth";
 import type { Finding } from "../types";
+import { buildDashboardProof } from "./dashboardProof";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
-import { buildNetWorthProof, type NetWorthDescriptor } from "./netWorthProof";
+import { buildNetWorthProof, MONTHS_SPLIT_NOTE, type NetWorthDescriptor } from "./netWorthProof";
 
 // An invented household: Pat Example at Springfield Bank, Jan – Apr 2025. Checking
 // (••1234), a card (••5678) with one proven idle cycle, a quarterly brokerage statement,
@@ -559,6 +560,49 @@ describe("net-worth change proof", () => {
       "ledger.freshness",
       "networth.reconciles",
     ]);
+  });
+});
+
+describe("estimate or proven over a span of months", () => {
+  const line = (p: Proof, label: RegExp) => p.blocks.flatMap((b) => (b.kind === "chain" ? b.lines : [])).find((l) => label.test(l.label));
+
+  it("judges a span as one period: the quarter report's quality, account by account", () => {
+    const book = makeBook();
+    const quarter = buildNetWorth(book, { granularity: "quarter" }).periods[0]!;
+    const span = netWorthSpanQuality(book, quarter.start, quarter.end);
+    expect(span.household).toBe(quarter.household.quality);
+    for (const a of quarter.byAccount) expect(span.byAccount.get(a.accountId)).toBe(a.quality);
+    // The brokerage's month-ends inside its quarterly statement are estimates; the quarter isn't.
+    const months = buildNetWorth(book, { granularity: "month" }).periods.slice(0, 3);
+    expect(months.some((m) => m.byAccount.find((a) => a.accountId === "brk")!.quality !== "EXACT")).toBe(true);
+    expect(span.byAccount.get("brk")).toBe("EXACT");
+  });
+
+  it("proves a change between two statements though the months inside it are spread by day", () => {
+    const book = makeBook();
+    const p = buildNetWorthProof(book, chg("2025-01-01", "2025-03-31", { accountIds: ["brk"] }));
+    expect(line(p, /^Market change/)!.source).toBe("proven");
+    expect(line(p, /^Closing/)!.source).toBe("proven");
+    const byMonth = p.blocks.find((b) => b.title === "By month");
+    expect(byMonth?.note).toBe(MONTHS_SPLIT_NOTE);
+    // A month inside the statement is still an estimate on its own.
+    expect(line(buildNetWorthProof(book, chg("2025-01-01", "2025-01-31", { accountIds: ["brk"] })), /^Market change/)!.source).toBe("estimate");
+  });
+
+  it("marks each account's market change by its own quality, the same as the proof it links to", async () => {
+    const book = makeBook();
+    const p = buildDashboardProof(book, { report: "dashboard", figure: "markets", start: "2025-01-01", end: "2025-03-31" });
+    const lines = p.blocks.flatMap((b) => (b.kind === "chain" ? b.lines : [])).filter((l) => l.link?.descriptor.report === "net-worth" && l.op !== "=");
+    expect(lines.length).toBeGreaterThan(1);
+    const sources = new Set<string>();
+    for (const l of lines) {
+      const linked = await buildProof({ book, db: {} as never }, l.link!.descriptor);
+      expect(l.source).toBe(line(linked, /^Market change/)!.source);
+      sources.add(l.source);
+    }
+    // The brokerage is proven from statement to statement; the 401(k)'s year-to-date summary is not.
+    expect(sources).toEqual(new Set(["proven", "estimate"]));
+    expect(line(p, /^From markets/)!.source).toBe("estimate");
   });
 });
 

@@ -11,7 +11,17 @@ import {
   type Granularity,
 } from "../dates/isoDate.ts";
 import { GROUP_ORDER, type AccountGroup, type Ledger } from "./loadLedger.ts";
-import { chainReturns, decompose, dietzParts, MIN_RETURN_CAPITAL_CENTS, valueAt, worstQuality, type Quality } from "./timeline.ts";
+import {
+  chainReturns,
+  decompose,
+  dietzParts,
+  MIN_RETURN_CAPITAL_CENTS,
+  valueAt,
+  worstQuality,
+  type AccountTimeline,
+  type Decomposition,
+  type Quality,
+} from "./timeline.ts";
 
 export type AccountPeriod = {
   accountId: string;
@@ -103,6 +113,42 @@ export type NetWorthReport = {
 
 const lane = (f: Partial<Record<Lane, number>>, l: Lane) => f[l] ?? 0;
 
+/** One account over [start, end] as a period counts it: null when nothing happened in it. */
+function accountSpan(t: AccountTimeline, start: string, end: string): { d: Decomposition; newlyTracked: number } | null {
+  if (t.firstDay! > end) return null;
+  const d = decompose(t, start, end);
+  // Lanes can net to zero (a card's purchase and its payoff) yet each still counts toward the household's lanes.
+  const anyFlow = Object.values(d.flowsByLane).some((v) => v !== 0);
+  if (d.openingCents === 0 && d.closingCents === 0 && !anyFlow && d.growthCents === 0 && d.feesCents === 0) return null;
+  // An account first on file this period enters with whatever it already held.
+  const entering = t.firstDay! >= start && t.firstDay! <= end;
+  const newlyTracked = entering ? d.openingCents : 0;
+  if (entering) {
+    d.openingCents = 0;
+    // Its opening is what it held when first on file (newlyTracked), not an unknown: the
+    // month is as good as its closing value, which may itself be an estimate.
+    if (d.quality === "UNKNOWN") d.quality = valueAt(t, end).quality;
+  }
+  return { d, newlyTracked };
+}
+
+/**
+ * How good a span's figures are, judged the way a single period over it is: by the values
+ * at its two edges and what moved in between. A quarter whose statements close on its
+ * first and last day is exact, even though the month-ends inside it are interpolated; how
+ * its market change splits across those months is the estimate, not the quarter's total.
+ * Every figure that adds months over a span takes its quality from here, not from the
+ * worst of its months.
+ */
+export function spanQuality(ledger: Ledger, start: string, end: string): { household: Quality; byAccount: Map<string, Quality> } {
+  const byAccount = new Map<string, Quality>();
+  for (const a of ledger.accounts) {
+    const span = accountSpan(a.timeline, start, end);
+    if (span) byAccount.set(a.id, span.d.quality);
+  }
+  return { household: worstQuality([...byAccount.values()]), byAccount };
+}
+
 /**
  * Net worth over calendar periods, decomposed per account and for the household into
  * opening + net principal + growth (net of fees) = closing, with every estimate,
@@ -148,20 +194,9 @@ export function buildNetWorthReport(
     let pCapital = 0;
     for (const a of ledger.accounts) {
       const t = a.timeline;
-      if (t.firstDay! > end) continue;
-      const d = decompose(t, start, end);
-      // Lanes can net to zero (a card's purchase and its payoff) yet each still counts toward the household's lanes.
-      const anyFlow = Object.values(d.flowsByLane).some((v) => v !== 0);
-      if (d.openingCents === 0 && d.closingCents === 0 && !anyFlow && d.growthCents === 0 && d.feesCents === 0) continue;
-      // An account first on file this period enters with whatever it already held.
-      const entering = t.firstDay! >= start && t.firstDay! <= end;
-      const newlyTracked = entering ? d.openingCents : 0;
-      if (entering) {
-        d.openingCents = 0;
-        // Its opening is what it held when first on file (newlyTracked), not an unknown: the
-        // month is as good as its closing value, which may itself be an estimate.
-        if (d.quality === "UNKNOWN") d.quality = valueAt(t, end).quality;
-      }
+      const span = accountSpan(t, start, end);
+      if (!span) continue;
+      const { d, newlyTracked } = span;
       let ret: number | null = null;
       if (a.isInvestment) {
         const parts = dietzParts(t, start, end);

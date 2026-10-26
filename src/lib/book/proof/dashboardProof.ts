@@ -1,9 +1,9 @@
 import { addDays } from "../../dates/isoDate.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { Book } from "../load.ts";
-import { buildNetWorth } from "../reports/netWorth.ts";
+import { buildNetWorth, netWorthSpanQuality } from "../reports/netWorth.ts";
 import { checksFor, isIsoDate, sumCheck } from "./common.ts";
-import { NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
+import { MONTHS_SPLIT_NOTE, NET_WORTH_CHECKS, type NetWorthDescriptor } from "./netWorthProof.ts";
 import type { ChainLine, Proof, ProofBlock, ProofKind } from "./types.ts";
 
 /**
@@ -45,7 +45,11 @@ export function buildDashboardProof(book: Book, d: DashboardDescriptor): Proof {
     ...(accountIds ? { accountIds } : {}),
   });
   const ofChange = { label: "the net-worth change over these months", descriptor: change() };
-  const estimated = periods.some((p) => p.household.quality !== "EXACT");
+  // Judged over the whole span, each account on its own: month-ends inside a statement
+  // period make the monthly split an estimate, not the span's total.
+  const quality = netWorthSpanQuality(book, periods[0]?.start ?? d.start, periods.at(-1)?.end ?? d.end);
+  const isEstimate = (id: string) => (quality.byAccount.get(id) ?? "EXACT") !== "EXACT";
+  let estimated = false;
   const span = periods.length ? `${periods[0]!.label} – ${periods.at(-1)!.label}` : `${d.start} – ${d.end}`;
 
   let figureCents: number;
@@ -72,15 +76,17 @@ export function buildDashboardProof(book: Book, d: DashboardDescriptor): Proof {
     for (const p of periods) for (const a of p.byAccount) if (a.growthNetOfFeesCents) byAccount.set(a.accountId, (byAccount.get(a.accountId) ?? 0) + a.growthNetOfFeesCents);
     const name = (id: string) => report.accounts.find((a) => a.id === id)?.name ?? "An account";
     const fees = sum((h) => h.feesCents);
-    [...byAccount]
-      .filter(([, cents]) => cents !== 0)
+    const moved = [...byAccount].filter(([, cents]) => cents !== 0);
+    // The total is as good as the accounts in it.
+    estimated = moved.some(([id]) => isEstimate(id));
+    moved
       .sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))
       .forEach(([id, cents], i) =>
         lines.push({
           ...(i ? { op: "+" as const } : {}),
           label: `${name(id)}: market change (net of fees)`,
           value: { cents },
-          source: estimated ? "estimate" : "proven",
+          source: isEstimate(id) ? "estimate" : "proven",
           link: { label: name(id), descriptor: change([id]) },
         }),
       );
@@ -101,6 +107,7 @@ export function buildDashboardProof(book: Book, d: DashboardDescriptor): Proof {
     blocks.push({
       kind: "breakdown",
       title: "By month",
+      ...(d.figure === "markets" && periods.some((p) => p.household.quality !== "EXACT") ? { note: MONTHS_SPLIT_NOTE } : {}),
       items: periods.map((p) => ({
         label: p.label,
         ...(p.through ? { sub: `to ${p.through}` } : {}),
