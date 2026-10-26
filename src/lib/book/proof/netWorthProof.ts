@@ -4,7 +4,7 @@ import type { LedgerAccount } from "../../ledger/loadLedger.ts";
 import { valueAt, type Segment } from "../../ledger/timeline.ts";
 import type { Book } from "../load.ts";
 import { buildCashFlowReport } from "../reports/cashFlow.ts";
-import { buildNetWorth } from "../reports/netWorth.ts";
+import { buildNetWorth, netWorthSpanQuality } from "../reports/netWorth.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor, isIsoDate, sumCheck } from "./common.ts";
 import type { ChainLine, Proof, ProofBlock, ProofEstimate, ProofGroup, ProofKind, ProofLink, ProofRow } from "./types.ts";
@@ -50,6 +50,10 @@ type BalanceDescriptor = Extract<NetWorthDescriptor, { metric: "balance" }>;
 type ChangeDescriptor = Extract<NetWorthDescriptor, { metric: "change" }>;
 
 /** The checks that can withhold a net-worth figure, in the order the drawer lists them. */
+/** On a by-month breakdown whose month-ends fall inside a statement period. */
+export const MONTHS_SPLIT_NOTE =
+  "Some month-ends fall inside an account's statement period, so how its market change splits across these months is spread by day: an estimate. The total runs from statement to statement.";
+
 export const NET_WORTH_CHECKS: CheckId[] = [
   "statement.held",
   "statement.chain",
@@ -433,7 +437,10 @@ export function buildChangeProof(book: Book, d: ChangeDescriptor): Proof {
     start: d.start,
     end: last?.end ?? d.end,
   });
-  const estimated = periods.some((p) => (ids ? p.byAccount.filter((a) => ids.has(a.accountId)) : [p.household]).some((x) => x.quality !== "EXACT"));
+  // The span judged as one period (its edges and what moved), not by the worst of its months.
+  const quality = netWorthSpanQuality(book, first?.start ?? d.start, last?.end ?? d.end);
+  const estimated = ids ? [...ids].some((id) => (quality.byAccount.get(id) ?? "EXACT") !== "EXACT") : quality.household !== "EXACT";
+  const monthsSplit = periods.some((p) => (ids ? p.byAccount.filter((a) => ids.has(a.accountId)) : [p.household]).some((x) => x.quality !== "EXACT"));
 
   // What cash flow counts for the same days, so a line that differs says so.
   const cf =
@@ -578,6 +585,7 @@ export function buildChangeProof(book: Book, d: ChangeDescriptor): Proof {
     blocks.push({
       kind: "breakdown",
       title: `By ${d.granularity}`,
+      ...(d.granularity === "month" && monthsSplit ? { note: MONTHS_SPLIT_NOTE } : {}),
       items: periods.map((p) => ({
         label: p.label,
         ...(p.through ? { sub: `to ${p.through}` } : {}),

@@ -1,5 +1,5 @@
 import { inclusiveDays, maxIso, minIso, type Granularity } from "../../dates/isoDate.ts";
-import { buildNetWorthReport as buildFromLedger, type NetWorthPeriod, type NetWorthReport as LedgerNetWorthReport } from "../../ledger/netWorthReport.ts";
+import { buildNetWorthReport as buildFromLedger, spanQuality, type NetWorthPeriod, type NetWorthReport as LedgerNetWorthReport } from "../../ledger/netWorthReport.ts";
 import { GROUP_ORDER } from "../../ledger/loadLedger.ts";
 import { chainReturns } from "../../ledger/timeline.ts";
 import { netWorthAtBlockers, netWorthBlockers } from "../blockers.ts";
@@ -59,6 +59,15 @@ export type NetWorthReport = Omit<LedgerNetWorthReport, "periods" | "current"> &
     };
   };
 };
+
+/**
+ * How good the net-worth figures over [start, end] are, the span judged as one period
+ * (lib/ledger spanQuality), cut at the proven-through date as the periods are. Figures
+ * that add months over a span take their quality from here.
+ */
+export function netWorthSpanQuality(book: Book, start: string, end: string) {
+  return spanQuality(book.ledger, start, minIso(end, book.horizon.netWorth));
+}
 
 /** The trailing run of periods that pass `ok`. */
 function trailingRun<T>(ps: T[], ok: (p: T) => boolean): T[] {

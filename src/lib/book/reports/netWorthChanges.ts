@@ -1,11 +1,11 @@
 import { addDays, inclusiveDays, periodsBetween, type Granularity } from "../../dates/isoDate.ts";
 import { formatPercentRatio, usd0 } from "../../formatMoney.ts";
 import type { HouseholdPeriod, NetWorthPeriod } from "../../ledger/netWorthReport.ts";
-import { chainReturns, worstQuality } from "../../ledger/timeline.ts";
+import { chainReturns, type Quality } from "../../ledger/timeline.ts";
 import type { Book } from "../load.ts";
 import type { ProofDescriptor } from "../proof/index.ts";
 import { buildCashFlowReport, type CashFlowPeriod, type CategoryAmount } from "./cashFlow.ts";
-import { buildNetWorth } from "./netWorth.ts";
+import { buildNetWorth, netWorthSpanQuality } from "./netWorth.ts";
 
 /**
  * What changed net worth in each proven period, and how that compares with the periods
@@ -228,16 +228,19 @@ const SUMMED = [
   "unexplainedCents",
 ] as const satisfies readonly (keyof HouseholdPeriod)[];
 
+/** A span's quality judged as one period (netWorthSpanQuality), not by the worst of its months. */
+type SpanQuality = (start: string, end: string) => Quality;
+
 /**
  * A quarter or year of net worth as its months add up: Home's "from saving" and "from
  * markets" (and their proofs) add months, so the steps here do too. Opening is the first
  * month's, closing the last's; the return chains the months' returns, as Investment
- * returns does.
+ * returns does. Its quality is the span's own, not the worst of its months.
  */
-function monthsAdded(label: string, months: NetWorthPeriod[]): NetWorthSpan {
+function monthsAdded(label: string, months: NetWorthPeriod[], quality: Quality): NetWorthSpan {
   const first = months[0]!;
   const last = months.at(-1)!;
-  const household = { ...first.household, closingCents: last.household.closingCents, quality: worstQuality(months.map((m) => m.household.quality)) };
+  const household = { ...first.household, closingCents: last.household.closingCents, quality };
   for (const k of SUMMED) household[k] = months.reduce((t, m) => t + m.household[k], 0);
   const rs = months.map((m) => m.household.portfolioReturn);
   household.portfolioReturn = rs.every((r) => r != null) ? chainReturns(months.map((m) => ({ r: m.household.portfolioReturn!, days: inclusiveDays(m.start, m.end) }))).total : null;
@@ -249,14 +252,14 @@ function monthsAdded(label: string, months: NetWorthPeriod[]): NetWorthSpan {
  * proven-through cut) and keeps those both can prove, every month of it; each is compared
  * with up to COMPARE_WITH whole, proven periods just before it.
  */
-export function netWorthChangesOf(nwMonths: NetWorthPeriod[], cf: CashFlowPeriod[], g: Granularity): NetWorthChange[] {
+export function netWorthChangesOf(nwMonths: NetWorthPeriod[], cf: CashFlowPeriod[], g: Granularity, spanQuality: SpanQuality): NetWorthChange[] {
   const joined = cf.flatMap((c): Joined[] => {
     if (c.blockers.length) return [];
     const months = nwMonths.filter((m) => m.start >= c.start && m.end <= c.end);
     const want = periodsBetween(c.start, c.end, "month").length;
     if (months.length !== want || months[0]?.start !== c.start || months.at(-1)!.end !== c.end) return [];
     // Cut short as cash flow cuts it: a year through June is part of a year, though June is a whole month.
-    return [{ nw: { ...monthsAdded(c.label, months), through: c.through }, cf: c }];
+    return [{ nw: { ...monthsAdded(c.label, months, spanQuality(c.start, months.at(-1)!.end)), through: c.through }, cf: c }];
   });
   return joined.map((j, i) => {
     const before = joined.slice(0, i).filter((b) => !b.nw.through).slice(-COMPARE_WITH[g]);
@@ -276,6 +279,7 @@ export function buildNetWorthChanges(book: Book, opts: { granularity: Granularit
       nw.periods.filter((p) => !p.blockers.length),
       cf.periods,
       g,
+      (start, end) => netWorthSpanQuality(book, start, end).household,
     ),
   };
 }

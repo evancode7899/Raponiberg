@@ -64,7 +64,8 @@ function cash(start: string, end: string, income: CategoryAmount[], spending: Ca
 }
 
 const PAY = 612_345;
-const typicalMonth: Lanes = { incomeCents: PAY, spendingCents: -310_000, retirementEmployeeCents: 45_000, growthNetOfFeesCents: 20_000 };
+const exact = () => "EXACT" as const;
+const typicalMonth: Lanes ={ incomeCents: PAY, spendingCents: -310_000, retirementEmployeeCents: 45_000, growthNetOfFeesCents: 20_000 };
 
 describe("netWorthChangesOf", () => {
   it("adds the steps up to the change, with timing for what cash flow counts in another month", () => {
@@ -74,7 +75,7 @@ describe("netWorthChangesOf", () => {
       cash("2025-01-01", "2025-01-31", [cat("Paycheck", PAY)], [cat("Groceries", 310_000)]),
       cash("2025-02-01", "2025-02-28", [cat("Paycheck", PAY)], [cat("Groceries", 100_000), cat("Rent", 210_000)]),
     ];
-    const [jan, feb] = netWorthChangesOf(nw, cf, "month");
+    const [jan, feb] = netWorthChangesOf(nw, cf, "month", exact);
     for (const p of [jan!, feb!]) {
       expect(p.steps.at(-1)!.toCents).toBe(p.changeCents);
       expect(p.changeCents).toBe(p.closingCents - p.openingCents);
@@ -90,7 +91,7 @@ describe("netWorthChangesOf", () => {
   it("compares each month with the proven whole months before it", () => {
     const nw = months([typicalMonth, typicalMonth, typicalMonth, { ...typicalMonth, spendingCents: -490_000 }]);
     const cf = nw.map((m, i) => cash(m.start, m.end, [cat("Paycheck", PAY)], i === 3 ? [cat("Groceries", 310_000), cat("Travel", 180_000)] : [cat("Groceries", 310_000)]));
-    const ps = netWorthChangesOf(nw, cf, "month");
+    const ps = netWorthChangesOf(nw, cf, "month", exact);
     expect(ps[0]!.typical).toBeNull();
     const apr = ps[3]!;
     expect(apr.typical).toMatchObject({ periods: 3, spendingCents: 310_000, incomeCents: PAY });
@@ -103,8 +104,8 @@ describe("netWorthChangesOf", () => {
   it("leaves out periods cash flow can't prove, and months missing from net worth", () => {
     const nw = months([typicalMonth, typicalMonth, typicalMonth]);
     const cf = nw.map((m, i) => cash(m.start, m.end, [cat("Paycheck", PAY)], [cat("Groceries", 310_000)], "month", i === 1 ? { blockers: [{ id: "f1", status: "MISSING", title: "A statement is missing", fix: "Download it." }] } : {}));
-    expect(netWorthChangesOf(nw, cf, "month").map((p) => p.label)).toEqual([nw[0]!.label, nw[2]!.label]);
-    expect(netWorthChangesOf([nw[0]!, nw[2]!], cf.slice(0, 2), "month").map((p) => p.start)).toEqual(["2025-01-01"]);
+    expect(netWorthChangesOf(nw, cf, "month", exact).map((p) => p.label)).toEqual([nw[0]!.label, nw[2]!.label]);
+    expect(netWorthChangesOf([nw[0]!, nw[2]!], cf.slice(0, 2), "month", exact).map((p) => p.start)).toEqual(["2025-01-01"]);
   });
 
   it("adds a quarter's months, and doesn't compare a period cut short", () => {
@@ -113,7 +114,7 @@ describe("netWorthChangesOf", () => {
       cash("2025-01-01", "2025-03-31", [cat("Paycheck", 3 * PAY)], [cat("Groceries", 930_000)], "quarter"),
       cash("2025-04-01", "2025-05-20", [cat("Paycheck", 2 * PAY)], [cat("Groceries", 620_000)], "quarter", { through: "2025-05-20" }),
     ];
-    const [q1, q2] = netWorthChangesOf(nw, cf, "quarter");
+    const [q1, q2] = netWorthChangesOf(nw, cf, "quarter", exact);
     expect(q1!.openingCents).toBe(nw[0]!.household.openingCents);
     expect(q1!.closingCents).toBe(nw[2]!.household.closingCents);
     expect(q1!.marketsCents).toBe(60_000);
