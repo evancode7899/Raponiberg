@@ -306,6 +306,10 @@ const SYSTEM_RULES: SystemRule[] = [
       }, "savings-ach") },
   { id: "bank-fidelity-moneyline", re: /FID BKG SVC|FIDELITY|MONEYLINE/,
     decide: () => own("TRANSFER", "Own-account transfers", { kind: "OWN_ACCOUNT", institution: "Fidelity" }, "bank-fidelity-moneyline") },
+  // A debit-card deposit into the child's Trump Account ("Payment Sent ... Trump Account
+  // Deposi Trumpaccounts FL"): pairs with the account's "Other Contribution" row.
+  { id: "bank-trump-account", re: /TRUMPACCOUNTS|TRUMP ACCOUNT DEPOSI/, sign: "-",
+    decide: () => own("TRANSFER", "Own-account transfers", { kind: "OWN_ACCOUNT", institution: "Trump Account" }, "bank-trump-account") },
 
   // The Bilt card is tracked: payments to it pair with the card's own "PAYMENT" rows.
   // (Payments before its first statement end up as untracked card payments, see runMatching.)

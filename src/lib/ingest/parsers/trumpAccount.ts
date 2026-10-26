@@ -52,7 +52,7 @@ export function parseTrumpAccount(text: string): ParsedDocument {
   const periodStart = parseSlashDate(period[1]!)!;
   const periodEnd = parseSlashDate(period[2]!)!;
 
-  // "Portfolio Value N/A $1,005.15": opening (N/A on the first statement) and closing.
+  // "Portfolio Value N/A $2,345.67": opening (N/A on the first statement) and closing.
   const value = all.map((l) => new RegExp(String.raw`^Portfolio Value (N/A|-?${MONEY}) (-?${MONEY})$`).exec(l)).find(Boolean);
   if (!value) throw new Error("Trump Account: portfolio value not found");
   const firstStatement = value[1] === "N/A";
