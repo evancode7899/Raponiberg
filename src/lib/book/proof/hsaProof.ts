@@ -352,7 +352,7 @@ const eligibleOpen = (e: ExpenseView) => !e.reimbursement && !e.flags.includes("
 function receiptsProof(book: Book, r: HsaReport, metric: "reimbursable" | "ready" | "reimbursed" | "logged" | "growth"): Built {
   const pick: Record<typeof metric, (e: ExpenseView) => boolean> = {
     reimbursable: eligibleOpen,
-    ready: (e) => eligibleOpen(e) && e.receipt,
+    ready: (e) => eligibleOpen(e) && e.hasReceipt,
     reimbursed: (e) => e.reimbursement != null,
     logged: () => true,
     growth: eligibleOpen,
@@ -367,7 +367,7 @@ function receiptsProof(book: Book, r: HsaReport, metric: "reimbursable" | "ready
       e.date,
       e.patient || "unassigned",
       metric === "growth" ? `${formatUsdFromCents(e.amountCents)} waiting ${e.daysWaiting} days` : null,
-      e.reimbursement ? `reimbursed${e.reimbursement.date ? ` ${e.reimbursement.date}` : ""}` : e.receipt ? "receipt saved" : "no receipt",
+      e.reimbursement ? `reimbursed${e.reimbursement.date ? ` ${e.reimbursement.date}` : ""}` : e.hasReceipt ? "receipt saved" : "no receipt",
       e.paid ? `paid by ${e.paid.account || "a card"} ${e.paid.date}` : null,
     ]
       .filter(Boolean)

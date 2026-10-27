@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { guessKind, qualifyPayee } from "./qualify.ts";
+import { receiptFacts } from "./receipts.ts";
 import { buildHsaReport, exactSubset, hsaFunding, payrollTaxSaved, withdrawalKind, type LedgerRowIn, type ReportInput } from "./report.ts";
 import { applyHsaOp, EMPTY_SETTINGS, readHsaFile, type HsaExpense, type HsaFile } from "./store.ts";
 
@@ -150,6 +151,34 @@ describe("the HSA report", () => {
     expect(r.totals.unreimbursedCents).toBe(0);
     // Unset rates come from the HSA's measured return and the default bracket.
     expect(r.growth).toMatchObject({ rate: 0.09, rateSource: "MEASURED", marginalRate: 0.32, marginalSource: "DEFAULT", planYear: 2046 });
+  });
+
+  it("counts a receipt found in the receipts folder as saved, and lists the folder's unmatched files", () => {
+    const f = file([
+      expense("found", "2026-03-02", 8_412, { receipt: false }),
+      expense("photo", "2026-05-01", 1_999, { receipt: false }),
+      expense("none", "2026-06-01", 5_000, { receipt: false }),
+    ]);
+    const receipts = {
+      dir: "R",
+      files: [
+        receiptFacts("2026.2.20.pdf", "Statement\n2/14/26 Office visit $84.12"),
+        receiptFacts("2026.5.1.jpeg", null),
+        receiptFacts("2026.9.9.pdf", "9/1/26 Lab $12.34"),
+      ],
+    };
+    const r = buildHsaReport(input(f, [], { receipts }));
+    const by = (id: string) => r.expenses.find((e) => e.id === id)!;
+    expect(by("found")).toMatchObject({ hasReceipt: true, receiptFiles: [{ file: "2026.2.20.pdf", how: "AMOUNT", date: "2026-02-14" }] });
+    expect(by("found").flags).not.toContain("NO_RECEIPT");
+    // A photo only suggests the receipt: it isn't counted until it's tied.
+    expect(by("photo")).toMatchObject({ hasReceipt: false, receiptFiles: [{ how: "DATE" }] });
+    expect(r.totals).toMatchObject({ readyCents: 8_412, missingReceiptCount: 2 });
+    expect(r.receiptsFolder).toEqual({ dir: "R", fileCount: 3, unmatched: [{ file: "2026.9.9.pdf", date: "2026-09-09" }] });
+    // Tied by the owner: on file.
+    const tied = buildHsaReport(input(file([expense("photo", "2026-05-01", 1_999, { receipt: true, receiptRef: "2026.5.1.jpeg" })]), [], { receipts }));
+    expect(tied.expenses[0]).toMatchObject({ hasReceipt: true, receiptFiles: [{ how: "LINKED" }] });
+    expect(buildHsaReport(input(f, [])).receiptsFolder).toBeNull();
   });
 
   it("totals what's reimbursable, flags duplicates and missing receipts, and estimates growth from waiting", () => {
