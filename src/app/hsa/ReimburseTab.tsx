@@ -32,7 +32,7 @@ export function planWithdrawal(list: ExpenseView[], target: number): ExpenseView
 export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimburse: (ids: string[], withdrawal: number | null) => void; send: Send }) {
   const [target, setTarget] = useState<number | null>(null);
   const [receiptsOnly, setReceiptsOnly] = useState(true);
-  const pool = useMemo(() => reimbursable(r).filter((e) => !receiptsOnly || e.receipt), [r, receiptsOnly]);
+  const pool = useMemo(() => reimbursable(r).filter((e) => !receiptsOnly || e.hasReceipt), [r, receiptsOnly]);
   const plan = target ? planWithdrawal(pool, target) : [];
   const planCents = plan.reduce((s, e) => s + e.amountCents, 0);
   const byId = new Map(r.expenses.map((e) => [e.id, e]));
@@ -259,7 +259,7 @@ export function ReimburseDrawer({
   }
   const chosen = w === "" ? null : r.withdrawals[Number(w)];
   const growth = list.reduce((s, e) => s + e.growthCents, 0);
-  const missing = list.filter((e) => !e.receipt).length;
+  const missing = list.filter((e) => !e.hasReceipt).length;
 
   return (
     <Drawer open={ids != null} onClose={onClose} title={`Mark ${list.length} reimbursed`} subtitle={`${formatUsdCents(total)} paid back from the HSA`} width="34rem">

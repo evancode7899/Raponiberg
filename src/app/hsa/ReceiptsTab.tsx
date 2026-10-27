@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, btn, Callout, Card, EmptyState, inputCls, Segmented, selectCls, table } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, downloadResponse, EmptyState, inputCls, Segmented, selectCls, table } from "@/components/ui/kit";
+import { apiSecretHeaders } from "@/components/ledger/useApi";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL } from "@/lib/hsa/qualify";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
@@ -303,7 +304,78 @@ export function ReceiptsTab({
           </div>
         )}
       </Card>
+      {r.receiptsFolder && r.receiptsFolder.unmatched.length > 0 && <UnmatchedReceipts r={r} send={send} onAdd={onAdd} />}
     </>
+  );
+}
+
+const dayNum = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86_400_000;
+
+/** Receipts in the folder no expense was matched to: open one, tie it to an expense, or log the bill it's for. */
+function UnmatchedReceipts({ r, send, onAdd }: { r: HsaReport; send: Send; onAdd: () => void }) {
+  const folder = r.receiptsFolder!;
+  // Expenses a receipt could be for: no receipt in the folder yet, paid up to ~6 months after the receipt's date.
+  const choices = (date: string | null) =>
+    r.expenses
+      .filter((e) => !e.receiptFiles.some((m) => m.how !== "DATE"))
+      .map((e) => ({ e, gap: date ? dayNum(e.date) - dayNum(date) : 0 }))
+      .filter(({ gap }) => gap >= -14 && gap <= 200)
+      .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap))
+      .slice(0, 30)
+      .map(({ e }) => e);
+  return (
+    <Card
+      title={`${folder.unmatched.length} receipt${folder.unmatched.length === 1 ? " in the folder matches" : "s in the folder match"} no expense`}
+      subtitle={`Of ${folder.fileCount} files in ${folder.dir}. Matched by the amount printed in the receipt next to a date, or by the date in a photo's file name. Tie one to its expense, or add the bill if it isn't logged.`}
+      actions={
+        <button type="button" className={btn.secondary} onClick={onAdd}>
+          + Add expense
+        </button>
+      }
+    >
+      <div className={table.wrap}>
+        <table className={table.table}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>File</th>
+              <th className={table.th}>Dated</th>
+              <th className={table.th}>Tie to</th>
+            </tr>
+          </thead>
+          <tbody>
+            {folder.unmatched.map((f) => {
+              const opts = choices(f.date);
+              return (
+                <tr key={f.file} className={table.trHover}>
+                  <td className={table.td}>
+                    <button type="button" className="text-xs text-fg hover:underline" onClick={() => openReceipt(f.file)} title="Open it">
+                      {f.file}
+                    </button>
+                  </td>
+                  <td className={`${table.td} num whitespace-nowrap text-xs text-muted`}>{f.date ?? "no date in its name"}</td>
+                  <td className={table.td}>
+                    <select
+                      className={`${selectCls} text-xs`}
+                      value=""
+                      aria-label={`Tie ${f.file} to an expense`}
+                      disabled={!opts.length}
+                      onChange={(ev) => ev.target.value && void send({ op: "receipt", ids: [ev.target.value], receipt: true, receiptRef: f.file })}
+                    >
+                      <option value="">{opts.length ? "Choose its expense…" : "No logged expense near its date"}</option>
+                      {opts.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.date} · {e.provider || "Unnamed"} · {formatUsdCents(e.amountCents)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
@@ -314,6 +386,74 @@ function reimbursedHow(e: ExpenseView): string {
   if (e.withdrawal) return `tied to ${e.withdrawal.payee}, ${e.withdrawal.date} (${formatUsdCents(e.withdrawal.amountCents)})${when}`;
   if (e.source === "IMPORT" && !r.markedAt) return "from the imported spreadsheet";
   return `marked by hand${when}`;
+}
+
+/**
+ * Opens a file from the receipts folder in a new tab. The tab opens at the click (a tab
+ * opened after the fetch would be blocked as a pop-up), then gets the file; with pop-ups
+ * blocked the file is downloaded instead.
+ */
+export function openReceipt(file: string) {
+  const tab = window.open("", "_blank");
+  void fetch(`/api/hsa/receipt?file=${encodeURIComponent(file)}`, { headers: apiSecretHeaders() })
+    .then(async (res) => {
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Could not open the receipt");
+      if (!tab) return void downloadResponse(res, file.split("/").pop()!);
+      const url = URL.createObjectURL(await res.blob());
+      tab.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    })
+    .catch((err: Error) => {
+      tab?.close();
+      window.alert(err.message);
+    });
+}
+
+const cellBtn = "whitespace-nowrap rounded px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-focus";
+
+/** The Receipt column: a receipt found in the folder (opens it), ticked by hand, a photo that may be it, or still needed. */
+function ReceiptCell({ e, send }: { e: ExpenseView; send: Send }) {
+  const proven = e.receiptFiles.find((m) => m.how !== "DATE");
+  const maybe = e.receiptFiles.find((m) => m.how === "DATE");
+  if (proven) {
+    const more = e.receiptFiles.filter((m) => m.how !== "DATE").length - 1;
+    const why =
+      proven.how === "LINKED" ? `Tied to ${proven.file} in the receipts folder` : `${proven.file} shows ${formatUsdCents(e.amountCents)}${proven.date ? ` next to ${proven.date}` : ""}`;
+    return (
+      <button type="button" onClick={() => openReceipt(proven.file)} className={`${cellBtn} text-pos hover:underline`} title={`${why}. Click to open it.`}>
+        ✓ on file{more > 0 && <span className="text-faint"> +{more}</span>}
+      </button>
+    );
+  }
+  if (e.receipt) {
+    return (
+      <button
+        type="button"
+        onClick={() => send({ op: "receipt", ids: [e.id], receipt: false })}
+        className={`${cellBtn} text-pos`}
+        title={`Receipt saved${e.receiptRef ? `: ${e.receiptRef}` : ""}, not in the receipts folder (click to unmark)`}
+      >
+        ✓ saved
+      </button>
+    );
+  }
+  if (maybe) {
+    return (
+      <span className="flex items-center whitespace-nowrap">
+        <button type="button" onClick={() => openReceipt(maybe.file)} className={`${cellBtn} text-warn hover:underline`} title={`${maybe.file} is dated ${maybe.date}, but its amount can't be read (a photo or a scan). Click to open it.`}>
+          possible
+        </button>
+        <button type="button" className={`${cellBtn} text-muted hover:text-fg`} title={`It is this expense's receipt: tie ${maybe.file} to it`} onClick={() => send({ op: "receipt", ids: [e.id], receipt: true, receiptRef: maybe.file })}>
+          tie
+        </button>
+      </span>
+    );
+  }
+  return (
+    <button type="button" onClick={() => send({ op: "receipt", ids: [e.id], receipt: true })} className={`${cellBtn} text-warn hover:text-fg`} title="No receipt in the receipts folder or saved yet (click when you have it)">
+      needed
+    </button>
+  );
 }
 
 function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: boolean; toggle: () => void; send: Send; onEdit: () => void }) {
@@ -354,14 +494,7 @@ function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: bool
         )}
       </td>
       <td className={table.td}>
-        <button
-          type="button"
-          onClick={() => send({ op: "receipt", ids: [e.id], receipt: !e.receipt })}
-          className={`whitespace-nowrap rounded px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-focus ${e.receipt ? "text-pos" : "text-warn hover:text-fg"}`}
-          title={e.receipt ? `Receipt saved${e.receiptRef ? `: ${e.receiptRef}` : ""} (click to unmark)` : "No receipt saved yet (click when you have it)"}
-        >
-          {e.receipt ? "✓ saved" : "needed"}
-        </button>
+        <ReceiptCell e={e} send={send} />
       </td>
       <td className={table.tdR}>{formatUsdCents(e.amountCents)}</td>
       <td className={`${table.td} whitespace-nowrap text-xs`}>

@@ -221,7 +221,8 @@ export type HsaOp =
   | { op: "delete"; ids: string[]; dismiss?: boolean }
   | { op: "reimburse"; ids: string[]; date: string | null; withdrawal?: unknown; note?: string }
   | { op: "unreimburse"; ids: string[] }
-  | { op: "receipt"; ids: string[]; receipt: boolean }
+  /** `receiptRef`: also say where the receipt is (a file in the receipts folder ties it there). */
+  | { op: "receipt"; ids: string[]; receipt: boolean; receiptRef?: string }
   | { op: "keep"; ids: string[] }
   | { op: "link"; id: string; row: unknown }
   | { op: "dismiss"; rows: unknown[] }
@@ -299,13 +300,15 @@ export function applyHsaOp(input: HsaOp, file = hsaFilePath()): { changed: numbe
       break;
     }
     case "receipt": {
+      const ref = typeof input.receiptRef === "string" ? asString(input.receiptRef, 500) : null;
       for (const e of byIds(input.ids)) {
-        if (e.receipt === (input.receipt === true)) continue;
+        if (e.receipt === (input.receipt === true) && (ref == null || e.receiptRef === ref)) continue;
         e.receipt = input.receipt === true;
+        if (ref != null) e.receiptRef = ref;
         e.updatedAt = now;
         changed++;
       }
-      if (changed) write(file, data, { op: "receipt", ids: input.ids, receipt: input.receipt === true });
+      if (changed) write(file, data, { op: "receipt", ids: input.ids, receipt: input.receipt === true, ...(ref != null ? { receiptRef: ref } : {}) });
       break;
     }
     case "keep": {

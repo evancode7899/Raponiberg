@@ -2,6 +2,7 @@ import type { BlockerRef } from "../book/reports/blockerRef.ts";
 import { daysBetween } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
 import { ownerFiled, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
+import { matchReceipts, onFile, type ReceiptFileFacts, type ReceiptMatch } from "./receipts.ts";
 import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store.ts";
 import { hsaAfterTax, strategyRows, taxableAfterTax, type StrategyAssumptions, type StrategyRow } from "./strategy.ts";
 
@@ -68,6 +69,8 @@ export function payrollTaxSaved(p: { personWagesCents: number; householdWagesCen
 export type ReportInput = {
   today: string;
   file: HsaFile;
+  /** The HSA receipts folder as last scanned (receiptScan.ts), or null when it isn't set up. */
+  receipts?: { dir: string; files: ReceiptFileFacts[] } | null;
   rows: LedgerRowIn[];
   accounts: LedgerAccountIn[];
   hsaAccounts: HsaAccountIn[];
@@ -121,6 +124,10 @@ export type ExpenseView = HsaExpense & {
   candidates: LedgerRef[];
   /** Why the paying row doesn't look medical (NOT_MEDICAL), or why the reimbursement's tie is wrong (BAD_TIE). */
   doubt: string | null;
+  /** Its receipts in the receipts folder: tied by the owner, proven by amount, or only dated close (receipts.ts). */
+  receiptFiles: ReceiptMatch[];
+  /** Ticked as saved, or a receipt for it is in the folder. */
+  hasReceipt: boolean;
 };
 
 export type Suggestion = LedgerRef & { merchant: string; tier: Tier; kind: ExpenseKind; reason: string; patient: string };
@@ -221,6 +228,8 @@ export type HsaReport = {
   patients: string[];
   ignoredMerchants: string[];
   dismissed: LedgerRef[];
+  /** The receipts folder (HSA_RECEIPTS_DIR), with the files in it no expense was matched to; null when it isn't set up. */
+  receiptsFolder: { dir: string; fileCount: number; unmatched: { file: string; date: string | null }[] } | null;
 };
 
 const AUTO_MATCH_DAYS = 10;
@@ -383,12 +392,16 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const dupCount = new Map<string, number>();
   for (const e of file.expenses) dupCount.set(dupKey(e), (dupCount.get(dupKey(e)) ?? 0) + 1);
 
+  const receiptMatches = matchReceipts(file.expenses, input.receipts?.files ?? []);
+
   const expenses: ExpenseView[] = file.expenses.map((e) => {
     const paid = pinned.get(e.id) ?? auto.get(e.id) ?? null;
+    const receiptFiles = receiptMatches.get(e.id) ?? [];
+    const hasReceipt = e.receipt || receiptFiles.some(onFile);
     const flags: ExpenseFlag[] = [];
     if ((dupCount.get(dupKey(e)) ?? 0) > 1) flags.push("DUPLICATE");
     if (openedOn && e.date < openedOn) flags.push("BEFORE_OPEN");
-    if (!e.receipt) flags.push("NO_RECEIPT");
+    if (!hasReceipt) flags.push("NO_RECEIPT");
     if (e.paidWith && paid && !paid.rowId) flags.push("PAID_ROW_MISSING");
     let doubt: string | null = null;
     // Added from a statement row that doesn't pass today's rules: probably not medical at all.
@@ -416,6 +429,8 @@ export function buildHsaReport(input: ReportInput): HsaReport {
         ? []
         : spending.filter((r) => !claimed.has(r.id) && -r.amountCents === e.amountCents && Math.abs(daysBetween(e.date, r.date)) <= CANDIDATE_DAYS).map(refOf),
       doubt,
+      receiptFiles,
+      hasReceipt,
     };
   });
 
@@ -462,7 +477,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   const done = expenses.filter((e) => e.reimbursement);
   // Paid before the HSA opened, or doubtfully medical: kept in the log, left out of what's reimbursable.
   const eligibleOpen = open.filter((e) => !e.flags.includes("BEFORE_OPEN") && !e.flags.includes("NOT_MEDICAL"));
-  const missing = open.filter((e) => !e.receipt);
+  const missing = open.filter((e) => !e.hasReceipt);
   const openCents = sum(eligibleOpen);
   const totals: HsaReport["totals"] = {
     count: expenses.length,
@@ -472,7 +487,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     reimbursedCents: sum(done),
     reimbursedCount: done.length,
     growthCents: eligibleOpen.reduce((s, e) => s + e.growthCents, 0),
-    readyCents: sum(eligibleOpen.filter((e) => e.receipt)),
+    readyCents: sum(eligibleOpen.filter((e) => e.hasReceipt)),
     missingReceiptCount: missing.length,
     missingReceiptCents: sum(missing),
     oldestUnreimbursed: eligibleOpen.reduce<string | null>((m, e) => (m == null || e.date < m ? e.date : m), null),
@@ -567,5 +582,15 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     patients,
     ignoredMerchants: file.ignoredMerchants,
     dismissed: file.dismissed.map(refOfFp),
+    receiptsFolder: input.receipts
+      ? {
+          dir: input.receipts.dir,
+          fileCount: input.receipts.files.length,
+          unmatched: input.receipts.files
+            .filter((f) => !expenses.some((e) => e.receiptFiles.some((m) => m.file === f.file)))
+            .map((f) => ({ file: f.file, date: f.date }))
+            .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || a.file.localeCompare(b.file)),
+        }
+      : null,
   };
 }

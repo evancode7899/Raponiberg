@@ -3,6 +3,8 @@ import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { csvRow } from "@/lib/csv";
 import { localToday } from "@/lib/dates/isoDate";
 import { KIND_LABEL } from "@/lib/hsa/qualify";
+import { matchReceipts, onFile } from "@/lib/hsa/receipts";
+import { scanHsaReceipts } from "@/lib/hsa/receiptScan";
 import { readHsaFile } from "@/lib/hsa/store";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -26,24 +28,29 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not read the HSA log" }, { status: 500 });
   }
+  // The receipts folder's files that prove each expense: the first thing to hand over in an audit.
+  const folder = await scanHsaReceipts().catch(() => null);
+  const matched = matchReceipts(expenses, folder?.files ?? []);
   const lines = [
-    csvRow(["Date", "Amount", "Provider", "Patient", "Kind", "Notes", "Receipt saved", "Receipt location", "Paid with", "Reimbursed", "Reimbursed on", "Reimbursement note"]),
-    ...expenses.map((e) =>
-      csvRow([
+    csvRow(["Date", "Amount", "Provider", "Patient", "Kind", "Notes", "Receipt saved", "Receipt location", "Receipt file", "Paid with", "Reimbursed", "Reimbursed on", "Reimbursement note"]),
+    ...expenses.map((e) => {
+      const files = (matched.get(e.id) ?? []).filter(onFile).map((m) => m.file);
+      return csvRow([
         e.date,
         dollars(e.amountCents),
         e.provider,
         e.patient,
         KIND_LABEL[e.kind],
         e.notes,
-        e.receipt ? "Yes" : "No",
+        e.receipt || files.length ? "Yes" : "No",
         e.receiptRef,
+        files.join("; "),
         e.paidWith ? `${e.paidWith.payee} (${e.paidWith.institution}, ${e.paidWith.date})` : "",
         e.reimbursement ? "Yes" : "No",
         e.reimbursement?.date ?? "",
         e.reimbursement?.note ?? "",
-      ]),
-    ),
+      ]);
+    }),
   ];
   await logAuditEvent({ action: "hsa_expenses_exported", actor: AUDIT_ACTOR_APP, payload: { rows: expenses.length, openOnly } });
   const name = `hsa-receipts-${openOnly ? "unreimbursed-" : ""}${localToday()}.csv`;
