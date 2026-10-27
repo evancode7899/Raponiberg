@@ -4,7 +4,7 @@ import { loadJsonSetting } from "../settingsStore.ts";
 import { INSURANCE_NOTES_KEY, normalizeInsuranceNotes, type InsuranceNotes } from "./notes.ts";
 import { buildInsuranceReport, type InsuranceReport, type PremiumRow } from "./report.ts";
 import { refreshInsuranceDocs } from "./scan.ts";
-import type { BillingNotice, TermPolicy } from "./types.ts";
+import type { BillingNotice, PaymentReceipt, PolicyStatus, TermPolicy } from "./types.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -37,14 +37,18 @@ export async function loadInsurancePage(db: Db): Promise<InsurancePage> {
   const entries = Object.entries(docs?.files ?? {}).sort(([a], [b]) => a.localeCompare(b));
   const policies: { file: string; policy: TermPolicy }[] = [];
   const bills: { file: string; bill: BillingNotice }[] = [];
+  const receipts: { file: string; receipt: PaymentReceipt }[] = [];
+  const statuses: { file: string; status: PolicyStatus }[] = [];
   for (const [file, e] of entries) {
     if (e.doc?.kind === "TERM_LIFE") policies.push({ file, policy: e.doc });
     else if (e.doc?.kind === "BILL") bills.push({ file, bill: e.doc });
+    else if (e.doc?.kind === "RECEIPT") receipts.push({ file, receipt: e.doc });
+    else if (e.doc?.kind === "STATUS") statuses.push({ file, status: e.doc });
   }
   // The same packet saved twice is one policy: the first file wins.
   const unique = policies.filter((p, i) => policies.findIndex((q) => q.policy.policyNumber === p.policy.policyNumber) === i);
   return {
-    ...buildInsuranceReport({ policies: unique, bills, rows: ledger.rows, today: ledger.today }),
+    ...buildInsuranceReport({ policies: unique, bills, receipts, statuses, rows: ledger.rows, today: ledger.today }),
     notes,
     accounts: ledger.accounts,
     scanned: docs != null,
