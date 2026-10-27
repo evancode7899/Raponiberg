@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { guessKind, qualifyPayee } from "./qualify.ts";
+import { guessKind, providerKey, qualifyPayee } from "./qualify.ts";
 import { receiptFacts } from "./receipts.ts";
 import { buildHsaReport, exactSubset, hsaFunding, payrollTaxSaved, withdrawalKind, type LedgerRowIn, type ReportInput } from "./report.ts";
 import { applyHsaOp, EMPTY_SETTINGS, readHsaFile, type HsaExpense, type HsaFile } from "./store.ts";
@@ -37,6 +37,27 @@ describe("what counts as a qualified expense", () => {
     expect(qualifyPayee("ALEX QUILL MD PC 0001 NEW YORK")).toMatchObject({ kind: "MEDICAL", tier: "LIKELY" });
     expect(qualifyPayee("RIVERSIDE GASTROENTEROLOGY")).toMatchObject({ kind: "MEDICAL" });
     expect(qualifyPayee("ACME DIAGNOSTICS")).toMatchObject({ kind: "MEDICAL" });
+  });
+
+  it("knows billing offices, cut-short words and doctors billing under their own name", () => {
+    expect(qualifyPayee("RIVERBEND HEALTH CUST SERV 00-0000000 MILLTOWN CT")).toMatchObject({ tier: "LIKELY", kind: "HOSPITAL" });
+    expect(qualifyPayee("HARBORVIEW PATIENT ACCT 800-555-0100")).toMatchObject({ tier: "LIKELY", kind: "HOSPITAL" });
+    expect(qualifyPayee("MYPORTAL FOR JOINT SURGRY NA NY NY")).toMatchObject({ tier: "LIKELY", kind: "HOSPITAL" });
+    expect(qualifyPayee("NORTHGATE SCHOOL OF MEDICINE")).toMatchObject({ kind: "HOSPITAL" });
+    expect(qualifyPayee("MYPORTAL DR K MARLOWE NA NY NY")).toMatchObject({ tier: "CHECK", kind: "MEDICAL" });
+    // An insurer's customer service is still a premium, and a surge protector isn't surgery.
+    expect(qualifyPayee("ACME HEALTH INSURANCE CUST SERV")).toBeNull();
+    expect(qualifyPayee("VOLTCO SURGE PROTECTOR")).toBeNull();
+  });
+
+  it("checks a name it doesn't know when the provider is already known", () => {
+    expect(qualifyPayee("NYX MEADOW SOMNEW YORKNY", null, null, "your HSA card has paid this provider")).toMatchObject({ tier: "CHECK", kind: "MEDICAL" });
+    // …but never a medical-adjacent name, or one filed somewhere plainly not medical.
+    expect(qualifyPayee("NYX MEADOW SPA", null, null, "known")).toBeNull();
+    expect(qualifyPayee("NYX MEADOW CAFE", null, { category: "Dining", byOwner: false }, "known")).toBeNull();
+    expect(providerKey("AplPay NYX MEADOW SOM NEW YORK NY")).toBe("NYX MEADOW");
+    expect(providerKey("Card: Nyx Meadow Cust Ser, 800-555-0100, CT")).toBe("NYX MEADOW");
+    expect(providerKey("CHECK")).toBeNull();
   });
 
   it("weighs the category the ledger filed the charge under", () => {
@@ -127,6 +148,22 @@ describe("the HSA report", () => {
     expect(r.suggestions.map((s) => [s.payee, s.tier])).toEqual([
       ["LAKESIDE OPHTHALMOLOGY", "LIKELY"],
       ["CVS/PHARMACY", "CHECK"],
+    ]);
+  });
+
+  it("suggests charges from providers the HSA card paid or the owner logged", () => {
+    const rows = [
+      row("2026-03-01", -60_000, "Card: Nyx Meadow Cust Ser, 800-555-0100, CT", "hsa"), // the HSA card paid them
+      row("2026-04-01", -23_000, "NYX MEADOW BILLING CT"), // same provider on a card: check
+      row("2026-05-01", -4_000, "ORCHID LANE SOM NEW YORK NY"), // logged below
+      row("2026-06-01", -1_800, "ORCHID LANE SOMNEW YORKNY"), // same provider, not logged: check
+      row("2026-06-02", -5_000, "QUILLBY WIDGETS"), // unknown: nothing
+    ];
+    const logged = expense("orchid", "2026-05-01", 4_000, { provider: "Orchid Lane Som" });
+    const r = buildHsaReport(input(file([logged]), rows));
+    expect(r.suggestions.map((s) => [s.payee, s.tier, s.reason])).toEqual([
+      ["ORCHID LANE SOMNEW YORKNY", "CHECK", "you've logged an expense from this provider"],
+      ["NYX MEADOW BILLING CT", "CHECK", "your HSA card has paid this provider"],
     ]);
   });
 
