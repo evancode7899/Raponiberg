@@ -133,6 +133,7 @@ function Overview({ v, today, notes, save }: { v: PolicyView; today: string; not
           {p.premiumClass ? ` (${p.premiumClass})` : ""}, for {usd0(p.annualPremiumCents)} a year
           {p.levelEndDate ? ` fixed through ${longDate(addDays(p.levelEndDate, -1))}` : ""}.
           {v.nextDue && ` Next premium ${usd0(v.nextDue.cents)} due ${longDate(v.nextDue.date)}, ${until(today, v.nextDue.date)}.`}
+          {v.paidTo && ` The insurer shows it paid to ${longDate(v.paidTo.date)} (as of ${shortDate(v.paidTo.asOf)}).`}
         </p>
       </Card>
 
@@ -483,10 +484,11 @@ function Payments({ v, accounts }: { v: PolicyView; accounts: Record<string, str
   const dueSoFar = v.years.filter((y) => v.currentYear != null && y.year <= v.currentYear);
   return (
     <>
-      <StatGrid cols={3}>
+      <StatGrid cols={v.paidTo ? 4 : 3}>
         <StatCell label="Paid so far" value={usd0(v.paidCents)} sub={`${v.payments.length} premium${v.payments.length === 1 ? "" : "s"} found in the statements`} />
         <StatCell label="Years paid" value={`${dueSoFar.filter((y) => paidYears.has(y.year)).length} of ${dueSoFar.length}`} sub="Policy years started so far" />
         <StatCell label="Next premium" value={v.nextDue ? usd0(v.nextDue.cents) : "—"} sub={v.nextDue ? `Due ${longDate(v.nextDue.date)} (year ${v.nextDue.year})` : undefined} />
+        {v.paidTo && <StatCell label="Paid to" value={shortDate(v.paidTo.date)} sub={`Per the insurer's policy summary of ${shortDate(v.paidTo.asOf)}`} />}
       </StatGrid>
 
       <Card title="Premiums in the statements" subtitle={`Charges to ${p.insurer} on your bank and card statements, each counted toward the policy year it paid for. Click an amount for the statement row.`}>
@@ -523,6 +525,40 @@ function Payments({ v, accounts }: { v: PolicyView; accounts: Record<string, str
           </div>
         )}
       </Card>
+
+      {v.receipts.length > 0 && (
+        <Card title="Payment confirmations" subtitle="The insurer's receipts found in the statements folder, and the statement charge each one confirms.">
+          <div className={table.wrap}>
+            <table className={table.table}>
+              <thead>
+                <tr className={table.head}>
+                  <th className={table.th}>Paid</th>
+                  <th className={table.th}>Confirmation</th>
+                  <th className={table.th}>Charge</th>
+                  <th className={table.th}>File</th>
+                  <th className={table.thR}>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {v.receipts.map((x) => {
+                  const paid = v.payments.find((y) => y.rowId === x.paidBy);
+                  return (
+                    <tr key={x.file} className={table.tr}>
+                      <td className={table.td}>{shortDate(x.date)}</td>
+                      <td className={`${table.td} text-fg-2`}>{[x.confirmation, x.method].filter(Boolean).join(" · ") || "—"}</td>
+                      <td className={table.td}>{paid ? `${shortDate(paid.date)} · ${accounts[paid.accountId] ?? "statement"}` : <span className="text-muted">Not found in the statements</span>}</td>
+                      <td className={`${table.td} max-w-[16rem] truncate text-fg-2`} title={x.file}>
+                        {x.file}
+                      </td>
+                      <td className={table.tdR}>{formatUsdFromCents(x.cents)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       <Card title="Premium notices" subtitle="The insurer's billing notices found in the statements folder, and the statement charge that paid each one.">
         {v.bills.length === 0 ? (
@@ -575,7 +611,7 @@ function Terms({ v }: { v: PolicyView }) {
           rows={[
             ["Type", `Term life${p.levelYears ? `, ${p.levelYears}-year level premium` : ""}`],
             ["Renewable", p.features.renewable ? `Yes, yearly after the level term${p.finalEndDate ? `, until ${longDate(p.finalEndDate)}` : ""}` : "No"],
-            ["Convertible", p.features.convertible ? `Yes${p.conversionExpiryDate ? `, before ${longDate(p.conversionExpiryDate)}` : ""}${p.conversionMinFaceCents ? `; at least ${usd0(p.conversionMinFaceCents)} after converting` : ""}` : "No"],
+            ["Convertible", p.features.convertible ? `Yes${p.conversionExpiryDate ? `, ${p.conversionThroughExpiry ? "through" : "before"} ${longDate(p.conversionExpiryDate)}` : ""}${p.conversionMinFaceCents ? `; at least ${usd0(p.conversionMinFaceCents)} after converting` : ""}` : "No"],
             ["Re-entry option", p.features.reEntry ? `Yes${p.levelEndDate ? `, on ${longDate(p.levelEndDate)} only` : ""}` : "No"],
             ["Pays dividends", yesNo(p.features.participating)],
             ["Cash value", "None: term insurance pays only on death"],

@@ -1,6 +1,7 @@
 /**
  * Life insurance documents found in the statements folder: the policy packet (the
- * contract, its schedule and its table of premiums) and the insurer's billing notices.
+ * contract, its schedule and its table of premiums) and the insurer's billing notices,
+ * payment receipts and policy summaries.
  * Each PDF is read once into one of these and kept in data/insurance-documents.json
  * (gitignored, backed up with data/), so the Insurance page never touches the PDFs. Money
  * is integer cents throughout.
@@ -42,6 +43,8 @@ export type TermPolicy = {
   /** The day coverage ends for good, renewing every year after the level period. */
   finalEndDate: string | null;
   conversionExpiryDate: string | null;
+  /** The contract allows converting on the expiry date itself ("on or before"), not only before it. */
+  conversionThroughExpiry: boolean;
   conversionMinFaceCents: number | null;
   /** Renewable, convertible, re-entry, dividends: what the cover page says the policy is. */
   features: { renewable: boolean; convertible: boolean; reEntry: boolean; participating: boolean };
@@ -79,7 +82,31 @@ export type BillingNotice = {
   mode: string | null;
 };
 
-export type InsuranceDoc = TermPolicy | BillingNotice;
+/** The insurer's confirmation of a premium paid (an emailed receipt). */
+export type PaymentReceipt = {
+  kind: "RECEIPT";
+  insurer: string | null;
+  policyNumber: string;
+  date: string;
+  amountCents: number;
+  confirmation: string | null;
+  /** How it was paid, as printed ("Debit / Credit Card"). */
+  method: string | null;
+};
+
+/** The insurer's summary of where a policy stands on a day: what's paid and to when. */
+export type PolicyStatus = {
+  kind: "STATUS";
+  insurer: string | null;
+  policyNumber: string;
+  asOf: string;
+  /** Premiums are paid up to (not including) this date. */
+  paidToDate: string | null;
+  premiumCents: number | null;
+  mode: string | null;
+};
+
+export type InsuranceDoc = TermPolicy | BillingNotice | PaymentReceipt | PolicyStatus;
 
 /** A PDF in the statements folder, as last seen. `doc` is set for insurance documents; anything else is remembered so it isn't read again. */
 export type InsuranceFileEntry = {

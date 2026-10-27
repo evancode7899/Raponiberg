@@ -20,9 +20,10 @@
  *     total tax;
  *   - data/hsa-expenses.json: the patients and providers in the HSA receipts log (providers
  *     of two words or more, so a one-word note like "Dental" doesn't flag the code);
- *   - data/insurance-documents.json (the life insurance policies and premium notices as
- *     read): policy numbers, the insured, owner and agent, and each face amount that isn't
- *     a round multiple of $2,500; and the
+ *   - data/insurance-documents.json (the life insurance policies, premium notices, payment
+ *     receipts and policy summaries as read): policy numbers, receipt confirmation numbers,
+ *     the insured, owner and agent, and each face amount that isn't a round multiple of
+ *     $2,500; and the
  *     beneficiaries typed in on the Insurance page (a saved setting).
  *
  * Usage: npm run privacy:check [-- --dir <exported copy>]
@@ -231,6 +232,7 @@ for (const e of Object.values(readInsuranceDocs()?.files ?? {})) {
   const d = e.doc;
   if (!d) continue;
   word(d.policyNumber);
+  if (d.kind === "RECEIPT" && d.confirmation) word(d.confirmation);
   if (d.kind === "TERM_LIFE") {
     [d.insured, d.owner ?? "", d.agent ?? ""].forEach(word);
     // Face amounts are usually round ($500,000), which code uses by chance; the odd ones (a renewal face) are the policy's own.

@@ -1,5 +1,5 @@
 import { addDays, ymd } from "../dates/isoDate.ts";
-import type { BillingNotice, TermPolicy } from "./types.ts";
+import type { BillingNotice, PaymentReceipt, PolicyStatus, TermPolicy } from "./types.ts";
 
 /**
  * The Insurance page: each policy read from its packet, laid out by policy year (dates,
@@ -14,10 +14,19 @@ import type { BillingNotice, TermPolicy } from "./types.ts";
 export type PremiumRow = { id: string; date: string; amountCents: number; payee: string; accountId: string };
 
 /**
- * Who a premium is paid to, as card and bank statements print it: the issuing company's
- * merchant name ("AGL*INSURANCE PREMIUM"), the group's name, or the New York company.
+ * Who a premium is paid to, as card and bank statements print it, by insurer: American
+ * General's merchant name ("AGL*INSURANCE PREMIUM"), its group's name or its New York
+ * company; Protective's new-business desk ("PROTECTIVE IDG/IAD NB").
  */
-const INSURER_PAYEE = /\bAGL\b|AGL\*|AMERICAN GENERAL|COREBRIDGE|US ?LIFE INS|UNITED STATES LIFE/i;
+const INSURER_PAYEES: { insurer: RegExp; payee: RegExp }[] = [
+  { insurer: /American General|United States Life/i, payee: /\bAGL\b|AGL\*|AMERICAN GENERAL|COREBRIDGE|US ?LIFE INS|UNITED STATES LIFE/i },
+  { insurer: /Protective/i, payee: /\bPROTECTIVE\b/i },
+];
+const NO_PAYEE = /$^/;
+const insurerPayee = (p: TermPolicy) => INSURER_PAYEES.find((x) => x.insurer.test(p.insurer))?.payee ?? NO_PAYEE;
+
+/** An insurer's receipt and the statement charge are the same payment when the amounts agree within this many days. */
+const RECEIPT_DAYS = 5;
 
 /** A premium paid up to this many days before a due date counts toward that year (paid with the application, or early). */
 const PAID_AHEAD_DAYS = 60;
@@ -42,6 +51,9 @@ export type PolicyPayment = { rowId: string; date: string; cents: number; payee:
 
 export type PolicyBill = { file: string; dueDate: string; premiumCents: number; mode: string | null; paidBy: string | null };
 
+/** The insurer's confirmation of a payment, and the statement charge it confirms. */
+export type PolicyReceipt = { file: string; date: string; cents: number; confirmation: string | null; method: string | null; paidBy: string | null };
+
 export type PolicyView = {
   file: string;
   policy: TermPolicy;
@@ -61,6 +73,9 @@ export type PolicyView = {
   payments: PolicyPayment[];
   paidCents: number;
   bills: PolicyBill[];
+  receipts: PolicyReceipt[];
+  /** Premiums paid up to this date, per the insurer's latest policy summary (as of `asOf`). */
+  paidTo: { date: string; asOf: string; file: string } | null;
 };
 
 export type InsuranceReport = { today: string; policies: PolicyView[] };
@@ -133,7 +148,14 @@ function dates(p: TermPolicy, today: string): PolicyDate[] {
     });
   }
   if (p.conversionExpiryDate) {
-    out.push({ key: "conversion", label: "Conversion option expires", date: p.conversionExpiryDate, note: "Before this date the policy can be converted to a permanent one with no medical questions; not on or after it." });
+    out.push({
+      key: "conversion",
+      label: "Conversion option expires",
+      date: p.conversionExpiryDate,
+      note: p.conversionThroughExpiry
+        ? "Up to and including this date the policy can be converted to a permanent one with no medical questions; not after it."
+        : "Before this date the policy can be converted to a permanent one with no medical questions; not on or after it.",
+    });
   }
   if (p.features.reEntry && p.levelEndDate) {
     out.push({ key: "reentry", label: "Re-entry option", date: p.levelEndDate, note: "Only on this anniversary: exchange for a new level term policy at then-current rates, with new evidence of insurability." });
@@ -145,11 +167,13 @@ function dates(p: TermPolicy, today: string): PolicyDate[] {
 export function buildInsuranceReport(input: {
   policies: { file: string; policy: TermPolicy }[];
   bills: { file: string; bill: BillingNotice }[];
+  receipts?: { file: string; receipt: PaymentReceipt }[];
+  statuses?: { file: string; status: PolicyStatus }[];
   rows: PremiumRow[];
   today: string;
 }): InsuranceReport {
   const { today } = input;
-  const charges = input.rows.filter((r) => r.amountCents < 0 && INSURER_PAYEE.test(r.payee)).sort((a, b) => a.date.localeCompare(b.date));
+  const charges = input.rows.filter((r) => r.amountCents < 0).sort((a, b) => a.date.localeCompare(b.date));
   const many = input.policies.length > 1;
   const claimed = new Set<string>();
 
@@ -165,9 +189,10 @@ export function buildInsuranceReport(input: {
 
     // With one policy every premium to its insurer is its own; with more, only charges of one of its payment amounts.
     const amounts = new Set(ms.map((m) => m.perPaymentCents));
+    const payee = insurerPayee(p);
     const payments: PolicyPayment[] = [];
     for (const r of charges) {
-      if (claimed.has(r.id) || (many && !amounts.has(-r.amountCents))) continue;
+      if (claimed.has(r.id) || !payee.test(r.payee) || (many && !amounts.has(-r.amountCents))) continue;
       const year = yearOf(years, addDays(r.date, PAID_AHEAD_DAYS));
       if (year == null) continue;
       claimed.add(r.id);
@@ -181,6 +206,18 @@ export function buildInsuranceReport(input: {
         return { file: f, dueDate: b.dueDate, premiumCents: b.premiumCents, mode: b.mode, paidBy: payments.find((x) => x.year === year)?.rowId ?? null };
       })
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+    const receipts = (input.receipts ?? [])
+      .filter((x) => x.receipt.policyNumber === p.policyNumber)
+      .map(({ file: f, receipt: x }): PolicyReceipt => {
+        const charge = payments.find((y) => y.cents === x.amountCents && y.date >= addDays(x.date, -RECEIPT_DAYS) && y.date <= addDays(x.date, RECEIPT_DAYS));
+        return { file: f, date: x.date, cents: x.amountCents, confirmation: x.confirmation, method: x.method, paidBy: charge?.rowId ?? null };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const latest = (input.statuses ?? [])
+      .filter((x) => x.status.policyNumber === p.policyNumber && x.status.paidToDate)
+      .sort((a, b) => b.status.asOf.localeCompare(a.status.asOf))[0];
 
     return {
       file,
@@ -197,6 +234,8 @@ export function buildInsuranceReport(input: {
       payments,
       paidCents: payments.reduce((s, x) => s + x.cents, 0),
       bills,
+      receipts,
+      paidTo: latest ? { date: latest.status.paidToDate!, asOf: latest.status.asOf, file: latest.file } : null,
     };
   });
   return { today, policies };
