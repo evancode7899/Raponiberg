@@ -1,7 +1,7 @@
 import type { BlockerRef } from "../book/reports/blockerRef.ts";
 import { daysBetween } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
-import { ownerFiled, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
+import { ownerFiled, providerKey, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
 import { matchReceipts, onFile, type ReceiptFileFacts, type ReceiptMatch } from "./receipts.ts";
 import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store.ts";
 import { hsaAfterTax, strategyRows, taxableAfterTax, type StrategyAssumptions, type StrategyRow } from "./strategy.ts";
@@ -443,6 +443,18 @@ export function buildHsaReport(input: ReportInput): HsaReport {
   // Logged expenses not tied to a row still hide a same-amount row within the window
   // (e.g. two equally close candidates): better to miss a suggestion than to log twice.
   const unmatchedLogged = expenses.filter((e) => !e.paid);
+  // Providers already known to be medical, by name: ones the HSA card paid, then ones the owner logged.
+  const knownProviders = new Map<string, string>();
+  const know = (name: string, why: string) => {
+    const k = providerKey(name);
+    if (k && !knownProviders.has(k)) knownProviders.set(k, why);
+  };
+  for (const w of hsaOut) if (w.kind === "DIRECT") know(w.payee, "your HSA card has paid this provider");
+  for (const e of expenses) {
+    if (e.flags.includes("NOT_MEDICAL")) continue;
+    know(e.provider, "you've logged an expense from this provider");
+    if (e.paid) know(e.paid.payee, "you've logged an expense from this provider");
+  }
   const refunds = input.rows.filter((r) => r.amountCents > 0 && !isHsa(r.accountId));
   const suggestions: Suggestion[] = [];
   for (const r of spending) {
@@ -450,7 +462,8 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     if (openedOn && r.date < openedOn) continue;
     const merchant = r.merchantKey || r.payee;
     if (ignored.has(merchant.toUpperCase())) continue;
-    const q = qualify(r);
+    const known = knownProviders.get(providerKey(r.payee) ?? "") ?? null;
+    const q = qualifyPayee(r.payee, r.detail, { category: r.category, byOwner: ownerFiled(r.classifiedBy) }, known);
     if (!q) continue;
     const refunded = refunds.some(
       (x) => x.accountId === r.accountId && x.amountCents === -r.amountCents && (x.merchantKey ?? x.payee) === merchant && daysBetween(r.date, x.date) >= 0 && daysBetween(r.date, x.date) <= REFUND_DAYS,
