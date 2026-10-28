@@ -82,6 +82,14 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     keywords: ["insurance", "life insurance", "term life", "policy", "premium", "death benefit", "face amount", "beneficiary", "conversion", "rider", "coverage"],
   },
   {
+    mnemonic: "PERK",
+    href: "/card-perks",
+    label: "Card perks",
+    description: "Whether each credit card earns its annual fee: the monthly, quarterly, semiannual and yearly credits you used or missed, and the points your spending earned, at a point value you set.",
+    group: "Money",
+    keywords: ["credit card", "card", "perks", "benefits", "credits", "statement credit", "annual fee", "points", "rewards", "miles", "amex", "sapphire", "uber cash", "resy", "scorecard", "cents per point"],
+  },
+  {
     mnemonic: "ANN",
     href: "/annual",
     label: "Annual report",
