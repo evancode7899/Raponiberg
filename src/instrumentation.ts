@@ -50,6 +50,7 @@ export async function register() {
         "/api/tax-accounts",
         "/api/goals",
         "/api/car",
+        "/api/card-perks",
         "/api/bonuses",
         "/api/home-budget/funds",
         "/api/dashboard/net-worth/accounts",

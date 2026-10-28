@@ -190,6 +190,29 @@ pocket and left for the HSA to reimburse later, so the account stays invested:
 
 The log is `data/hsa-expenses.json` (with its journal), backed up like the other files.
 
+## Card perks
+
+**Card perks** (Money › Card perks, or type `PERK`) checks whether each credit card earns its
+annual fee, one calendar year at a time:
+
+- **Scorecard**: for each card, the spending on it, the points that spending earned and what
+  they're worth, the credits used, and the annual fee, adding up to a net value. Points are
+  worth 1¢ each unless you set another value, for all cards or for one. They're estimated
+  from each purchase's category or description (4× on dining, and so on); enter the points
+  actually posted to replace the estimate.
+- **Perk tracker**: every monthly, quarterly, twice-a-year and yearly credit, with each
+  period marked used, partly used, missed, available now, or awaiting its statement.
+  Statement credits count toward the matching perk automatically. Perks that never reach
+  the statement (Uber Cash, in-app promos) are marked used by hand.
+- **Setup**: each card starts from the built-in list (Amex Gold and Platinum, Chase Sapphire
+  Reserve and Preferred, Capital One Venture X, Bilt) suggested by the account's name. The
+  fee, earn rates and perks are then yours to edit, since issuers change them often.
+  Cards not on the list are set up by hand.
+
+The annual fee is the one the statements charge (net of any reversal), or the card's fee
+when none was charged on file that year. Your setup is stored in the database, with the
+rest of your data.
+
 ## The desktop app (Windows)
 
 `npm run setup` makes the Desktop shortcut. To make it again, or to start Raponiberg

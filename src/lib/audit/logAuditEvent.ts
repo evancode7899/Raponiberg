@@ -27,6 +27,7 @@ export type AuditAction =
   | "goals_updated"
   | "retirement_accounts_updated"
   | "car_updated"
+  | "card_perks_updated"
   | "hsa_expenses_updated"
   | "hsa_expenses_exported"
   | "insurance_notes_updated";
