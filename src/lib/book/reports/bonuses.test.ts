@@ -242,8 +242,13 @@ describe("buildBonuses", () => {
     for (const measure of ["headline", "totalComp", "upfront", "deferred", "scheduled", "paid", "forfeited", "outstanding"]) expect(held({ figure: "award", letterId: "old", year: 2023, measure }), measure).toEqual([]);
     for (const measure of ["headline", "deferredPaid", "outstanding"]) expect(held({ figure: "totals", measure }), measure).toEqual([]);
     expect(r.windows.map((w) => w.blockers.length)).toEqual([0, 0, 0, 0]);
-    // The year the gap is in can't say what bonus was paid in it yet.
-    expect(held({ figure: "reconcile", year: 2026, personId: "p1", employer: OLD })).toEqual(["late"]);
+    // The year the gap is in counts up to the day before it: everything before the gap is complete.
+    expect(held({ figure: "reconcile", year: 2026, personId: "p1", employer: OLD })).toEqual([]);
+    expect(r.byYear.find((y) => y.year === 2026)).toMatchObject({ through: "2026-09-15", cents: 833300, payments: 1 });
+    expect(r.byYear.find((y) => y.year === 2025)).toMatchObject({ through: null });
+    // A gap from the year's first day leaves nothing complete: withheld.
+    const r3 = buildBonuses(withGap(gap("all", "2026-01-01", "2026-12-31")), letter, "2026-10-06");
+    expect(figureReads(r3, { figure: "reconcile", year: 2026, personId: "p1", employer: OLD }).blockers.map((b) => b.id)).toEqual(["all"]);
     expect(held({ figure: "reconcile", year: 2025, personId: "p1", employer: OLD })).toEqual([]);
 
     // A gap inside a window does withhold what was paid in it, and only that.

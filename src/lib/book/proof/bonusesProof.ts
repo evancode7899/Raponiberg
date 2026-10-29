@@ -506,7 +506,9 @@ function reconcileProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "recon
   const { r } = ctx;
   const y = r.byYear.find((x) => x.year === d.year && x.personId === d.personId && x.employer === d.employer);
   if (!y) return missing(ctx.book, d, "No bonus paychecks match that year, person and employer any more.");
-  const ps = r.payments.filter((p) => Number(p.date.slice(0, 4)) === d.year && p.personId === d.personId && p.employer === d.employer);
+  // Through the day before a gap in the stubs, when one cuts the year short (BonusYear.through).
+  const end = y.through ?? `${d.year}-12-31`;
+  const ps = r.payments.filter((p) => Number(p.date.slice(0, 4)) === d.year && p.date <= end && p.personId === d.personId && p.employer === d.employer);
   const windowOf = (p: BonusPayment) => r.windows.find((w) => w.payments.some((q) => q.stubId === p.stubId && q.line === p.line));
   const explained = ps.filter((p) => p.explains);
   const unexplained = ps.filter((p) => !p.explains);
@@ -540,20 +542,21 @@ function reconcileProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "recon
           ? "Paid outside every payment date on the employer's letter (on or about each window)."
           : "No letter from this employer is on file: add it to the bonus letters file to see its schedule.",
     });
-  const yearPay: PayDescriptor = { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end: `${y.year}-12-31` };
+  const yearPay: PayDescriptor = { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end };
+  const paidIn = y.through ? `${y.year} through ${y.through}` : String(y.year);
   blocks.push({
     kind: "chain",
-    title: `${y.personName} · ${y.employer}, bonus paid in ${y.year}`,
+    title: `${y.personName} · ${y.employer}, bonus paid in ${paidIn}`,
     lines: [
       { label: "Explained by a letter", value: { cents: sum(explained) }, source: "proven" },
       { op: "+", label: "Not explained", value: { cents: sum(unexplained) }, source: "proven" },
-      { op: "=", label: `Bonus paid in ${y.year}`, value: { cents: y.cents }, source: "proven", link: { label: `Bonus paid in ${y.year}`, descriptor: yearPay } },
+      { op: "=", label: `Bonus paid in ${paidIn}`, value: { cents: y.cents }, source: "proven", link: { label: `Bonus paid in ${paidIn}`, descriptor: yearPay } },
     ],
   });
   const ws = [...new Set(explained.map(windowOf).filter((w): w is VestWindow => !!w))];
   blocks.push(...warningBlocks(r, ws.map((w) => `${w.key}|`)));
   const e = sum(explained);
-  return base(ctx, d, `${y.personName} · ${y.employer}, bonus paid in ${y.year} that a letter explains`, y.explainedCents, e, `The ${explained.length} letter payment${explained.length === 1 ? "" : "s"} below add up to ${money(e)}, of ${money(sum(ps))} bonus paid that year`, blocks, { from: `${d.year}-01-01`, to: `${d.year}-12-31` });
+  return base(ctx, d, `${y.personName} · ${y.employer}, bonus paid in ${paidIn} that a letter explains`, y.explainedCents, e, `The ${explained.length} letter payment${explained.length === 1 ? "" : "s"} below add up to ${money(e)}, of ${money(sum(ps))} bonus paid that year`, blocks, { from: `${d.year}-01-01`, to: end });
 }
 
 // ---------------------------------------------------------------- the forecast's estimates

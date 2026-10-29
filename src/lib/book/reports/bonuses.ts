@@ -2,6 +2,7 @@ import type { AwardLetter, AwardsFile, ScheduledPayment } from "../../bonuses/aw
 import { addDays, endOfMonth } from "../../dates/isoDate.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
 import { blockersFor, type BlockerQuery } from "../blockers.ts";
+import { findingStart } from "../checks/collector.ts";
 import type { Book, BookStub } from "../load.ts";
 import { payBreakdown, personPayYear, stubGroups, UNKNOWN_PERSON } from "../pay.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
@@ -105,7 +106,13 @@ export type BonusYear = {
   payments: number;
   /** The part a letter explains (paid as one of its scheduled payments). */
   explainedCents: number;
-  /** The year's stubs from this employer, to date, as a pay-findings query (yearPayQuery). Its proofs check the same. */
+  /**
+   * The last day the year's figures run through, when a gap in the stubs cuts it short (a
+   * paycheck with no stub): everything before the gap is complete, so the year counts up to
+   * the day before it rather than not at all. Null: the whole year, or to date.
+   */
+  through: string | null;
+  /** The year's stubs from this employer, through `through` (else to date), as a pay-findings query (yearPayQuery). Its proofs check the same. */
   payQuery: BlockerQuery;
   /** Pay findings over them: a missing stub could hide a bonus paid that year. */
   blockers: BlockerRef[];
@@ -333,19 +340,33 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string): Bonus
   const review = applyExceptions(book, warnings);
 
   const byYearMap = new Map<string, BonusYear>();
+  const yearPayments = new Map<string, BonusPayment[]>();
   const lettered = new Set(file.letters.map((l) => employerKey(l.employer)));
   for (const p of payments) {
     const year = Number(p.date.slice(0, 4));
     const k = `${year}|${p.personId}|${p.employer}`;
-    const cur = byYearMap.get(k) ?? { year, personId: p.personId, personName: p.personName, employer: p.employer, employerKeys: [], cents: 0, payments: 0, explainedCents: 0, payQuery: { affects: "PAY", from: "", to: "" }, blockers: [] };
+    const cur = byYearMap.get(k) ?? { year, personId: p.personId, personName: p.personName, employer: p.employer, employerKeys: [], cents: 0, payments: 0, explainedCents: 0, through: null, payQuery: { affects: "PAY", from: "", to: "" }, blockers: [] };
     if (!cur.employerKeys.includes(p.employerKey)) cur.employerKeys.push(p.employerKey);
     cur.cents += p.amountCents;
     cur.payments += 1;
     if (p.explains) cur.explainedCents += p.amountCents;
     byYearMap.set(k, cur);
+    yearPayments.set(k, [...(yearPayments.get(k) ?? []), p]);
   }
-  for (const y of byYearMap.values()) {
+  for (const [k, y] of byYearMap) {
     y.payQuery = yearPayQuery(y, today);
+    // A gap in the stubs (a paycheck with no stub) leaves only the pay after it unread: the
+    // year counts up to the day before it, and says so, rather than not at all.
+    const gap = blockersFor(book, y.payQuery).map(findingStart).sort()[0];
+    if (gap && gap > y.payQuery.from) {
+      const through = addDays(gap, -1);
+      const kept = yearPayments.get(k)!.filter((p) => p.date <= through);
+      y.through = through;
+      y.cents = kept.reduce((s, p) => s + p.amountCents, 0);
+      y.payments = kept.length;
+      y.explainedCents = kept.filter((p) => p.explains).reduce((s, p) => s + p.amountCents, 0);
+      y.payQuery = { ...y.payQuery, to: through };
+    }
     y.blockers = refs(blockersFor(book, y.payQuery));
     for (const b of y.blockers) blockers.set(b.id, b);
   }

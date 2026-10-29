@@ -631,7 +631,14 @@ function Payouts({ r }: { r: BonusesReport }) {
             <tbody>
               {r.byYear.map((y) => (
                 <tr key={`${y.year}|${y.personId}|${y.employer}`} className={table.tr}>
-                  <td className={`${table.td} num font-medium`}>{y.year}</td>
+                  <td className={`${table.td} num font-medium`}>
+                    {y.year}
+                    {y.through && (
+                      <div className="text-[11px] font-normal text-muted" title="A later paycheck has no stub yet: the year counts through the day before it.">
+                        through {formatDisplayDateFromYmd(y.through)}
+                      </div>
+                    )}
+                  </td>
                   <td className={table.td}>{y.personName}</td>
                   <td className={`${table.td} text-fg-2`}>{y.employer}</td>
                   <td className={table.tdR}>{y.payments}</td>
@@ -642,7 +649,7 @@ function Payouts({ r }: { r: BonusesReport }) {
                     ) : (
                       <ProofValue
                         proof={{
-                          descriptor: { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end: `${y.year}-12-31` },
+                          descriptor: { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end: y.through ?? `${y.year}-12-31` },
                           shownCents: y.cents,
                         }}
                       >
