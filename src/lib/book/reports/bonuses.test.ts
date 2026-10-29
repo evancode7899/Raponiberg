@@ -6,6 +6,7 @@ import { Collector } from "../checks/collector.ts";
 import { checkBonusLetters } from "../checks/bonuses.ts";
 import type { StandingException } from "../types.ts";
 import { bonusFindingId, buildBonuses, windowLabel } from "./bonuses.ts";
+import { figureReads, type BonusFigureRef } from "./bonusFigures.ts";
 
 let n = 0;
 const stub = (employer: string, payDate: string, lines: StubLine[]): BookStub =>
@@ -179,7 +180,7 @@ describe("buildBonuses", () => {
     const noBase: AwardsFile = { version: 1, letters: [{ ...letter.letters[0]!, awards: [{ ...letter.letters[0]!.awards[0]!, baseSalary: null, totalComp: null }] }] };
     const stubs = [stub("Prior Co", "2023-03-31", regular(20000)), stub(OLD, "2023-12-31", regular(100000))];
     const a = buildBonuses(book(stubs), noBase, "2026-10-06").awards[0]!;
-    expect(a.base).toEqual({ cents: 12000000, from: "STUBS", parts: [{ employer: "Prior Co", cents: 2000000 }, { employer: OLD, cents: 10000000 }] });
+    expect(a.base).toMatchObject({ cents: 12000000, from: "STUBS", parts: [{ employer: "Prior Co", cents: 2000000 }, { employer: OLD, cents: 10000000 }], blockers: [] });
     expect(a.totalComp).toEqual({ cents: 22000000, from: "SUM" });
     const lettered = buildBonuses(book(stubs), letter, "2026-10-06").awards.find((x) => x.year === 2023)!;
     expect(lettered).toMatchObject({ base: { cents: 10000000, from: "LETTER" }, totalComp: { cents: 20000000, from: "LETTER" } });
@@ -215,6 +216,43 @@ describe("buildBonuses", () => {
     expect(reopened.warnings.find((x) => x.id === w.id)).toMatchObject({ gapCents: 10000 });
     expect(reopened.reviewed).toEqual([]);
     expect(reopened.staleReviews).toEqual([{ id: ex.id, warning: w.text, note: ex.note, reviewedAt: ex.acceptedAt }]);
+  });
+
+  it("lets a missing stub withhold only the figures that read stubs from its days", () => {
+    const stubs = [
+      stub(OLD, "2024-03-07", bonus(79999.5)),
+      stub(OLD, "2025-03-07", bonus(8333)),
+      stub(OLD, "2026-03-06", bonus(8333)),
+      stub(OLD, "2026-09-15", regular(80000)),
+    ];
+    // Paychecks after the latest stub have none: a gap from Sep 16, 2026, long after the 2024 and 2025 windows closed.
+    const gap = (id: string, from: string, to: string) => ({
+      id,
+      check: "pay.after-last-stub",
+      status: "MISSING",
+      title: "paychecks with no stub",
+      detail: "",
+      fix: "",
+      scope: { affects: ["PAY"], personId: "p1", employerKey: employerKey(OLD), from, to },
+    });
+    const withGap = (...fs: ReturnType<typeof gap>[]) => ({ ...book(stubs, letter), integrity: { findings: fs, inferences: [], accepted: [], stale: [] } }) as unknown as Book;
+    const r = buildBonuses(withGap(gap("late", "2026-09-16", "2026-12-31")), letter, "2026-10-06");
+    const held = (d: BonusFigureRef) => figureReads(r, d).blockers.map((b) => b.id);
+    // What the letter prints and what was settled in closed windows stand.
+    for (const measure of ["headline", "totalComp", "upfront", "deferred", "scheduled", "paid", "forfeited", "outstanding"]) expect(held({ figure: "award", letterId: "old", year: 2023, measure }), measure).toEqual([]);
+    for (const measure of ["headline", "deferredPaid", "outstanding"]) expect(held({ figure: "totals", measure }), measure).toEqual([]);
+    expect(r.windows.map((w) => w.blockers.length)).toEqual([0, 0, 0, 0]);
+    // The year the gap is in can't say what bonus was paid in it yet.
+    expect(held({ figure: "reconcile", year: 2026, personId: "p1", employer: OLD })).toEqual(["late"]);
+    expect(held({ figure: "reconcile", year: 2025, personId: "p1", employer: OLD })).toEqual([]);
+
+    // A gap inside a window does withhold what was paid in it, and only that.
+    const r2 = buildBonuses(withGap(gap("in2025", "2025-02-20", "2025-03-20")), letter, "2026-10-06");
+    const held2 = (d: BonusFigureRef) => figureReads(r2, d).blockers.map((b) => b.id);
+    expect(held2({ figure: "window", window: r2.windows[1]!.key, measure: "paid" })).toEqual(["in2025"]);
+    expect(held2({ figure: "award", letterId: "old", year: 2023, measure: "paid" })).toEqual(["in2025"]);
+    expect(held2({ figure: "award", letterId: "old", year: 2023, measure: "headline" })).toEqual([]);
+    expect(held2({ figure: "window", window: r2.windows[0]!.key, measure: "paid" })).toEqual([]);
   });
 
   it("labels windows the way letters do", () => {

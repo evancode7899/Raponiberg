@@ -11,6 +11,7 @@ import { BUCKETS } from "../../profile/settings.ts";
 import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateKey } from "../../tax/estimateLines.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
 import type { BonusesReport } from "../reports/bonuses.ts";
+import { figureReads } from "../reports/bonusFigures.ts";
 import type { CashFlowPeriod } from "../reports/cashFlow.ts";
 import type { GoalsReport } from "../reports/goals.ts";
 import type { InvestmentsReport } from "../reports/investments.ts";
@@ -263,7 +264,8 @@ export function bonusesFigures(r: BonusesReport): PageFigure[] {
     out.push([bon({ figure: "letter", letterId: l.id, measure: "paid" }), l.windowTotals.paidCents]);
   }
   for (const y of r.byYear) out.push([bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }), y.explainedCents]);
-  return out.map(([descriptor, v]) => ({ page, descriptor, shown: cents(v) }));
+  // A figure a pay finding withholds shows as withheld, not as a number (figureReads: the page's own rule).
+  return out.map(([descriptor, v]) => ({ page, descriptor, shown: figureReads(r, descriptor).blockers.length ? null : cents(v) }));
 }
 
 // ------------------------------------------------------------------ HSA

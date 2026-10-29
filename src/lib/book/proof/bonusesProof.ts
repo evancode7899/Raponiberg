@@ -6,6 +6,7 @@ import { monthKey, type BonusFacts } from "../../forecast/bonusSchedule.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
 import type { OutlookSeeds } from "../../profile/basePay.ts";
 import type { Book } from "../load.ts";
+import { figureReads } from "../reports/bonusFigures.ts";
 import { bonusesOf, type AwardRow, type BonusesReport, type BonusPayment, type Tranche, type VestWindow, type WindowStatus } from "../reports/bonuses.ts";
 import { checksFor, perBook, sumCheck } from "./common.ts";
 import { PAY_CHECKS, type PayDescriptor } from "./payProof.ts";
@@ -202,10 +203,17 @@ function trancheLine(r: BonusesReport, a: AwardRow, t: Tranche, value: "amount" 
 
 type Ctx = { book: Book; r: BonusesReport };
 
-function base(ctx: Ctx, d: BonusesDescriptor, describes: string, figureCents: number, partsCents: number, explain: string, blocks: ProofBlock[], scope: { personId?: string; from: string; to: string }, estimates: ProofEstimate[] = []): Proof {
+/**
+ * The proof's checks. `scope` is the stretch of dates the figure is about (its letter checks,
+ * its "through" date). Only the pay it reads (bonuses.ts figureReads, the rule the page marks
+ * by too) can withhold it: a figure the letter prints reads no stubs, and a missing paycheck
+ * stub years after a window closed never reaches back into it.
+ */
+function base(ctx: Ctx, d: BonusesDescriptor, describes: string, figureCents: number, partsCents: number, explain: string, blocks: ProofBlock[], scope: { from: string; to: string }, estimates: ProofEstimate[] = []): Proof {
   const to = scope.to < ctx.book.today ? scope.to : ctx.book.today;
   const until = to < scope.from ? scope.from : to;
-  const pay = checksFor(ctx.book, { affects: "PAY", from: scope.from, to: until, ...(scope.personId ? { personId: scope.personId } : {}) }, PAY_CHECKS);
+  const reads = d.figure === "estimate" ? [] : figureReads(ctx.r, d).queries;
+  const pay = reads.length ? checksFor(ctx.book, reads, PAY_CHECKS) : { checks: [], withheld: false };
   // What the letter says against itself and the stubs: listed, never withholding (the page
   // shows the letter and the stubs side by side, with the warning, for exactly this).
   const letters = checksFor(ctx.book, { affects: "BONUS", from: scope.from, to: until }, ["bonus.letters"]);
@@ -252,7 +260,6 @@ function windowProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "window" 
   const w = r.windows.find((x) => x.key === d.window);
   if (!w) return missing(ctx.book, d, "That payment date is no longer on any letter.");
   const letter = r.letters.find((l) => l.id === w.letterId)!;
-  const personId = letter.employment?.personId;
   const blocks: ProofBlock[] = [];
   const days = payDays(w.payments);
   const paidSum = days.reduce((t, x) => t + x.cents, 0);
@@ -278,7 +285,7 @@ function windowProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "window" 
     });
     blocks.push(...warn);
     const sum = w.parts.reduce((t, p) => t + p.amountCents, 0);
-    return base(ctx, d, `${letter.title} · ${w.label}, scheduled`, w.scheduledCents, sum, `The ${w.parts.length} scheduled payment${w.parts.length === 1 ? "" : "s"} below add up to ${money(sum)}`, blocks, { personId, from: w.from, to: w.to }, upcomingEstimates(r, w.parts.map((p) => ({ a: awardOf(p.awardYear), t: awardOf(p.awardYear).tranches.find((x) => x.window === w.key && x.kind === p.kind)! }))));
+    return base(ctx, d, `${letter.title} · ${w.label}, scheduled`, w.scheduledCents, sum, `The ${w.parts.length} scheduled payment${w.parts.length === 1 ? "" : "s"} below add up to ${money(sum)}`, blocks, { from: w.from, to: w.to }, upcomingEstimates(r, w.parts.map((p) => ({ a: awardOf(p.awardYear), t: awardOf(p.awardYear).tranches.find((x) => x.window === w.key && x.kind === p.kind)! }))));
   }
   const lines: ChainLine[] = days.map((x, i) => ({ op: i ? "+" : undefined, label: `${x.date} stub · ${x.employer}`, value: { cents: x.cents }, source: "proven", note: x.lines.join(", "), link: payLink(x) }));
   lines.push({ op: "=", label: `On the stubs for ${w.label}`, value: { cents: w.paidCents }, source: "proven", note: w.detail });
@@ -293,7 +300,7 @@ function windowProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "window" 
     ],
   });
   blocks.push(...warn);
-  return base(ctx, d, `${letter.title} · ${w.label}, on the stubs`, w.paidCents, paidSum, `The ${days.length} stub${days.length === 1 ? "" : "s"} below add up to ${money(paidSum)}`, blocks, { personId, ...span([w]) });
+  return base(ctx, d, `${letter.title} · ${w.label}, on the stubs`, w.paidCents, paidSum, `The ${days.length} stub${days.length === 1 ? "" : "s"} below add up to ${money(paidSum)}`, blocks, { ...span([w]) });
 }
 
 function trancheProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "tranche" }>): Proof {
@@ -321,7 +328,7 @@ function trancheProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "tranche
     ],
   });
   blocks.push(...warningBlocks(r, [`${w.key}|`]));
-  return base(ctx, d, `${letter.title} · ${a.year} award, ${KIND[t.kind].toLowerCase()} ${t.label}`, t.amountCents, t.amountCents, `As the letter prints it: ${money(t.amountCents)}`, blocks, { personId: a.personId, from: w.from, to: w.to }, upcomingEstimates(r, [{ a, t }]));
+  return base(ctx, d, `${letter.title} · ${a.year} award, ${KIND[t.kind].toLowerCase()} ${t.label}`, t.amountCents, t.amountCents, `As the letter prints it: ${money(t.amountCents)}`, blocks, { from: w.from, to: w.to }, upcomingEstimates(r, [{ a, t }]));
 }
 
 function awardProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "award" }>): Proof {
@@ -330,7 +337,7 @@ function awardProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "award" }>
   if (!a) return missing(ctx.book, d, "That award is no longer on the letter.");
   const letter = r.letters.find((l) => l.id === a.letterId)!;
   const ws = r.windows.filter((w) => a.tranches.some((t) => t.window === w.key));
-  const scope = { personId: a.personId === "?" ? undefined : a.personId, ...(ws.length ? span(ws) : { from: `${a.year}-01-01`, to: `${a.year + 3}-12-31` }) };
+  const dates = ws.length ? span(ws) : { from: `${a.year}-01-01`, to: `${a.year + 3}-12-31` };
   const warn = warningBlocks(r, [`${a.letterId}|${a.year}|`, ...ws.map((w) => `${w.key}|`)]);
   const title = `${letter.title}: ${a.year} award${a.partial ? " (part)" : ""}`;
   const describes = (what: string) => `${letter.title} · ${a.year} award, ${what}`;
@@ -379,7 +386,7 @@ function awardProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "award" }>
       blocks.push({ kind: "breakdown", title: "How the letter splits it", items, note: a.partial ? "This letter shows only some of the year's payments." : "Sign-on and make-whole payments are outside the headline bonus." });
     }
     blocks.push(...warn);
-    return base(ctx, d, describes(d.measure === "headline" ? "headline bonus" : "total compensation"), figure, parts, `The lines below come to ${money(parts)}`, blocks, scope);
+    return base(ctx, d, describes(d.measure === "headline" ? "headline bonus" : "total compensation"), figure, parts, `The lines below come to ${money(parts)}`, blocks, dates);
   }
 
   const pick: Record<Exclude<AwardMeasure, "headline" | "totalComp">, { what: string; take: (t: Tranche) => boolean; value: "amount" | "paid" }> = {
@@ -428,7 +435,7 @@ function awardProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "award" }>
     ...warn,
   ];
   const n = ts.length + (d.measure === "deferred" && a.planDeferredCents ? 1 : 0);
-  return base(ctx, d, describes(m.what), figure, parts, `The ${n} payment${n === 1 ? "" : "s"} below add up to ${money(parts)}`, blocks, scope, upcomingEstimates(r, ts.map((t) => ({ a, t }))));
+  return base(ctx, d, describes(m.what), figure, parts, `The ${n} payment${n === 1 ? "" : "s"} below add up to ${money(parts)}`, blocks, dates, upcomingEstimates(r, ts.map((t) => ({ a, t }))));
 }
 
 function letterProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "letter" }>): Proof {
@@ -445,7 +452,6 @@ function letterProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "letter" 
   ];
   const blocks: ProofBlock[] = [{ kind: "chain", title: letter.title, lines }, ...warningBlocks(r, [`${letter.id}|`])];
   return base(ctx, d, `${letter.title} · ${d.measure === "paid" ? "on the stubs" : "scheduled"}`, figure, figure, `The ${ws.length} payment date${ws.length === 1 ? "" : "s"} below add up to ${money(figure)}`, blocks, {
-    personId: letter.employment?.personId,
     ...(ws.length ? span(ws) : { from: ctx.book.today, to: ctx.book.today }),
   });
 }
@@ -490,8 +496,10 @@ function totalsProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "totals" 
     },
     ...warningBlocks(r, [""]),
   ];
-  const ws = r.windows;
-  return base(ctx, d, `Bonuses · ${m.what.toLowerCase()}, every award on file`, shown[d.measure], parts, `The ${full.length} award${full.length === 1 ? "" : "s"} below add up to ${money(parts)}`, blocks, ws.length ? span(ws) : { from: ctx.book.today, to: ctx.book.today });
+  const ws = r.windows.filter((w) => full.some((a) => a.tranches.some((t) => t.window === w.key)));
+  return base(ctx, d, `Bonuses · ${m.what.toLowerCase()}, every award on file`, shown[d.measure], parts, `The ${full.length} award${full.length === 1 ? "" : "s"} below add up to ${money(parts)}`, blocks, {
+    ...(ws.length ? span(ws) : { from: ctx.book.today, to: ctx.book.today }),
+  });
 }
 
 function reconcileProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "reconcile" }>): Proof {
@@ -545,11 +553,7 @@ function reconcileProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "recon
   const ws = [...new Set(explained.map(windowOf).filter((w): w is VestWindow => !!w))];
   blocks.push(...warningBlocks(r, ws.map((w) => `${w.key}|`)));
   const e = sum(explained);
-  return base(ctx, d, `${y.personName} · ${y.employer}, bonus paid in ${y.year} that a letter explains`, y.explainedCents, e, `The ${explained.length} letter payment${explained.length === 1 ? "" : "s"} below add up to ${money(e)}, of ${money(sum(ps))} bonus paid that year`, blocks, {
-    personId: d.personId === "?" ? undefined : d.personId,
-    from: `${d.year}-01-01`,
-    to: `${d.year}-12-31`,
-  });
+  return base(ctx, d, `${y.personName} · ${y.employer}, bonus paid in ${y.year} that a letter explains`, y.explainedCents, e, `The ${explained.length} letter payment${explained.length === 1 ? "" : "s"} below add up to ${money(e)}, of ${money(sum(ps))} bonus paid that year`, blocks, { from: `${d.year}-01-01`, to: `${d.year}-12-31` });
 }
 
 // ---------------------------------------------------------------- the forecast's estimates

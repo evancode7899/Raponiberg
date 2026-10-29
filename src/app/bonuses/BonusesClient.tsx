@@ -1,6 +1,6 @@
 "use client";
 
-import { BlockedNote } from "@/components/ledger/Blocked";
+import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Loading, PageBody, StatCell, StatGrid, table, Tabs, useTabParam, type Tone } from "@/components/ui/kit";
@@ -10,11 +10,12 @@ import type { PaymentKind } from "@/lib/bonuses/awardStore";
 import type { AwardMeasure, BonusesDescriptor } from "@/lib/book/proof/bonusesProof";
 import type { PayLine } from "@/lib/book/proof/payProof";
 import type { AwardRow, BonusesReport, BonusPayment, BonusWarning, Tranche, VestWindow, WindowStatus } from "@/lib/book/reports/bonuses";
+import { figureReads } from "@/lib/book/reports/bonusFigures";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { buildForecast } from "@/lib/forecast/forecast";
 import type { ForecastData } from "@/lib/forecast/load";
 import { formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const TABS = ["overview", "schedule", "payouts"] as const;
 
@@ -49,6 +50,19 @@ const yearPay = (personId: string, year: number, lines: PayLine[], cents: number
 /** A Bonuses figure's proof (lib/book/proof/bonusesProof.ts), re-derived through the same report. */
 type Fig = BonusesDescriptor extends infer D ? (D extends { report: "bonuses" } ? Omit<D, "report"> : never) : never;
 const bon = (d: Fig, cents: number): ProofTarget => ({ descriptor: { report: "bonuses", ...d } as BonusesDescriptor, shownCents: cents });
+
+/** The report the figures below are read from: what a pay finding withholds (figureReads, the rule their proofs use). */
+const Report = createContext<BonusesReport | null>(null);
+const heldBy = (r: BonusesReport | null, proof: ProofTarget) => {
+  const d = proof.descriptor as BonusesDescriptor;
+  return r && d.report === "bonuses" && d.figure !== "estimate" ? figureReads(r, d).blockers : [];
+};
+
+/** A Bonuses figure: its proof, or "missing data" with the finding when one withholds it. */
+function BonusValue({ proof, children }: { proof: ProofTarget; children: ReactNode }) {
+  const held = heldBy(useContext(Report), proof);
+  return held.length ? <BlockedValue blockers={held} /> : <ProofValue proof={proof}>{children}</ProofValue>;
+}
 const awardProof = (a: AwardRow, measure: AwardMeasure, cents: number) => bon({ figure: "award", letterId: a.letterId, year: a.year, measure }, cents);
 const trancheProof = (a: AwardRow, t: Tranche) => bon({ figure: "tranche", letterId: a.letterId, year: a.year, window: t.window, kind: t.kind }, t.amountCents);
 const windowProof = (w: VestWindow, measure: "scheduled" | "paid") => bon({ figure: "window", window: w.key, measure }, measure === "paid" ? w.paidCents : w.scheduledCents);
@@ -114,9 +128,11 @@ export function BonusesClient({ requiresApiSecret }: { requiresApiSecret: boolea
               <WarningCallout key={w.id} w={w} onReview={onReview} />
             ))}
             <BlockedNote what="which bonuses were paid" blockers={r.blockers} />
-            {tab === "overview" && <Overview r={r} fdata={fdata} />}
-            {tab === "schedule" && <Schedule r={r} />}
-            {tab === "payouts" && <Payouts r={r} />}
+            <Report.Provider value={r}>
+              {tab === "overview" && <Overview r={r} fdata={fdata} />}
+              {tab === "schedule" && <Schedule r={r} />}
+              {tab === "payouts" && <Payouts r={r} />}
+            </Report.Provider>
           </>
         )}
       </PageBody>
@@ -184,35 +200,37 @@ function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }
   const t = r.totals;
   if (!r.awards.length) return <NoLetters r={r} fdata={fdata} />;
   const fullYears = r.awards.filter((a) => !a.partial).map((a) => a.year);
+  // A total a pay finding withholds shows as withheld (figureReads), not as a number.
+  const total = (measure: string, cents: number) => {
+    const proof = bon({ figure: "totals", measure } as Fig, cents);
+    const held = heldBy(r, proof);
+    return held.length ? { value: <BlockedValue blockers={held} />, proof: undefined } : { value: usd0(cents), proof };
+  };
   return (
     <>
       <StatGrid cols={6}>
         <StatCell
           label="Headline bonuses"
-          value={usd0(t.headlineCents)}
-          proof={bon({ figure: "totals", measure: "headline" }, t.headlineCents)}
+          {...total("headline", t.headlineCents)}
           sub={`${fullYears.length} year${fullYears.length === 1 ? "" : "s"} on letters (${[...fullYears].sort().join(", ")})`}
         />
-        <StatCell label="Paid up front" value={usd0(t.upfrontCents)} proof={bon({ figure: "totals", measure: "upfront" }, t.upfrontCents)} sub={`${ratio(t.upfrontCents, t.headlineCents)} of headline`} />
-        <StatCell label="Deferred" value={usd0(t.deferredCents)} proof={bon({ figure: "totals", measure: "deferred" }, t.deferredCents)} sub={`${ratio(t.deferredCents, t.headlineCents)} of headline`} />
+        <StatCell label="Paid up front" {...total("upfront", t.upfrontCents)} sub={`${ratio(t.upfrontCents, t.headlineCents)} of headline`} />
+        <StatCell label="Deferred" {...total("deferred", t.deferredCents)} sub={`${ratio(t.deferredCents, t.headlineCents)} of headline`} />
         <StatCell
           label="Deferred paid out"
-          value={usd0(t.deferredPaidCents)}
-          proof={bon({ figure: "totals", measure: "deferredPaid" }, t.deferredPaidCents)}
+          {...total("deferredPaid", t.deferredPaidCents)}
           tone={t.deferredPaidCents ? "pos" : "neutral"}
           sub={`${ratio(t.deferredPaidCents, t.deferredCents)} of deferred`}
         />
         <StatCell
           label="Forfeited"
-          value={usd0(t.forfeitedCents)}
-          proof={bon({ figure: "totals", measure: "forfeited" }, t.forfeitedCents)}
+          {...total("forfeited", t.forfeitedCents)}
           tone={t.forfeitedCents ? "neg" : "neutral"}
           sub={`${ratio(t.forfeitedCents, t.deferredCents)} of deferred`}
         />
         <StatCell
           label="Still to vest"
-          value={usd0(t.outstandingCents)}
-          proof={bon({ figure: "totals", measure: "outstanding" }, t.outstandingCents)}
+          {...total("outstanding", t.outstandingCents)}
           tone={t.outstandingCents ? "info" : "neutral"}
           sub={t.next ? `Next: ${usd0(t.next.amountCents)} in ${t.next.label}` : "Nothing left to vest"}
         />
@@ -270,23 +288,27 @@ function AwardTr({ a }: { a: AwardRow }) {
       </td>
       <td className={`${table.td} text-fg-2`}>{a.employer}</td>
       <td className={table.tdR} title={baseTitle(a)}>
-        {a.base?.from === "STUBS" ? <ProofValue proof={yearPay(a.personId, a.year, ["base"], a.base.cents)}>{usd0(a.base.cents)}</ProofValue> : usd0(a.base?.cents ?? null)}
+        {a.base?.from === "STUBS" ? (
+          a.base.blockers?.length ? <BlockedValue blockers={a.base.blockers} /> : <ProofValue proof={yearPay(a.personId, a.year, ["base"], a.base.cents)}>{usd0(a.base.cents)}</ProofValue>
+        ) : (
+          usd0(a.base?.cents ?? null)
+        )}
         {baseOk && <span className="ml-1 text-pos" aria-label="matches the stubs">✓</span>}
         {a.base?.from === "STUBS" && <div className="text-[11px] text-faint">from stubs{a.base.parts.length > 1 ? `, ${a.base.parts.length} employers` : ""}</div>}
       </td>
       <td className={`${table.tdR} font-semibold`}>
-        {a.totalBonusCents != null ? <ProofValue proof={awardProof(a, "headline", a.totalBonusCents)}>{usd0(a.totalBonusCents)}</ProofValue> : usd0(null)}
+        {a.totalBonusCents != null ? <BonusValue proof={awardProof(a, "headline", a.totalBonusCents)}>{usd0(a.totalBonusCents)}</BonusValue> : usd0(null)}
         {a.oneOffCents > 0 && <div className="text-[11px] font-normal text-faint">+ {usd0(a.oneOffCents)} sign-on / make-whole</div>}
       </td>
       <td className={table.tdR} title={a.totalComp?.from === "SUM" ? "Base + headline bonus + sign-on / make-whole (the letter prints no total)" : undefined}>
-        {a.totalComp ? <ProofValue proof={awardProof(a, "totalComp", a.totalComp.cents)}>{usd0(a.totalComp.cents)}</ProofValue> : usd0(null)}
+        {a.totalComp ? <BonusValue proof={awardProof(a, "totalComp", a.totalComp.cents)}>{usd0(a.totalComp.cents)}</BonusValue> : usd0(null)}
       </td>
       <td className={table.tdR}>
-        <ProofValue proof={awardProof(a, "upfront", a.upfrontCents)}>{usd0(a.upfrontCents)}</ProofValue>
+        <BonusValue proof={awardProof(a, "upfront", a.upfrontCents)}>{usd0(a.upfrontCents)}</BonusValue>
         {a.totalBonusCents ? <span className="ml-1 text-[11px] text-faint">{ratio(a.upfrontCents, a.totalBonusCents)}</span> : null}
       </td>
       <td className={table.tdR}>
-        <ProofValue proof={awardProof(a, "deferred", a.deferredCents + a.planDeferredCents)}>{usd0(a.deferredCents + a.planDeferredCents)}</ProofValue>
+        <BonusValue proof={awardProof(a, "deferred", a.deferredCents + a.planDeferredCents)}>{usd0(a.deferredCents + a.planDeferredCents)}</BonusValue>
         {a.totalBonusCents ? <span className="ml-1 text-[11px] text-faint">{ratio(a.deferredCents + a.planDeferredCents, a.totalBonusCents)}</span> : null}
         {a.planDeferredCents > 0 && (
           <div className="text-[11px] text-faint" title="Deferred into a deferred compensation plan: paid out under the plan's terms, not on the pay stubs.">
@@ -295,13 +317,13 @@ function AwardTr({ a }: { a: AwardRow }) {
         )}
       </td>
       <td className={`${table.tdR} text-pos`}>
-        <ProofValue proof={awardProof(a, "paid", a.paidCents)}>{usd0(a.paidCents)}</ProofValue>
+        <BonusValue proof={awardProof(a, "paid", a.paidCents)}>{usd0(a.paidCents)}</BonusValue>
       </td>
       <td className={`${table.tdR} ${a.forfeitedCents ? "text-neg" : ""}`}>
-        <ProofValue proof={awardProof(a, "forfeited", a.forfeitedCents)}>{usd0(a.forfeitedCents)}</ProofValue>
+        <BonusValue proof={awardProof(a, "forfeited", a.forfeitedCents)}>{usd0(a.forfeitedCents)}</BonusValue>
       </td>
       <td className={`${table.tdR} ${a.outstandingCents ? "text-info" : ""}`}>
-        <ProofValue proof={awardProof(a, "outstanding", a.outstandingCents)}>{usd0(a.outstandingCents)}</ProofValue>
+        <BonusValue proof={awardProof(a, "outstanding", a.outstandingCents)}>{usd0(a.outstandingCents)}</BonusValue>
       </td>
     </tr>
   );
@@ -423,7 +445,7 @@ function Expected({ fdata }: { fdata: ForecastData | null }) {
               {!b.counted && b.why && <span className="block text-xs text-faint">Not counted in the forecast: {b.why}</span>}
             </span>
             <span className="num font-medium">
-              <ProofValue proof={bon({ figure: "estimate", personId: b.personId, awardYear: b.awardYear!, month: b.key, part: b.label.split(" · ").slice(1).join(" · ") }, b.gross)}>{usd0(b.gross)}</ProofValue>
+              <BonusValue proof={bon({ figure: "estimate", personId: b.personId, awardYear: b.awardYear!, month: b.key, part: b.label.split(" · ").slice(1).join(" · ") }, b.gross)}>{usd0(b.gross)}</BonusValue>
             </span>
           </li>
         ))}
@@ -472,14 +494,14 @@ function Schedule({ r }: { r: BonusesReport }) {
                         <td className={`${table.td} whitespace-nowrap`}>
                           {a.year} bonus{a.partial ? " (part)" : ""}
                         </td>
-                        <td className={`${table.tdR} font-medium`}><ProofValue proof={awardProof(a, "scheduled", a.upfrontCents + a.deferredCents + a.oneOffCents)}>{usd0(a.upfrontCents + a.deferredCents + a.oneOffCents)}</ProofValue></td>
+                        <td className={`${table.tdR} font-medium`}><BonusValue proof={awardProof(a, "scheduled", a.upfrontCents + a.deferredCents + a.oneOffCents)}>{usd0(a.upfrontCents + a.deferredCents + a.oneOffCents)}</BonusValue></td>
                         {windows.map((w) => {
                           const ts = a.tranches.filter((t) => t.window === w.key);
                           return (
                             <td key={w.key} className={table.tdR}>
                               {ts.map((t) => (
                                 <div key={t.kind} className={STATUS[t.status].cell} title={`${KIND[t.kind].title} · ${STATUS[t.status].label}`}>
-                                  <ProofValue proof={trancheProof(a, t)}>{usd0(t.amountCents)}</ProofValue>
+                                  <BonusValue proof={trancheProof(a, t)}>{usd0(t.amountCents)}</BonusValue>
                                   {KIND[t.kind].tag && <span className="ml-1 text-[10px] uppercase text-faint">{KIND[t.kind].tag}</span>}
                                 </div>
                               ))}
@@ -490,19 +512,19 @@ function Schedule({ r }: { r: BonusesReport }) {
                     ))}
                     <tr className="border-t border-line-strong font-semibold">
                       <td className={table.td}>Due</td>
-                      <td className={table.tdR}><ProofValue proof={bon({ figure: "letter", letterId: l.id, measure: "scheduled" }, l.windowTotals.scheduledCents)}>{usd0(l.windowTotals.scheduledCents)}</ProofValue></td>
+                      <td className={table.tdR}><BonusValue proof={bon({ figure: "letter", letterId: l.id, measure: "scheduled" }, l.windowTotals.scheduledCents)}>{usd0(l.windowTotals.scheduledCents)}</BonusValue></td>
                       {windows.map((w) => (
                         <td key={w.key} className={table.tdR}>
-                          <ProofValue proof={windowProof(w, "scheduled")}>{usd0(w.scheduledCents)}</ProofValue>
+                          <BonusValue proof={windowProof(w, "scheduled")}>{usd0(w.scheduledCents)}</BonusValue>
                         </td>
                       ))}
                     </tr>
                     <tr className={table.tr}>
                       <td className={`${table.td} text-muted`}>On the stubs</td>
-                      <td className={table.tdR}><ProofValue proof={bon({ figure: "letter", letterId: l.id, measure: "paid" }, l.windowTotals.paidCents)}>{usd0(l.windowTotals.paidCents)}</ProofValue></td>
+                      <td className={table.tdR}><BonusValue proof={bon({ figure: "letter", letterId: l.id, measure: "paid" }, l.windowTotals.paidCents)}>{usd0(l.windowTotals.paidCents)}</BonusValue></td>
                       {windows.map((w) => (
                         <td key={w.key} className={table.tdR}>
-                          <div>{w.paidCents ? <ProofValue proof={windowProof(w, "paid")}>{formatUsdCents(w.paidCents)}</ProofValue> : "—"}</div>
+                          <div>{w.paidCents ? <BonusValue proof={windowProof(w, "paid")}>{formatUsdCents(w.paidCents)}</BonusValue> : "—"}</div>
                           <div className="mt-0.5">
                             <StatusBadge s={w.status} title={w.detail} />
                           </div>
@@ -524,7 +546,7 @@ function Schedule({ r }: { r: BonusesReport }) {
                           {t.label} <span className="text-muted">· {t.awardYear} bonus</span>
                         </span>
                         <span className="flex items-center gap-2">
-                          <span className="num font-medium"><ProofValue proof={trancheProof(awards.find((a) => a.year === t.awardYear)!, t)}>{usd0(t.amountCents)}</ProofValue></span>
+                          <span className="num font-medium"><BonusValue proof={trancheProof(awards.find((a) => a.year === t.awardYear)!, t)}>{usd0(t.amountCents)}</BonusValue></span>
                           <StatusBadge s={t.status} />
                         </span>
                       </li>
@@ -579,7 +601,7 @@ function WindowLi({ w }: { w: VestWindow }) {
       <div className="flex items-center justify-between gap-3">
         <span className="font-medium">{w.label}</span>
         <span className="flex items-center gap-2">
-          <span className="num"><ProofValue proof={windowProof(w, "scheduled")}>{usd0(w.scheduledCents)}</ProofValue></span>
+          <span className="num"><BonusValue proof={windowProof(w, "scheduled")}>{usd0(w.scheduledCents)}</BonusValue></span>
           <StatusBadge s={w.status} />
         </span>
       </div>
@@ -614,17 +636,22 @@ function Payouts({ r }: { r: BonusesReport }) {
                   <td className={`${table.td} text-fg-2`}>{y.employer}</td>
                   <td className={table.tdR}>{y.payments}</td>
                   <td className={`${table.tdR} font-medium`}>
-                    <ProofValue
-                      proof={{
-                        descriptor: { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end: `${y.year}-12-31` },
-                        shownCents: y.cents,
-                      }}
-                    >
-                      {formatUsdCents(y.cents)}
-                    </ProofValue>
+                    {/* The year's stubs from the employer, to date: a missing one could hide a bonus paid. */}
+                    {y.blockers.length ? (
+                      <BlockedValue blockers={y.blockers} />
+                    ) : (
+                      <ProofValue
+                        proof={{
+                          descriptor: { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end: `${y.year}-12-31` },
+                          shownCents: y.cents,
+                        }}
+                      >
+                        {formatUsdCents(y.cents)}
+                      </ProofValue>
+                    )}
                   </td>
                   <td className={table.td}>
-                    <ProofValue proof={bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }, y.explainedCents)}>
+                    <BonusValue proof={bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }, y.explainedCents)}>
                       {y.explainedCents === y.cents ? (
                         <Badge tone="pos">On a letter</Badge>
                       ) : y.explainedCents ? (
@@ -636,7 +663,7 @@ function Payouts({ r }: { r: BonusesReport }) {
                       ) : (
                         <Badge>None</Badge>
                       )}
-                    </ProofValue>
+                    </BonusValue>
                   </td>
                 </tr>
               ))}
@@ -687,5 +714,5 @@ function Payouts({ r }: { r: BonusesReport }) {
 function PaysCell({ p, r }: { p: BonusPayment; r: BonusesReport }) {
   const w = r.windows.find((x) => x.payments.some((q) => q.stubId === p.stubId && q.line === p.line));
   const text = <span className="text-fg-2">{p.explains!.window} payment</span>;
-  return w ? <ProofValue proof={windowProof(w, "paid")}>{text}</ProofValue> : text;
+  return w ? <BonusValue proof={windowProof(w, "paid")}>{text}</BonusValue> : text;
 }
