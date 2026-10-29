@@ -12,12 +12,14 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ClassAmount, ClassId, InvestmentsReport, PositionRow } from "@/lib/book/reports/investments";
 import { axisUsd, formatPercentRatio, usd0, usdDelta } from "@/lib/formatMoney";
 import { ASSET_CLASSES, classLabel, type AssetClass, type Weights } from "@/lib/investments/securities";
+import type { FundsPage } from "@/lib/funds/page";
 import type { InvestmentSettings } from "@/lib/investments/settings";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LpPanel, PrivateFunds } from "./LpView";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 
-const TABS = ["overview", "holdings", "fees", "gains", "growth"] as const;
+const TABS = ["overview", "holdings", "fees", "gains", "growth", "funds"] as const;
 type Data = { report: InvestmentsReport; settings: InvestmentSettings; /** The forecast's return. */ returnRate: number };
 
 /** Each asset class keeps one chart slot everywhere; unclassified is the neutral gray. */
@@ -42,6 +44,8 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
   const [data, setData] = useState(() => cachedResponse<Data>("/api/investments"));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The LP view reads the funds' own notices, apart from the Book's report.
+  const [funds, setFunds] = useState(() => cachedResponse<FundsPage>("/api/investments/funds"));
 
   const load = useCallback(() => {
     api
@@ -52,6 +56,13 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
   useEffect(() => {
     if (api.ready) load();
   }, [api, load]);
+  useEffect(() => {
+    if (!api.ready) return;
+    api
+      .call<FundsPage>("/api/investments/funds")
+      .then(setFunds)
+      .catch((e: Error) => setError(e.message));
+  }, [api]);
 
   const save = async (settings: InvestmentSettings) => {
     setSaving(true);
@@ -75,6 +86,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
           { id: "fees", label: "Fees" },
           { id: "gains", label: "Unrealized gains" },
           { id: "growth", label: "Money in vs growth" },
+          ...(funds?.funds.length ? [{ id: "funds" as const, label: "Private funds", count: funds.funds.length }] : []),
         ]}
         value={tab}
         onChange={setTab}
@@ -100,7 +112,8 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
             {tab === "holdings" && <Holdings data={data} save={save} saving={saving} />}
             {tab === "fees" && <Fees r={r!} returnRate={data!.returnRate} />}
             {tab === "gains" && <Gains r={r!} />}
-            {tab === "growth" && <Growth r={r!} />}
+            {tab === "growth" && <Growth r={r!} funds={funds} />}
+            {tab === "funds" && (funds ? <PrivateFunds page={funds} /> : <Loading label="Reading the funds' notices and statements…" />)}
           </>
         )}
       </PageBody>
@@ -576,25 +589,49 @@ function Gains({ r }: { r: InvestmentsReport }) {
 
 // ---------------------------------------------------------------------------- growth
 
-function Growth({ r }: { r: InvestmentsReport }) {
+function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null }) {
   const p = useChartPalette();
   const ui = chartChrome(p);
   const [which, setWhich] = useState<string>("all");
-  const s = r.growth.find((x) => (x.accountId ?? "all") === which) ?? r.growth[0]!;
+  // A private fund also gets its LP view: commitment, calls, distributions, unfunded. One
+  // whose statements all fall after the proven-through date has no series yet, but its LP
+  // view still opens here.
+  const lpOnly = (funds?.funds ?? []).filter((f) => f.accountId && !r.growth.some((g) => g.accountId === f.accountId));
+  const lp = which === "all" ? undefined : funds?.funds.find((f) => f.accountId === which);
+  const found = r.growth.find((x) => (x.accountId ?? "all") === which);
+  const picker = (
+    <div className="flex flex-wrap items-center gap-2">
+      <select className={selectCls} value={which} onChange={(e) => setWhich(e.target.value)} aria-label="Account">
+        {r.growth.map((g) => (
+          <option key={g.accountId ?? "all"} value={g.accountId ?? "all"}>
+            {g.name}
+          </option>
+        ))}
+        {lpOnly.map((f) => (
+          <option key={f.accountId} value={f.accountId!}>
+            {f.accountName ?? f.fund}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+  if (!found && lp) {
+    return (
+      <>
+        {picker}
+        <LpPanel fund={lp} />
+        <p className="text-xs text-muted">Its money in vs value starts once the proven-through date reaches its first capital statement.</p>
+      </>
+    );
+  }
+  const s = found ?? r.growth[0]!;
   const last = s.points.at(-1);
   const blocked = s.points.filter((x) => x.blocked).length;
   const rows = s.points.map((x) => ({ label: x.label, invested: x.investedCents / 100, value: x.valueCents / 100 }));
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <select className={selectCls} value={which} onChange={(e) => setWhich(e.target.value)} aria-label="Account">
-          {r.growth.map((g) => (
-            <option key={g.accountId ?? "all"} value={g.accountId ?? "all"}>
-              {g.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {picker}
+      {lp && <LpPanel fund={lp} />}
       {last && (
         <StatGrid cols={3}>
           <StatCell label="Value" value={usd0(last.valueCents)} sub={`end of ${last.label}`} />

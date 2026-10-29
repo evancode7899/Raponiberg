@@ -192,6 +192,12 @@ export async function importedHashes(db: Pick<PrismaClient, "sourceDocument">, h
   return new Set(known.map((d) => d.fileHash));
 }
 
+/** Where these imported documents' files are stored, with each file's hash (the fund LP view reads them: lib/funds). */
+export async function storedDocumentFiles(db: Pick<PrismaClient, "sourceDocument">, ids: string[]): Promise<{ id: string; fileHash: string; filePath: string }[]> {
+  if (!ids.length) return [];
+  return db.sourceDocument.findMany({ where: { id: { in: ids } }, select: { id: true, fileHash: true, filePath: true } });
+}
+
 /**
  * Re-reads the statements whose parser has changed since they were imported, from the
  * statements folder, so a parser update reaches the ledger without anyone running a
