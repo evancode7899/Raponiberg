@@ -1,95 +1,123 @@
 "use client";
 
-import { inputCls } from "@/components/ui/kit";
-import type { PeriodStatus } from "@/lib/cardPerks/report";
-import type { CardPerksSettings } from "@/lib/cardPerks/settings";
-import { formatUsdCents } from "@/lib/formatMoney";
-import { useState } from "react";
-
-/** Saves the whole setup; the page reloads the report after it. */
-export type Save = (next: CardPerksSettings) => Promise<boolean>;
+import type { RewardKind } from "@/lib/cardPerks/catalog";
+import type { CardScore, PeriodStatus } from "@/lib/cardPerks/types";
+import { formatUsdCents, usd0 } from "@/lib/formatMoney";
+import type { ReactNode } from "react";
 
 export const fmtPoints = (n: number) => `${Math.round(n).toLocaleString("en-US")} pts`;
 export const fmtCpp = (cpp: number) => `${+cpp.toFixed(2)}¢`;
-/** A perk amount: dollars for a USD perk, points for a POINTS perk. */
-export const fmtAmount = (unit: "USD" | "POINTS", n: number) => (unit === "USD" ? formatUsdCents(n) : fmtPoints(n));
+/** Rewards in their own unit: points, or cents of cash back shown as dollars. */
+export const fmtRewards = (kind: RewardKind, n: number, whole = false) => (kind === "CASH" ? (whole ? usd0(n) : formatUsdCents(n)) : kind === "POINTS" ? fmtPoints(n) : "—");
+/** A rate: "4×" for points, "3%" for cash back. */
+export const fmtRate = (kind: RewardKind, rate: number) => (kind === "CASH" ? `${+rate.toFixed(2)}%` : `${+rate.toFixed(2)}×`);
+export const fmtDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+export const fmtMonth = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+/** Dollars, saying $0 rather than a dash where the sentence needs a number. */
+export const money = (cents: number) => (cents === 0 ? "$0" : usd0(cents));
+export const pct = (r: number | null) => (r == null ? "—" : `${Math.round(r * 100)}%`);
 
-export const STATUS: Record<PeriodStatus, { label: string; cls: string }> = {
-  USED: { label: "Used", cls: "bg-pos-soft text-pos border-pos/40" },
-  PARTIAL: { label: "Partly used", cls: "bg-warn-soft text-warn border-warn/40" },
-  MISSED: { label: "Missed", cls: "bg-neg-soft text-neg border-neg/40" },
-  OPEN: { label: "Available now", cls: "bg-accent text-accent-fg border-accent" },
-  AWAITING: { label: "Awaiting statement", cls: "bg-info-soft text-info border-info/40" },
-  FUTURE: { label: "Coming up", cls: "bg-surface-2 text-faint border-line" },
-  NOT_HELD: { label: "Card not held", cls: "border-dashed border-line text-faint" },
+/** A card's short name: the product's, without the issuer's boilerplate. */
+export const shortName = (c: Pick<CardScore, "product" | "accountName">) =>
+  (c.product?.name ?? c.accountName)
+    .replace(/^The /, "")
+    .replace(/ from American Express| Card from American Express/, "")
+    .replace(/^American Express /, "Amex ");
+
+export const STATUS: Record<PeriodStatus, { label: string; cls: string; hint: string }> = {
+  USED: { label: "Used", cls: "bg-pos text-white border-pos", hint: "Used in full" },
+  PARTIAL: { label: "Partly used", cls: "bg-warn-soft text-warn border-warn/50", hint: "Only part of it was used" },
+  MISSED: { label: "Missed", cls: "bg-neg-soft text-neg border-neg/40", hint: "The period is over and the statements show no use" },
+  OPEN: { label: "Available now", cls: "bg-accent-soft text-accent border-accent ring-1 ring-accent/40", hint: "Under way: still yours to use" },
+  AWAITING: { label: "Awaiting statement", cls: "bg-info-soft text-info border-info/40", hint: "Over, but the statement that would show the credit isn't in yet" },
+  FUTURE: { label: "Coming up", cls: "bg-surface-2 text-faint border-line", hint: "Hasn't started" },
+  NOT_HELD: { label: "Card not held", cls: "border-dashed border-line text-faint", hint: "Before the card's first statement or after it closed" },
+  NOT_OFFERED: { label: "Not offered", cls: "border-transparent text-faint opacity-40", hint: "The card didn't offer this then" },
 };
 
-/** Used out of available, as a thin bar. */
-export function Meter({ used, of, tone = "pos" }: { used: number; of: number; tone?: "pos" | "warn" | "neg" }) {
-  const pct = of > 0 ? Math.min(100, Math.round((used / of) * 100)) : 0;
-  const bar = { pos: "bg-pos", warn: "bg-warn", neg: "bg-neg" }[tone];
+/** A credit card's face, colored like the product. */
+const FACES: Record<string, string> = {
+  "amex-gold": "linear-gradient(135deg,#b8893a 0%,#e6c66f 45%,#a8792c 100%)",
+  "amex-platinum": "linear-gradient(135deg,#8a8f98 0%,#d8dbe0 45%,#7c818a 100%)",
+  "amex-green": "linear-gradient(135deg,#3f6b4a,#7fa483)",
+  "amex-blue-cash-everyday": "linear-gradient(135deg,#1d4fa3 0%,#4f8be0 60%,#1a3f86 100%)",
+  "amex-blue-cash-preferred": "linear-gradient(135deg,#0f2f6b,#2f6fd0)",
+  "chase-freedom-unlimited": "linear-gradient(135deg,#0d3a75 0%,#2a6bc0 70%,#0b2f60 100%)",
+  "chase-freedom-flex": "linear-gradient(135deg,#123d6e,#3a7cc4)",
+  "chase-sapphire-preferred": "linear-gradient(135deg,#0d2c5a,#2b5ea6)",
+  "chase-sapphire-reserve": "linear-gradient(135deg,#0b1a33,#2a3e63)",
+  "capital-one-quicksilver": "linear-gradient(135deg,#6f7480 0%,#c9ccd2 50%,#666b76 100%)",
+  "capital-one-platinum": "linear-gradient(135deg,#26303f,#4a5668)",
+  "capital-one-savor": "linear-gradient(135deg,#5a2a20,#a4553f)",
+  "capital-one-venture": "linear-gradient(135deg,#21324f,#3d5683)",
+  "capital-one-venture-x": "linear-gradient(135deg,#111827,#374151)",
+  "bilt-blue": "linear-gradient(135deg,#1c3f8f 0%,#3767c9 60%,#16336f 100%)",
+  "bilt-obsidian": "linear-gradient(135deg,#0b0b0d,#2a2a30)",
+  "bilt-palladium": "linear-gradient(135deg,#5d6066,#b4b7bd)",
+  "bilt-mastercard": "linear-gradient(135deg,#0b0b0d,#2a2a30)",
+};
+const LIGHT_FACES = new Set(["amex-gold", "amex-platinum", "capital-one-quicksilver", "bilt-palladium"]);
+
+export function CardFace({ c, small = false, children }: { c: CardScore; small?: boolean; children?: ReactNode }) {
+  const id = c.product?.id ?? "";
+  const dark = LIGHT_FACES.has(id);
   return (
-    <div className="h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-surface-3" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-      <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
+    <div
+      className={`relative overflow-hidden rounded-xl shadow-md ${small ? "h-10 w-16" : "aspect-[1.586] w-full max-w-[17rem]"} ${dark ? "text-[#1b1b1b]" : "text-white"}`}
+      style={{ background: FACES[id] ?? "linear-gradient(135deg,#4b5563,#9ca3af)" }}
+      aria-hidden={small}
+    >
+      <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/15 blur-xl" />
+      {!small && (
+        <div className="relative flex h-full flex-col justify-between p-3.5">
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider opacity-80">{c.product?.issuer ?? c.accountName}</span>
+            <span className="h-5 w-7 rounded-[4px] bg-gradient-to-br from-yellow-200/90 to-yellow-500/80 shadow-inner" />
+          </div>
+          <div>
+            <div className={`font-semibold leading-tight ${shortName(c).length > 18 ? "text-[13px]" : "text-[15px]"}`}>{shortName(c)}</div>
+            <div className="num mt-1 flex items-center justify-between text-xs opacity-85">
+              <span>•••• {c.last4 ?? "····"}</span>
+              {children}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/**
- * A number typed freely and committed on blur or Enter: dollars and cents (scale 100, so
- * $12.95 is 1295) or plain numbers (scale 1). Blank commits null.
- */
-export function NumberInput({
-  value,
-  onChange,
-  scale = 1,
-  prefix,
-  suffix,
-  placeholder,
-  ariaLabel,
-  className = "",
-}: {
-  value: number | null;
-  onChange: (v: number | null) => void;
-  scale?: number;
-  prefix?: string;
-  suffix?: string;
-  placeholder?: string;
-  ariaLabel?: string;
-  className?: string;
-}) {
-  const shown = value == null ? "" : String(+(value / scale).toFixed(scale === 100 ? 2 : 4));
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = () => {
-    const t = (draft ?? shown).replace(/[$,\s]/g, "");
-    const n = Number(t);
-    onChange(t === "" || !Number.isFinite(n) || n < 0 ? null : Math.round(n * scale * 10_000) / 10_000);
-  };
+/** A thin bar: used out of available. */
+export function Meter({ used, of, tone = "pos" }: { used: number; of: number; tone?: "pos" | "warn" | "neg" | "accent" }) {
+  const p = of > 0 ? Math.min(100, Math.round((used / of) * 100)) : 0;
+  const bar = { pos: "bg-pos", warn: "bg-warn", neg: "bg-neg", accent: "bg-accent" }[tone];
   return (
-    <div className={`flex min-w-0 items-center rounded-md border border-line-strong bg-surface px-2 focus-within:border-accent ${className}`}>
-      {prefix && <span className="select-none text-faint">{prefix}</span>}
-      <input
-        inputMode="decimal"
-        aria-label={ariaLabel}
-        className="num w-full min-w-0 bg-transparent px-1 py-1 text-right text-xs text-fg outline-none placeholder:text-faint"
-        value={draft ?? shown}
-        placeholder={placeholder}
-        onFocus={(e) => {
-          setDraft(shown);
-          e.target.select();
-        }}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          commit();
-          setDraft(null);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-      />
-      {suffix && <span className="select-none pl-1 text-faint">{suffix}</span>}
+    <div className="h-1.5 w-full min-w-12 overflow-hidden rounded-full bg-surface-3" role="meter" aria-valuenow={p} aria-valuemin={0} aria-valuemax={100}>
+      <div className={`h-full rounded-full ${bar}`} style={{ width: `${p}%` }} />
     </div>
   );
 }
 
-export const textCls = `${inputCls} w-full py-1 text-xs`;
+/** Where a rewards figure came from. */
+export function SourceTag({ source }: { source: CardScore["rewards"]["source"] }) {
+  const s = {
+    STATEMENTS: { t: "From statements", c: "text-pos", h: "Every cycle this year is proven by the rewards balance the statements print." },
+    MIXED: { t: "Partly from statements", c: "text-info", h: "Proven by the statements' rewards balances where they print one; estimated from spending elsewhere." },
+    ESTIMATE: { t: "Estimated", c: "text-muted", h: "The statements print no rewards balance for these cycles, so this is what the spending earns at the card's rates." },
+    NONE: { t: "No rewards", c: "text-faint", h: "This card earns no rewards." },
+  }[source];
+  return (
+    <span className={`text-[11px] font-medium ${s.c}`} title={s.h}>
+      {s.t}
+    </span>
+  );
+}
+
+export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="mb-1.5 flex items-baseline justify-between gap-2">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted">{children}</h3>
+      {aside}
+    </div>
+  );
+}
