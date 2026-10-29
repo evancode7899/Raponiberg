@@ -43,7 +43,7 @@ function StatusBadge({ s, today }: { s: PlanStatement; today: string }) {
   if (s.status === "ready") return <Badge tone="pos">ready to download</Badge>;
   if (s.status === "posting")
     return (
-      <Badge tone="warn" title={`Closed ${date(s.end)}. Monthly statements usually post within a few days, quarterly ones within a few weeks.`}>
+      <Badge tone="warn" title={`Closed ${date(s.end)}. Monthly statements usually post about a week after closing; quarterly ones five to nine weeks after.`}>
         closed · expected ~{date(s.readyBy)}
       </Badge>
     );

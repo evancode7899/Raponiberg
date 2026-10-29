@@ -1,4 +1,4 @@
-import { addDays, daysBetween, endOfMonth, maxIso, minIso, periodLabel, periodsBetween, startOfMonth } from "../../dates/isoDate.ts";
+import { addBusinessDays, addDays, daysBetween, endOfMonth, maxIso, minIso, periodLabel, periodsBetween, startOfMonth } from "../../dates/isoDate.ts";
 import type { Book } from "../load.ts";
 import type { Finding } from "../types.ts";
 import type { TimelineLane } from "./timeline.ts";
@@ -13,7 +13,7 @@ export type PlanStatement = {
   label: string;
   /** next: the cycle after what's on file (dates predicted from the cycle); gap/history: a window that's missing. */
   kind: "next" | "gap" | "history";
-  /** When the issuer should have it posted (a few days after it closes; weeks for quarterly). */
+  /** When the issuer should have it posted (a week after it closes; five to nine weeks for quarterly). */
   readyBy: string;
   /** ready: should be out now; posting: closed, maybe not posted yet; open: the period hasn't ended. */
   status: "ready" | "posting" | "open";
@@ -65,8 +65,13 @@ export type StatementPlan = {
 const BANKING = new Set(["Cash", "Credit cards"]);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthName = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
-/** Days after closing an issuer usually has the statement posted. */
-const POSTING_DAYS = { monthly: 3, quarterly: 21 } as const;
+/**
+ * Business days after closing an issuer usually has the statement posted: banks and
+ * cards about a week (Chase: 5 business days); plan and brokerage quarterlies about five
+ * weeks; private funds' capital-account statements wait on the fund's quarter-end
+ * valuation, about nine weeks.
+ */
+const POSTING_BUSINESS_DAYS = (p: Pick<PlanAccount, "cadence" | "group">) => (p.cadence === "monthly" ? 5 : p.group === "Other" ? 45 : 25);
 
 /** `iso` moved by whole months, keeping the day (clamped), or the month end when it is one. */
 function addMonths(iso: string, n: number): string {
@@ -159,7 +164,7 @@ export function buildStatementPlan(book: Book): StatementPlan {
       k++;
       if (end <= prev) continue;
       const start = addDays(prev, 1);
-      const readyBy = addDays(end, POSTING_DAYS[p.cadence]);
+      const readyBy = addBusinessDays(end, POSTING_BUSINESS_DAYS(p));
       p.statements.push({
         start,
         end,

@@ -86,8 +86,10 @@ describe("statement plan", () => {
 
   it("says when each one can be downloaded", () => {
     expect(statementsOf("card").map((s) => s.status)).toEqual(["ready", "open"]);
-    // The quarter closed Sep 30; quarterly statements post a few weeks later.
-    expect(statementsOf("k")[0]).toMatchObject({ status: "posting", readyBy: "2026-10-21" });
+    // The quarter closed Sep 30; a plan's quarterly statement posts about 25 business days later.
+    expect(statementsOf("k")[0]).toMatchObject({ status: "posting", readyBy: "2026-11-04" });
+    // A card posts 5 business days after closing: Sep 21 (Mon) → Sep 28.
+    expect(statementsOf("card")[0]!.readyBy).toBe("2026-09-28");
   });
 
   it("records the first month of each figure that waits on it", () => {
