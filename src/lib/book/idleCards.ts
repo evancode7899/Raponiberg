@@ -57,7 +57,8 @@ export type IdleReport = { proven: IdleWindow[]; unproven: IdleRejection[] };
 
 const upper = (s: string | null) => (s ?? "").trim().toUpperCase();
 
-const issuerOf = (a: LedgerAccount) =>
+/** The card's issuer when it skips idle statements (SKIPS_IDLE_STATEMENTS), else undefined. */
+export const issuerOf = (a: Pick<LedgerAccount, "group" | "institution">) =>
   a.group === "Credit cards" ? SKIPS_IDLE_STATEMENTS.find((i) => (a.institution ?? "").toUpperCase().includes(i.institution)) : undefined;
 
 /** Last day of the unbroken run of coverage that includes `from`, or null if `from` isn't covered. */

@@ -4,7 +4,7 @@ import { NO_HOUSEHOLD } from "../../household/patterns";
 import { groupFor } from "../../ledger/loadLedger";
 import { buildTimeline, type SegmentInput } from "../../ledger/timeline";
 import { runChecks } from "../checks/index";
-import type { Book, BookAccount, BookStatement } from "../load";
+import type { Book, BookAccount, BookRow, BookStatement, BookStub } from "../load";
 import { buildStatementPlan } from "./statementPlan";
 
 // A synthetic household (all names, numbers and amounts invented).
@@ -110,5 +110,64 @@ describe("statement plan", () => {
   it("names the latest statement on file", () => {
     const a = plan.institutions.flatMap((i) => i.accounts).find((x) => x.accountId === "card")!;
     expect(a.last).toEqual({ title: "card 2026-08-21.pdf", start: "2026-07-22", end: "2026-08-21" });
+  });
+
+  it("says which bank statements prove a card's cycle when its issuer skips idle statements", () => {
+    const skipper: Acct = { ...card, institution: "Capital One" };
+    const b = makeBook([quarterly, skipper, bank], "2026-10-05");
+    b.matches = [{ id: "m1", status: "CONFIRMED", differenceCents: 0, legs: [{ transactionId: "t1", accountId: "chk", date: "2026-07-05", amountCents: -100 }, { transactionId: "t2", accountId: "card", date: "2026-07-06", amountCents: 100 }] }];
+    const s = buildStatementPlan(b).institutions.flatMap((i) => i.accounts).find((a) => a.accountId === "card")!.statements;
+    // Sep 21 + 30 days: Checking's October statement (closing Oct 31) settles it, ~5 business days later.
+    expect(s[0]!.ifIdle).toEqual({ banks: ["Checking ••1111"], through: "2026-10-21", readyBy: "2026-11-06", onFile: false });
+    // An issuer that always sends one gets no such note.
+    expect(statementsOf("card")[0]!.ifIdle).toBeUndefined();
+  });
+});
+
+describe("statement plan · pay stubs", () => {
+  const row = (id: string, date: string): BookRow => ({
+    id,
+    date,
+    precision: "EXACT",
+    statement: { start: `${date.slice(0, 8)}01`, end: `${date.slice(0, 8)}30` },
+    bookedOn: date,
+    amountCents: 2_000_00,
+    lane: "INCOME",
+    accountId: "chk",
+    payee: "ACME PAYROLL",
+    merchantKey: "ACME",
+    category: "Paycheck",
+    categoryGroup: null,
+    counterpartyKind: null,
+    counterpartyInstitution: null,
+    counterpartyAccountHint: null,
+    classifiedBy: null,
+    transferMatchId: null,
+    statementImportId: "st",
+    documentId: "doc",
+  });
+  const stub = (payDate: string, rowId: string | null, n: number) =>
+    ({ id: `s-${payDate}`, documentId: `d-${payDate}`, documentTitle: `acme ${payDate}.pdf`, employer: "Acme Corp", employerKey: "ACME", personId: "pat", payDate, depositTransactionId: rowId, printed: { netCurrent: 2_000_00, netYtd: n * 2_000_00 }, lines: [], deposits: [] }) as unknown as BookStub;
+  const withPay = (dates: string[], stubbed: number) => {
+    const b = makeBook([quarterly, bank], "2026-10-05");
+    b.rows = dates.map((d, i) => row(`r${i}`, d));
+    b.rowById = new Map(b.rows.map((r) => [r.id, r]));
+    b.stubs = dates.slice(0, stubbed).map((d, i) => stub(d, `r${i}`, i + 1));
+    return buildStatementPlan(b);
+  };
+
+  it("lists paychecks the bank shows without a stub, and the ones the pay cycle says are due past the bank's statements", () => {
+    // Semimonthly (the 15th and month end, a weekend moved to Friday); stubs through Aug 31, bank through Sep 30.
+    const p = withPay(["2026-07-15", "2026-07-31", "2026-08-14", "2026-08-31", "2026-09-15"], 4);
+    expect(p.stubs).toHaveLength(1);
+    expect(p.stubs[0]).toMatchObject({ person: "Pat", employer: "Acme Corp", cadence: "semimonthly", last: { title: "acme 2026-08-31.pdf", payDate: "2026-08-31" } });
+    expect(p.stubs[0]!.stubs.map((s) => [s.kind, s.date, s.status, s.neededFrom.tax])).toEqual([
+      ["deposited", "2026-09-15", "ready", "2026-09-15"],
+      ["expected", "2026-09-30", "ready", "2026-09-30"],
+    ]);
+  });
+
+  it("leaves out an employer the bank shows paying nothing for two cycles after its last stub", () => {
+    expect(withPay(["2026-07-15", "2026-07-31"], 2).stubs).toEqual([]);
   });
 });
