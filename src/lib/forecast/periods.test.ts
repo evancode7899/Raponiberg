@@ -46,7 +46,7 @@ const year = (y: number, nw: number, saved: number, opts: Partial<YearProfile> =
     netWorthAsOf: `${y}-12-31`,
     people: [{ deferrals: 5_000_00 }],
     cash: {
-      waterfall: cashWaterfall({ salary: saved + 40_000_00, bonus: 0, otherIncome: 0, withholding: 30_000_00, additionalTaxes: 0, refunds: 0, otherDeductions: 0, employer: 2_000_00, living: 12_000_00, nonRecurring: 0 }),
+      waterfall: cashWaterfall({ salary: saved + 40_000_00, bonus: 0, otherIncome: 0, withholding: 30_000_00, additionalTaxes: 0, refunds: 0, otherDeductions: 0, employer: 2_000_00, partnerKept: 0, living: 12_000_00, nonRecurring: 0 }),
     },
     netWorth: { netWorth: nw, liquid: nw - 20_000_00, illiquid: 20_000_00 },
     change: { cents: 0, pct: null },

@@ -173,6 +173,7 @@ const CASH: [AnnualCashLine, (y: AnnualProfileReport["years"][number]) => number
   ["refunds", (y) => y.cash!.waterfall.refunds],
   ["deductions", (y) => y.cash!.waterfall.otherDeductions],
   ["employer", (y) => y.cash!.waterfall.employer],
+  ["partner-kept", (y) => y.cash!.waterfall.partnerKept],
   ["net-cash", (y) => y.cash!.waterfall.netCash],
   ["living", (y) => y.cash!.waterfall.living],
   ["one-offs", (y) => y.cash!.waterfall.nonRecurring],

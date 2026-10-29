@@ -53,6 +53,7 @@ export type ForecastSeed = "start" | "pay" | "deferrals" | "employer" | "take-ho
  *
  *  - salary: base salary · bonus: bonuses, gross · otherIncome: interest & other (actual only, 0 in the forecast)
  *  - taxes: income tax, FICA and payroll deductions · employer: employer 401(k) & HSA money
+ *  - partnerKept: a partner's net pay kept in their own accounts (actual only, 0 in the forecast)
  *  - living: living cost · bonusSpent: bonus kept after tax but not saved · oneOffs: one-off expenses
  *  - saved: income − taxes + employer − spending · toRetirement: deferrals + employer money · toLiquid: saved − toRetirement
  *  - growth: investment returns (actual: the change not explained by saved) · change: change in net worth
@@ -64,6 +65,7 @@ export type LedgerLine =
   | "otherIncome"
   | "taxes"
   | "employer"
+  | "partnerKept"
   | "living"
   | "bonusSpent"
   | "oneOffs"
@@ -82,6 +84,7 @@ export const LEDGER_LINES: Record<LedgerLine, string> = {
   otherIncome: "Interest & other",
   taxes: "Taxes & deductions",
   employer: "Employer 401(k) & HSA",
+  partnerKept: "Partner's pay kept",
   living: "Living cost",
   bonusSpent: "Bonus spent",
   oneOffs: "One-offs",
@@ -665,7 +668,9 @@ function savedParts(x: CellCtx): ChainLine[] {
   const parts: ChainLine[] = [partOf(x, "salary", undefined)];
   if (nz("bonus")) parts.push(partOf(x, "bonus", "+"));
   if (nz("otherIncome")) parts.push(partOf(x, "otherIncome", "+"));
-  parts.push(partOf(x, "taxes", "−"), partOf(x, "employer", "+"), partOf(x, "living", "−"));
+  parts.push(partOf(x, "taxes", "−"), partOf(x, "employer", "+"));
+  if (nz("partnerKept")) parts.push(partOf(x, "partnerKept", "−"));
+  parts.push(partOf(x, "living", "−"));
   if (nz("bonusSpent")) parts.push(partOf(x, "bonusSpent", "−"));
   if (nz("oneOffs")) parts.push(partOf(x, "oneOffs", "−"));
   return parts;
@@ -811,6 +816,10 @@ function projectedMonth(x: CellCtx, m: OutlookMonth): Built {
       parts = s.sum;
       break;
     }
+    case "partnerKept":
+      blocks.push({ kind: "chain", title: "Partner's pay kept", lines: [{ label: "A partner's pay kept in their own accounts", value: { cents: 0 }, source: "derived", note: "Actual years only: the forecast's pay is all the household's." }] });
+      parts = 0;
+      break;
     case "otherIncome":
       blocks.push({ kind: "chain", title: "Interest & other", lines: [{ label: "Interest and dividends", value: { cents: 0 }, source: "derived", note: "The forecast counts them in growth, not as income." }] });
       parts = 0;
@@ -1107,6 +1116,15 @@ function actualColumn(x: CellCtx, cols: Period[]): Built {
       parts = l.recomputed;
       break;
     }
+    case "partnerKept":
+      push(
+        sumChain(
+          `Partner's pay kept, ${word}`,
+          [{ label: "Net pay that reached only their own accounts", value: { cents: y.cash!.waterfall.partnerKept }, source: "proven", link: { label: `Partner's pay kept, ${y.year}`, descriptor: { report: "annual", figure: "cash", year: y.year, line: "partner-kept" } } }],
+          { label: "Partner's pay kept", cents: figure },
+        ),
+      );
+      break;
     case "bonusSpent":
       push(sumChain("Bonus spent", [{ label: "Actual years count every bonus dollar in what was saved or spent", value: { cents: 0 }, source: "derived" }], { label: "Bonus spent", cents: figure }));
       break;

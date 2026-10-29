@@ -53,6 +53,12 @@ export type PersonYear = {
   /** Employer 401(k) and HSA money. */
   employer: number;
   net: number;
+  /**
+   * A partner's net pay that reached no household account (their own accounts, mostly
+   * before the merge): kept out of the household's cash. Always 0 for the first person,
+   * whose undeposited pay is a gap in the statements, not someone else's money.
+   */
+  keptOwn: number;
   employers: string[];
   lastPayDate: string | null;
   hasPay: boolean;
@@ -68,6 +74,8 @@ export type YearCash = {
   waterfall: CashWaterfall;
   otherIncomeDetail: { interest: number; dividends: number; other: number };
   reimbursements: number;
+  /** The part of saved incl. retirement that went to retirement accounts: every 401(k)/HSA deferral plus employer money. */
+  toRetirement: number;
   /** Paycheck reimbursements linked to specific charges (book/reimbursements.ts): netted in those charges' categories, so left out of `reimbursements`. */
   payLinked: number;
   spending: CategoryCents[];
@@ -125,6 +133,8 @@ const tally = (rows: { cents: number }[]) => ({ count: rows.length, cents: rows.
 export type AnnualProfileReport = {
   today: string;
   currentYear: number;
+  /** When the partners' finances merged: before it, a partner's own money wasn't the household's. */
+  mergeDate: string;
   persons: { id: string; name: string }[];
   years: YearProfile[];
   /**
@@ -204,13 +214,18 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     // ------------------------------------------------------------ pay
     const payBlockers: BlockerRef[] = [];
     const payYears: PersonPayYear[] = [];
-    const people: PersonYear[] = persons.map((p) => {
+    const people: PersonYear[] = persons.map((p, i) => {
       const pay = personPayYear(book, p.id, year, cashEnd);
       payYears.push(pay);
       if (record) pays.set(`${p.id}|${year}`, pay);
       payBlockers.push(...refs(pay.blockers));
       const t = pay.totals;
       const birth = settings.birthYears[p.id];
+      // A partner's net pay less what their stubs' deposits brought into tracked accounts (one deposit can carry two stubs: each once).
+      const deposited = [...new Set(pay.employers.flatMap((e) => e.stubs.map((s) => s.depositTransactionId)).filter((id): id is string => !!id))].reduce(
+        (s, id) => s + (book.rowById.get(id)?.amountCents ?? 0),
+        0,
+      );
       return {
         personId: p.id,
         name: p.name,
@@ -223,6 +238,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
         deferrals: t.deferrals,
         employer: t.employerRetirement + t.employerHsa,
         net: t.net,
+        keptOwn: i === 0 ? 0 : Math.max(0, t.net - deposited),
         employers: pay.employers.map((e) => e.employer),
         lastPayDate: pay.through,
         hasPay: pay.employers.length > 0,
@@ -265,6 +281,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       refunds,
       otherDeductions: sumPeople((p) => p.otherDeductions),
       employer: sumPeople((p) => p.employer),
+      partnerKept: sumPeople((p) => p.keptOwn),
       living,
       nonRecurring,
     });
@@ -294,13 +311,14 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
             waterfall,
             otherIncomeDetail: { interest, dividends, other },
             reimbursements,
+            toRetirement: sumPeople((p) => p.deferrals) + waterfall.employer,
             payLinked: rows.payLinked,
             spending: byCents(spending),
             otherIncomeByCategory: byCents(rows.otherByCategory),
             taxRowsByCategory: { income: byCents(rows.taxByCategory.income), spending: byCents(rows.taxByCategory.spending) },
             livingTrail: livingTrail(start, cashEnd, rows, payReimbursements),
             timing: rows.timing,
-            savedBridge: savedBridge(book, { from: start, to: cashEnd, pays: payYears, dividends, taxIds, taxesPaid, refunds, saved: waterfall.saved }),
+            savedBridge: savedBridge(book, { from: start, to: cashEnd, pays: payYears, dividends, taxIds, taxesPaid, refunds, partnerKept: waterfall.partnerKept, saved: waterfall.saved }),
           }
         : null;
     const h = period?.household;
@@ -364,6 +382,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
   return {
     today,
     currentYear,
+    mergeDate: book.ledger.mergeDate,
     persons: persons.map((p) => ({ id: p.id, name: p.name })),
     years: out,
     ytd,

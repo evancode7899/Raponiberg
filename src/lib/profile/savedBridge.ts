@@ -12,6 +12,7 @@ import { cashFlowContributions } from "../book/reports/cashFlow.ts";
  *   + brokerage dividends (income on brokerage statements, not bank rows)
  *   + net pay the stubs show that Cash flow has no paycheck deposit for, split by why
  *   − paycheck deposits on Cash flow with no stub this year
+ *   − a partner's net pay kept in their own accounts (not the household's: annualMath.ts)
  *   ± tax rows, by bank date (Annual) vs. Cash flow's day
  *   = saved incl. retirement
  *
@@ -31,6 +32,8 @@ export type SavedBridge = {
   payOtherYear: number;
   /** Paycheck deposits on Cash flow tied to no stub this year (a positive amount, subtracted). */
   depositsWithoutStub: number;
+  /** A partner's net pay that reached only their own accounts (a positive amount, subtracted): already inside the two pay lines above. */
+  partnerKept: number;
   /** Taxes paid and refunds by bank date (Annual) less the same rows as Cash flow counts them. */
   taxTiming: number;
   unexplained: number;
@@ -40,8 +43,8 @@ export type SavedBridge = {
 export type SavedBridgeLine = Exclude<keyof SavedBridge, "saved">;
 
 /** The lines in the order they're shown, each signed as it adds to the bridge. */
-export const SAVED_BRIDGE_LINES: SavedBridgeLine[] = ["takeHome", "deferrals", "employer", "dividends", "payYtdOnly", "payNotDeposited", "payOtherYear", "depositsWithoutStub", "taxTiming", "unexplained"];
-export const savedBridgeSign = (l: SavedBridgeLine): 1 | -1 => (l === "depositsWithoutStub" ? -1 : 1);
+export const SAVED_BRIDGE_LINES: SavedBridgeLine[] = ["takeHome", "deferrals", "employer", "dividends", "payYtdOnly", "payNotDeposited", "payOtherYear", "depositsWithoutStub", "partnerKept", "taxTiming", "unexplained"];
+export const savedBridgeSign = (l: SavedBridgeLine): 1 | -1 => (l === "depositsWithoutStub" || l === "partnerKept" ? -1 : 1);
 
 /** The parts of a bridge before `unexplained`, added with their signs. */
 export function savedBridgeParts(b: Omit<SavedBridge, "unexplained" | "saved">): number {
@@ -60,6 +63,8 @@ export function savedBridge(
     taxIds: Set<string>;
     taxesPaid: number;
     refunds: number;
+    /** The waterfall's partner pay kept in their own accounts. */
+    partnerKept: number;
     /** Saved incl. retirement, as the waterfall worked it out. */
     saved: number;
   },
@@ -99,6 +104,7 @@ export function savedBridge(
     payNotDeposited: stubNet - linkedCents,
     payOtherYear: Math.round(linkedCents - linkedHere),
     depositsWithoutStub: Math.round(paycheckCents - linkedHere),
+    partnerKept: x.partnerKept,
     taxTiming: Math.round(x.refunds - taxIncome - (x.taxesPaid - taxSpending)),
   };
   return { ...parts, unexplained: x.saved - savedBridgeParts(parts), saved: x.saved };

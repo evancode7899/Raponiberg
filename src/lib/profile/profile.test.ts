@@ -32,11 +32,12 @@ describe("cash waterfall", () => {
       refunds: 2_000,
       otherDeductions: 1_000,
       employer: 10_000,
+      partnerKept: 3_000,
       living: 60_000,
       nonRecurring: 7_000,
     });
     expect(w.grossCash).toBe(151_000);
-    expect(w.netCash).toBe(151_000 - 50_000 - 5_000 + 2_000 - 1_000 + 10_000);
+    expect(w.netCash).toBe(151_000 - 50_000 - 5_000 + 2_000 - 1_000 + 10_000 - 3_000);
     expect(w.saved).toBe(w.netCash - 67_000);
     expect(w.cashTaxRate).toBeCloseTo(53_000 / 151_000);
     expect(w.savingsOfNet).toBeCloseTo(w.saved / w.netCash);
