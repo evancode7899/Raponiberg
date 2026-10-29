@@ -174,6 +174,9 @@ describe("pay checks", () => {
     expect(ids(b, "pay.after-last-stub")).toEqual(["MISSING"]);
     // And the year's pay is blocked for that person.
     expect(blockersFor(b, { affects: "PAY", personId: "pat", from: "2025-01-01", to: "2025-12-31" }).length).toBeGreaterThan(0);
+    // But not the months the stubs on file already prove.
+    expect(blockersFor(b, { affects: "PAY", personId: "pat", from: "2025-01-01", to: "2025-01-15" })).toEqual([]);
+    expect(blockersFor(b, { affects: "TAX", from: "2025-01-01", to: "2025-01-15" })).toEqual([]);
   });
 
   it("reports net pay that never reached a tracked account as missing, more than paid as failing", () => {

@@ -1,5 +1,7 @@
 import { addBusinessDays, addDays, daysBetween, endOfMonth, maxIso, minIso, periodLabel, periodsBetween, startOfMonth } from "../../dates/isoDate.ts";
+import { issuerOf, PAYMENT_GRACE_DAYS } from "../idleCards.ts";
 import type { Book } from "../load.ts";
+import { employerDeposits, stubGroups, UNKNOWN_PERSON } from "../pay.ts";
 import type { Finding } from "../types.ts";
 import type { TimelineLane } from "./timeline.ts";
 
@@ -21,7 +23,38 @@ export type PlanStatement = {
   neededFrom: Partial<Record<PlanLane, string>>;
   /** Open findings it would settle (for a transfer, any of the candidate accounts' statements does). */
   settles: { id: string; title: string; anyOf: string[] }[];
+  /**
+   * A card whose issuer sends no statement for a cycle without activity: if none comes,
+   * the bank accounts that pay it prove the cycle idle once their statements run through
+   * `through` (cycle end + the payment grace period), expected by `readyBy` (or already
+   * `onFile`).
+   */
+  ifIdle?: { banks: string[]; through: string; readyBy: string | null; onFile: boolean };
 };
+
+/** One pay stub to download: a paycheck the bank already shows, or one the pay cycle says is due. */
+export type PlanStub = {
+  /** The deposit's date, or the predicted pay date. */
+  date: string;
+  kind: "deposited" | "expected";
+  /** ready: paid, so the stub should be out; open: the pay date hasn't come. */
+  status: "ready" | "open";
+  neededFrom: Partial<Record<PlanLane, string>>;
+};
+
+/** A person's employer whose stubs the year's pay (and so its taxes) still waits on. */
+export type PlanEmployer = {
+  key: string;
+  person: string;
+  employer: string;
+  cadence: Cadence | null;
+  last: { title: string; payDate: string };
+  stubs: PlanStub[];
+  /** Open findings the stubs settle. */
+  settles: { id: string; title: string }[];
+};
+
+type Cadence = "weekly" | "biweekly" | "semimonthly" | "monthly";
 
 export type PlanAccount = {
   accountId: string;
@@ -59,6 +92,8 @@ export type StatementPlan = {
   institutions: PlanInstitution[];
   /** Open accounts already on file through the last target. */
   upToDate: { name: string; institution: string; coveredThrough: string; lastTitle: string | null }[];
+  /** Pay stubs to download, per person and employer: taxes wait on them as they do on statements. */
+  stubs: PlanEmployer[];
   other: PlanOther[];
 };
 
@@ -96,6 +131,85 @@ function neededFrom(book: Book, f: Finding): Partial<Record<PlanLane, string>> {
     if (s.affects.some((a) => a === "CASH_FLOW" || a === "PAY" || a === "TAX")) set("tax");
   }
   return out;
+}
+
+/** An employer's pay cycle, from its distinct pay dates (off-cycle checks don't move the median). */
+function cadenceOf(dates: string[]): Cadence | null {
+  if (dates.length < 2) return null;
+  const gaps = dates.slice(1).map((d, i) => daysBetween(dates[i]!, d)).sort((a, b) => a - b);
+  const median = gaps[Math.floor(gaps.length / 2)]!;
+  if (median <= 9) return "weekly";
+  if (median <= 17) {
+    // Semimonthly pay lands mid-month and at month end; biweekly drifts through the month.
+    const day = (d: string) => Number(d.slice(8));
+    const fixed = dates.filter((d) => (day(d) >= 13 && day(d) <= 16) || daysBetween(d, endOfMonth(d)) <= 3).length;
+    return fixed >= dates.length * 0.8 ? "semimonthly" : "biweekly";
+  }
+  return median >= 25 && median <= 35 ? "monthly" : null;
+}
+
+/** Pay dates after `after` through `through` on the cycle (semimonthly: the 15th and the month end, a weekend moved to the Friday before). */
+function payDatesAfter(cadence: Cadence, after: string, through: string): string[] {
+  const out: string[] = [];
+  const weekday = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay();
+  const friday = (d: string) => (weekday(d) === 6 ? addDays(d, -1) : weekday(d) === 0 ? addDays(d, -2) : d);
+  if (cadence === "semimonthly") {
+    for (let m = startOfMonth(after); m <= through; m = addDays(endOfMonth(m), 1))
+      for (const d of [friday(`${m.slice(0, 8)}15`), friday(endOfMonth(m))]) if (d > after && d <= through) out.push(d);
+    return out;
+  }
+  for (let d = cadence === "monthly" ? addMonths(after, 1) : addDays(after, cadence === "weekly" ? 7 : 14); d <= through; d = cadence === "monthly" ? addMonths(d, 1) : addDays(d, cadence === "weekly" ? 7 : 14)) out.push(d);
+  return out;
+}
+
+/**
+ * The pay stubs taxes wait on through `through`, per person and employer, for the years
+ * past the horizon: the paychecks the bank shows after the last stub (pay.after-last-stub),
+ * and past the bank statements on file, the paychecks the employer's cycle says are due —
+ * so the stubs to get are known before the statements that would reveal them arrive. An
+ * employer the bank shows paying nothing for two cycles after its last stub is done.
+ */
+function stubPlan(book: Book, through: string): PlanEmployer[] {
+  const firstYear = Number(addDays(book.horizon.cashFlow, 1).slice(0, 4));
+  const groups = stubGroups(book);
+  const linked = new Set(book.stubs.map((s) => s.depositTransactionId).filter(Boolean));
+  const out: PlanEmployer[] = [];
+  for (const [key, stubs] of groups) {
+    const [personId, employerKey, yearStr] = key.split("|") as [string, string, string];
+    const year = Number(yearStr);
+    if (year < firstYear || `${year}-01-01` > through) continue;
+    const last = stubs.at(-1)!;
+    const yearEnd = minIso(`${year}-12-31`, through);
+    // The cycle, from this year's pay dates and last year's (a new year has few).
+    const prior = groups.get(`${personId}|${employerKey}|${year - 1}`) ?? [];
+    const cadence = cadenceOf([...new Set([...prior, ...stubs].map((s) => s.payDate))]);
+    const deposits = employerDeposits(book, employerKey);
+    const paid = deposits.filter((r) => !linked.has(r.id) && r.date > addDays(last.payDate, 3) && r.date <= yearEnd).map((r) => r.date);
+    // How far the banks the employer pays into are on file.
+    const banks = [...new Set(deposits.map((r) => r.accountId))];
+    const bankThrough = banks.length ? banks.map((id) => book.ledger.accounts.find((a) => a.id === id)?.timeline.lastDay ?? last.payDate).sort()[0]! : last.payDate;
+    const step = cadence === "weekly" ? 7 : cadence === "monthly" ? 31 : 15;
+    if (!paid.length && bankThrough >= addDays(last.payDate, 2 * step + 5)) continue;
+    const due = cadence ? payDatesAfter(cadence, maxIso(last.payDate, addDays(bankThrough, -3)), yearEnd).filter((d) => paid.every((p) => Math.abs(daysBetween(p, d)) > 5)) : [];
+    const items: PlanStub[] = [
+      ...paid.map((date) => ({ date, kind: "deposited" as const, status: "ready" as const, neededFrom: { tax: date } })),
+      ...due.map((date) => ({ date, kind: "expected" as const, status: date <= book.today ? ("ready" as const) : ("open" as const), neededFrom: { tax: date } })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+    if (!items.length) continue;
+    const person = book.persons.find((p) => p.id === personId)?.name ?? "Someone";
+    out.push({
+      key,
+      person,
+      employer: last.employer,
+      cadence,
+      last: { title: last.documentTitle, payDate: last.payDate },
+      stubs: items,
+      settles: book.integrity.findings
+        .filter((f) => f.check === "pay.after-last-stub" && f.scope.employerKey === employerKey && (f.scope.personId ?? UNKNOWN_PERSON) === personId && f.scope.to.startsWith(yearStr))
+        .map((f) => ({ id: f.id, title: f.title })),
+    });
+  }
+  return out.sort((a, b) => a.stubs[0]!.date.localeCompare(b.stubs[0]!.date) || a.person.localeCompare(b.person));
 }
 
 /**
@@ -198,12 +312,16 @@ export function buildStatementPlan(book: Book): StatementPlan {
     }
   }
 
+  // Pay stubs, listed apart from statements: the year's taxes wait on them too.
+  const stubs = stubPlan(book, lastTarget);
+  const byStub = new Set(stubs.flatMap((e) => e.settles.map((f) => f.id)));
+
   // Findings: the statement each one waits on, or listed apart when no statement settles it.
   const other: PlanOther[] = [];
   const nameOf = (id: string) => book.accounts.find((a) => a.id === id)?.name ?? "an account";
   for (const f of book.integrity.findings) {
     const lanes = neededFrom(book, f);
-    if (!Object.keys(lanes).length) continue;
+    if (!Object.keys(lanes).length || byStub.has(f.id)) continue;
     if (!f.needs) {
       other.push({ id: f.id, title: f.title, fix: f.fix, status: f.status, neededFrom: lanes });
       continue;
@@ -240,6 +358,30 @@ export function buildStatementPlan(book: Book): StatementPlan {
     }
   }
 
+  // A card that skips idle statements may never issue the one asked for: then its cycle is
+  // proven from the bank side (idleCards.ts), once the paying banks' statements run past
+  // the cycle's payment window. Say which, and when that's expected, up front.
+  for (const p of [...accounts.values()]) {
+    const card = book.ledger.accounts.find((a) => a.id === p.accountId);
+    if (!card || !issuerOf(card)) continue;
+    const fromIdle = book.idle.proven.filter((w) => w.accountId === card.id).flatMap((w) => w.payerIds);
+    const fromMatches = book.matches.filter((m) => m.legs.some((l) => l.accountId === card.id)).flatMap((m) => m.legs.map((l) => l.accountId));
+    const payers = [...new Set(fromIdle.length ? fromIdle : fromMatches)].filter((id) => id !== card.id && book.accounts.find((a) => a.id === id)?.group === "Cash");
+    if (!payers.length) continue;
+    for (const s of p.statements) {
+      if (s.kind !== "next" || !Object.keys(s.neededFrom).length) continue;
+      const through = addDays(s.end, PAYMENT_GRACE_DAYS);
+      const onFile = payers.every((id) => (book.ledger.accounts.find((a) => a.id === id)?.timeline.lastDay ?? "") >= through);
+      const ready = payers.map((id) => {
+        const bank = planFor(id);
+        if (!bank || bank.coveredThrough >= through) return today;
+        extend(bank, through);
+        return bank.statements.find((x) => x.kind === "next" && x.end >= through)?.readyBy ?? null;
+      });
+      s.ifIdle = { banks: payers.map(nameOf), through, readyBy: ready.includes(null) ? null : ready.sort().at(-1)!, onFile };
+    }
+  }
+
   // Keep only statements something waits on, oldest first.
   const institutions = new Map<string, PlanAccount[]>();
   const planned = new Set<string>();
@@ -267,6 +409,7 @@ export function buildStatementPlan(book: Book): StatementPlan {
         return { name: a.name, institution: book.accounts.find((x) => x.id === a.id)?.institution ?? "Other", coveredThrough: a.timeline.lastDay!, lastTitle: st?.documentTitle ?? null };
       })
       .sort((a, b) => a.institution.localeCompare(b.institution) || a.name.localeCompare(b.name)),
+    stubs,
     other,
   };
 }
