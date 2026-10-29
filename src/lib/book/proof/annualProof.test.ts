@@ -398,6 +398,26 @@ describe("annual statement proofs", () => {
     expect(b.saved).toBe(profile.years.find((y) => y.year === 2025)!.cash!.waterfall.saved);
   });
 
+  it("keeps a partner's pay that reached only their own accounts out of the household's cash", () => {
+    // The same two paychecks Cash flow never sees, but the stubs belong to a second household member.
+    const first = stubs.find((s) => s.payDate.startsWith("2025"))!;
+    const elsewhere = stubs.find((s) => s.payDate === "2025-06-20")!;
+    const kept = first.printed.netCurrent + elsewhere.printed.netCurrent;
+    const variant = {
+      ...book,
+      persons: [{ id: "lee", name: "Lee Example", match: ["LEE EXAMPLE"] }, ...book.persons],
+      stubs: book.stubs.filter((s) => s !== first).map((s) => (s === elsewhere ? { ...s, depositTransactionId: null, deposits: [{ last4: "9999", amount: s.printed.netCurrent }] } : s)),
+    } as Book;
+    const y = buildAnnualProfile(variant, SETTINGS).years.find((v) => v.year === 2025)!;
+    expect(y.people!.find((p) => p.personId === "pat")!.keptOwn).toBe(kept);
+    expect(y.cash!.waterfall.partnerKept).toBe(kept);
+    expect(y.cash!.waterfall.saved).toBe(profile.years.find((v) => v.year === 2025)!.cash!.waterfall.saved - kept);
+    expect(y.cash!.savedBridge).toMatchObject({ partnerKept: kept, unexplained: 0 });
+    // The first person's undeposited pay stays in: it's a gap in their statements, not someone else's money.
+    const solo = buildAnnualProfile({ ...variant, persons: book.persons } as Book, SETTINGS).years.find((v) => v.year === 2025)!;
+    expect(solo.cash!.waterfall.partnerKept).toBe(0);
+  });
+
   it("points a calendar year's saved from take-home on Cash flow to the Annual statement", async () => {
     const year = await buildProof(ctx, { report: "cash-flow", metric: "net", granularity: "year", start: "2025-01-01", end: "2025-12-31" });
     const facts = year.blocks.find((b) => b.kind === "facts" && b.title === "On the Annual statement");

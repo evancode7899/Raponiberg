@@ -9,7 +9,7 @@ import type { Forecast } from "./forecast.ts";
  * the sum of its parts and each column's net worth change = saved + growth:
  *
  *   salary + bonus + other income − taxes & deductions + employer money
- *   − living − bonus spent − one-offs = saved;  saved + growth = change in net worth.
+ *   − a partner's pay kept in their own accounts − living − bonus spent − one-offs = saved;  saved + growth = change in net worth.
  *
  * Actual columns come from the annual profile (pay stubs, ledger rows, statements); growth
  * there is everything besides what was saved incl. retirement (markets, outside money, gaps). Forecast columns
@@ -25,6 +25,8 @@ export type Flows = {
   /** Income tax, FICA and payroll deductions. Actual: withheld + paid − refunds + deductions. Forecast: owed on that pay. */
   taxes: number | null;
   employer: number | null;
+  /** Actual only: a partner's net pay that reached only their own accounts (before the merge): not the household's. */
+  partnerKept: number | null;
   living: number | null;
   /** Forecast only: the part of bonuses kept after tax that's spent rather than saved. */
   bonusSpent: number | null;
@@ -76,6 +78,7 @@ export function actualFlows(y: YearProfile, open: number | null): Flows {
     otherIncome: w?.otherIncome ?? null,
     taxes: w ? w.withholding + w.additionalTaxes - w.refunds + w.otherDeductions : null,
     employer: w?.employer ?? null,
+    partnerKept: w?.partnerKept ?? null,
     living: w?.living ?? null,
     bonusSpent: w ? 0 : null,
     oneOffs: w?.nonRecurring ?? null,
@@ -99,6 +102,7 @@ export function forecastFlows(months: OutlookMonth[], open: number): Flows {
     otherIncome: 0,
     taxes: t((m) => m.salary - m.takeHome + m.bonusGross - m.bonusKept),
     employer: t((m) => m.employerMatch),
+    partnerKept: 0,
     living: t((m) => m.livingCost),
     bonusSpent: t((m) => m.bonusKept - m.bonusSaved),
     oneOffs: t((m) => m.planned),
@@ -120,6 +124,7 @@ export function addFlows(a: Flows, b: Flows): Flows {
     otherIncome: k("otherIncome"),
     taxes: k("taxes"),
     employer: k("employer"),
+    partnerKept: k("partnerKept"),
     living: k("living"),
     bonusSpent: k("bonusSpent"),
     oneOffs: k("oneOffs"),
@@ -148,7 +153,7 @@ function currentYearParts(f: Forecast, r: AnnualProfileReport): { ytd: Period; r
   flows.close = { netWorth: startNetWorth(f), liquid: s.liquid, illiquid: s.illiquid };
   if (flows.open != null) flows.change = flows.close.netWorth - flows.open;
   if (cashShort) {
-    for (const key of ["salary", "bonus", "otherIncome", "taxes", "employer", "living", "bonusSpent", "oneOffs", "saved", "toRetirement", "growth"] as const) flows[key] = null;
+    for (const key of ["salary", "bonus", "otherIncome", "taxes", "employer", "partnerKept", "living", "bonusSpent", "oneOffs", "saved", "toRetirement", "growth"] as const) flows[key] = null;
   } else if (flows.change != null && flows.saved != null) flows.growth = flows.change - flows.saved;
   return {
     ytd: {

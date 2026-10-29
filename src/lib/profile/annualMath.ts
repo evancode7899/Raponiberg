@@ -23,6 +23,12 @@ export type CashWaterfallInput = {
   refunds: number;
   otherDeductions: number;
   employer: number;
+  /**
+   * A partner's net pay that reached no household account (paid into their own accounts,
+   * mostly before the merge): theirs, not the household's. What of it they moved in later
+   * is outside money in the bridge.
+   */
+  partnerKept: number;
   living: number;
   nonRecurring: number;
 };
@@ -37,10 +43,10 @@ export type CashWaterfall = CashWaterfallInput & {
   savingsOfNet: number | null;
 };
 
-/** Gross pay → taxes → deductions → + employer money → − living → saved incl. retirement (book/definitions.ts). */
+/** Gross pay → taxes → deductions → + employer money → − a partner's own pay → − living → saved incl. retirement (book/definitions.ts). */
 export function cashWaterfall(i: CashWaterfallInput): CashWaterfall {
   const grossCash = i.salary + i.bonus + i.otherIncome;
-  const netCash = grossCash - i.withholding - i.additionalTaxes + i.refunds - i.otherDeductions + i.employer;
+  const netCash = grossCash - i.withholding - i.additionalTaxes + i.refunds - i.otherDeductions + i.employer - i.partnerKept;
   const saved = savedInclRetirement(netCash, i.living, i.nonRecurring);
   const ratio = (a: number, b: number) => (b > 0 ? a / b : null);
   return {

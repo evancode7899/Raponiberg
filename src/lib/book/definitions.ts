@@ -15,7 +15,9 @@ import type { AccountGroup } from "../ledger/loadLedger.ts";
  *    employer money never pass through, so they're not in it.
  *  - Saved incl. retirement (Annual, Forecast): pay as the stubs show it, less taxes and
  *    deductions, plus employer retirement money, less living and one-off spending. Holds
- *    deferrals and employer money, and pay the stubs show whichever account it reached.
+ *    deferrals and employer money, and pay the stubs show whichever account it reached —
+ *    except a partner's net pay that reached only their own accounts (before the merge):
+ *    that was theirs, and joins the household as outside money when they move it in.
  *
  * They differ by more than retirement money (pay to an account with no statements, pay
  * known only from year-to-date totals), so neither is derived from the other; the

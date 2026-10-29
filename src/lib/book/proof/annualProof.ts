@@ -44,6 +44,7 @@ export type AnnualCashLine =
   | "refunds"
   | "deductions"
   | "employer"
+  | "partner-kept"
   | "net-cash"
   | "living"
   | "one-offs"
@@ -73,6 +74,7 @@ const CASH_LINES: AnnualCashLine[] = [
   "refunds",
   "deductions",
   "employer",
+  "partner-kept",
   "net-cash",
   "living",
   "one-offs",
@@ -281,6 +283,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
     if (b.payNotDeposited) lines.push(signed(b.payNotDeposited, "Net pay to accounts with no statements", "proven", { note: to ? `Deposited to ${to}.` : "Part of a paycheck deposited outside the tracked accounts." }));
     if (b.payOtherYear) lines.push(signed(b.payOtherYear, "Net pay on this year's stubs, deposited in another year", "proven", { note: "Or the deposit is filed as other income, not as a paycheck." }));
     if (b.depositsWithoutStub) lines.push(signed(-b.depositsWithoutStub, "Paycheck deposits with no stub this year", "proven"));
+    if (b.partnerKept) lines.push(signed(-b.partnerKept, "A partner's net pay kept in their own accounts", "proven", { link: cashLink("Partner pay kept", yr, "partner-kept") }));
     if (b.taxTiming) lines.push(signed(b.taxTiming, "Tax payments and refunds: bank date vs. Cash flow's month", "derived", { note: BOOKED_DAY }));
     if (b.unexplained) lines.push(signed(b.unexplained, "Not explained by the lines above", "derived"));
     lines.push(line("=", "Saved incl. retirement", b.saved, "derived"));
@@ -342,6 +345,20 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
       const lines = [...stubLines((b) => b.employerRetirement + b.employerHsa, "Employer 401(k) and HSA money"), line("=", "Employer retirement & HSA money", w.employer, "derived")];
       return chainProof(`Employer retirement & HSA money · ${label}`, w.employer, "On pay stubs", lines, { ...base, blocks: [stubsBlock()] });
     }
+    case "partner-kept": {
+      const lines: ChainLine[] = [];
+      for (const p of people.filter((x) => x.keptOwn)) {
+        lines.push(line("+", `${p.name}: net pay, year to date`, p.net, "proven", { link: { label: `${p.name}'s net pay`, descriptor: payD(p.personId, "net") } }));
+        lines.push(line("−", `${p.name}: deposits into tracked accounts`, p.net - p.keptOwn, "proven", { note: "Each stub's linked deposit row, once." }));
+        lines.push(line("=", `${p.name}: kept in their own accounts`, p.keptOwn, "derived"));
+      }
+      lines.push(line("=", "A partner's pay kept in their own accounts", w.partnerKept, "derived"));
+      return chainProof(`A partner's pay kept in their own accounts · ${label}`, w.partnerKept, "Net pay − deposits reaching household accounts", startChain(lines), {
+        ...base,
+        blocks: [stubsBlock()],
+        note: `Pay into a partner's own accounts (before the ${book.ledger.mergeDate} merge, or an account that stayed theirs) was theirs, not the household's. What they moved in later counts as outside money in the net-worth bridge.`,
+      });
+    }
     case "taxes-paid":
     case "refunds": {
       const paid = ln === "taxes-paid";
@@ -377,6 +394,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
         line("+", "Tax refunds", w.refunds, "proven", { link: cashLink("Refunds", yr, "refunds") }),
         line("−", "Benefits & other deductions", w.otherDeductions, "proven", { link: cashLink("Deductions", yr, "deductions") }),
         line("+", "Employer retirement & HSA money", w.employer, "proven", { link: cashLink("Employer money", yr, "employer") }),
+        line("−", "A partner's pay kept in their own accounts", w.partnerKept, "proven", { link: cashLink("Partner pay kept", yr, "partner-kept") }),
         line("=", "Total net cash", w.netCash, "derived"),
       ]);
       return chainProof(`Total net cash · ${label}`, w.netCash, "Gross → net", lines, base);
