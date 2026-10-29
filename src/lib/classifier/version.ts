@@ -9,8 +9,8 @@
  * fingerprint doesn't, so the version can't be forgotten: bump CLASSIFIER_VERSION and
  * paste the fingerprint the test prints.
  */
-export const CLASSIFIER_VERSION = 5;
-export const RULES_FINGERPRINT = "779d9ad8f9c97325";
+export const CLASSIFIER_VERSION = 6;
+export const RULES_FINGERPRINT = "9d61f47efd2816dc";
 
 /** AppSetting key holding the version the ledger was last classified with. */
 export const CLASSIFIER_VERSION_SETTING = "ledger.classifierVersion";

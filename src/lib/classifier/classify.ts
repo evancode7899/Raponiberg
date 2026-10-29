@@ -332,8 +332,9 @@ const SYSTEM_RULES: SystemRule[] = [
         accountHint: /\bENDING IN (\d{4})\b/.exec(i.description.toUpperCase())?.[1],
       }, "bank-chase-card-payment") },
 
-  // Untracked credit cards: counted as spending, by the owner's rule.
-  { id: "bank-untracked-card", re: /CAPITAL ONE|DISCOVER|CITI CARD|BARCLAYCARD|SYNCHRONY/, sign: "-",
+  // Untracked credit cards: counted as spending, by the owner's rule. Elan issues the
+  // Fidelity Visa; \bELAN\b keeps "IRELAND" out.
+  { id: "bank-untracked-card", re: /CAPITAL ONE|DISCOVER|CITI CARD|BARCLAYCARD|SYNCHRONY|\bELAN\b.*(PYMT|PMT|PAYMENT)/, sign: "-",
     decide: () => ({ ...expense("Untracked card payments", "bank-untracked-card", "high"), counterparty: { kind: "UNTRACKED_CARD" } }) },
   { id: "bank-bilt-rent", re: /BILT CARD HOUSING|BILT RENT/, sign: "-",
     decide: () => expense("Housing", "bank-bilt-rent", "high") },
