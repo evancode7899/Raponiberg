@@ -1,7 +1,7 @@
 import type { AwardLetter, AwardsFile, ScheduledPayment } from "../../bonuses/awardStore.ts";
 import { addDays, endOfMonth } from "../../dates/isoDate.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
-import { blockersFor } from "../blockers.ts";
+import { blockersFor, type BlockerQuery } from "../blockers.ts";
 import type { Book, BookStub } from "../load.ts";
 import { payBreakdown, personPayYear, stubGroups, UNKNOWN_PERSON } from "../pay.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
@@ -50,6 +50,10 @@ export type VestWindow = {
   status: WindowStatus;
   /** Why the status is what it is, in a sentence. */
   detail: string;
+  /** The stubs this window is settled against, as a pay-findings query (windowPayQuery); null before it opens. Its proofs check the same. */
+  payQuery: BlockerQuery | null;
+  /** Pay findings over those stubs: what could hide one of its payments. */
+  blockers: BlockerRef[];
 };
 
 export type Tranche = WindowPart & { window: string; label: string; from: string; to: string; status: WindowStatus; paidCents: number };
@@ -72,7 +76,8 @@ export type AwardRow = {
    * year (a job change splits it across employers); the letter's total comp, else base +
    * headline bonus + one-offs.
    */
-  base: { cents: number; from: "LETTER" | "STUBS"; parts: { employer: string; cents: number }[] } | null;
+  /** From the stubs: that year's pay is read (`payQuery`), and its findings (`blockers`) withhold what's built on it. */
+  base: { cents: number; from: "LETTER" | "STUBS"; parts: { employer: string; cents: number }[]; payQuery?: BlockerQuery; blockers?: BlockerRef[] } | null;
   totalComp: { cents: number; from: "LETTER" | "SUM" } | null;
   upfrontCents: number;
   deferredCents: number;
@@ -100,6 +105,10 @@ export type BonusYear = {
   payments: number;
   /** The part a letter explains (paid as one of its scheduled payments). */
   explainedCents: number;
+  /** The year's stubs from this employer, to date, as a pay-findings query (yearPayQuery). Its proofs check the same. */
+  payQuery: BlockerQuery;
+  /** Pay findings over them: a missing stub could hide a bonus paid that year. */
+  blockers: BlockerRef[];
 };
 
 export type BonusesReport = {
@@ -250,15 +259,15 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string): Bonus
     if (!employment) warnings.push({ id: `${letter.id}|no-stubs`, gapCents: 0, ...span, text: `No pay stubs from ${letter.employer} are on file, so nothing on the letter "${letter.title}" can be checked against what was paid.` });
 
     const letterWindows = windowsOf(letter);
+    const keys = [...new Set(stubs.map((s) => s.employerKey))];
     for (const w of letterWindows) {
       settle(w, payments, key, employment, today);
+      // A missing stub inside one of the letter's windows could hide that window's payment; a
+      // gap anywhere else (a later paycheck, years on) has no bearing on it.
+      w.payQuery = employment ? windowPayQuery(w, employment.personId, keys, today) : null;
+      w.blockers = w.payQuery ? refs(blockersFor(book, w.payQuery)) : [];
+      for (const b of w.blockers) blockers.set(b.id, b);
       windows.push(w);
-    }
-    // A missing stub in the letter's windows could hide a payment.
-    if (employment && letterWindows.length) {
-      const last = addDays(letterWindows.at(-1)!.to, LATE_DAYS);
-      const span = { affects: "PAY" as const, personId: employment.personId, from: addDays(letterWindows[0]!.from, -EARLY_DAYS), to: last < today ? last : today };
-      for (const b of refs(blockersFor(book, span))) blockers.set(b.id, b);
     }
 
     for (const a of letter.awards) {
@@ -300,7 +309,8 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string): Bonus
       else if (personId !== UNKNOWN_PERSON) {
         const py = personPayYear(book, personId, a.year);
         const parts = py.employers.filter((e) => e.breakdown.salary > 0).map((e) => ({ employer: e.employer.replace(/ · payroll .*$/, ""), cents: e.breakdown.salary }));
-        if (parts.length) row.base = { cents: py.totals.salary, from: "STUBS", parts };
+        if (parts.length)
+          row.base = { cents: py.totals.salary, from: "STUBS", parts, payQuery: { affects: "PAY", personId, from: `${a.year}-01-01`, to: `${a.year}-12-31` }, blockers: refs(py.blockers) };
         for (const b of refs(py.blockers)) blockers.set(b.id, b);
       }
       if (row.totalCompCents != null) row.totalComp = { cents: row.totalCompCents, from: "LETTER" };
@@ -327,12 +337,17 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string): Bonus
   for (const p of payments) {
     const year = Number(p.date.slice(0, 4));
     const k = `${year}|${p.personId}|${p.employer}`;
-    const cur = byYearMap.get(k) ?? { year, personId: p.personId, personName: p.personName, employer: p.employer, employerKeys: [], cents: 0, payments: 0, explainedCents: 0 };
+    const cur = byYearMap.get(k) ?? { year, personId: p.personId, personName: p.personName, employer: p.employer, employerKeys: [], cents: 0, payments: 0, explainedCents: 0, payQuery: { affects: "PAY", from: "", to: "" }, blockers: [] };
     if (!cur.employerKeys.includes(p.employerKey)) cur.employerKeys.push(p.employerKey);
     cur.cents += p.amountCents;
     cur.payments += 1;
     if (p.explains) cur.explainedCents += p.amountCents;
     byYearMap.set(k, cur);
+  }
+  for (const y of byYearMap.values()) {
+    y.payQuery = yearPayQuery(y, today);
+    y.blockers = refs(blockersFor(book, y.payQuery));
+    for (const b of y.blockers) blockers.set(b.id, b);
   }
   const stubOnlyKeys = (file.stubOnly ?? []).map((s) => ({ key: employerKey(s.employer), note: s.note ?? null }));
   const unletteredMap = new Map<string, UnletteredEmployer>();
@@ -410,6 +425,8 @@ function windowsOf(letter: AwardLetter): VestWindow[] {
         payments: [],
         status: "UPCOMING" as WindowStatus,
         detail: "",
+        payQuery: null as BlockerQuery | null,
+        blockers: [] as BlockerRef[],
       };
       w.parts.push({ awardYear: a.year, kind: p.kind, amountCents: cents(p.amount) });
       w.scheduledCents += cents(p.amount);
@@ -428,6 +445,24 @@ function employmentOf(book: Book, stubs: BookStub[], nameOf: (id: string) => str
     .filter((s) => (s.personId ?? UNKNOWN_PERSON) === personId && s.payDate > last && !stubs.includes(s))
     .sort((a, b) => a.payDate.localeCompare(b.payDate))[0];
   return { personId, personName: nameOf(personId), employer: stubs[0]!.employer, employerKey: stubs[0]!.employerKey, first: stubs[0]!.payDate, last, nextEmployer: later?.employer ?? null };
+}
+
+/**
+ * The stubs a payment window is settled against ("on or about": a little before it opens, a
+ * month after it closes, to date), as a pay-findings query: what a missing stub could hide
+ * from it. Null before the window opens: nothing is read from the stubs yet.
+ */
+export function windowPayQuery(w: Pick<VestWindow, "from" | "to">, personId: string, employerKeys: string[], today: string): BlockerQuery | null {
+  const from = addDays(w.from, -EARLY_DAYS);
+  if (from > today) return null;
+  const to = addDays(w.to, LATE_DAYS);
+  return { affects: "PAY", personId, employerKeys, from, to: to < today ? to : today };
+}
+
+/** A year's bonus paychecks from one employer, to date, as a pay-findings query. */
+export function yearPayQuery(y: Pick<BonusYear, "year" | "personId" | "employerKeys">, today: string): BlockerQuery {
+  const to = `${y.year}-12-31`;
+  return { affects: "PAY", ...(y.personId === UNKNOWN_PERSON ? {} : { personId: y.personId }), employerKeys: y.employerKeys, from: `${y.year}-01-01`, to: to < today ? to : today };
 }
 
 function settle(w: VestWindow, payments: BonusPayment[], key: string, employment: Employment | null, today: string) {
