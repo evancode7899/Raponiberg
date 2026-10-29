@@ -171,7 +171,8 @@ export function checkPay(book: Book, c: Collector) {
     }
     if (!broken) c.pass("pay.continuity", { subject: `${who}: year-to-date totals carry from stub to stub`, ...scope });
 
-    // Nothing paid after the year's last stub.
+    // Nothing paid after the year's last stub. A paycheck without a stub only leaves the
+    // pay after the last stub unread: the stubs on file prove the year up to it.
     const after = unlinked.filter((r) => r.date > addDays(last.payDate, 3) && r.date <= yearEnd);
     if (after.length === 0) c.pass("pay.after-last-stub", { subject: `${who}: nothing paid after the ${last.payDate} stub`, ...scope });
     else
@@ -182,7 +183,7 @@ export function checkPay(book: Book, c: Collector) {
         title: `${who}: ${after.length} paycheck(s) after the ${last.payDate} stub have no stub`,
         detail: `Deposits: ${after.map((r) => `${r.date} ${money(r.amountCents)}`).join(", ")}. The year's pay can't be read without the latest stub.`,
         fix: `Download the ${last.employer} pay stub(s) dated after ${last.payDate}.`,
-        scope,
+        scope: { ...scope, from: addDays(last.payDate, 1) },
       });
 
     // Paychecks deposited to an account with no statements available: from the stubs, partial.

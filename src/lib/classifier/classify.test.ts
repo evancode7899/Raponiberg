@@ -42,6 +42,27 @@ describe("Amex High Yield Savings rows", () => {
   });
 });
 
+describe("untracked card payments", () => {
+  const bank = (description: string, dollars: number): ClassifyInput => ({
+    institution: "Chase",
+    accountSubtype: "CHECKING",
+    description,
+    amountCents: Math.round(dollars * 100),
+    date: "2026-07-20",
+  });
+
+  it("files an Elan (Fidelity Visa) payment as an untracked card payment, not for review", () => {
+    const c = classifyTransaction(bank("Elan Web Pymt ***********9876 Web ID: 1234567890", -512.34), ctx);
+    expect(c).toMatchObject({ lane: "EXPENSE", ruleId: "bank-untracked-card", category: "Untracked card payments" });
+    expect(c.counterparty.kind).toBe("UNTRACKED_CARD");
+    expect(c.needsReview).toBe(false);
+  });
+
+  it("leaves merchants that merely contain ELAN alone", () => {
+    expect(classifyTransaction(bank("ZAZZLE IRELANDCORKCO", -20), ctx).ruleId).not.toBe("bank-untracked-card");
+  });
+});
+
 describe("the household file", () => {
   it("files Zelle with the partner and the partner's card payments as partner money", () => {
     const zelle = classifyTransaction({ institution: "Chase", accountSubtype: "CHECKING", description: "Zelle Payment To Sam 123456", amountCents: -10_000, date: "2025-03-01" }, ctx);
