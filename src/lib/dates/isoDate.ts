@@ -28,6 +28,18 @@ export function addDays(iso: string, days: number): string {
   return fromDayNumber(dayNumber(iso) + days);
 }
 
+/** `iso` moved forward by `days` weekdays (Mon–Fri; holidays aren't skipped). */
+export function addBusinessDays(iso: string, days: number): string {
+  let n = dayNumber(iso);
+  for (let left = days; left > 0; ) {
+    n++;
+    // Day 0 (1970-01-01) was a Thursday: (n + 4) % 7 is 0 on Sundays, 6 on Saturdays.
+    const dow = (n + 4) % 7;
+    if (dow !== 0 && dow !== 6) left--;
+  }
+  return fromDayNumber(n);
+}
+
 /** b - a in days. */
 export function daysBetween(a: string, b: string): number {
   return dayNumber(b) - dayNumber(a);
