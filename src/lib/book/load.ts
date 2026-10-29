@@ -152,6 +152,8 @@ export type BookDocument = {
   factsVersion: number;
   periodStart: string | null;
   periodEnd: string | null;
+  /** The stored file (relative to the app folder) and its SHA-256, for readers of what a statement prints beyond its rows (card rewards). */
+  file?: { path: string; sha: string };
 };
 
 export type BookTransferMatch = {
@@ -315,7 +317,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     loadTaxProfile(db),
     db.sourceDocument.findMany({
       orderBy: { createdAt: "asc" },
-      select: { id: true, title: true, originalFileName: true, institution: true, parserId: true, parserVersion: true, factsVersion: true, periodStart: true, periodEnd: true },
+      select: { id: true, title: true, originalFileName: true, institution: true, parserId: true, parserVersion: true, factsVersion: true, periodStart: true, periodEnd: true, filePath: true, fileHash: true },
     }),
     db.appSetting.findUnique({ where: { key: CLASSIFIER_VERSION_SETTING } }).then((s) => (s && Number.isFinite(Number(s.value)) ? Number(s.value) : null)),
     db.appSetting.findUnique({ where: { key: CLASSIFIER_HOUSEHOLD_SETTING } }).then((s) => s?.value ?? null),
@@ -511,6 +513,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       factsVersion: d.factsVersion,
       periodStart: d.periodStart ? iso(d.periodStart) : null,
       periodEnd: d.periodEnd ? iso(d.periodEnd) : null,
+      file: { path: d.filePath, sha: d.fileHash },
     })),
     decisions,
     classifiedWith,

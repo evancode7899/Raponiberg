@@ -193,25 +193,32 @@ The log is `data/hsa-expenses.json` (with its journal), backed up like the other
 ## Card perks
 
 **Card perks** (Money › Card perks, or type `PERK`) checks whether each credit card earns its
-annual fee, one calendar year at a time:
+annual fee, one calendar year at a time, with nothing to mark by hand:
 
-- **Scorecard**: for each card, the spending on it, the points that spending earned and what
-  they're worth, the credits used, and the annual fee, adding up to a net value. Points are
-  worth 1¢ each unless you set another value, for all cards or for one. They're estimated
-  from each purchase's category or description (4× on dining, and so on); enter the points
-  actually posted to replace the estimate.
-- **Perk tracker**: every monthly, quarterly, twice-a-year and yearly credit, with each
-  period marked used, partly used, missed, available now, or awaiting its statement.
-  Statement credits count toward the matching perk automatically. Perks that never reach
-  the statement (Uber Cash, in-app promos) are marked used by hand.
-- **Setup**: each card starts from the built-in list (Amex Gold and Platinum, Chase Sapphire
-  Reserve and Preferred, Capital One Venture X, Bilt) suggested by the account's name. The
-  fee, earn rates and perks are then yours to edit, since issuers change them often.
-  Cards not on the list are set up by hand.
+- **Overview**: a tile per card with its net value (rewards + perks + issuer offers − the fee
+  the statements charged), perk capture rate, rewards balance, and a keep-or-cancel line for
+  the twelve months to its latest statement. Above them, the credits open right now, soonest
+  deadline first.
+- **Credits**: every monthly, quarterly, twice-a-year and yearly credit as a heatmap.
+  Statement credits are matched by their description or by the merchant they pay back, and
+  counted in the period of that charge. In-app credits (Uber Cash) count as used in a month
+  when the household paid that merchant on any card or account (memberships aside): each
+  charge covers one card's credit. Click a period to see the rows that prove it.
+- **Rewards**: the rewards balance each statement prints (Amex Membership Rewards as of the
+  month end, shared by every card on the account; Amex Reward Dollars; Chase points by
+  category; Capital One cash back or miles), reconciled stretch by stretch against what the
+  spending should have earned. A rise is what posted, the difference is bonuses and offers,
+  and a fall is a transfer or redemption. Cash back is worth its face; points are worth what
+  you set per program (1¢ by default). Cards whose statements print no balance (Bilt) are
+  estimated from spending.
+- **Best card**: which open card earns the most on each kind of purchase, and what the year's
+  spending would have earned on the best card every time.
+- **Setup**: which product each account is (matched from its name; the built-in list covers
+  Amex, Chase, Capital One, Bilt and Citi cards, with credits dated so past years use past
+  terms) and what a point is worth.
 
-The annual fee is the one the statements charge (net of any reversal), or the card's fee
-when none was charged on file that year. Your setup is stored in the database, with the
-rest of your data.
+The rewards summaries are read once per statement file into `data/card-rewards.json`,
+backed up with the rest of `data/`.
 
 ## The desktop app (Windows)
 

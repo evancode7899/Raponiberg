@@ -91,6 +91,7 @@ const FIGURE_MODULES = [
   "src/lib/forecast",
   "src/lib/dashboard",
   "src/lib/hsa",
+  "src/lib/cardPerks",
   "src/lib/car",
   "src/lib/home-budget",
   "src/lib/mortgage",

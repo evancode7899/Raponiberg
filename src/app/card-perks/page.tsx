@@ -3,7 +3,7 @@ import { CardPerksClient } from "./CardPerksClient";
 
 export const metadata: Metadata = {
   title: "Card perks",
-  description: "Each credit card's annual fee against the credits you used and the points you earned, period by period, from the statements",
+  description: "Each credit card's fee against the rewards its statements report and every credit it paid, found automatically, with the best card for each purchase",
 };
 
 export const dynamic = "force-dynamic";

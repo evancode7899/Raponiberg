@@ -1,375 +1,281 @@
-import { CADENCE_INFO, guessProduct, type Cadence, type PerkUnit } from "./catalog.ts";
-import { pointsKey, setupFromProduct, usageKey, type CardPerksSettings, type CardSetup, type Perk } from "./settings.ts";
+import { applies, guessProduct, productById, PROGRAMS, type CardProduct } from "./catalog.ts";
+import { optimize } from "./optimizer.ts";
+import { addDays, daysBetween } from "./periods.ts";
+import { inAppUses, perkLines, sortCredits, isSpendRow, type Holding, type Sorted } from "./perks.ts";
+import { buildPools, estimateEarn, postedForCard, type EarnedRow } from "./rewards.ts";
+import { centsPerPoint, type CardPerksSettings } from "./settings.ts";
+import type { ActItem, CardAccount, CardPerksReport, CardRewards, CardScore, EarnLine, PerkLine, PerkRow, StatementRewards } from "./types.ts";
 
 /**
- * The Card perks page: for each credit card and calendar year, what it cost (the annual
- * fee as the statements charge it), what it gave back (the perk credits used, period by
- * period, and the points earned on its spending, valued at the owner's cents per point),
- * and whether that adds up to more than the fee.
- *
- * Perk credits are the card's statement credits (rows the classifier filed as card perks,
- * or that say CREDIT), matched to a perk by its pattern and to a period by their date. A
- * use marked by hand replaces what the statements show for that period. Points are
- * estimated from each purchase's category or description unless the owner enters the
- * points the issuer actually posted.
+ * The Card perks page, for one calendar year: each credit card's annual fee against the
+ * rewards it earned, the perks it paid and the issuer offers it gave, with nothing marked
+ * by hand. Perks come from the statements' credits and, for in-app perks, the household's
+ * charges (lib/cardPerks/perks.ts); rewards from the statements' printed balances,
+ * reconciled against what the spending should have earned (rewards.ts); and which card
+ * each purchase should have gone on (optimizer.ts).
  */
 
-/** The ledger row fields this report reads. */
-export type PerkRow = {
-  id: string;
-  date: string;
-  amountCents: number;
-  lane: string | null;
-  accountId: string;
-  payee: string;
-  detail?: string | null;
-  section?: string | null;
-  category: string;
-  classifiedBy: string | null;
-};
+/** A card with no statement for this long (from an issuer that sends one every cycle) is taken as no longer held. */
+const STALE_DAYS = 60;
 
-export type CardAccount = {
-  id: string;
-  name: string;
-  institution: string | null;
-  archived?: boolean;
-  /** First day and last day the card's statements cover (null: none on file). */
-  from: string | null;
-  through: string | null;
-};
-
-export type PeriodStatus =
-  /** Fully used. */
-  | "USED"
-  /** Over, and only part of it was used. */
-  | "PARTIAL"
-  /** Over, statements in, nothing used. */
-  | "MISSED"
-  /** Under way: still can be used. */
-  | "OPEN"
-  /** Over, but the statement that would show the credit isn't in yet. */
-  | "AWAITING"
-  | "FUTURE"
-  /** Before the card's first statement or after a closed card's last: not counted. */
-  | "NOT_HELD";
-
-export type PerkPeriod = {
-  key: string;
-  label: string;
-  start: string;
-  end: string;
-  allowance: number;
-  used: number;
-  /** What the statements show, whatever the source of `used`. */
-  detected: number;
-  source: "STATEMENTS" | "MANUAL" | "NONE";
-  status: PeriodStatus;
-  rowIds: string[];
-};
-
-export type PerkLine = {
-  id: string;
-  name: string;
-  cadence: Cadence;
-  unit: PerkUnit;
-  amount: number;
-  pattern: string;
-  note: string;
-  /** The pattern isn't a valid regular expression, so nothing matches it. */
-  patternError: boolean;
-  periods: PerkPeriod[];
-  /** Over the periods the card was held (cents, or points for a POINTS perk). */
-  allowance: number;
-  used: number;
-  missed: number;
-  remaining: number;
-  /** What `used` is worth in cents (points at the card's cents per point). */
-  valueCents: number;
-};
-
-export type CreditRow = { id: string; date: string; payee: string; amountCents: number; perkId: string | null; kind: "PERK" | "OTHER" | "REDEMPTION" };
-export type EarnLine = { label: string; rate: number; spendCents: number; points: number };
-
-export type CardScore = {
-  accountId: string;
-  accountName: string;
-  setup: CardSetup;
-  /** No setup saved: the setup shown is the catalog product the name suggests (or a blank one). */
-  guessed: boolean;
-  from: string | null;
-  through: string | null;
-  centsPerPoint: number;
-  spend: { chargesCents: number; refundsCents: number; netCents: number };
-  earn: EarnLine[];
-  points: { estimated: number; entered: number | null; earned: number; valueCents: number };
-  perks: PerkLine[];
-  credits: CreditRow[];
-  fee: { chargedCents: number; termsCents: number; cents: number; source: "STATEMENTS" | "TERMS" | "NONE"; rows: { id: string; date: string; payee: string; amountCents: number }[] };
-  /** Perk credits used, at face value (bonus points valued at the card's rate). */
-  perksValueCents: number;
-  /** Statement credits that match no perk (issuer offers and the like). */
-  otherCreditsCents: number;
-  /** Perks + other credits: everything the card gave back besides points. */
-  creditsCents: number;
-  /** Points value + credits: everything the card gave back. */
-  returnedCents: number;
-  /** Perk value still to be had this year (open, awaiting and future periods). */
-  remainingCents: number;
-  missedCents: number;
-  /** Points value + perks + other credits − annual fee. */
-  netCents: number;
-};
-
-export type CardPerksReport = {
-  year: number;
-  years: number[];
+export type CardPerksInput = {
+  settings: CardPerksSettings;
+  accounts: CardAccount[];
+  /** Every row on the credit card accounts. */
+  rows: PerkRow[];
+  /** Charges on the household's other accounts at in-app perks' merchants (an Uber ride paid from a debit card). */
+  householdRows: PerkRow[];
+  snapshots: StatementRewards[];
   today: string;
-  centsPerPoint: number;
-  cards: CardScore[];
-  /** Cards left off the page by the owner. */
-  hidden: { accountId: string; accountName: string }[];
-  totals: {
-    feesCents: number;
-    perksValueCents: number;
-    otherCreditsCents: number;
-    creditsCents: number;
-    pointsValueCents: number;
-    points: number;
-    netCents: number;
-    remainingCents: number;
-    missedCents: number;
-    spendCents: number;
-    /** Cards charging a fee this year. */
-    cardsWithFee: number;
-    /** Perks with a period under way that isn't used up yet. */
-    openPerks: number;
-  };
+  year?: number;
 };
 
-const ANNUAL_FEE = /ANNUAL (MEMBERSHIP )?FEE|MEMBERSHIP FEE|ANNUAL CARD FEE|CARD ANNUAL FEE/i;
-const REDEMPTION = /POINTS|REWARDS?\b|CASH ?BACK|REDEMPTION|REDEEM|MILES/i;
+type Prepared = {
+  account: CardAccount;
+  product: CardProduct | null;
+  productSource: CardScore["productSource"];
+  hidden: boolean;
+  held: Holding;
+  rows: PerkRow[];
+  sorted: Sorted;
+  spend: PerkRow[];
+  earned: EarnedRow[];
+};
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const lastDay = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const inYear = (date: string, year: number) => date.startsWith(`${year}-`);
 
-/** The periods of one cadence in a calendar year, in order. */
-export function periodsOf(cadence: Cadence, year: number): { key: string; label: string; start: string; end: string }[] {
-  const months = CADENCE_INFO[cadence].months;
-  const out = [];
-  for (let i = 0; i < 12 / months; i++) {
-    const m0 = i * months + 1;
-    const m1 = m0 + months - 1;
-    const key = cadence === "MONTHLY" ? `${year}-${pad(m0)}` : cadence === "QUARTERLY" ? `${year}-Q${i + 1}` : cadence === "SEMIANNUAL" ? `${year}-H${i + 1}` : `${year}`;
-    const label = cadence === "MONTHLY" ? MONTHS[i]! : cadence === "QUARTERLY" ? `Q${i + 1}` : cadence === "SEMIANNUAL" ? (i === 0 ? "Jan–Jun" : "Jul–Dec") : String(year);
-    out.push({ key, label, start: `${year}-${pad(m0)}-01`, end: `${year}-${pad(m1)}-${pad(lastDay(year, m1))}` });
+/** Two lines for one perk whose terms changed mid-year (a $20 credit that became $25) read as one. */
+function mergeLines(lines: PerkLine[]): PerkLine[] {
+  const out: PerkLine[] = [];
+  for (const l of lines) {
+    const same = out.find((x) => x.name === l.name && x.cadence === l.cadence);
+    if (!same) {
+      out.push(l);
+      continue;
+    }
+    same.periods = same.periods.map((p, i) => (p.status === "NOT_OFFERED" ? l.periods[i]! : p));
+    same.amountCents = l.amountCents;
+    same.how = l.how;
+    for (const k of ["allowanceCents", "usedCents", "missedCents", "remainingCents"] as const) same[k] += l[k];
+    same.neverUsed &&= l.neverUsed;
   }
   return out;
 }
 
-/** The period of `cadence` a date falls in. */
-export function periodKey(cadence: Cadence, date: string): string {
-  const y = date.slice(0, 4);
-  const m = Number(date.slice(5, 7));
-  if (cadence === "MONTHLY") return date.slice(0, 7);
-  if (cadence === "QUARTERLY") return `${y}-Q${Math.ceil(m / 3)}`;
-  if (cadence === "SEMIANNUAL") return `${y}-H${m <= 6 ? 1 : 2}`;
-  return y;
-}
-
-function regex(pattern: string): RegExp | null | "invalid" {
-  if (!pattern) return null;
-  try {
-    return new RegExp(pattern, "i");
-  } catch {
-    return "invalid";
-  }
-}
-
-const textOf = (r: PerkRow) => `${r.payee} ${r.detail ?? ""}`;
-
-/** The setup a card uses: the owner's, or the one its name suggests. */
-export function setupFor(settings: CardPerksSettings, account: { id: string; name: string; institution: string | null }): { setup: CardSetup; guessed: boolean } {
-  const saved = settings.cards[account.id];
-  if (saved) return { setup: saved, guessed: false };
-  return { setup: setupFromProduct(guessProduct(account), account.name), guessed: true };
-}
-
-function scoreCard(account: CardAccount, setup: CardSetup, guessed: boolean, rows: PerkRow[], settings: CardPerksSettings, year: number, today: string): CardScore {
-  const cpp = setup.centsPerPoint ?? settings.centsPerPoint;
-  const inYear = rows.filter((r) => r.accountId === account.id && r.date.startsWith(`${year}-`)).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-
-  // The annual fee, net of any reversal, as the statements charge it.
-  const feeRows = inYear.filter((r) => ANNUAL_FEE.test(textOf(r)));
-  const feeIds = new Set(feeRows.map((r) => r.id));
-  const chargedCents = -feeRows.reduce((t, r) => t + r.amountCents, 0);
-
-  // Statement credits, each to the first matching perk with room left in its period.
-  const perkRes = setup.perks.map((p) => ({ perk: p, re: p.unit === "USD" ? regex(p.pattern) : null }));
-  const allocated = new Map<string, { cents: number; rowIds: string[] }>();
-  const credits: CreditRow[] = [];
-  const creditIds = new Set<string>();
-  for (const r of inYear) {
-    if (r.lane !== "EXPENSE" || r.amountCents <= 0 || feeIds.has(r.id)) continue;
-    const perkCredit = r.classifiedBy === "card-perk-credit";
-    if (!perkCredit && !/CREDIT/i.test(r.payee)) continue;
-    const matches = perkRes.filter((x): x is { perk: Perk; re: RegExp } => x.re instanceof RegExp && x.re.test(textOf(r)));
-    const room = (p: Perk) => p.amount - (allocated.get(usageKey(account.id, p.id, periodKey(p.cadence, r.date)))?.cents ?? 0);
-    const perk = (matches.find((x) => room(x.perk) > 0) ?? matches[0])?.perk;
-    if (perk) {
-      const k = usageKey(account.id, perk.id, periodKey(perk.cadence, r.date));
-      const a = allocated.get(k) ?? { cents: 0, rowIds: [] };
-      allocated.set(k, { cents: a.cents + r.amountCents, rowIds: [...a.rowIds, r.id] });
-      credits.push({ id: r.id, date: r.date, payee: r.payee, amountCents: r.amountCents, perkId: perk.id, kind: "PERK" });
-      creditIds.add(r.id);
-    } else if (perkCredit) {
-      // Points cashed in are the points already counted, not a perk: shown, never added.
-      credits.push({ id: r.id, date: r.date, payee: r.payee, amountCents: r.amountCents, perkId: null, kind: REDEMPTION.test(textOf(r)) ? "REDEMPTION" : "OTHER" });
-      creditIds.add(r.id);
-    }
-    // Anything else that says CREDIT is a merchant's refund: it counts against spending.
-  }
-
-  const heldFrom = account.from;
-  const heldThrough = account.archived ? account.through : null;
-  const perks: PerkLine[] = perkRes.map(({ perk, re }) => {
-    const periods = periodsOf(perk.cadence, year).map((p): PerkPeriod => {
-      const k = usageKey(account.id, perk.id, p.key);
-      const det = allocated.get(k);
-      const manual = settings.usage[k];
-      const detected = det?.cents ?? 0;
-      const used = manual ?? detected;
-      const source = manual != null ? "MANUAL" : det ? "STATEMENTS" : "NONE";
-      const notHeld = !used && ((heldFrom != null && p.end < heldFrom) || heldFrom == null || (heldThrough != null && p.start > heldThrough));
-      const over = p.end < today;
-      const status: PeriodStatus = notHeld
-        ? "NOT_HELD"
-        : used >= perk.amount
-          ? "USED"
-          : p.start > today
-            ? "FUTURE"
-            : !over
-              ? "OPEN"
-              : manual != null || (account.through != null && p.end <= account.through)
-                ? used > 0
-                  ? "PARTIAL"
-                  : "MISSED"
-                : "AWAITING";
-      return { ...p, allowance: perk.amount, used, detected, source, status, rowIds: det?.rowIds ?? [] };
-    });
-    const counted = periods.filter((p) => p.status !== "NOT_HELD");
-    const short = (p: PerkPeriod) => Math.max(0, p.allowance - p.used);
-    const used = counted.reduce((t, p) => t + p.used, 0);
-    return {
-      id: perk.id,
-      name: perk.name,
-      cadence: perk.cadence,
-      unit: perk.unit,
-      amount: perk.amount,
-      pattern: perk.pattern,
-      note: perk.note,
-      patternError: re === "invalid",
-      periods,
-      allowance: counted.reduce((t, p) => t + p.allowance, 0),
-      used,
-      missed: counted.filter((p) => p.status === "MISSED" || p.status === "PARTIAL").reduce((t, p) => t + short(p), 0),
-      remaining: counted.filter((p) => p.status === "OPEN" || p.status === "AWAITING" || p.status === "FUTURE").reduce((t, p) => t + short(p), 0),
-      valueCents: perk.unit === "USD" ? used : Math.round(used * cpp),
-    };
-  });
-  const toCents = (p: PerkLine, n: number) => (p.unit === "USD" ? n : Math.round(n * cpp));
-
-  // Spending and the points it earns: purchases less merchant refunds, never fees,
-  // interest or the card's own credits.
-  const rules = setup.earnRules.map((r) => ({ rule: r, re: regex(r.pattern) }));
-  const earn = new Map<string, EarnLine>();
-  let charges = 0;
-  let refunds = 0;
-  let estimated = 0;
-  for (const r of inYear) {
-    if (r.lane !== "EXPENSE" || feeIds.has(r.id) || creditIds.has(r.id) || r.section === "Fees" || r.section === "Interest") continue;
-    if (r.amountCents < 0) charges -= r.amountCents;
-    else refunds += r.amountCents;
-    const hit = rules.find(({ rule, re }) => rule.categories.includes(r.category) || (re instanceof RegExp && re.test(textOf(r))));
-    const label = hit?.rule.label ?? "Everything else";
-    const rate = hit?.rule.rate ?? setup.baseRate;
-    const points = (-r.amountCents / 100) * rate;
-    const line = earn.get(label) ?? { label, rate, spendCents: 0, points: 0 };
-    earn.set(label, { ...line, spendCents: line.spendCents - r.amountCents, points: line.points + points });
-    estimated += points;
-  }
-  const entered = settings.pointsEarned[pointsKey(account.id, year)] ?? null;
-  const earned = entered ?? Math.max(0, Math.round(estimated));
-  const pointsValue = Math.round(earned * cpp);
-
-  // The fee the statements charged this year; else the card's terms if it was held this year.
-  const heldThisYear = account.from != null && account.from <= `${year}-12-31` && (account.through == null || account.through >= `${year}-01-01`);
-  const feeSource = feeRows.length ? "STATEMENTS" : heldThisYear && setup.annualFeeCents > 0 ? "TERMS" : "NONE";
-  const feeCents = feeSource === "STATEMENTS" ? chargedCents : feeSource === "TERMS" ? setup.annualFeeCents : 0;
-
-  const perksValue = perks.reduce((t, p) => t + p.valueCents, 0);
-  const otherCredits = credits.filter((c) => c.kind === "OTHER").reduce((t, c) => t + c.amountCents, 0);
-  return {
-    accountId: account.id,
-    accountName: account.name,
-    setup,
-    guessed,
-    from: account.from,
-    through: account.through,
-    centsPerPoint: cpp,
-    spend: { chargesCents: charges, refundsCents: refunds, netCents: charges - refunds },
-    earn: [...earn.values()].map((l) => ({ ...l, points: Math.round(l.points) })).sort((a, b) => b.points - a.points),
-    points: { estimated: Math.max(0, Math.round(estimated)), entered, earned, valueCents: pointsValue },
-    perks,
-    credits,
-    fee: { chargedCents, termsCents: setup.annualFeeCents, cents: feeCents, source: feeSource, rows: feeRows.map((r) => ({ id: r.id, date: r.date, payee: r.payee, amountCents: r.amountCents })) },
-    perksValueCents: perksValue,
-    otherCreditsCents: otherCredits,
-    creditsCents: perksValue + otherCredits,
-    returnedCents: pointsValue + perksValue + otherCredits,
-    remainingCents: perks.reduce((t, p) => t + toCents(p, p.remaining), 0),
-    missedCents: perks.reduce((t, p) => t + toCents(p, p.missed), 0),
-    netCents: pointsValue + perksValue + otherCredits - feeCents,
-  };
-}
-
-export function buildCardPerks(input: { settings: CardPerksSettings; accounts: CardAccount[]; rows: PerkRow[]; today: string; year?: number }): CardPerksReport {
-  const { settings, accounts, rows, today } = input;
+export function buildCardPerks(input: CardPerksInput): CardPerksReport {
+  const { settings, today } = input;
   const thisYear = Number(today.slice(0, 4));
   const year = input.year ?? thisYear;
-  const cardIds = new Set(accounts.map((a) => a.id));
-  const years = [...new Set([thisYear, ...rows.filter((r) => cardIds.has(r.accountId)).map((r) => Number(r.date.slice(0, 4)))])].sort((a, b) => b - a);
 
-  const inYear = (a: CardAccount) => a.from != null && a.from <= `${year}-12-31` && (a.through == null || a.through >= `${year}-01-01`);
-  const shown = accounts.filter(inYear).sort((a, b) => a.name.localeCompare(b.name));
+  const rowsBy = new Map<string, PerkRow[]>();
+  for (const r of [...input.rows].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) rowsBy.set(r.accountId, [...(rowsBy.get(r.accountId) ?? []), r]);
+
+  const prepared: Prepared[] = input.accounts
+    .filter((a) => a.statements.length)
+    .map((account) => {
+      const choice = settings.cards[account.id];
+      const chosen = choice?.productId === "none" ? null : productById(choice?.productId);
+      const guessed = choice?.productId ? null : guessProduct(account);
+      const product = chosen ?? guessed;
+      const through = account.statements.at(-1)!.end;
+      const held = { from: account.statements[0]!.start, through, open: !account.closed && (!!account.skipsIdle || daysBetween(through, today) <= STALE_DAYS) };
+      const rows = rowsBy.get(account.id) ?? [];
+      const sorted = sortCredits(product, rows);
+      const spend = rows.filter((r) => isSpendRow(r) && !sorted.notSpend.has(r.id));
+      const program = PROGRAMS[product?.program ?? "none"];
+      return {
+        account,
+        product,
+        productSource: chosen ? "CHOSEN" : guessed ? "AUTO" : "UNKNOWN",
+        hidden: choice?.hidden ?? false,
+        held,
+        rows,
+        sorted,
+        spend,
+        earned: product ? estimateEarn(product, program, spend) : [],
+      };
+    });
+
+  const years = [...new Set([thisYear, ...prepared.flatMap((p) => p.account.statements.flatMap((s) => [Number(s.start.slice(0, 4)), Number(s.end.slice(0, 4))]))])].sort((a, b) => b - a);
+
+  // Expected rewards per statement, for reconciling against the printed balances.
+  const expected = new Map<string, number>();
+  const statementAccount = new Map<string, string>();
+  for (const p of prepared) {
+    for (const s of p.account.statements) statementAccount.set(s.id, p.account.id);
+    for (const e of p.earned) expected.set(e.statementId, (expected.get(e.statementId) ?? 0) + e.units);
+  }
+  const cpp = (p: Prepared) => centsPerPoint(settings, p.product?.program ?? "none");
+  const pools = buildPools({
+    year,
+    cards: prepared.map((p) => ({ accountId: p.account.id, program: PROGRAMS[p.product?.program ?? "none"], centsPerPoint: cpp(p), statements: p.account.statements })),
+    snapshots: input.snapshots,
+    expected,
+    redemptions: prepared.flatMap((p) => p.sorted.credits.filter((c) => c.kind === "REDEMPTION").map((c) => ({ rowId: c.id, accountId: p.account.id, date: c.date, amountCents: c.amountCents }))),
+  });
+
+  const withProduct = prepared.filter((p): p is Prepared & { product: CardProduct } => p.product != null);
+  const inApp = inAppUses(
+    withProduct.map((p) => ({ accountId: p.account.id, product: p.product, held: p.held })),
+    [...input.rows, ...input.householdRows],
+    [...new Set([year - 1, year, thisYear])],
+  );
+
+  const shown = prepared.filter((p) => p.held.from <= `${year}-12-31` && (p.held.open || p.held.through >= `${year}-01-01`));
   const cards: CardScore[] = [];
   const hidden: CardPerksReport["hidden"] = [];
-  for (const a of shown) {
-    const { setup, guessed } = setupFor(settings, a);
-    if (setup.hidden) hidden.push({ accountId: a.id, accountName: a.name });
-    else cards.push(scoreCard(a, setup, guessed, rows, settings, year, today));
+  for (const p of shown) {
+    if (p.hidden) hidden.push({ accountId: p.account.id, accountName: p.account.name });
+    else cards.push(score(p, year));
   }
+
+  function rewardsFor(p: Prepared, y: number): CardRewards {
+    const program = PROGRAMS[p.product?.program ?? "none"];
+    const rate = program.kind === "CASH" ? 1 : cpp(p);
+    const exp = p.earned.filter((e) => inYear(e.date, y)).reduce((t, e) => t + e.units, 0);
+    const redeemedCents = p.sorted.credits.filter((c) => c.kind === "REDEMPTION" && inYear(c.date, y)).reduce((t, c) => t + c.amountCents, 0);
+    const pool = pools.find((x) => x.accountIds.includes(p.account.id));
+    const last = pool?.balances.filter((b) => b.date <= `${y}-12-31`).at(-1);
+    const balance = last ? { value: last.balance, date: last.date, statementId: last.statementId } : null;
+    if (program.kind === "NONE") return { kind: "NONE", expected: 0, earned: 0, fromStatements: 0, source: "NONE", valueCents: 0, redeemedCents, balance: null };
+    let earned = exp;
+    let fromStatements = 0;
+    if (pool) {
+      const { posted, proven, covered } = postedForCard(pool, p.account.id, y, expected, statementAccount);
+      const uncovered = p.account.statements.filter((s) => inYear(s.end, y) && !covered.has(s.id)).reduce((t, s) => t + (expected.get(s.id) ?? 0), 0);
+      earned = posted + uncovered;
+      fromStatements = proven;
+    }
+    earned = Math.max(0, Math.round(earned));
+    fromStatements = Math.min(earned, Math.max(0, Math.round(fromStatements)));
+    const source = fromStatements === 0 ? "ESTIMATE" : fromStatements >= earned - 1 ? "STATEMENTS" : "MIXED";
+    return { kind: program.kind, expected: Math.round(exp), earned, fromStatements, source, valueCents: Math.round(earned * rate), redeemedCents, balance };
+  }
+
+  function score(p: Prepared, y: number): CardScore {
+    const program = PROGRAMS[p.product?.program ?? "none"];
+    const ySpend = p.spend.filter((r) => inYear(r.date, y));
+    const charges = -ySpend.filter((r) => r.amountCents < 0).reduce((t, r) => t + r.amountCents, 0);
+    const refunds = ySpend.filter((r) => r.amountCents > 0).reduce((t, r) => t + r.amountCents, 0);
+
+    const earnBy = new Map<string, EarnLine>();
+    for (const e of p.earned) {
+      if (!inYear(e.date, y)) continue;
+      const l = earnBy.get(e.label) ?? { id: e.ruleId, label: e.label, rate: e.rate, spendCents: 0, units: 0, capped: e.capped };
+      earnBy.set(e.label, { ...l, spendCents: l.spendCents + e.spendCents, units: l.units + e.units });
+    }
+    const earn = [...earnBy.values()].map((l) => ({ ...l, units: Math.round(l.units) })).sort((a, b) => b.units - a.units);
+    const rewards = rewardsFor(p, y);
+    const perks = p.product ? mergeLines(perkLines({ accountId: p.account.id, product: p.product, held: p.held, rows: p.rows, sorted: p.sorted, inApp, year: y, today })) : [];
+
+    const feeRows = p.sorted.feeRows.filter((r) => inYear(r.date, y));
+    const lastFee = p.sorted.feeRows.filter((r) => r.amountCents < 0).at(-1);
+    const nextDue = p.held.open && lastFee ? addDays(lastFee.date, 365) : null;
+    const credits = p.sorted.credits.filter((c) => inYear(c.date, y));
+    const perksValue = perks.reduce((t, l) => t + l.usedCents, 0);
+    const offers = credits.filter((c) => c.kind === "OFFER").reduce((t, c) => t + c.amountCents, 0);
+    const feeCents = -feeRows.reduce((t, r) => t + r.amountCents, 0);
+    const used = perks.reduce((t, l) => t + l.usedCents, 0);
+    const missed = perks.reduce((t, l) => t + l.missedCents, 0);
+
+    // Keep or cancel: the year to the latest statement.
+    const to = p.held.through;
+    const from = addDays(to, -364);
+    const inWindow = (d: string) => d >= from && d <= to;
+    const rate = program.kind === "CASH" ? 1 : program.kind === "NONE" ? 0 : cpp(p);
+    const winRewards = p.earned.filter((e) => inWindow(e.date)).reduce((t, e) => t + e.units, 0) * rate;
+    const winPerks =
+      p.sorted.perkCredits.filter((c) => inWindow(c.on)).reduce((t, c) => t + c.row.amountCents, 0) +
+      [...inApp].filter(([k, e]) => k.startsWith(`${p.account.id}|`) && inWindow(e.date)).reduce((t, [k]) => {
+        const perk = p.product?.perks.find((x) => x.id === k.split("|")[1]);
+        return t + (perk?.amountCents ?? 0);
+      }, 0);
+    const winOffers = p.sorted.credits.filter((c) => c.kind === "OFFER" && inWindow(c.date)).reduce((t, c) => t + c.amountCents, 0);
+    const winFee = -p.sorted.feeRows.filter((r) => inWindow(r.date)).reduce((t, r) => t + r.amountCents, 0);
+
+    return {
+      accountId: p.account.id,
+      accountName: p.account.name,
+      last4: /(\d{4})\D*$/.exec(p.account.name)?.[1] ?? null,
+      product: p.product,
+      productSource: p.productSource,
+      program,
+      centsPerPoint: cpp(p),
+      held: p.held,
+      statementsInYear: p.account.statements.filter((s) => inYear(s.end, y)).length,
+      spend: { chargesCents: charges, refundsCents: refunds, netCents: charges - refunds },
+      earn,
+      hiddenEarn: (p.product?.earn ?? []).filter((r) => r.portal && applies(r, `${y}-01-01`, `${y}-12-31`)).map((r) => `${r.label} (${r.rate}×)`),
+      rewards,
+      perks,
+      credits,
+      fee: { cents: feeCents, rows: feeRows.map((r) => ({ id: r.id, date: r.date, amountCents: r.amountCents })), termsCents: p.product?.annualFeeCents ?? 0, nextDue },
+      perksValueCents: perksValue,
+      perksAllowanceCents: perks.reduce((t, l) => t + l.allowanceCents, 0),
+      offersCents: offers,
+      netCents: rewards.valueCents + perksValue + offers - feeCents,
+      remainingCents: perks.reduce((t, l) => t + l.remainingCents, 0),
+      missedCents: missed,
+      captureRate: used + missed > 0 ? used / (used + missed) : null,
+      trailing: p.product ? { from, to, valueCents: Math.round(winRewards + winPerks + winOffers), feeCents: winFee } : null,
+    };
+  }
+
+  // What to use before it resets: this year's open periods on cards still held.
+  const act: ActItem[] = [];
+  for (const p of withProduct) {
+    if (!p.held.open || p.hidden) continue;
+    const lines = year === thisYear ? (cards.find((c) => c.accountId === p.account.id)?.perks ?? []) : mergeLines(perkLines({ accountId: p.account.id, product: p.product, held: p.held, rows: p.rows, sorted: p.sorted, inApp, year: thisYear, today }));
+    for (const l of lines) {
+      const open = l.periods.find((x) => x.status === "OPEN");
+      if (!open) continue;
+      act.push({ accountId: p.account.id, perkId: l.id, name: l.name, card: p.product.name, leftCents: open.allowanceCents - open.usedCents, ends: open.end, daysLeft: daysBetween(today, open.end), how: l.how, neverUsed: l.neverUsed });
+    }
+  }
+  act.sort((a, b) => Number(a.neverUsed) - Number(b.neverUsed) || a.daysLeft - b.daysLeft || b.leftCents - a.leftCents);
+
+  const optimizer = optimize(
+    withProduct.filter((p) => !p.hidden && shown.includes(p)).map((p) => ({ accountId: p.account.id, product: p.product, held: p.held, centsPerPoint: cpp(p) })),
+    shown.filter((p) => !p.hidden).flatMap((p) => p.spend.filter((r) => inYear(r.date, year) && r.amountCents < 0)),
+    today,
+  );
+
+  // Where the rewards came from, in cents of value.
+  const mix = new Map<string, number>();
+  for (const c of cards) {
+    const rate = c.rewards.kind === "CASH" ? 1 : c.centsPerPoint;
+    for (const l of c.earn) {
+      const label = l.label.replace(/ (past the cap)$/, "");
+      mix.set(label, (mix.get(label) ?? 0) + l.units * rate);
+    }
+  }
+  const rewardsMix = [...mix].map(([label, v]) => ({ label, valueCents: Math.round(v) })).filter((x) => x.valueCents > 0).sort((a, b) => b.valueCents - a.valueCents);
+
   const sum = (f: (c: CardScore) => number) => cards.reduce((t, c) => t + f(c), 0);
+  const used = sum((c) => c.perksValueCents);
+  const missed = sum((c) => c.missedCents);
   return {
     year,
     years,
     today,
-    centsPerPoint: settings.centsPerPoint,
-    cards,
+    cards: cards.sort((a, b) => Number(b.held.open) - Number(a.held.open) || b.netCents - a.netCents),
     hidden,
+    pools,
+    act,
+    optimizer,
+    rewardsMix,
     totals: {
       feesCents: sum((c) => c.fee.cents),
-      perksValueCents: sum((c) => c.perksValueCents),
-      otherCreditsCents: sum((c) => c.otherCreditsCents),
-      creditsCents: sum((c) => c.creditsCents),
-      pointsValueCents: sum((c) => c.points.valueCents),
-      points: sum((c) => c.points.earned),
+      rewardsValueCents: sum((c) => c.rewards.valueCents),
+      perksValueCents: used,
+      offersCents: sum((c) => c.offersCents),
       netCents: sum((c) => c.netCents),
       remainingCents: sum((c) => c.remainingCents),
-      missedCents: sum((c) => c.missedCents),
+      missedCents: missed,
       spendCents: sum((c) => c.spend.netCents),
-      cardsWithFee: cards.filter((c) => c.fee.cents > 0).length,
-      openPerks: sum((c) => c.perks.filter((p) => p.periods.some((x) => x.status === "OPEN")).length),
+      captureRate: used + missed > 0 ? used / (used + missed) : null,
+      openPerks: act.length,
     },
   };
 }
+

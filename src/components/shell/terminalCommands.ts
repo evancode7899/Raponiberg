@@ -85,7 +85,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     mnemonic: "PERK",
     href: "/card-perks",
     label: "Card perks",
-    description: "Whether each credit card earns its annual fee: the monthly, quarterly, semiannual and yearly credits you used or missed, and the points your spending earned, at a point value you set.",
+    description: "Whether each credit card earns its fee: the rewards its statements report, every credit it paid (found automatically), what's still open, and the best card for each purchase.",
     group: "Money",
     keywords: ["credit card", "card", "perks", "benefits", "credits", "statement credit", "annual fee", "points", "rewards", "miles", "amex", "sapphire", "uber cash", "resy", "scorecard", "cents per point"],
   },
