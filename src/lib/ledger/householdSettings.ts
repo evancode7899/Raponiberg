@@ -27,3 +27,21 @@ export async function setMergeDate(db: Db, iso: string): Promise<void> {
     update: { value: iso },
   });
 }
+
+/**
+ * How the figures count a partner's money before the merge (book/householdView.ts):
+ * STRICT, the household from the merge date; PRO_FORMA, as if merged all along.
+ */
+export type HouseholdViewMode = "STRICT" | "PRO_FORMA";
+export const HOUSEHOLD_VIEW_KEY = "householdView";
+export const HOUSEHOLD_VIEW_MODES: readonly HouseholdViewMode[] = ["STRICT", "PRO_FORMA"];
+
+export async function getHouseholdView(db: Db): Promise<HouseholdViewMode> {
+  const row = await db.appSetting.findUnique({ where: { key: HOUSEHOLD_VIEW_KEY } });
+  return row?.value === "PRO_FORMA" ? "PRO_FORMA" : "STRICT";
+}
+
+export async function setHouseholdView(db: Db, mode: HouseholdViewMode): Promise<void> {
+  if (!HOUSEHOLD_VIEW_MODES.includes(mode)) throw new Error(`Expected STRICT or PRO_FORMA, got ${mode}`);
+  await db.appSetting.upsert({ where: { key: HOUSEHOLD_VIEW_KEY }, create: { key: HOUSEHOLD_VIEW_KEY, value: mode }, update: { value: mode } });
+}

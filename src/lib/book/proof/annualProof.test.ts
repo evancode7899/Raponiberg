@@ -3,14 +3,17 @@ import type { Lane } from "../../classifier/taxonomy";
 import { NO_HOUSEHOLD } from "../../household/patterns";
 import { employerKey, type StubLine } from "../../ingest/payroll/types";
 import { groupFor, refreshLedgerStatus, type LedgerAccount } from "../../ledger/loadLedger";
-import { buildTimeline, type SegmentInput } from "../../ledger/timeline";
+import { buildTimeline, valueAt, type SegmentInput } from "../../ledger/timeline";
 import { expenseFingerprint } from "../../profile/annualMath";
 import { buildAnnualProfile, type AnnualProfileReport } from "../../profile/buildAnnualProfile";
 import { buildAccountRollforwards, type RollforwardReport } from "../../profile/rollforwards";
 import { DEFAULT_SETTINGS, PROFILE_SETTINGS_KEY, type FinancialProfileSettings } from "../../profile/settings";
 import type { Book, BookBrokerage, BookRow, BookStatement, BookStub, BookTransferMatch } from "../load";
+import { personPayYear } from "../pay";
+import { household, PARTNER_PRE_MERGE, PARTNER_SHARE_RENT } from "../householdView";
 import { resolveReimbursements, rowFingerprint } from "../reimbursements";
-import { buildCashFlowReport } from "../reports/cashFlow";
+import { buildCashFlowReport, cashFlowContributions } from "../reports/cashFlow";
+import { buildNetWorth } from "../reports/netWorth";
 import type { ReimbursementLinksFile } from "../../reimbursements/store";
 import { buildAnnualProof, parseAnnualDescriptor, type AnnualDescriptor } from "./annualProof";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
@@ -416,6 +419,111 @@ describe("annual statement proofs", () => {
     // The first person's undeposited pay stays in: it's a gap in their statements, not someone else's money.
     const solo = buildAnnualProfile({ ...variant, persons: book.persons } as Book, SETTINGS).years.find((v) => v.year === 2025)!;
     expect(solo.cash!.waterfall.partnerKept).toBe(0);
+  });
+
+  it("starts the household at the merge: a partner's own account joins then, and what they paid in comes off living cost", async () => {
+    // Lee is the partner; the brokerage is Lee's own; the finances merge on Jul 2, 2025, so the
+    // Jul 1 money from Lee is a pre-merge payment into the household's checking.
+    const MERGE = "2025-07-02";
+    const lee = { id: "lee", name: "Lee Example", match: ["LEE EXAMPLE"] };
+    const paidIn = rows.find((r) => r.payee === "FROM SAM SAMPLE (UNTRACKED)")!;
+    const variantRows = rows.map((r) => (r === paidIn ? { ...r, category: PARTNER_PRE_MERGE } : r));
+    const variant = {
+      ...book,
+      ledger: { ...book.ledger, mergeDate: MERGE },
+      persons: [...book.persons, lee],
+      taxProfile: { ...book.taxProfile, accountOwners: { X2468: "lee" } },
+      rows: variantRows,
+      rowById: new Map(variantRows.map((r) => [r.id, r])),
+    } as Book;
+    const vp = buildAnnualProfile(variant, SETTINGS);
+    const at = (p: AnnualProfileReport, year: number) => p.years.find((y) => y.year === year)!;
+    const [base, y] = [at(profile, 2025), at(vp, 2025)];
+
+    // Their share is a spending credit, the same on Cash flow, living cost and the annual statement.
+    expect(y.cash!.spending.find((c) => c.category === PARTNER_SHARE_RENT)?.cents).toBe(-paidIn.amountCents);
+    expect(y.cash!.waterfall.living).toBe(base.cash!.waterfall.living - paidIn.amountCents);
+    expect(y.cash!.savedBridge.unexplained).toBe(0);
+    const cfYear = (b: Book) => buildCashFlowReport(b, { granularity: "year", from: "2025-01-01", to: "2025-12-31" }).periods[0]!;
+    expect(cfYear(variant).spendingCents).toBe(cfYear(book).spendingCents - paidIn.amountCents);
+    expect(cfYear(variant).spendingByCategory.find((c) => c.category === PARTNER_SHARE_RENT)?.cents).toBe(-paidIn.amountCents);
+    expect(cfYear(variant).externalByCategory.some((c) => c.category === PARTNER_PRE_MERGE)).toBe(false);
+    // It's in saved, not outside money; the brokerage enters at the merge with what it held.
+    const brkAtMerge = valueAt(ledgerAccounts.find((a) => a.id === "brk")!.timeline, "2025-07-01").cents;
+    expect(y.bridge!.outsideMoney).toBe(base.bridge!.outsideMoney - paidIn.amountCents);
+    expect(y.bridge!.newlyTracked).toBe(brkAtMerge);
+    expect(y.bridge!.unexplainedSavings).toBe(base.bridge!.unexplainedSavings);
+    expect(y.bridge!.total).toBe(y.change!.cents);
+    // Before the merge the brokerage isn't the household's.
+    const brk2024 = valueAt(ledgerAccounts.find((a) => a.id === "brk")!.timeline, "2024-12-31").cents;
+    expect(at(vp, 2024).netWorth!.netWorth).toBe(at(profile, 2024).netWorth!.netWorth - brk2024);
+    expect(y.people!.find((p) => p.personId === "lee")).toMatchObject({ member: true, from: MERGE, hasPay: false });
+
+    // Every page reads the same view: Net worth and Cash flow agree with the annual statement.
+    const nw = buildNetWorth(variant, { granularity: "year" });
+    expect(nw.periods.find((p) => p.start === "2024-01-01")!.household.closingCents).toBe(at(vp, 2024).netWorth!.netWorth);
+    expect(nw.periods.find((p) => p.start === "2025-01-01")!.household.newlyTrackedCents).toBe(brkAtMerge);
+    const cf = (b: Book) => buildCashFlowReport(b, { granularity: "month", from: "2025-03-01", to: "2025-03-31" }).periods[0]!;
+    const brkRows = (b: Book) => cashFlowContributions(b, [{ start: "2024-12-01", end: "2025-07-01" }], new Set(["brk"])).length;
+    expect(brkRows(variant)).toBe(0);
+    expect(cf(variant).incomeCents).toBe(cf(book).incomeCents);
+
+    // Pro forma: as if merged all along, it's the figures from before the merge rule.
+    const proForma = { ...variant, viewMode: "PRO_FORMA" } as Book;
+    const pf = buildAnnualProfile(proForma, SETTINGS);
+    expect(pf.view).toBe("PRO_FORMA");
+    expect(at(pf, 2025).cash!.spending.some((c) => c.category === PARTNER_SHARE_RENT)).toBe(false);
+    expect(at(pf, 2025).cash!.waterfall.living).toBe(base.cash!.waterfall.living);
+    expect(at(pf, 2024).netWorth!.netWorth).toBe(at(profile, 2024).netWorth!.netWorth);
+    expect(at(pf, 2025).bridge!.outsideMoney).toBe(base.bridge!.outsideMoney);
+    expect(at(pf, 2025).people!.find((p) => p.personId === "lee")!.from).toBeNull();
+
+    const vctx = { book: variant, db: fakeDb };
+    for (const f of annualFigures(vp, buildAccountRollforwards(variant))) {
+      if (f.page !== "Annual") continue;
+      const p = await buildProof(vctx, f.descriptor);
+      const what = JSON.stringify(f.descriptor);
+      if (f.shown && "cents" in f.shown) expect(p.figure, what).toEqual({ cents: f.shown.cents });
+      expect(p.selfCheck?.ok ?? true, `${what}: ${p.selfCheck?.explain}`).toBe(true);
+      for (const c of chains(p)) expect(reAdds(c.lines), `${what} · ${c.title}`).toEqual([]);
+    }
+  });
+
+  it("counts as a partner's share only money they paid into household accounts", () => {
+    const like = rows.find((r) => r.payee === "FROM SAM SAMPLE (UNTRACKED)")!;
+    const extra = (id: string, accountId: string, amountCents: number): BookRow => ({ ...like, id, accountId, amountCents, category: PARTNER_PRE_MERGE, date: "2025-03-03", bookedOn: "2025-03-03" });
+    const paidIn = extra("in", "chk", 40_000);
+    const sentOut = extra("out", "chk", -25_000); // the household sending the partner money: outside money, not a refund of their share
+    const ownCard = extra("own", "brk", 30_000); // on the partner's own account before it joined
+    const variantRows = [...rows, paidIn, sentOut, ownCard];
+    const variant = {
+      ...book,
+      ledger: { ...book.ledger, mergeDate: "2025-07-02" },
+      persons: [...book.persons, { id: "lee", name: "Lee Example", match: ["LEE EXAMPLE"] }],
+      taxProfile: { ...book.taxProfile, accountOwners: { X2468: "lee" } },
+      rows: variantRows,
+      rowById: new Map(variantRows.map((r) => [r.id, r])),
+    } as Book;
+    const v = household(variant).rows;
+    const of = (id: string) => v.find((r) => r.id === id);
+    expect(of("in")).toMatchObject({ lane: "EXPENSE", category: PARTNER_SHARE_RENT, amountCents: 40_000 });
+    expect(of("out")).toMatchObject({ lane: "EXTERNAL_TRANSFER", category: PARTNER_PRE_MERGE });
+    expect(of("own")).toBeUndefined();
+    // The stored rows are as printed: the view is how the figures count them.
+    expect(variant.rowById.get("in")).toMatchObject({ lane: "EXTERNAL_TRANSFER", category: PARTNER_PRE_MERGE });
+  });
+
+  it("counts a partner's pay only from the merge, check by check", () => {
+    const from = "2025-07-02";
+    const cut = personPayYear(book, "pat", 2025, "2025-12-31", from);
+    const after = stubs.filter((s) => s.payDate >= from && s.payDate.startsWith("2025"));
+    const current = (k: StubLine["kind"]) => after.reduce((t, s) => t + (s.lines.find((l) => l.kind === k)?.current ?? 0), 0);
+    expect(cut.employers[0]!.firstPayDate).toBe(after[0]!.payDate);
+    expect(cut.totals.salary).toBe(current("REGULAR"));
+    expect(cut.totals.deferrals).toBe(current("RETIREMENT_PRETAX") + current("HSA"));
+    expect(cut.totals.net).toBe(after.reduce((t, s) => t + s.printed.netCurrent, 0));
+    // A year wholly before the merge has no pay at all.
+    expect(personPayYear(book, "pat", 2025, "2025-12-31", "2026-01-01").employers).toEqual([]);
   });
 
   it("points a calendar year's saved from take-home on Cash flow to the Annual statement", async () => {

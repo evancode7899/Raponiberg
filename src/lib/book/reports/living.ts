@@ -2,6 +2,7 @@ import { amountsFromLines } from "../../tax/facts/payroll.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { LivingTrail } from "../../profile/basePay.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
+import { household } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
 import { oneOffSubject } from "../reimbursements.ts";
 import { countsOn } from "../rent.ts";
@@ -14,7 +15,9 @@ import { oneOffRules, provenMonths } from "./spending.ts";
  * living seeds, the Goals emergency fund, the Home budget). Spending as Cash flow selects
  * it (cashFlowContributions), less tax payments (taxes, not living), less what the owner
  * counts as one-off, less expense reimbursements received (Zelle/Venmo rows and the
- * reimbursements paid inside paychecks).
+ * reimbursements paid inside paychecks). Rows as the household view counts them
+ * (householdView.ts): a partner's pre-merge share is already a credit in its own spending
+ * category there, so it comes off living cost the way it comes off Cash flow's spending.
  */
 
 export type OneOffRow = {
@@ -89,7 +92,7 @@ export function cashRowsIn(book: Book, settings: Pick<FinancialProfileSettings, 
   const bump = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
   // Rows the ledger books in the window less rows Cash flow counts in it: rent paid ahead (or late).
   let timing = 0;
-  for (const r of book.rows) {
+  for (const r of household(book).rows) {
     if (taxIds.has(r.id) || (r.lane !== "INCOME" && r.lane !== "EXPENSE") || r.precision !== "EXACT") continue;
     const day = dayOf(r);
     if (day === r.bookedOn) continue;

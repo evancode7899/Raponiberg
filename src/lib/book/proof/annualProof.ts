@@ -1,6 +1,6 @@
 import { addDays } from "../../dates/isoDate.ts";
 import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
-import { buildAnnualProfile, transfersInTransit, type AnnualProfileReport, type YearCash, type YearProfile } from "../../profile/buildAnnualProfile.ts";
+import { buildAnnualProfile, transfersInTransit, type AnnualProfileReport, type PersonYear, type YearCash, type YearProfile } from "../../profile/buildAnnualProfile.ts";
 import { bucketForGroup } from "../../profile/annualMath.ts";
 import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "../../profile/rollLines.ts";
 import { buildAccountRollforwards, type AccountRollforward, type RollYear } from "../../profile/rollforwards.ts";
@@ -238,7 +238,13 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
   const yr = y.year;
   const start = `${yr}-01-01`;
   const people = (y.people ?? []).filter((p) => p.hasPay);
-  const payD = (personId: string, l: PayLine): PayDescriptor => ({ report: "pay", basis: "ytd", personId, year: yr, through: y.asOf, lines: [l] });
+  const fromOf = new Map(people.map((p) => [p.personId, p.from]));
+  // A partner's year from the merge: the checks paid from then on, not the stub's year to date.
+  const payD = (personId: string, l: PayLine): PayDescriptor => {
+    const from = fromOf.get(personId);
+    return from ? { report: "pay", basis: "paid", personId, start: from, end: y.asOf, lines: [l] } : { report: "pay", basis: "ytd", personId, year: yr, through: y.asOf, lines: [l] };
+  };
+  const payOf = (p: PersonYear) => personPayYear(book, p.personId, yr, y.asOf, p.from ?? undefined);
   const base = { ...cashChecks(c, y), through: y.asOf };
   const label = `${y.label}`;
 
@@ -256,8 +262,10 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
   const stubLines = (pick: (b: ReturnType<typeof personPayYear>["totals"]) => number, what: string): ChainLine[] =>
     startChain(
       people.flatMap((p) =>
-        personPayYear(book, p.personId, yr, y.asOf).employers.map((e) =>
-          line("+", `${p.name} · ${e.employer}`, pick(e.breakdown), "proven", { note: `${what}, year to date on the ${e.lastPayDate} stub` }),
+        payOf(p).employers.map((e) =>
+          line("+", `${p.name} · ${e.employer}`, pick(e.breakdown), "proven", {
+            note: p.from ? `${what}, check by check on the stubs paid ${p.from} – ${e.lastPayDate} (from the merge)` : `${what}, year to date on the ${e.lastPayDate} stub`,
+          }),
         ),
       ),
     );
@@ -269,12 +277,12 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
     // Where the undeposited pay went: each stub's printed deposit account.
     const notDeposited = new Map<string, number>();
     for (const p of people)
-      for (const e of personPayYear(book, p.personId, yr, y.asOf).employers)
+      for (const e of payOf(p).employers)
         for (const s of e.stubs) if (!s.depositTransactionId) for (const d of s.deposits) notDeposited.set(d.last4 ?? "?", (notDeposited.get(d.last4 ?? "?") ?? 0) + 1);
     const to = [...notDeposited].map(([last4, n]) => `••${last4} (${n} stub${n === 1 ? "" : "s"})`).join(", ");
     const lines: ChainLine[] = [line(undefined, "Saved from take-home on Cash flow", b.takeHome, "proven", { link: { label: `Saved from take-home, ${label}`, descriptor: cf.d("net") } })];
     for (const p of people) {
-      const d = personPayYear(book, p.personId, yr, y.asOf).totals.deferrals;
+      const d = payOf(p).totals.deferrals;
       if (d) lines.push(line("+", `${p.name}: 401(k) and HSA deferrals`, d, "proven", { link: { label: `${p.name}'s deferrals`, descriptor: payD(p.personId, "deferrals") }, note: "Taken from pay before it's deposited." }));
     }
     if (b.employer) lines.push(line("+", "Employer retirement & HSA money", b.employer, "proven", { link: cashLink("Employer money", yr, "employer") }));
@@ -356,7 +364,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
       return chainProof(`A partner's pay kept in their own accounts · ${label}`, w.partnerKept, "Net pay − deposits reaching household accounts", startChain(lines), {
         ...base,
         blocks: [stubsBlock()],
-        note: `Pay into a partner's own accounts (before the ${book.ledger.mergeDate} merge, or an account that stayed theirs) was theirs, not the household's. What they moved in later counts as outside money in the net-worth bridge.`,
+        note: `A partner's pay counts from the ${book.ledger.mergeDate} merge. What of it went to an account that stayed theirs was theirs, not the household's; what they moved in later counts as outside money in the net-worth bridge.`,
       });
     }
     case "taxes-paid":
@@ -433,7 +441,7 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
       ];
       if (c.profile.seeds?.baseYear === yr && c.profile.seeds.living.LAST_YEAR)
         blocks.push({ kind: "breakdown", title: "In the forecast", items: [{ label: c.profile.seeds.living.LAST_YEAR.label, value: { cents: c.profile.seeds.living.LAST_YEAR.cents }, link: { label: "Living cost seed", descriptor: { report: "forecast", figure: "seed", which: "living", basis: "LAST_YEAR" } } }] });
-      return chainProof(`Living expenses · ${label}`, w.living, "Spending less taxes, one-offs and reimbursements", lines, { ...base, blocks });
+      return chainProof(`Living expenses · ${label}`, w.living, "Spending less taxes, one-offs, reimbursements and a partner's pre-merge share", lines, { ...base, blocks });
     }
     case "one-offs": {
       const t = cash.livingTrail;

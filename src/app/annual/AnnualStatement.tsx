@@ -20,8 +20,11 @@ const proofOf = (descriptor: AnnualDescriptor, shown: number | null): ProofTarge
 const cashP = (y: YearProfile, line: AnnualCashLine, shown: number | null) => proofOf({ report: "annual", figure: "cash", year: y.year, line }, shown);
 const nwP = (y: YearProfile, line: AnnualNetWorthLine, shown: number | null) => proofOf({ report: "annual", figure: "net-worth", year: y.year, line }, shown);
 const bridgeP = (y: YearProfile, line: AnnualBridgeLine, shown: number) => proofOf({ report: "annual", figure: "bridge", year: y.year, line }, shown);
+// A partner's merge year: the checks paid from the merge on, not the stub's year to date.
 const payP = (y: YearProfile, p: PersonYear, line: PayLine, shown: number): ProofTarget => ({
-  descriptor: { report: "pay", basis: "ytd", personId: p.personId, year: y.year, through: y.asOf, lines: [line] },
+  descriptor: p.from
+    ? { report: "pay", basis: "paid", personId: p.personId, start: p.from, end: y.asOf, lines: [line] }
+    : { report: "pay", basis: "ytd", personId: p.personId, year: y.year, through: y.asOf, lines: [line] },
   shownCents: shown,
 });
 
@@ -199,10 +202,16 @@ function Footnotes({ r, est }: { r: AnnualProfileReport; est: YearEstimate | nul
   const partner = mergedPartner(r);
   return (
     <ul className="mt-3 flex flex-col gap-0.5 text-[11px] text-muted">
-      {partner && (
+      {partner && r.view === "STRICT" && (
         <li>
-          Finances merged {r.mergeDate}. Before then, {partner}&apos;s pay into their own accounts was theirs: it&apos;s taken back out above net cash, and what they moved in shows as
-          outside money.
+          Finances merged {r.mergeDate}. Before then nothing of {partner}&apos;s is shown: not their pay, nor their own accounts, which join net worth with what they held on the merge
+          date. What {partner} paid into your accounts before it was their share of rent and cards: a credit against spending, here as on Cash flow and Net worth. (Settings › Household switches to pro forma.)
+        </li>
+      )}
+      {partner && r.view === "PRO_FORMA" && (
+        <li>
+          Pro forma: counted as if finances had merged all along (they merged {r.mergeDate}). {partner}&apos;s pay into their own accounts is taken back out above net cash, and what they
+          moved in shows as outside money. (Settings › Household switches to counting from the merge.)
         </li>
       )}
       {cur && (
@@ -260,8 +269,8 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
       good: null,
       get: (c) => {
         const y = c.y ?? c.est?.ytd;
-        const age = y && person(y, p.id)?.age;
-        return age != null ? { v: age } : null;
+        const q = y && person(y, p.id);
+        return q?.member && q.age != null ? { v: q.age } : null;
       },
     });
 
@@ -282,10 +291,12 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
           get: (c) =>
             pay(c, (y) => {
               const q = person(y, p.id)!;
+              // Before the merge a partner wasn't in the household: nothing to show.
+              if (!q.member) return null;
               return {
                 v: q[what],
                 proof: payP(y, q, line, q[what]),
-                title: [what === "salary" ? q.employers.join(" + ") : "", ...q.partial].filter(Boolean).join("\n") || undefined,
+                title: [what === "salary" ? q.employers.join(" + ") : "", q.from ? `Paid from the ${q.from} merge` : "", ...q.partial].filter(Boolean).join("\n") || undefined,
                 after: q.partial.length ? <Badge tone="warn">partial</Badge> : undefined,
               };
             }),
@@ -350,7 +361,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     lines.push({
       label: `Less: ${partner}'s pay kept in own accounts`,
       indent: true,
-      help: `Net pay that reached none of the household's accounts — paid into ${partner}'s own accounts, mostly before the ${r.mergeDate} merge. It was theirs, not the household's; what they moved in later is outside money below.`,
+      help: `Net pay since the ${r.mergeDate} merge that reached none of the household's accounts — paid into an account that stayed ${partner}'s. It was theirs, not the household's; what they moved in later is outside money below.`,
       get: kept,
     });
   }
@@ -361,7 +372,9 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
   lines.push({
     label: "Living expenses",
     indent: true,
-    help: "Every expense on bank and card statements except income-tax payments and one-offs, net of reimbursements. The FIRE plan starts from the latest full year of this line.",
+    help: mergedPartner(r) && r.view === "STRICT"
+      ? `Every expense on bank and card statements except income-tax payments and one-offs, net of reimbursements and, before the ${r.mergeDate} merge, of what ${mergedPartner(r)} paid toward rent and cards. The FIRE plan starts from the latest full year of this line.`
+      : "Every expense on bank and card statements except income-tax payments and one-offs, net of reimbursements. The FIRE plan starts from the latest full year of this line.",
     get: (c) => cash(c, (w, _, y) => ({ v: -w.living, proof: cashP(y, "living", w.living) }), (e) => (e.flows.living != null ? { v: -(e.flows.living + (e.flows.bonusSpent ?? 0)) } : null)),
   });
   lines.push({
@@ -429,9 +442,9 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
   bridgeLine(
     "outsideMoney",
     mergedPartner(r) ? `Outside money (incl. ${mergedPartner(r)} moving money in)` : "Outside money",
-    "Money from outside the tracked accounts: a partner's own money before the merge, untracked accounts, international transfers.",
+    "Money from outside the tracked accounts: a partner's own savings moving in at and after the merge, untracked accounts, international transfers. Counted from the merge, what a partner paid toward rent and cards before it is a credit against spending, not outside money.",
   );
-  bridgeLine("newlyTracked", "Balances first on file", "What an account already held when its first statement begins (a partner's accounts join at the merge).", false);
+  bridgeLine("newlyTracked", "Balances first on file", "What an account already held when it joins: its first statement, or the merge for a partner's own account already on file.", false);
   bridgeLine("inTransit", "Transfers in transit", "A transfer whose other leg lands in the next year (e.g. a rollover).", false);
   bridgeLine(
     "unexplainedSavings",

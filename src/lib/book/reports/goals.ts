@@ -4,6 +4,7 @@ import { GROUP_ORDER, type AccountGroup } from "../../ledger/loadLedger.ts";
 import { valueAt } from "../../ledger/timeline.ts";
 import { netWorthAtBlockers, netWorthBlockers } from "../blockers.ts";
 import type { Book } from "../load.ts";
+import { household } from "../householdView.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import { SPENDABLE_GROUPS } from "../definitions.ts";
@@ -108,14 +109,14 @@ export function buildGoals(
   profile: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">,
 ): GoalsReport {
   const asOf = book.horizon.netWorth;
-  const open = book.ledger.accounts.filter((a) => !a.closed && a.group !== "Credit cards" && a.timeline.firstDay! <= asOf);
+  const open = household(book).ledger.accounts.filter((a) => !a.closed && a.group !== "Credit cards" && a.timeline.firstDay! <= asOf);
   const balance = new Map(open.map((a) => [a.id, valueAt(a.timeline, asOf).cents]));
 
   const typical = typicalMonthlyLiving(book, profile);
   const monthlySpending = typical
     ? { cents: typical.cents, months: typical.months, from: typical.from, to: typical.to, periods: typical.periods.map((p) => ({ start: p.start, end: p.end, cents: p.cents, spendingCents: p.spendingCents })) }
     : null;
-  const cardsOwedCents = -book.ledger.accounts.filter((a) => !a.closed && a.group === "Credit cards" && a.timeline.firstDay! <= asOf).reduce((s, a) => s + valueAt(a.timeline, asOf).cents, 0);
+  const cardsOwedCents = -household(book).ledger.accounts.filter((a) => !a.closed && a.group === "Credit cards" && a.timeline.firstDay! <= asOf).reduce((s, a) => s + valueAt(a.timeline, asOf).cents, 0);
 
   const fundersOf = (g: Goal) => open.filter((a) => g.groups.includes(a.group) || g.accountIds.includes(a.id));
   const reach = forecast ? forecastFiller(forecast) : null;

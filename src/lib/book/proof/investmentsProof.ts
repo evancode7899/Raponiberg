@@ -4,6 +4,7 @@ import { valueAt } from "../../ledger/timeline.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import type { Book, BookHoldings } from "../load.ts";
+import { household } from "../householdView.ts";
 import { holdingsByAccount, type AccountHoldings, type HoldingsStatus, type PositionRow } from "../reports/investments.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor } from "./common.ts";
@@ -98,7 +99,7 @@ function readFrom(book: Book, a: AccountHoldings, snap: BookHoldings | null): Pr
 
 function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: InvestmentsDescriptor): Proof {
   const snap = a.holdingsId ? (book.holdings.find((h) => h.id === a.holdingsId) ?? null) : null;
-  const timeline = book.ledger.accounts.find((x) => x.id === a.accountId)!.timeline;
+  const timeline = household(book).ledger.accounts.find((x) => x.id === a.accountId)!.timeline;
   const shown = positions.filter((p) => p.accountId === a.accountId);
   const held = shown.filter((p) => p.kind !== "ACCOUNT");
   const plug = shown.find((p) => p.kind === "ACCOUNT") ?? null;

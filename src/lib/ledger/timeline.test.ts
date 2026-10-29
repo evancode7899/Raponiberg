@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTimeline, chainBreaks, coverageGaps, decompose, modifiedDietz, valueAt } from "./timeline";
+import { buildTimeline, chainBreaks, clipTimeline, coverageGaps, decompose, modifiedDietz, valueAt } from "./timeline";
 
 describe("timeline: bank account on a mid-month cycle", () => {
   // Chase-like statements: Jul 25 – Aug 26, Aug 27 – Sep 25.
@@ -82,6 +82,21 @@ describe("timeline: quarterly 401(k)", () => {
     for (const d of months) {
       expect(d.openingCents + d.contributionsCents + d.growthCents + d.feesCents + d.unexplainedCents).toBe(d.closingCents);
     }
+  });
+
+  it("starts on a later day when clipped: opening that morning, the rest of the quarter, still adding up", () => {
+    const c = clipTimeline(t, "2026-02-15");
+    expect(c.firstDay).toBe("2026-02-15");
+    // Opens with the value the night before; the same value and closing as the full timeline from then on.
+    expect(valueAt(c, "2026-02-14")).toMatchObject({ cents: valueAt(t, "2026-02-14").cents, quality: "UNKNOWN" });
+    expect(valueAt(c, "2026-03-31")).toMatchObject({ cents: 1_480_000, quality: "EXACT" });
+    const d = decompose(c, "2026-02-15", "2026-03-31");
+    expect(d.openingCents + d.contributionsCents + d.growthCents + d.feesCents).toBe(d.closingCents);
+    expect(d.unexplainedCents).toBe(0);
+    // Its first days are an estimate, as any day inside a quarter is.
+    expect(c.segments[0]!.derived).toBe(true);
+    expect(clipTimeline(t, "2025-12-01")).toBe(t);
+    expect(clipTimeline(t, "2026-04-01").firstDay).toBeNull();
   });
 
   it("computes a Modified Dietz return net of fees", () => {

@@ -1,6 +1,7 @@
 import { daysBetween, endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
+import { household } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
 import { oneOffSubject, withReimbursements } from "../reimbursements.ts";
 import { countsOn, rentPayments, type RentPayment } from "../rent.ts";
@@ -264,7 +265,7 @@ export function spendingRows(book: Book, accountIds?: string[]) {
   const to = (proven.current ?? proven.window.at(-1))?.end;
   const windowEnd = proven.window.at(-1)?.end;
   const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
-  const inRange = withReimbursements(book).filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
+  const inRange = withReimbursements({ rows: household(book).rows, reimbursements: book.reimbursements }).filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
   const reversed = reversals(inRange);
   const inScope = inRange.filter((r) => !reversed.has(r.id));
   return {

@@ -3,6 +3,7 @@ import { buildNetWorthReport as buildFromLedger, spanQuality, type NetWorthPerio
 import { GROUP_ORDER } from "../../ledger/loadLedger.ts";
 import { chainReturns } from "../../ledger/timeline.ts";
 import { netWorthAtBlockers, netWorthBlockers } from "../blockers.ts";
+import { household } from "../householdView.ts";
 import type { Book } from "../load.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 
@@ -66,7 +67,7 @@ export type NetWorthReport = Omit<LedgerNetWorthReport, "periods" | "current"> &
  * that add months over a span take their quality from here.
  */
 export function netWorthSpanQuality(book: Book, start: string, end: string) {
-  return spanQuality(book.ledger, start, minIso(end, book.horizon.netWorth));
+  return spanQuality(household(book).ledger, start, minIso(end, book.horizon.netWorth));
 }
 
 /** The trailing run of periods that pass `ok`. */
@@ -92,7 +93,8 @@ const touches = (b: BlockerRef, ids: Set<string>) => !b.accountId || ids.has(b.a
  */
 export function buildNetWorth(book: Book, opts: { granularity: Granularity; from?: string; to?: string }): NetWorthReport {
   const through = book.horizon.netWorth;
-  const r = buildFromLedger(book.ledger, { ...opts, today: book.today, through });
+  // The household view (householdView.ts): a partner's own account counts from the day it joined.
+  const r = buildFromLedger(household(book).ledger, { ...opts, today: book.today, through });
   const periods = r.periods.map((p) => ({ ...p, blockers: refs(netWorthBlockers(book, p.start, p.end)) }));
 
   const investmentIds = new Set(r.accounts.filter((a) => a.isInvestment).map((a) => a.id));

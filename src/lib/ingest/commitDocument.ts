@@ -9,6 +9,7 @@ import { refreshDerived, type MaintenanceReport } from "../ledger/maintenance.ts
 import { resolveAccount, type AccountResolution } from "../ledger/resolveAccount.ts";
 import { hashFile } from "../statements/hashFile.ts";
 import { parseIsoDate } from "../statements/parseIsoDate.ts";
+import { loadTaxProfile } from "../tax/profile.ts";
 import { BILL_CYCLE_DAYS, continueBill } from "./billContinuation.ts";
 import { storeDocumentFacts } from "./documentFacts.ts";
 import { contentFingerprint } from "./fingerprint.ts";
@@ -107,7 +108,7 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
   }
 
   const autoCommit = input.autoCommit ?? true;
-  const [ctx, categoryIds] = await Promise.all([loadClassifyContext(db), ensureCategories(db)]);
+  const [ctx, categoryIds, { persons }] = await Promise.all([loadClassifyContext(db), ensureCategories(db), loadTaxProfile(db)]);
   // Stored relative to the app folder (documentFacts re-reads it from there).
   const relPath = path.relative(process.cwd(), path.join(dataDir(), "statements", `${fileHash}.${input.fileExtension}`));
   const isSummaryDoc = doc.kind === "PERIOD_SUMMARY";
@@ -128,7 +129,7 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
         for (const rawSection of doc.sections) {
           let section = rawSection;
           const isSummarySection = section.isSummary ?? isSummaryDoc;
-          const resolution = await resolveAccount(tx, section);
+          const resolution = await resolveAccount(tx, section, persons);
           if (rawSection.startsAfterPrior && !isSummarySection) {
             const inside = await tx.statementImport.findFirst({
               where: {

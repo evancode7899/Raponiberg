@@ -1,5 +1,6 @@
 import { netWorthBlockers } from "../book/blockers.ts";
 import { accountIdForNumber, investmentIncomeByAccount } from "../book/investments.ts";
+import { household } from "../book/householdView.ts";
 import type { Book } from "../book/load.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import type { Lane } from "../classifier/taxonomy.ts";
@@ -73,7 +74,7 @@ export function buildAccountRollforwards(book: Book): RollforwardReport {
       incomeByAccountYear.set(id, m);
     }
   }
-  const accounts: AccountRollforward[] = book.ledger.accounts
+  const accounts: AccountRollforward[] = household(book).ledger.accounts
     .filter((a) => a.isInvestment)
     .map((a) => {
       const t = a.timeline;

@@ -6,6 +6,7 @@ import type { AccountGroup } from "../../ledger/loadLedger.ts";
 import { decompose, valueAt } from "../../ledger/timeline.ts";
 import { netWorthAtBlockers } from "../blockers.ts";
 import type { Book, BookHoldings } from "../load.ts";
+import { household } from "../householdView.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import { buildNetWorth } from "./netWorth.ts";
 
@@ -159,7 +160,7 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
 
   const lastDay = book.horizon.netWorth;
   // Closed or not today, an account counts when it held money on that day (as on Net worth).
-  const included = book.ledger.accounts.filter((a) => a.timeline.firstDay != null && a.timeline.firstDay <= lastDay && (a.isInvestment || (settings.includeBankCash && a.group === "Cash")));
+  const included = household(book).ledger.accounts.filter((a) => a.timeline.firstDay != null && a.timeline.firstDay <= lastDay && (a.isInvestment || (settings.includeBankCash && a.group === "Cash")));
   for (const a of included) {
     const value = valueAt(a.timeline, lastDay).cents;
     if (value === 0) continue;
