@@ -5,6 +5,7 @@ import { householdPatterns } from "../household/householdFile.ts";
 import type { HouseholdPatterns } from "../household/patterns.ts";
 import { payrollCodeOf, type PayStubFacts, type PayStubSource, type StubLineKind } from "../ingest/payroll/types.ts";
 import type { BrokerageFacts, HoldingsFacts } from "../ingest/types.ts";
+import { getHouseholdView, type HouseholdViewMode } from "../ledger/householdSettings.ts";
 import { groupFor, loadLedger, type AccountGroup, type Ledger } from "../ledger/loadLedger.ts";
 import { loadTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.ts";
 import { loadProfileSettings } from "../profile/settings.ts";
@@ -172,7 +173,10 @@ export type Book = {
    * the last whole month before any open finding past the edge (see cashFlowThrough).
    */
   horizon: { cashFlow: string; netWorth: string };
+  /** Every statement as printed: what the checks and the statement pages read. Figures read the household view (householdView.ts). */
   ledger: Ledger;
+  /** How the figures count a partner's money before the merge (Settings › Household); absent (tests): STRICT. */
+  viewMode?: HouseholdViewMode;
   accounts: BookAccount[];
   statements: BookStatement[];
   rows: BookRow[];
@@ -265,7 +269,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     decisions = { error: e instanceof Error ? e.message : String(e) };
   }
   const household = householdPatterns();
-  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfile, documents, classifiedWith, classifiedWithHousehold, profileSettings] = await Promise.all([
+  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfile, documents, classifiedWith, classifiedWithHousehold, profileSettings, viewMode] = await Promise.all([
     loadLedger(db, { today }),
     // Archived accounts included: archiving hides an account from pickers, never its history from figures.
     db.account.findMany({ include: { aliases: { select: { identifier: true } } } }),
@@ -322,6 +326,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     db.appSetting.findUnique({ where: { key: CLASSIFIER_VERSION_SETTING } }).then((s) => (s && Number.isFinite(Number(s.value)) ? Number(s.value) : null)),
     db.appSetting.findUnique({ where: { key: CLASSIFIER_HOUSEHOLD_SETTING } }).then((s) => s?.value ?? null),
     loadProfileSettings(db),
+    getHouseholdView(db),
   ]);
 
   const persons = taxProfile.persons;
@@ -418,6 +423,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       netWorth: lastDayOf(() => true),
     },
     ledger,
+    viewMode,
     accounts: accounts.map((a) => ({
       id: a.id,
       name: a.name,

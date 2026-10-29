@@ -1,5 +1,7 @@
 import { blockersFor, netWorthAtBlockers } from "../book/blockers.ts";
 import { investmentIncomeByAccount } from "../book/investments.ts";
+import { household, payJoins } from "../book/householdView.ts";
+import type { HouseholdViewMode } from "../ledger/householdSettings.ts";
 import { addDays, daysBetween } from "../dates/isoDate.ts";
 import type { Book, BookStub } from "../book/load.ts";
 import { personPayYear, type PersonPayYear } from "../book/pay.ts";
@@ -36,6 +38,11 @@ import { BUCKETS, type FinancialProfileSettings, type NetWorthBucket } from "./s
  * missing or failing is withheld (null) with the findings that block it. Nothing is
  * typed in by hand: the owner only tags one-off expenses (Annual report › One-off
  * expenses) and sets FIRE assumptions.
+ *
+ * Whose money counts is the household view's (book/householdView.ts): strictly from the
+ * merge, a partner's pay counts from then, their own accounts join net worth that day, and
+ * what they paid into the household's accounts before it is a credit against spending, on
+ * this page as on Cash flow and Net worth; pro forma, everything counts from the start.
  */
 
 export type PersonYear = {
@@ -59,6 +66,13 @@ export type PersonYear = {
    * whose undeposited pay is a gap in the statements, not someone else's money.
    */
   keptOwn: number;
+  /**
+   * The first day this person's pay counts, when that's after Jan 1 (a partner's, from the
+   * merge); null from Jan 1. A partner's year before the merge has no pay at all.
+   */
+  from: string | null;
+  /** In the household at all this year (false: a partner's year before the merge, shown blank). */
+  member: boolean;
   employers: string[];
   lastPayDate: string | null;
   hasPay: boolean;
@@ -135,6 +149,8 @@ export type AnnualProfileReport = {
   currentYear: number;
   /** When the partners' finances merged: before it, a partner's own money wasn't the household's. */
   mergeDate: string;
+  /** The household view the figures were counted in (book/householdView.ts). */
+  view: HouseholdViewMode;
   persons: { id: string; name: string }[];
   years: YearProfile[];
   /**
@@ -215,7 +231,9 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     const payBlockers: BlockerRef[] = [];
     const payYears: PersonPayYear[] = [];
     const people: PersonYear[] = persons.map((p, i) => {
-      const pay = personPayYear(book, p.id, year, cashEnd);
+      const joins = payJoins(book, p.id);
+      const from = joins && joins > start ? joins : null;
+      const pay = personPayYear(book, p.id, year, cashEnd, from ?? undefined);
       payYears.push(pay);
       if (record) pays.set(`${p.id}|${year}`, pay);
       payBlockers.push(...refs(pay.blockers));
@@ -239,6 +257,8 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
         employer: t.employerRetirement + t.employerHsa,
         net: t.net,
         keptOwn: i === 0 ? 0 : Math.max(0, t.net - deposited),
+        from,
+        member: !from || from <= `${year}-12-31`,
         employers: pay.employers.map((e) => e.employer),
         lastPayDate: pay.through,
         hasPay: pay.employers.length > 0,
@@ -383,6 +403,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     today,
     currentYear,
     mergeDate: book.ledger.mergeDate,
+    view: household(book).mode,
     persons: persons.map((p) => ({ id: p.id, name: p.name })),
     years: out,
     ytd,
@@ -459,9 +480,11 @@ function outlookSeeds(x: {
     const lastYear = personPayYear(book, p.id, base.year);
     const payYear = thisYear?.employers.length ? thisYear : lastYear.employers.length ? lastYear : null;
     const history: BonusYear[] = [];
+    // Their whole years, the merge aside: how their own pay and bonus run.
     for (const y of out) {
-      const q = !y.isCurrent ? y.people?.find((v) => v.personId === p.id) : undefined;
-      if (q?.hasPay) history.push({ year: y.year, salary: q.salary, bonus: q.bonus, pct: q.salary > 0 ? q.bonus / q.salary : null, partial: false });
+      if (y.isCurrent) continue;
+      const q = personPayYear(book, p.id, y.year);
+      if (q.blockers.length === 0 && q.employers.length) history.push({ year: y.year, salary: q.totals.salary, bonus: q.totals.bonus, pct: q.totals.salary > 0 ? q.totals.bonus / q.totals.salary : null, partial: false });
     }
     const seed: PersonSeed = {
       personId: p.id,

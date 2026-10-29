@@ -1,6 +1,7 @@
 import { endOfPeriod, periodLabel, periodsBetween, startOfPeriod, type Granularity } from "../../dates/isoDate.ts";
 import { decompose } from "../../ledger/timeline.ts";
 import { blockersFor } from "../blockers.ts";
+import { household } from "../householdView.ts";
 import { bookedShare } from "../booking.ts";
 import type { Book, BookRow } from "../load.ts";
 import { withReimbursements } from "../reimbursements.ts";
@@ -68,7 +69,8 @@ export function cashFlowContributions(book: Book, periods: { start: string; end:
   const dayOf = dayOfFor(book);
   const out: CashFlowContribution[] = [];
   // A reimbursement link's pair (book/reimbursements.ts) counts like any row: the payback moves from income into the charge's category.
-  for (const r of withReimbursements(book)) {
+  // Rows as the household view counts them (householdView.ts): none on a partner's account before it joined, their pre-merge share as spending credits.
+  for (const r of withReimbursements({ rows: household(book).rows, reimbursements: book.reimbursements })) {
     if (r.lane !== "INCOME" && r.lane !== "EXPENSE" && r.lane !== "EXTERNAL_TRANSFER") continue;
     if (accountFilter && !accountFilter.has(r.accountId)) continue;
     if (r.precision === "EXACT") {
@@ -95,7 +97,7 @@ export function cashFlowContributions(book: Book, periods: { start: string; end:
  */
 export function buildCashFlowReport(book: Book, opts: { granularity: Granularity; from?: string; to?: string; accountIds?: string[] }): CashFlowReport {
   const g = opts.granularity;
-  const ledger = book.ledger;
+  const ledger = household(book).ledger;
   const provenThrough = book.horizon.cashFlow;
   // Nothing past the proven-through date: the period containing it ends there (partial).
   const from = startOfPeriod(opts.from ?? ledger.firstDay ?? provenThrough, g);

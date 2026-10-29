@@ -3,6 +3,7 @@ import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { LedgerAccount } from "../../ledger/loadLedger.ts";
 import { valueAt, type Segment } from "../../ledger/timeline.ts";
 import type { Book } from "../load.ts";
+import { household } from "../householdView.ts";
 import { buildCashFlowReport } from "../reports/cashFlow.ts";
 import { buildNetWorth, netWorthSpanQuality } from "../reports/netWorth.ts";
 import type { CheckId } from "../types.ts";
@@ -271,7 +272,7 @@ function accountBalance(book: Book, a: LedgerAccount, date: string): AccountBala
  */
 function balancesAt(book: Book, date: string, accountIds?: string[], side?: "assets" | "debts"): AccountBalance[] {
   const ids = accountIds?.length ? new Set(accountIds) : null;
-  return book.ledger.accounts
+  return household(book).ledger.accounts
     .filter((a) => (!ids || ids.has(a.id)) && a.timeline.firstDay! <= date)
     .map((a) => accountBalance(book, a, date))
     .filter((b) => !side || (side === "assets" ? b.cents > 0 : b.cents < 0));
@@ -317,7 +318,7 @@ export function buildBalanceProof(book: Book, d: BalanceDescriptor): Proof {
   const rowIds = new Set(groups.flatMap((g) => g.rows.map((r) => r.id.slice(0, r.id.lastIndexOf(":")))));
   const estimates = [...list.flatMap((b) => (b.estimate ? [b.estimate] : [])), ...estimatesFor(book, { rowIds, from: d.date, to: d.date, accountIds })];
   const rowCount = groups.reduce((t, g) => t + g.rows.length, 0);
-  const who = d.accountIds?.length ? d.accountIds.map((id) => book.ledger.accounts.find((a) => a.id === id)?.name ?? "an account").join(", ") : "Net worth";
+  const who = d.accountIds?.length ? d.accountIds.map((id) => household(book).ledger.accounts.find((a) => a.id === id)?.name ?? "an account").join(", ") : "Net worth";
   return {
     report: "net-worth",
     descriptor: d,

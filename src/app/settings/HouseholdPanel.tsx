@@ -2,7 +2,8 @@
 
 import type { Api } from "@/components/ledger/useApi";
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
-import { btn, Card, ErrorNote, Field, inputCls, Loading, selectCls } from "@/components/ui/kit";
+import { btn, Card, ErrorNote, Field, inputCls, Loading, Segmented, selectCls } from "@/components/ui/kit";
+import type { HouseholdViewMode } from "@/lib/ledger/householdSettings";
 import type { FinancialProfileSettings } from "@/lib/profile/settings";
 import type { TaxProfile } from "@/lib/tax/profile";
 import { useEffect, useMemo, useState } from "react";
@@ -35,13 +36,15 @@ function BirthYearInput({ value, onCommit }: { value: number | undefined; onComm
 /**
  * Facts about the household that several pages share: who's who (matched on pay stubs
  * and brokerage owner lines), birth years and bonus timing (FIRE), dependents (Taxes),
- * and the date finances merged (how partner transfers are labeled).
+ * the date finances merged (how partner transfers are labeled), and whether the figures
+ * count the household strictly from that date or as if merged all along.
  */
 export function HouseholdPanel({ api }: { api: Api }) {
   const [tax, setTax] = useState<TaxProfile | null>(null);
   const [profile, setProfile] = useState<FinancialProfileSettings | null>(null);
   const [mergeDate, setMergeDate] = useState("");
-  const [saved, setSaved] = useState<{ tax: string; profile: string; mergeDate: string } | null>(null);
+  const [view, setView] = useState<HouseholdViewMode>("STRICT");
+  const [saved, setSaved] = useState<{ tax: string; profile: string; mergeDate: string; view: HouseholdViewMode } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,22 +54,23 @@ export function HouseholdPanel({ api }: { api: Api }) {
     Promise.all([
       api.call<TaxProfile>("/api/tax/profile"),
       api.call<FinancialProfileSettings>("/api/profile/settings"),
-      api.call<{ mergeDate: string }>("/api/settings/household"),
+      api.call<{ mergeDate: string; view: HouseholdViewMode }>("/api/settings/household"),
     ])
       .then(([t, p, h]) => {
         setTax(t);
         setProfile(p);
         setMergeDate(h.mergeDate);
-        setSaved({ tax: JSON.stringify(t), profile: JSON.stringify(p), mergeDate: h.mergeDate });
+        setView(h.view);
+        setSaved({ tax: JSON.stringify(t), profile: JSON.stringify(p), mergeDate: h.mergeDate, view: h.view });
       })
       .catch((e: Error) => setError(e.message));
   }, [api, version]);
 
   const dirty = useMemo(() => {
-    if (!saved || !tax || !profile) return { tax: false, profile: false, merge: false, any: false };
-    const d = { tax: JSON.stringify(tax) !== saved.tax, profile: JSON.stringify(profile) !== saved.profile, merge: mergeDate !== saved.mergeDate };
-    return { ...d, any: d.tax || d.profile || d.merge };
-  }, [tax, profile, mergeDate, saved]);
+    if (!saved || !tax || !profile) return { tax: false, profile: false, merge: false, view: false, any: false };
+    const d = { tax: JSON.stringify(tax) !== saved.tax, profile: JSON.stringify(profile) !== saved.profile, merge: mergeDate !== saved.mergeDate, view: view !== saved.view };
+    return { ...d, any: d.tax || d.profile || d.merge || d.view };
+  }, [tax, profile, mergeDate, view, saved]);
 
   if (error && !tax) return <ErrorNote>{error}</ErrorNote>;
   if (!tax || !profile) return <Loading />;
@@ -92,9 +96,10 @@ export function HouseholdPanel({ api }: { api: Api }) {
       const notes: string[] = [];
       if (dirty.tax) await api.call("/api/tax/profile", { method: "PUT", json: tax });
       if (dirty.profile) await api.call("/api/profile/settings", { method: "PUT", json: profile });
-      if (dirty.merge) {
-        const r = await api.call<{ reclassified: number }>("/api/settings/household", { method: "PUT", json: { mergeDate } });
-        notes.push(`${r.reclassified} rows relabeled for the new merge date`);
+      if (dirty.merge || dirty.view) {
+        const r = await api.call<{ reclassified: number }>("/api/settings/household", { method: "PUT", json: { ...(dirty.merge ? { mergeDate } : {}), view } });
+        if (dirty.merge) notes.push(`${r.reclassified} rows relabeled for the new merge date`);
+        if (dirty.view) notes.push(view === "STRICT" ? "figures count the household from the merge" : "figures count as if merged all along");
         notifyLedgerChanged();
       }
       setNotice(`Saved${notes.length ? ` — ${notes.join("; ")}` : ""}.`);
@@ -236,7 +241,28 @@ export function HouseholdPanel({ api }: { api: Api }) {
         title="Finances merged on"
         subtitle="Before this date, money from the partner's own accounts counts as partner contributions into the books; after it, it's household money that isn't tracked yet. Charts mark this date. Saving a new date relabels those transfers."
       >
-        <input type="date" className={inputCls} value={mergeDate} onChange={(e) => setMergeDate(e.target.value)} aria-label="Finances merged on" />
+        <div className="flex flex-col gap-3">
+          <input type="date" className={inputCls} value={mergeDate} onChange={(e) => setMergeDate(e.target.value)} aria-label="Finances merged on" />
+          {/* Not a Field (a <label>): its buttons are the control. */}
+          <div className="flex min-w-0 flex-col gap-1 text-xs">
+            <span className="font-medium text-fg-2">Count the partner&apos;s money</span>
+            <Segmented
+              ariaLabel="Count the partner's money"
+              size="xs"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "STRICT", label: "From the merge" },
+                { value: "PRO_FORMA", label: "Pro forma" },
+              ]}
+            />
+            <span className="text-[11px] leading-snug text-muted">
+              {view === "STRICT"
+                ? "From the merge: their pay, their own accounts (joining with what they held that day) and their money count only from this date; what they paid in before is their share of the bills. Every figure on every page follows this."
+                : "Pro forma: as if merged all along. Every account from its first statement, all pay from the first stub; what they moved in counts as outside money. Every figure on every page follows this."}
+            </span>
+          </div>
+        </div>
       </Card>
     </>
   );

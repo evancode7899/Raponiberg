@@ -436,3 +436,30 @@ export function chainReturns(periodReturns: { r: number; days: number }[]): { to
  * bonuses and timing rather than performance, so it's left out of chained returns.
  */
 export const MIN_RETURN_CAPITAL_CENTS = 100_000;
+
+/**
+ * The timeline from `from` on, as if the account were first on file that day (a partner's
+ * own account joining the household at the merge). Statements ending before it drop out;
+ * the one holding it is cut there: it opens with the value that morning and keeps its
+ * dated flows from then on and its undated flows and fees for the days left, with market
+ * change taking the rounding so it still adds up to its closing balance. A cut statement
+ * with anything spread over it is an estimate on its first day, as any day inside it is.
+ */
+export function clipTimeline(t: AccountTimeline, from: string): AccountTimeline {
+  if (!t.firstDay || from <= t.firstDay) return t;
+  const day = dayNumber(from);
+  const segments = t.segments.flatMap((s): Segment[] => {
+    if (s.end < day) return [];
+    if (s.start >= day) return [s];
+    const frac = (s.end - day + 1) / s.days;
+    const opening = valueInSegment(s, day - 1);
+    const exact = s.exact.filter((f) => f.day >= day);
+    const spread = s.spread.map((f) => ({ ...f, amount: f.amount * frac }));
+    const fees = s.fees * frac;
+    const moved = exact.reduce((v, f) => v + f.amount, 0) + spread.reduce((v, f) => v + f.amount, 0) + fees;
+    const estimated = s.spread.length > 0 || s.growth !== 0 || s.fees !== 0;
+    return [{ ...s, start: day, days: s.end - day + 1, opening, exact, spread, fees, growth: s.closing - opening - moved, derived: s.derived || estimated }];
+  });
+  if (!segments.length) return { ...t, segments, firstDay: null, lastDay: null };
+  return { ...t, segments, firstDay: fromDayNumber(segments[0]!.start) };
+}

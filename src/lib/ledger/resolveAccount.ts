@@ -19,10 +19,33 @@ const KIND_TO_TYPE: Record<ParsedAccountSection["kind"], AccountType> = {
   OTHER: "OTHER",
 };
 
-/** "Amex Gold Card" + "0-12345" → "Amex Gold Card ••2345". */
-export function displayName(section: ParsedAccountSection): string {
+/** "Amex Gold Card" + "0-12345" → "Amex Gold Card ••2345"; with its holder, "Amex Gold Card — Sam ••2345". */
+export function displayName(section: ParsedAccountSection, holder?: string | null): string {
   const digits = section.accountNumber.replace(/\D/g, "");
-  return digits.length >= 4 ? `${section.accountName} ••${digits.slice(-4)}` : section.accountName;
+  const name = holder ? `${section.accountName} — ${holder}` : section.accountName;
+  return digits.length >= 4 ? `${name} ••${digits.slice(-4)}` : name;
+}
+
+/** A household member as documents name them (the tax profile's persons). */
+export type Holder = { name: string; match: string[] };
+
+/**
+ * The one household member a card statement belongs to, by the card-member name it prints
+ * on its rows: their first name, when nearly every row (90%) names a card member and every
+ * one is the same person. Null for a card two people use, or one that prints no names. The
+ * name goes into the new account's name, which is how the app tells whose account it is
+ * (book/owners.ts), so a partner's own card is theirs from its first import.
+ */
+export function cardHolder(section: ParsedAccountSection, persons: Holder[]): string | null {
+  if (section.kind !== "CREDIT_CARD" || !persons.length || !section.transactions.length) return null;
+  const named = section.transactions.map((t) => t.cardMember?.toUpperCase().trim()).filter((m): m is string => !!m);
+  if (named.length < 0.9 * section.transactions.length) return null;
+  const who = new Set(named.map((m) => {
+    const ps = persons.filter((p) => p.match.some((x) => x && m.includes(x.toUpperCase())));
+    return ps.length === 1 ? ps[0]!.name : null;
+  }));
+  const [only] = who;
+  return who.size === 1 && only ? only.split(/\s+/)[0]! : null;
 }
 
 /**
@@ -37,9 +60,9 @@ export function displayName(section: ParsedAccountSection): string {
  *    Balance continuity to the cent is what makes this safe to do automatically.
  * 3. ADOPTED — an account created by hand (no aliases, no statements yet) at the same
  *    institution with the same type.
- * 4. CREATED — a brand-new account.
+ * 4. CREATED — a brand-new account, named for its holder when a card prints one (cardHolder).
  */
-export async function resolveAccount(db: Db, section: ParsedAccountSection): Promise<AccountResolution> {
+export async function resolveAccount(db: Db, section: ParsedAccountSection, persons: Holder[] = []): Promise<AccountResolution> {
   const alias = await db.accountAlias.findUnique({
     where: { institution_identifier: { institution: section.institution, identifier: section.accountNumber } },
     include: { account: { select: { name: true } } },
@@ -99,7 +122,7 @@ export async function resolveAccount(db: Db, section: ParsedAccountSection): Pro
     return { accountId: orphan.id, how: "ADOPTED", accountName: orphan.name };
   }
 
-  const name = displayName(section);
+  const name = displayName(section, cardHolder(section, persons));
   const created = await db.account.create({
     data: {
       name,

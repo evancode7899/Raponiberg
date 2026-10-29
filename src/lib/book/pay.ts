@@ -67,9 +67,10 @@ export type PayBreakdown = {
 
 export const ZERO_BREAKDOWN: PayBreakdown = { salary: 0, bonus: 0, reimbursements: 0, withholding: 0, benefits: 0, afterTax: 0, deferrals: 0, employerRetirement: 0, employerHsa: 0, net: 0 };
 
-export function payBreakdown(lines: StubLine[]): PayBreakdown {
-  const a = amountsFromLines(lines, "ytd");
-  const afterTax = lines.filter((l) => l.kind === "AFTER_TAX").reduce((t, l) => t + (l.ytd ?? 0), 0);
+/** From a stub's year-to-date lines (default), or its own check's ("current"). */
+export function payBreakdown(lines: StubLine[], which: "ytd" | "current" = "ytd"): PayBreakdown {
+  const a = amountsFromLines(lines, which);
+  const afterTax = lines.filter((l) => l.kind === "AFTER_TAX").reduce((t, l) => t + (l[which] ?? 0), 0);
   const b: PayBreakdown = {
     salary: a.regular,
     bonus: a.bonus,
@@ -112,13 +113,19 @@ export type PersonPayYear = {
   partial: Inference[];
 };
 
-/** A person's pay for a calendar year, from stubs paid on or before `through` (default: year end). */
-export function personPayYear(book: Book, personId: string, year: number, through = `${year}-12-31`): PersonPayYear {
+/**
+ * A person's pay for a calendar year, from stubs paid on or before `through` (default: year
+ * end). With `from` inside the year (a partner's pay counts only from the merge), only the
+ * checks paid from then on, added check by check (the pay proof's "paid" basis).
+ */
+export function personPayYear(book: Book, personId: string, year: number, through = `${year}-12-31`, from?: string): PersonPayYear {
+  const start = from && from > `${year}-01-01` ? from : `${year}-01-01`;
+  const byCheck = start !== `${year}-01-01`;
   const employers: EmployerYear[] = [];
   for (const [k, all] of stubGroups(book)) {
     const [p, employerKey, y] = k.split("|");
     if (p !== personId || Number(y) !== year) continue;
-    const stubs = all.filter((s) => s.payDate <= through);
+    const stubs = all.filter((s) => s.payDate >= start && s.payDate <= through);
     if (!stubs.length) continue;
     const last = stubs.at(-1)!;
     employers.push({
@@ -128,21 +135,31 @@ export function personPayYear(book: Book, personId: string, year: number, throug
       firstPayDate: stubs[0]!.payDate,
       lastPayDate: last.payDate,
       ytd: amountsFromLines(last.lines, "ytd"),
-      breakdown: payBreakdown(last.lines),
+      breakdown: byCheck ? sumBreakdowns(stubs.map((s) => payBreakdown(s.lines, "current"))) : payBreakdown(last.lines),
       stubs,
     });
   }
-  const totals = { ...ZERO_BREAKDOWN };
-  for (const e of employers) for (const key of Object.keys(ZERO_BREAKDOWN) as (keyof PayBreakdown)[]) totals[key] += e.breakdown[key];
+  const totals = sumBreakdowns(employers.map((e) => e.breakdown));
   return {
     personId,
     year,
     employers: employers.sort((a, b) => a.firstPayDate.localeCompare(b.firstPayDate)),
     totals,
     through: employers.map((e) => e.lastPayDate).sort().at(-1) ?? null,
-    blockers: blockersFor(book, { affects: "PAY", personId, from: `${year}-01-01`, to: through }),
-    partial: book.integrity.inferences.filter((i) => i.partial && i.scope?.personId === personId && i.scope.from <= through && i.scope.to >= `${year}-01-01`),
+    blockers: start > through ? [] : blockersFor(book, { affects: "PAY", personId, from: start, to: through }),
+    // Added check by check, a year's totals aren't read off year-to-date figures: only what's
+    // found about the checks from `from` on bears on them.
+    partial:
+      start > through
+        ? []
+        : book.integrity.inferences.filter((i) => i.partial && i.scope?.personId === personId && i.scope.from <= through && (byCheck ? i.scope.from >= start : i.scope.to >= start)),
   };
+}
+
+function sumBreakdowns(bs: PayBreakdown[]): PayBreakdown {
+  const totals = { ...ZERO_BREAKDOWN };
+  for (const b of bs) for (const key of Object.keys(ZERO_BREAKDOWN) as (keyof PayBreakdown)[]) totals[key] += b[key];
+  return totals;
 }
 
 export { ZERO_AMOUNTS };
