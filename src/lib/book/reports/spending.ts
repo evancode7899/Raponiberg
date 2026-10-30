@@ -1,9 +1,10 @@
 import { daysBetween, endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
-import { household } from "../householdView.ts";
+import { household, PARTNER_SHARE_CARDS, PARTNER_SHARE_RENT } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
 import { oneOffSubject, withReimbursements } from "../reimbursements.ts";
+import { taxAuthority } from "../../tax/facts/payments.ts";
 import { countsOn, rentPayments, type RentPayment } from "../rent.ts";
 import type { BlockerRef } from "./blockerRef.ts";
 import { buildCashFlowReport, type CashFlowPeriod } from "./cashFlow.ts";
@@ -42,6 +43,9 @@ export type SpendingMonth = CashFlowPeriod & {
 };
 
 export type SpendingKinds = { billCents: number; bigCents: number; everydayCents: number };
+
+/** The band an expense row counts in (SpendingKinds): bills, big & one-off, or everyday. */
+export type SpendingKind = "bill" | "big" | "everyday";
 
 /** Upper bounds (exclusive, cents) of the charge-size buckets; the last is open-ended. */
 export const CHARGE_BUCKETS = [1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 150_000, Infinity] as const;
@@ -344,18 +348,47 @@ export function oneOffRules(book: Book, settings: Pick<FinancialProfileSettings,
   return { tagged, candidate };
 }
 
+/**
+ * Which band an expense row's money counts in, the one test the spending chart's bands and
+ * their proofs use. A credit counts in the band of what it pays back, so a refund never
+ * drags everyday below zero:
+ *  - bill: rent, a merchant on the Recurring tab's bill list (its refunds too), a partner's
+ *    pre-merge share of rent;
+ *  - big: a one-off candidate (oneOffRules), any tax payment or refund (a tax authority is
+ *    never everyday, whatever the size), and any other credit of ONE_OFF_MIN_CENTS or more
+ *    (a big refund comes off big spending, where its charge sat);
+ *  - everyday: the rest.
+ * A reimbursement credit is judged by the charge it pays back.
+ */
+export function spendingKindRule(
+  book: Book,
+  settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">,
+  recurring: Pick<RecurringCharge, "key" | "kind">[],
+): (row: BookRow) => SpendingKind {
+  const bills = new Set(recurring.filter((c) => c.kind === "bill").map((c) => c.key));
+  const { candidate } = oneOffRules(book, settings);
+  const { rent } = billsAndRent(book);
+  return (row) => {
+    const r = oneOffSubject(row, book.rowById);
+    if (rent.has(r.id) || r.category === PARTNER_SHARE_RENT || bills.has(merchantKeyOf(r))) return "bill";
+    if (r.category === PARTNER_SHARE_CARDS) return "everyday";
+    if (candidate(r) || taxAuthority(r.payee) || (r.lane === "EXPENSE" && r.amountCents >= ONE_OFF_MIN_CENTS)) return "big";
+    return "everyday";
+  };
+}
+
 export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
   const { report, window, current, withheldAfter, withheldBefore, from, to, windowEnd, dayOf, inScope, windowRows, last12From } = spendingRows(book, opts.accountIds);
   const accountFilter = opts.accountIds?.length ? new Set(opts.accountIds) : null;
   const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
   const recurring = windowEnd ? detectRecurring(windowRows, windowEnd, last12From) : [];
-  const bills = new Set(recurring.filter((c) => c.kind === "bill").map((c) => c.key));
   const { tagged: isOneOff, candidate } = oneOffRules(book, settings);
+  const kindOf = spendingKindRule(book, settings, recurring);
 
   const enrich = (p: CashFlowPeriod): SpendingMonth => {
     let oneOffCents = 0;
     for (const r of inScope) if (r.lane === "EXPENSE" && dayOf(r) >= p.start && dayOf(r) <= p.end && isOneOff(r)) oneOffCents -= r.amountCents;
-    return { ...p, ...merchantsIn(inScope, p, dayOf), oneOffCents, ...spendingShape(inScope, p, bills, candidate, dayOf) };
+    return { ...p, ...merchantsIn(inScope, p, dayOf), oneOffCents, ...spendingShape(inScope, p, kindOf, dayOf) };
   };
 
   const months = window.map(enrich);
@@ -403,9 +436,8 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
 export function spendingShape(
   rows: BookRow[],
   p: Pick<CashFlowPeriod, "start" | "end" | "spendingCents">,
-  bills: Set<string>,
-  /** A one-off candidate (oneOffRules): the "big charges" band. */
-  isBig: (r: BookRow) => boolean,
+  /** The band each row counts in (spendingKindRule). */
+  kindOf: (r: BookRow) => SpendingKind,
   /** The day a row counts on (rent counts in the month it pays for; see rent.ts). */
   dayOf: (r: BookRow) => string = (r) => r.bookedOn,
 ): Pick<SpendingMonth, "kinds" | "daily" | "chargeSizes"> {
@@ -421,10 +453,11 @@ export function spendingShape(
     const cents = -r.amountCents;
     const d = Number(day.slice(8, 10)) - 1;
     daily.allCents[d]! += cents;
-    if (bills.has(merchantKeyOf(r))) {
+    const kind = kindOf(r);
+    if (kind === "bill") {
       billCents += cents;
       daily.billCents[d]! += cents;
-    } else if (isBig(r)) bigCents += cents;
+    } else if (kind === "big") bigCents += cents;
     else daily.everydayCents[d]! += cents;
     if (cents > 0) {
       const b = chargeSizes[CHARGE_BUCKETS.findIndex((hi) => cents < hi)]!;

@@ -3,8 +3,8 @@ import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { Book, BookRow } from "../load.ts";
 import { countsOn, rentCovers } from "../rent.ts";
 import { buildCashFlowReport, cashFlowContributions, type CashFlowContribution, type CashFlowPeriod, type CashFlowReport } from "../reports/cashFlow.ts";
-import { detectRecurring, merchantKeyOf, merchantName, merchantsIn, oneOffTest, spendingRows } from "../reports/spending.ts";
-import { loadProfileSettings } from "../../profile/settings.ts";
+import { buildSpendingReport, detectRecurring, merchantKeyOf, merchantName, merchantsIn, oneOffTest, spendingKindRule, spendingRows, type SpendingKind } from "../reports/spending.ts";
+import { loadProfileSettings, type FinancialProfileSettings } from "../../profile/settings.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor, isIsoDate, sumCheck } from "./common.ts";
 import type { Proof, ProofBlock, ProofCheck, ProofEstimate, ProofGroup, ProofKind, ProofRow } from "./types.ts";
@@ -44,7 +44,15 @@ export type CashFlowDescriptor = {
   merchantBasis?: "charges";
   /** Spending without what the owner counts as one-off (Cash flow's "Excluding one-offs"): those rows are listed apart. */
   oneOffs?: "exclude";
+  /**
+   * One band of spending as the Trends tab splits it (spendingKindRule): bills, big &
+   * one-off, or everyday. The figure is the spending report's band; the rows are the
+   * period's spending rows in that band.
+   */
+  spendingKind?: SpendingKind;
 };
+
+export const SPENDING_KIND_LABEL: Record<SpendingKind, string> = { bill: "Bills & subscriptions", big: "Big & one-off spending", everyday: "Everyday spending" };
 
 export type CashFlowSection = {
   /** "Income" / "Spending" / "Outside money" (net has two). */
@@ -109,6 +117,8 @@ export function parseCashFlowDescriptor(d: Record<string, unknown>): CashFlowDes
   if (d.merchantKey != null && d.category != null) return { error: "Give a category or a merchantKey, not both." };
   if (d.merchantBasis != null && (d.merchantBasis !== "charges" || !d.merchantKey || d.metric !== "spending")) return { error: "merchantBasis can only be charges, with a merchantKey and spending." };
   if (d.oneOffs != null && (d.oneOffs !== "exclude" || d.metric !== "spending" || d.merchantKey != null)) return { error: "oneOffs can only be exclude, with spending (not a merchant)." };
+  if (d.spendingKind != null && (!["bill", "big", "everyday"].includes(d.spendingKind as string) || d.metric !== "spending" || d.merchantKey != null || d.category != null || d.oneOffs != null))
+    return { error: "spendingKind is bill, big or everyday, with spending only (no category, merchant or oneOffs)." };
   return {
     report: "cash-flow",
     metric: d.metric as CashFlowMetric,
@@ -120,6 +130,7 @@ export function parseCashFlowDescriptor(d: Record<string, unknown>): CashFlowDes
     ...(d.merchantKey ? { merchantKey: d.merchantKey as string } : {}),
     ...(d.merchantBasis ? { merchantBasis: "charges" as const } : {}),
     ...(d.oneOffs ? { oneOffs: "exclude" as const } : {}),
+    ...(d.spendingKind ? { spendingKind: d.spendingKind as SpendingKind } : {}),
   };
 }
 
@@ -152,7 +163,13 @@ function viewFor(book: Book, d: CashFlowDescriptor, withRows: boolean): { report
   return { report: v.report, contributions: (withRows && v.contributions) || [] };
 }
 
-export function buildCashFlowProof(book: Book, d: CashFlowDescriptor, isOneOff: (r: BookRow) => boolean = () => false): CashFlowProof {
+export function buildCashFlowProof(
+  book: Book,
+  d: CashFlowDescriptor,
+  isOneOff: (r: BookRow) => boolean = () => false,
+  /** Needed for a spendingKind figure (which charges are one-off candidates). */
+  settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories"> = { oneOffs: {}, nonRecurringCategories: [] },
+): CashFlowProof {
   const dropOneOffs = d.oneOffs === "exclude";
   const { report, contributions } = viewFor(book, d, !d.merchantKey);
   const periods = report.periods;
@@ -160,6 +177,9 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor, isOneOff: 
   const statementById = new Map(book.statements.map((s) => [s.id, s]));
   const rent = rentCovers(book.rows, book.accounts, book.household.merchantRules);
   const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
+
+  // A band of spending: the spending report's own figure per month, and its rule for which rows are in it.
+  const band = d.spendingKind ? kindView(book, d, settings, periods) : null;
 
   // A merchant's figure reads the spending report's own rows (reversed pairs left out,
   // each row whole on the day it counts), through the same grouping step the page sums.
@@ -201,11 +221,14 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor, isOneOff: 
 
   const section = (part: Part): CashFlowSection => {
     const m = d.merchantKey ? merchantPart(part) : null;
-    const mine = m?.mine ?? contributions.filter((c) => c.row.lane === part.lane && (!d.category || c.row.category === d.category) && !(dropOneOffs && isOneOff(c.row)));
+    const mine =
+      m?.mine ??
+      contributions.filter((c) => c.row.lane === part.lane && (!d.category || c.row.category === d.category) && !(dropOneOffs && isOneOff(c.row)) && (!band || band.kindOf(c.row) === d.spendingKind));
     // Excluding one-offs: the report's figure less each one-off row, whole, as the spending report counts them.
     const oneOffCents = dropOneOffs ? contributions.filter((c) => c.row.lane === "EXPENSE" && isOneOff(c.row) && (!d.category || c.row.category === d.category)).reduce((t, c) => t - c.cents, 0) : 0;
     const figureCents =
       m?.figureCents ??
+      band?.perPeriod.reduce((t, v) => t + v, 0) ??
       periods.reduce((t, p) => t + (d.category ? (part.cats(p).find((c) => c.category === d.category)?.cents ?? 0) : part.pick(p)), 0) - Math.round(oneOffCents);
     // Re-added from the rows alone: each period's rows summed, then rounded once (as the report does).
     const perPeriod = periods.map(() => 0);
@@ -260,13 +283,15 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor, isOneOff: 
     }
     const byCat = new Map<string, number>();
     // The report's category amounts are already in the figure's sign (spending positive).
-    if (!d.merchantKey) for (const p of periods) for (const c of part.cats(p)) if (!d.category || c.category === d.category) byCat.set(c.category, (byCat.get(c.category) ?? 0) + c.cents);
+    if (band) for (const c of mine) byCat.set(c.row.category, (byCat.get(c.row.category) ?? 0) + part.sign * c.cents);
+    else if (!d.merchantKey) for (const p of periods) for (const c of part.cats(p)) if (!d.category || c.category === d.category) byCat.set(c.category, (byCat.get(c.category) ?? 0) + c.cents);
+    for (const [k, v] of byCat) byCat.set(k, Math.round(v));
     const byCategory = [...byCat].map(([category, cents]) => ({ category, cents })).filter((c) => c.cents !== 0).sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents));
     return {
       label: part.label,
       figureCents,
       rowsCents,
-      ...(merchantNotes.length ? { note: merchantNotes.join(" ") } : {}),
+      ...(merchantNotes.length || band?.note ? { note: [...merchantNotes, band?.note].filter(Boolean).join(" ") } : {}),
       groups: [...groups.values()]
         .map((g) => ({ ...g, subtotalCents: Math.round(g.subtotalCents), rows: g.rows.sort((a, b) => (a.bookedOn < b.bookedOn ? -1 : a.bookedOn > b.bookedOn ? 1 : 0)) }))
         .sort((a, b) => Math.abs(b.subtotalCents) - Math.abs(a.subtotalCents)),
@@ -302,7 +327,7 @@ export function buildCashFlowProof(book: Book, d: CashFlowDescriptor, isOneOff: 
     periods:
       d.merchantBasis === "charges"
         ? []
-        : periods.map((p, i) => ({ label: p.label, start: p.start, end: p.end, through: p.through, cents: d.merchantKey ? merchantPeriods[i]! : periodCents(p) })),
+        : periods.map((p, i) => ({ label: p.label, start: p.start, end: p.end, through: p.through, cents: d.merchantKey ? merchantPeriods[i]! : band ? band.perPeriod[i]! : periodCents(p) })),
     withheld,
     checks,
     estimates,
@@ -339,7 +364,8 @@ export function cashFlowToProof(p: CashFlowProof): Proof {
         items: s.byCategory.map((c) => ({
           label: c.category,
           value: { cents: c.cents },
-          link: { label: c.category, descriptor: { ...d, metric: net ? (s.label === "Income" ? "income" : "spending") : d.metric, category: c.category } },
+          // A band has no figure per category: its categories are listed, not linked.
+          link: d.spendingKind ? undefined : { label: c.category, descriptor: { ...d, metric: net ? (s.label === "Income" ? "income" : "spending") : d.metric, category: c.category } },
         })),
         note:
           s.categoryRoundingCents !== 0
@@ -386,8 +412,34 @@ export function cashFlowToProof(p: CashFlowProof): Proof {
 export const cashFlowKind: ProofKind<CashFlowDescriptor> = {
   report: "cash-flow",
   parse: parseCashFlowDescriptor,
-  build: async ({ book, db }, d) => cashFlowToProof(buildCashFlowProof(book, d, d.oneOffs ? oneOffTest(await loadProfileSettings(db), book.rowById) : undefined)),
+  build: async ({ book, db }, d) => {
+    const settings = d.oneOffs || d.spendingKind ? await loadProfileSettings(db) : undefined;
+    return cashFlowToProof(buildCashFlowProof(book, d, settings && d.oneOffs ? oneOffTest(settings, book.rowById) : undefined, settings));
+  },
 };
+
+/**
+ * A band's figure per period, read from the spending report (as the page shows it), and
+ * the rule that says which rows are in it. Everyday is what's left of each month's
+ * spending after bills and big charges, so a row the report sets apart (a charge and its
+ * exact refund) can make the rows differ from it: the note says so.
+ */
+function kindView(book: Book, d: CashFlowDescriptor, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, periods: CashFlowPeriod[]) {
+  const report = buildSpendingReport(book, settings, { accountIds: d.accountIds });
+  const kindOf = spendingKindRule(book, settings, report.recurring);
+  const months = [...report.months, ...(report.current ? [report.current] : [])];
+  const key = ({ bill: "billCents", big: "bigCents", everyday: "everydayCents" } as const)[d.spendingKind!];
+  const perPeriod = periods.map((p) => months.filter((m) => m.start >= p.start && m.end <= p.end).reduce((t, m) => t + m.kinds[key], 0));
+  const outside = periods.some((p) => !months.some((m) => m.start >= p.start && m.end <= p.end));
+  const note = [
+    d.spendingKind === "everyday" ? "Everyday is each month's spending less its bills and big charges, so it takes in anything the other two bands don't." : "",
+    "A refund or reimbursement counts in the band of what it pays back; tax payments and refunds are never everyday.",
+    outside ? "Some of these months are outside the proven months Cash flow shows, so the page has no band figure for them." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { kindOf, perPeriod, note };
+}
 
 function describe(d: CashFlowDescriptor, book: Book, periods: CashFlowPeriod[]): string {
   const what = { income: "Income", spending: "Spending", external: "Outside money", net: "Income minus spending" }[d.metric];
@@ -398,5 +450,5 @@ function describe(d: CashFlowDescriptor, book: Book, periods: CashFlowPeriod[]):
   const span = periods.length === 0 ? `${d.start} – ${d.end}` : periods.length === 1 ? periods[0]!.label : `${periods[0]!.label} – ${periods.at(-1)!.label}`;
   const cut = periods.at(-1)?.through ? ` (through ${periods.at(-1)!.through})` : "";
   const who = d.merchantKey ? ` ${d.metric === "income" ? "from" : "at"} ${merchantName(d.merchantKey)}` : "";
-  return `${what}${who}${d.category ? ` · ${d.category}` : ""}${d.oneOffs ? " excluding one-offs" : ""}, ${span}${cut}${accounts}`;
+  return `${d.spendingKind ? SPENDING_KIND_LABEL[d.spendingKind] : what}${who}${d.category ? ` · ${d.category}` : ""}${d.oneOffs ? " excluding one-offs" : ""}, ${span}${cut}${accounts}`;
 }

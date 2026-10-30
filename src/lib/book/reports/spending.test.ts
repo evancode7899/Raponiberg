@@ -3,7 +3,7 @@ import type { BookRow } from "../load.ts";
 import { NO_HOUSEHOLD } from "../../household/patterns.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { Book } from "../load.ts";
-import { CHARGE_BUCKETS, detectRecurring, merchantName, oneOffRules, reversals, spendingShape } from "./spending.ts";
+import { CHARGE_BUCKETS, detectRecurring, merchantName, oneOffRules, reversals, spendingKindRule, spendingShape } from "./spending.ts";
 
 let n = 0;
 const row = (date: string, cents: number, key: string, extra: Partial<BookRow> = {}): BookRow => ({
@@ -82,7 +82,7 @@ describe("spendingShape", () => {
   ];
   const spending = 200000 + 1250 + 4800 + 310000 - 1250 + 9900;
   // As oneOffRules' candidate test: tagged (the gift), or a charge of $1,500 or more that isn't a bill.
-  const shape = spendingShape(rows, { ...period, spendingCents: spending }, new Set(["LANDLORD"]), (r) => r.payee === "GIFT" || -r.amountCents >= 150_000);
+  const shape = spendingShape(rows, { ...period, spendingCents: spending }, (r) => (r.payee === "LANDLORD" ? "bill" : r.payee === "GIFT" || -r.amountCents >= 150_000 ? "big" : "everyday"));
 
   it("splits spending into bills, big one-offs and everyday that add up to the total", () => {
     expect(shape.kinds).toEqual({ billCents: 200000, bigCents: 310000 + 9900, everydayCents: 1250 + 4800 - 1250 });
@@ -122,5 +122,44 @@ describe("oneOffRules: the one test Annual and Cash flow both use", () => {
     expect(tagged(sofa)).toBe(false);
     expect(premium.some(candidate)).toBe(false);
     expect(candidate(refund)).toBe(false);
+  });
+});
+
+describe("spendingKindRule: credits count in the band of what they pay back", () => {
+  const sofa = row("2026-03-14", -250000, "FURNITURE BARN");
+  const sofaReturn = row("2026-04-02", 250000, "FURNITURE BARN");
+  const relocation = row("2026-04-10", -320000, "EXAMPLE MOVERS");
+  const payback = row("2026-04-28", 320000, "EXAMPLE MOVERS", { reimbursement: { linkId: "l1", side: "credit", source: "stub", expenseId: "" } });
+  const taxPaid = row("2026-01-15", -90000, "IRS USATAXPYMT", { category: "Taxes & fees", accountId: "checking" });
+  const taxRefund = row("2026-04-20", 1177500, "IRS TREAS 310 TAX REF", { category: "Taxes & fees", accountId: "checking" });
+  const coffee = row("2026-04-03", -650, "COFFEE");
+  const coffeeRefund = row("2026-04-04", 650, "COFFEE");
+  const streaming = monthly("STREAMFLIX", [1599, 1599, 1599]);
+  const streamingCredit = row("2026-04-12", 1599, "STREAMFLIX");
+  payback.reimbursement!.expenseId = relocation.id;
+  const rows = [sofa, sofaReturn, relocation, payback, taxPaid, taxRefund, coffee, coffeeRefund, ...streaming, streamingCredit];
+  const book = { rows, rowById: new Map(rows.map((r) => [r.id, r])), accounts: [], household: NO_HOUSEHOLD } as unknown as Book;
+  const kindOf = spendingKindRule(book, { oneOffs: {}, nonRecurringCategories: [] }, [{ key: "STREAMFLIX", kind: "bill" }]);
+
+  it("puts a big refund and a reimbursed big charge's payback with big spending, not everyday", () => {
+    expect([sofa, sofaReturn, relocation, payback].map(kindOf)).toEqual(["big", "big", "big", "big"]);
+  });
+
+  it("never counts a tax payment or refund as everyday, whatever its size", () => {
+    expect(kindOf(taxPaid)).toBe("big");
+    expect(kindOf(taxRefund)).toBe("big");
+  });
+
+  it("keeps small refunds with their everyday charges and a bill's credit with bills", () => {
+    expect([coffee, coffeeRefund].map(kindOf)).toEqual(["everyday", "everyday"]);
+    expect(kindOf(streamingCredit)).toBe("bill");
+  });
+
+  it("so a month with a big refund keeps everyday at its day-to-day level", () => {
+    const april = [sofaReturn, relocation, payback, taxRefund, coffee];
+    const spendingCents = -april.reduce((t, r) => t + r.amountCents, 0);
+    const { kinds } = spendingShape(april, { start: "2026-04-01", end: "2026-04-30", spendingCents }, kindOf);
+    expect(kinds.everydayCents).toBe(650);
+    expect(kinds.bigCents).toBe(spendingCents - 650);
   });
 });

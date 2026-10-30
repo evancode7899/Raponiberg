@@ -5,16 +5,30 @@ import { TransactionTable, type TxnRow } from "@/components/ledger/TransactionTa
 import type { Api } from "@/components/ledger/useApi";
 import type { ChartPalette } from "@/components/shell/chartPalette";
 import { btn, Loading } from "@/components/ui/kit";
-import type { WithheldMonth } from "@/lib/book/reports/spending";
+import type { SpendingMonth, WithheldMonth } from "@/lib/book/reports/spending";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { Ctx } from "./CashFlowClient";
 import { categorySlot } from "./model";
 
 export const categoryColor = (chart: ChartPalette, category: string) => {
   const s = categorySlot(category);
   return s == null ? chart.neutral : chart.series[s]!;
 };
+
+/**
+ * A chart's onClick that opens the clicked month's audit drawer. Anywhere in a month's
+ * column counts, so a thin or below-zero bar is as easy to hit as a tall one. The chart's
+ * data must be `months`, in order.
+ */
+export const openMonthOnClick =
+  (ctx: Pick<Ctx, "open">, months: SpendingMonth[]) =>
+  (s: { activeTooltipIndex?: number | string | null } | null | undefined) => {
+    const i = s?.activeTooltipIndex;
+    const m = i == null ? undefined : months[Number(i)];
+    if (m) ctx.open({ kind: "month", start: m.start });
+  };
 
 export function Dot({ color, className = "" }: { color: string; className?: string }) {
   return <span aria-hidden className={`inline-block h-2.5 w-2.5 shrink-0 rounded-[3px] ${className}`} style={{ background: color }} />;

@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
 import { categoryCents, categorySlot, median, mergeCategories, SPEND_CATEGORIES, totals } from "./model";
-import { categoryColor, Delta, Dot, Sparkline } from "./parts";
+import { categoryColor, Delta, Dot, openMonthOnClick, Sparkline } from "./parts";
 
 export function SpendingTab({ ctx }: { ctx: Ctx }) {
   const { slice, chart, focus, setFocus, open } = ctx;
@@ -109,10 +109,13 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
         </div>
       </Card>
 
-      <Card title="Spending by category, month by month" subtitle="Taxes & fees, untracked card payments and other spending are grouped as Other.">
+      <Card
+        title="Spending by category, month by month"
+        subtitle="Taxes & fees, untracked card payments and other spending are grouped as Other. A category that took in more than it spent (a big refund) shows below zero. Click a month to audit it."
+      >
         <div className="h-[320px] w-full min-w-0">
           <RechartsResponsive>
-            <BarChart data={stack} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <BarChart data={stack} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} stackOffset="sign" className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />

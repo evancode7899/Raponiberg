@@ -9,7 +9,7 @@ import { useMemo } from "react";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashTab, Ctx } from "./CashFlowClient";
 import { buildInsights, categoryCents, median, mergeCategories, totals, type Insight } from "./model";
-import { categoryColor, Delta, Dot } from "./parts";
+import { categoryColor, Delta, Dot, openMonthOnClick } from "./parts";
 
 const TONE: Record<Insight["tone"], { icon: string; cls: string }> = {
   good: { icon: "▲", cls: "bg-pos-soft text-pos" },
@@ -53,11 +53,11 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <Card
           title="Income vs spending"
-          subtitle="Each month from bank and card statements. Transfers between your own accounts never count. The dashed line is your average month of spending."
+          subtitle="Each month from bank and card statements. Transfers between your own accounts never count. The dashed line is your average month of spending. Click a month to audit it."
         >
           <div className="h-[320px] w-full min-w-0">
             <RechartsResponsive>
-              <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
+              <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2} className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
                 <YAxis {...ui.yAxis} tickFormatter={axisUsd} />

@@ -13,6 +13,8 @@ import type { TaxReport } from "../../tax/buildTaxReport.ts";
 import type { BonusesReport } from "../reports/bonuses.ts";
 import { figureReads } from "../reports/bonusFigures.ts";
 import type { CashFlowPeriod } from "../reports/cashFlow.ts";
+import type { SpendingKinds } from "../reports/spending.ts";
+import type { CashFlowDescriptor } from "./cashFlowProof.ts";
 import type { GoalsReport } from "../reports/goals.ts";
 import type { InvestmentsReport } from "../reports/investments.ts";
 import type { MoneyCalendarReport } from "../reports/moneyCalendar.ts";
@@ -49,8 +51,8 @@ const cents = (c: number | null | undefined): ProofValue | null => (c == null ? 
 
 // ------------------------------------------------------------------ Cash flow
 
-/** Each proven month's income, spending, outside money and saved, and each category of it. */
-export function cashFlowFigures(periods: CashFlowPeriod[], accountIds?: string[]): PageFigure[] {
+/** Each proven month's income, spending, outside money and saved, each category of it, and (from the spending report) each band of spending. */
+export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKinds })[], accountIds?: string[]): PageFigure[] {
   const out: PageFigure[] = [];
   const scope = accountIds?.length ? { accountIds } : {};
   for (const p of periods) {
@@ -64,6 +66,9 @@ export function cashFlowFigures(periods: CashFlowPeriod[], accountIds?: string[]
     );
     for (const c of p.spendingByCategory) out.push({ page: "Cash flow", descriptor: d("spending", c.category), shown: cents(c.cents) });
     for (const c of p.incomeByCategory) out.push({ page: "Cash flow", descriptor: d("income", c.category), shown: cents(c.cents) });
+    if (p.kinds)
+      for (const [spendingKind, shown] of [["bill", p.kinds.billCents], ["big", p.kinds.bigCents], ["everyday", p.kinds.everydayCents]] as const)
+        out.push({ page: "Cash flow", descriptor: { ...(d("spending") as CashFlowDescriptor), spendingKind }, shown: cents(shown) });
   }
   return out;
 }
