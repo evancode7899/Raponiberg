@@ -126,6 +126,33 @@ describe("planW4", () => {
     expect(plan.unreachable.federal).toBe(5_000_000 - takeHome);
   });
 
+  it("counts paychecks through the latest stub received as paid, past the stubs on file", () => {
+    const base = planW4(report([pat(), alex()], 600_000, 0));
+    // Pat's Oct 15 stub is in hand though the stubs on file stop at Aug 31.
+    const plan = planW4(report([pat(), alex()], 600_000, 0), { paidThrough: { pat: "2026-10-15" } });
+    const p = plan.people[0]!;
+    expect(p).toMatchObject({ paidThrough: "2026-10-15", paidThroughEntered: true });
+    expect(p.sinceStub).toEqual(["2026-09-15", "2026-09-30", "2026-10-15"]);
+    expect(p.reached).toEqual(["2026-10-31", "2026-11-15", "2026-11-30"]);
+    // Alex keeps today's cut; the year's balance is the same flat-lined projection either way.
+    expect(plan.people[1]!.paidThroughEntered).toBe(false);
+    expect(plan.people[1]!.reached).toEqual(base.people[1]!.reached);
+    expect(plan.federal.balanceNow).toBe(base.federal.balanceNow);
+    expect(plan.federal.withheldSinceStub).toBe(120_000 * 3 + 15_000);
+    expect(Math.abs(plan.federal.balanceAfter)).toBeLessThan(10);
+    // Fewer paychecks left to make it up: each takes more.
+    expect(p.federalChange).toBeGreaterThan(base.people[0]!.federalChange);
+  });
+
+  it("without an entered date counts pay dates through today, and never before the stubs on file", () => {
+    const today = planW4(report([pat()], 0, 0)).people[0]!;
+    expect(today).toMatchObject({ paidThrough: "2026-09-30", paidThroughEntered: false });
+    const early = planW4(report([pat()], 0, 0), { paidThrough: { pat: "2026-07-31" } }).people[0]!;
+    expect(early.paidThrough).toBe("2026-08-31");
+    expect(early.sinceStub).toEqual([]);
+    expect(early.reached[0]).toBe("2026-09-15");
+  });
+
   it("reads the filing status from the stub when no W-4 is entered", () => {
     const plan = planW4(report([pat({ status: "Single" })], 0, 0));
     expect(plan.people[0]!.onFileEntered).toBe(false);

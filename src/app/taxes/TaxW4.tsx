@@ -1,7 +1,7 @@
 "use client";
 
 import { buttonPrimary, Card, Segmented } from "@/components/ledger/LedgerBits";
-import { MoneyInput, selectCls } from "@/components/ui/kit";
+import { inputCls, MoneyInput, selectCls } from "@/components/ui/kit";
 import { formatUsdCents } from "@/lib/formatMoney";
 import { CT_W4_CODES, DEFAULT_PAY_FORECAST, EMPTY_EXTRAS, type CtW4Code, type TaxProfile, type W4OnFile } from "@/lib/tax/profile";
 import { planW4, type W4Balance, type W4PersonPlan } from "@/lib/tax/w4";
@@ -10,6 +10,8 @@ import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { BalanceBadge, Callout, EstimateValue, formatDate, NumberTable, usd } from "./taxUi";
 
 const STATUS: Record<W4OnFile["filingStatus"], string> = { SINGLE: "Single or Married filing separately", MFJ: "Married filing jointly", HOH: "Head of household" };
+/** Each person's latest pay stub received, per year: kept in this browser (it's a working note, not a figure). */
+const PAID_STORE = "pf-w4-paid-through";
 const FREQ: Record<string, string> = { WEEKLY: "weekly", BIWEEKLY: "every two weeks", SEMIMONTHLY: "twice a month", MONTHLY: "monthly" };
 
 /** A form amount to the cent; zero is "$0", not a dash: it's what goes on the line. */
@@ -19,11 +21,34 @@ const exact = (cents: number) => (Math.abs(cents) < 1 ? "$0.00" : `${cents > 0 ?
 /**
  * Taxes › W-4: every line of each person's W-4 and CT-W4 so the joint return lands at
  * $0 owed and $0 refunded, from the stubs to date, payments made and the forecast for the
- * rest of the year (lib/tax/w4).
+ * rest of the year (lib/tax/w4). Each person's latest stub received (often past the data
+ * edge) says which paychecks are already paid; it's kept in this browser only.
  */
 export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) => Promise<void> }) {
   const [tooSoon, setTooSoon] = useState<"0" | "1" | "2">("1");
-  const plan = useMemo(() => planW4(r, { tooSoonCount: Number(tooSoon) }), [r, tooSoon]);
+  // { year: { personId: latest stub received } }. The tab renders only once the report has loaded in the browser.
+  const [received, setReceived] = useState<Record<string, Record<string, string>>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(PAID_STORE) ?? "{}") as Record<string, Record<string, string>>;
+    } catch {
+      return {};
+    }
+  });
+  const paidThrough = useMemo(() => received[r.year] ?? {}, [received, r.year]);
+  const setPaid = (personId: string, date: string) =>
+    setReceived((cur) => {
+      const year = { ...cur[r.year] };
+      if (date) year[personId] = date;
+      else delete year[personId];
+      const next = { ...cur, [r.year]: year };
+      try {
+        localStorage.setItem(PAID_STORE, JSON.stringify(next));
+      } catch {
+        // Not kept past this visit; the plan still uses it.
+      }
+      return next;
+    });
+  const plan = useMemo(() => planW4(r, { tooSoonCount: Number(tooSoon), paidThrough }), [r, tooSoon, paidThrough]);
 
   if (!r.isCurrentYear) {
     return <Callout tone="info">A W-4 only changes paychecks still to come, so it&apos;s planned for the year in progress. Pick {r.today.slice(0, 4)} above.</Callout>;
@@ -40,6 +65,26 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
         title={`W-4s for $0.00 in April ${r.year + 1}`}
         subtitle="Starts from what each paycheck withholds under the W-4 on file now, then moves only Step 4(c) or Step 3 (CT-W4 line 2 or 3), so the joint return neither owes nor refunds."
       >
+        <div className="flex flex-col gap-2 px-4 pb-3 text-xs text-muted">
+          {plan.people.map((p) => (
+            <label key={p.personId} className="flex flex-wrap items-center gap-2">
+              <span>{p.name}&apos;s latest pay stub received</span>
+              <input
+                type="date"
+                className={`${inputCls} w-auto`}
+                value={paidThrough[p.personId] ?? ""}
+                min={p.latestStub}
+                max={`${r.year}-12-31`}
+                onChange={(e) => setPaid(p.personId, e.target.value)}
+                aria-label={`${p.name}'s latest pay stub received`}
+              />
+              <span>
+                {p.paidThroughEntered ? "Paid through" : "Not set: paid through"} {formatDate(p.paidThrough)}. Stubs on file stop at {formatDate(p.latestStub)}; the{" "}
+                {p.sinceStub.length} paycheck{p.sinceStub.length === 1 ? "" : "s"} between are taken to withhold what that one did.
+              </span>
+            </label>
+          ))}
+        </div>
         <div className="flex flex-wrap items-center gap-2 px-4 pb-3 text-xs text-muted">
           <span>The new W-4 reaches</span>
           <Segmented
@@ -98,8 +143,8 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
           </li>
           <li>Bonuses still to come are withheld at the flat 22% supplemental rate (and 6.99% for Connecticut), which a W-4 doesn&apos;t change; they&apos;re counted as they are.</li>
           <li>
-            Paychecks since the latest stub are forecast at the same paycheck. Upload newer stubs and the plan updates; so do the Forecast page&apos;s paycheck and bonus choices, and the Inputs
-            tab&apos;s extras.
+            Paychecks after the latest stub on file are forecast at the same paycheck, including the ones already received past it: set each person&apos;s latest stub received above, and the
+            new W-4 is spread over the paychecks after it. Upload newer stubs and the plan updates; so do the Forecast page&apos;s paycheck and bonus choices, and the Inputs tab&apos;s extras.
           </li>
           <li>Filing status, Step 2 and Steps 4(a)/(b) are kept as they are: changing them moves the base withholding by an amount only payroll&apos;s tables can say.</li>
         </ul>
@@ -142,7 +187,7 @@ function PersonW4({ p, r, onSave }: { p: W4PersonPlan; r: TaxResponse; onSave: (
   return (
     <Card
       title={`${p.name}: W-4 and CT-W4 for ${p.employer}`}
-      subtitle={`Paid ${FREQ[p.frequency] ?? p.frequency} (${p.periodsPerYear} pay periods a year). Latest stub ${formatDate(p.latestStub)}.`}
+      subtitle={`Paid ${FREQ[p.frequency] ?? p.frequency} (${p.periodsPerYear} pay periods a year). Latest stub on file ${formatDate(p.latestStub)}; paid through ${formatDate(p.paidThrough)}.`}
     >
       <div className="px-4 pb-4">
         <NumberTable
@@ -281,7 +326,7 @@ function Reconcile({ federal, ct, people }: { federal: W4Balance; ct: W4Balance;
   const rows = [
     row("Projected tax for the year", (b) => b.tax, { strong: true }),
     row("Withheld on the pay stubs on file", (b) => b.withheldStubs, { indent: true, sign: -1 }),
-    row("Paychecks since the latest stub (forecast)", (b) => b.withheldSinceStub, { indent: true, sign: -1 }),
+    row("Paychecks received since the stubs on file (forecast)", (b) => b.withheldSinceStub, { indent: true, sign: -1 }),
     tooSoon ? row("Paychecks before the new W-4 takes effect", (b) => b.withheldTooSoon, { indent: true, sign: -1 }) : null,
     row("Paychecks the new W-4 reaches, as withheld now", (b) => b.withheldReached, { indent: true, sign: -1 }),
     row("Bonuses still to come (flat supplemental rate)", (b) => b.withheldBonus, { indent: true, sign: -1 }),
