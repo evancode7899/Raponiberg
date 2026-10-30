@@ -91,8 +91,8 @@ function brokerage(periodEnd: string, dividends: number, interest: number): Book
     income: { dividends, interest, capGainDistShort: 0, capGainDistLong: 4_000, taxExempt: 0, taxDeferred: 0 },
     realized: { shortTerm: -12_000, longTerm: 85_000 },
     incomeRows: [
-      { kind: "DIVIDEND", amount: Math.round(dividends * 0.8), nonQualified: false, moneyMarket: false },
-      { kind: "DIVIDEND", amount: Math.round(dividends * 0.2), nonQualified: true, moneyMarket: true },
+      { date: "2025-03-15", security: "EXAMPLE FUND", cusip: "", kind: "DIVIDEND", amount: Math.round(dividends * 0.8), nonQualified: false, moneyMarket: false },
+      { date: "2025-03-15", security: "EXAMPLE MONEY FUND", cusip: "", kind: "DIVIDEND", amount: Math.round(dividends * 0.2), nonQualified: true, moneyMarket: true },
     ],
     distributions: [],
     contributionsYtd: null,

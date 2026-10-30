@@ -5,7 +5,7 @@ import { computeReturn, type PersonIncome, type ReturnResult } from "./computeRe
 import { ctResidentShares, filedBalance, k1Income, matchW2s, safeHarborTax, w2FromForm, type YearDocs } from "./documents";
 import { taxPaymentsFrom } from "./facts/payments";
 import { w2FromAmounts, ZERO_AMOUNTS } from "./facts/payroll";
-import { checkFiled } from "./filedCheck";
+import { checkFiled, documentTies } from "./filedCheck";
 import { taxYearParams } from "./params";
 import { DEFAULT_PAY_FORECAST, EMPTY_EXTRAS, emptyYear } from "./profile";
 
@@ -233,5 +233,48 @@ describe("the model against the filed return", () => {
     expect(filedBalance(filed(truth, { amountOwed: $(500), refund: null }))).toBe($(500));
     expect(filedBalance(filed(truth, { amountOwed: null, refund: $(700) }))).toBe(-$(700));
     expect(safeHarborTax(filed(truth, { totalTax: $(10_000), refundableCredits: $(300), excessSsCredit: $(300) }))).toBe($(10_000));
+  });
+});
+
+describe("a brokerage 1099 against the statements", () => {
+  const figures = (o: Partial<Record<string, number>>) => ({ ordinaryDividends: 0, qualifiedDividends: 0, moneyMarketDividends: 0, interest: 0, capGainDistShort: 0, capGainDistLong: 0, shortTermGain: 0, longTermGain: 0, ...o });
+  const form = (o: { fees?: number; payments: { date: string; amount: number }[] }) => ({ doc: { id: "b", file: "2023/1099.pdf" }, form: { proceedsInvestmentExpenses: o.fees ?? 0, dividendPayments: o.payments } });
+  // The 1099 prints $1,000.00 of dividends and $500.00 of gains; the statements also hold a
+  // $20.00 January dividend and net $15.00 of trust fees into gains.
+  const report = (jan: { date: string; amount: number }[]) =>
+    ({
+      year: 2023,
+      people: [],
+      payments: [],
+      bankInterest: { parts: [] },
+      accounts: [
+        {
+          source: "1099",
+          label: "Brokerage ••1234",
+          doc: { id: "b", file: "2023/1099.pdf" },
+          ytd: figures({ ordinaryDividends: 100_000, shortTermGain: 50_000 }),
+          fromStatements: figures({ ordinaryDividends: 102_000, shortTermGain: 48_500 }),
+          januaryDividends: jan,
+        },
+      ],
+    }) as unknown as TaxReport;
+  const tie = (r: TaxReport, f: ReturnType<typeof form>) => documentTies(r, { ...docs({} as FiledReturn), federal: null, brokerage: [f] } as unknown as YearDocs);
+  const jan20 = [{ date: "2023-01-17", amount: 2_000 }];
+
+  it("explains a January dividend the 1099 leaves to the prior year and the fees the statements net into gains", () => {
+    const ties = tie(report(jan20), form({ fees: -1_500, payments: [{ date: "2023-02-13", amount: 700 }] }));
+    expect(ties.map((t) => [t.label.split(" · ")[1], t.status])).toEqual([["ordinary dividends", "MATCH"], ["qualified dividends", "MATCH"], ["interest", "MATCH"], ["realized gains", "MATCH"]]);
+    expect(ties[0]!.note).toContain("$20.00");
+    expect(ties[3]!.note).toContain("$15.00");
+  });
+
+  it("still flags a January dividend that the 1099 prints, and gaps the fees don't explain", () => {
+    const ties = tie(report(jan20), form({ fees: -400, payments: [{ date: "2023-01-17", amount: 2_000 }] }));
+    expect(ties.find((t) => /ordinary/.test(t.label))!.status).toBe("DIFFERENT");
+    expect(ties.find((t) => /realized/.test(t.label))!.status).toBe("DIFFERENT");
+  });
+
+  it("does not guess when the 1099 lists no dated payments", () => {
+    expect(tie(report(jan20), form({ payments: [] })).find((t) => /ordinary/.test(t.label))!.status).toBe("DIFFERENT");
   });
 });

@@ -164,6 +164,20 @@ describe("1099s and K-1s", () => {
     expect(f1099).toMatchObject({ recipient: "PAT EXAMPLE", account: "1234", div: { ordinary: 100_000, qualified: 80_000, section199a: 5_000 }, int: { interest: 1_234 }, b: { longTermGain: 100_000, longTermProceeds: 500_000 } });
   });
 
+  it("reads the supplemental fees and the dated payments of a brokerage 1099", () => {
+    const text = [
+      "Proceeds Investment Expenses ........................... -19.65",
+      "EXAMPLE FUND, EXM, 123456789",
+      "02/13/23 7.61 7.61",
+      "03/23/23 0.71 0.01 0.64 0.06",
+      "Proceeds Investment Expenses",
+      "EXAMPLE TRUST 123456789 05/12/23 -3.86",
+    ].join("\n");
+    const { f1099 } = parseBrokerage1099(text);
+    expect(f1099.proceedsInvestmentExpenses).toBe(-1_965);
+    expect(f1099.dividendPayments).toEqual([{ date: "2023-02-13", amount: 761 }, { date: "2023-03-23", amount: 71 }]);
+  });
+
   it("reads a K-1's boxes, not its box numbers", () => {
     const rows = [
       row(1, 713, [318, 322, "1"], [334, 431, "Ordinary business income (loss)"], [453, 461, "14"], [471, 571, "Self-employment earnings (loss)"]),

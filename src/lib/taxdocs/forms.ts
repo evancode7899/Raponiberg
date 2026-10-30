@@ -53,6 +53,8 @@ export function parseBrokerage1099(text: string): { f1099: Brokerage1099; warnin
       taxExempt: dotted(text, /8 Tax-Exempt Interest/),
     },
     misc: { other: dotted(text, /3 Other Income/), substitutePayments: dotted(text, /8 Substitute Payments in Lieu of Dividends or Interest/) },
+    proceedsInvestmentExpenses: dotted(text, /Proceeds Investment Expenses/),
+    dividendPayments: [...text.matchAll(/^(\d{2})\/(\d{2})\/(\d{2})\s+\(?(-?[\d,]+\.\d{2})\)?/gm)].map((m) => ({ date: `20${m[3]}-${m[1]}-${m[2]}`, amount: money(m[4]) })),
     b: {
       shortTermProceeds: col(st, 0),
       shortTermBasis: col(st, 1),
