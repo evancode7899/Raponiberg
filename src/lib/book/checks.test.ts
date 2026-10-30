@@ -511,7 +511,7 @@ describe("tax documents were read by the current reader (ledger.freshness)", () 
     const f = fresh(b);
     expect(f.map((x) => x.id)).toEqual([`ledger.freshness:taxdocs:v${TAX_DOCS_VERSION}`]);
     expect(f[0]!.title).toBe("1 tax document was read by an older tax documents reader");
-    expect(f[0]!.detail).toMatch(/version 0 of the reader.*2024\/pat-w2\.pdf\.$/);
+    expect(f[0]!.detail).toMatch(new RegExp(`version ${TAX_DOCS_VERSION - 1} of the reader.*2024/pat-w2\\.pdf\\.$`));
     expect(f[0]!.fix).toMatch(/^Click Scan tax documents folder \(Statements → Import\)/);
     expect(f[0]!.scope).toEqual({ from: "2024-01-01", to: "2025-12-31", affects: ["TAX"] });
     expect(taxPasses(b)).toEqual([]);

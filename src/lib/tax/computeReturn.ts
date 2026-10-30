@@ -682,9 +682,9 @@ export function nyScheduleTax(ti: number, brackets: [number, number][]): number 
  * New York AGI it's the tax table / rate schedule. Above, the tax computation worksheets
  * take back the lower brackets' benefit: with income in bracket k, the recapture base
  * (the brackets below k − 1, at k − 1's rate) plus the incremental benefit (bracket k − 1
- * at bracket k's rate), phased in over the next $50,000 of AGI. Taxable income within the
- * first four brackets moves to the fourth bracket's flat rate; above $25 million of AGI
- * every dollar is at the top rate.
+ * at bracket k's rate), phased in over the next $50,000 of AGI. Taxable income up to the top
+ * of the bracket holding $107,650 (the fourth jointly, the fifth for a single filer) moves to
+ * that bracket's flat rate; above $25 million of AGI every dollar is at the top rate.
  */
 export function nyStateTax(np: NyParams, fs: FilingStatus, nyAgi: number, ti: number): { schedule: number; recapture: number } {
   const b = np.brackets[fs];
@@ -694,9 +694,10 @@ export function nyStateTax(np: NyParams, fs: FilingStatus, nyAgi: number, ti: nu
   if (nyAgi > np.flatAbove) return { schedule, recapture: whole(ti * b.at(-1)![1]) - schedule };
   const k = b.findIndex(([u]) => ti <= u);
   const phase = (from: number) => Math.min(1, Math.round((pos(nyAgi - from) / np.recapturePhaseIn) * 10_000) / 10_000);
-  if (k <= 3) {
-    // Worksheet 1: towards the fourth bracket's rate on all of it, as AGI passes $107,650.
-    const full = whole(ti * b[3]![1]);
+  const m = b.findIndex(([u]) => np.recaptureAgi <= u);
+  if (k <= m) {
+    // Worksheet 1: towards that bracket's rate on all of it, as AGI passes $107,650.
+    const full = whole(ti * b[m]![1]);
     return { schedule, recapture: whole(pos(full - schedule) * phase(np.recaptureAgi)) };
   }
   const lower = b[k - 1]![0];

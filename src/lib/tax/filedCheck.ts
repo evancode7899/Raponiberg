@@ -497,7 +497,7 @@ export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResu
   const params = taxYearParams(report.year);
   // Returns are filed in whole dollars, each W-2 box and 1099 amount rounded before it's added.
   const ny = report.ny?.filing ?? null;
-  const filedWay = (people: PersonIncome[]) => computeReturn({ params, filingStatus: "MFJ", people: people.map(wholeDollars), dependents: report.dependents, ny });
+  const filedWay = (people: PersonIncome[]) => computeReturn({ params, filingStatus: report.filingStatus, people: people.map(wholeDollars), dependents: report.dependents, ny });
   const k1s = report.people.flatMap((p) => p.k1s.filter((k) => !k.estimate));
   if (!k1s.length || !docs.federal || docs.federal.lines.some((l) => l.form === "SE" || l.form === "8582")) {
     return { result: filedWay(report.people.map((p) => p.income)), exact: full, amendment: null };
@@ -531,7 +531,7 @@ export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResu
     }
     return out;
   });
-  const before = computeReturn({ params, filingStatus: "MFJ", people: without, dependents: report.dependents, ny });
+  const before = computeReturn({ params, filingStatus: report.filingStatus, people: without, dependents: report.dependents, ny });
   const names = [...new Set(k1s.map((k) => k.partnership))].join(", ");
   return {
     result: filedWay(without),

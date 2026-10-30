@@ -31,14 +31,14 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     const { joint, mfs, cols: base } = estimateColumns(r, basis, whatIf);
     const ny = r.ny?.filing ?? null;
     // Marginal rate: $1,000 more wages for that column's highest earner.
-    const marginal = (c: EstimateColumn, fs: "MFJ" | "MFS") => {
+    const marginal = (c: EstimateColumn, fs: ReturnResult["filingStatus"]) => {
       const top = [...c.incomes].sort((a, b) => wages(b) - wages(a))[0];
       if (!top || !top.w2s.length) return null;
       const bumped = applyWhatIf(c.incomes, { ...NO_WHAT_IF, people: { [top.id]: { extraWages: 100_000, extraPretax401k: 0 } } }, params);
       const b = computeReturn({ params, filingStatus: fs, people: bumped, dependents: c.dependents, ny, itemizeMode: c.r.federal.itemizes ? "ITEMIZE" : "STANDARD" });
       return (allTaxes(b) - allTaxes(c.r)) / 100_000;
     };
-    const cols = base.map((c) => ({ ...c, marginal: marginal(c, c.id === "joint" ? "MFJ" : "MFS") }));
+    const cols = base.map((c) => ({ ...c, marginal: marginal(c, c.id === "joint" ? c.r.filingStatus : "MFS") }));
     return { joint, mfs, cols };
   }, [r, basis, whatIf, params]);
 
@@ -122,7 +122,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     ...(nyCity.some((x) => x) ? [line("ny.cityTax", "New York City income tax")] : []),
     ...(other.some((x) => x) ? [line("all.otherStateTax", "Other state tax")] : []),
     line("all.totalTaxes", "Total taxes", { strong: true, help: "The Overview's headline tax (joint, projected)." }),
-    line("all.jointValue", "Value of filing jointly", { only: "joint", help: "Both spouses' separate-return taxes minus the joint return's taxes." }),
+    ...(cols.length > 1 ? [line("all.jointValue", "Value of filing jointly", { only: "joint", help: "Both spouses' separate-return taxes minus the joint return's taxes." })] : []),
 
     { label: "Rates and take-home", values: [], heading: true },
     line("all.earnedPlusInvestment", "Earned + investment income", {
@@ -194,7 +194,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
             {basis === "ytd"
               ? "As if the year ended at the latest pay stub and statement: no remaining paychecks, expected bonus or future sales."
               : "Remaining paychecks, expected bonus and investment income projected to December 31."}
-            {` Separate columns assume ${people.find((p) => p.id === calc.mfs.claimant)?.name ?? "one spouse"} claims ${r.dependents.map((d) => d.name).join(", ") || "no dependents"}.`}
+            {cols.length > 1 && ` Separate columns assume ${people.find((p) => p.id === calc.mfs.claimant)?.name ?? "one spouse"} claims ${r.dependents.map((d) => d.name).join(", ") || "no dependents"}.`}
           </p>
         </div>
         <WhatIfPanel r={r} whatIf={whatIf} onChange={setWhatIf} basis={basis} />
@@ -203,7 +203,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
       {hasWhatIf(whatIf) && <Callout tone="info">What-if active — these figures include your hypothetical changes and aren&apos;t saved.</Callout>}
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,48rem)_minmax(0,1fr)]">
-        <Card title={`${r.year} tax worksheet`} subtitle={`${FILING_STATUS_LABEL.MFJ} vs each spouse ${FILING_STATUS_LABEL.MFS.toLowerCase()}.`}>
+        <Card title={`${r.year} tax worksheet`} subtitle={r.filingStatus === "SINGLE" ? `${FILING_STATUS_LABEL.SINGLE}, as filed.` : `${FILING_STATUS_LABEL.MFJ} vs each spouse ${FILING_STATUS_LABEL.MFS.toLowerCase()}.`}>
           <NumberTable columns={header} rows={rows} />
         </Card>
         <Supporting r={r} basis={basis} cols={cols} />
@@ -214,7 +214,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
         subtitle="How each tax is built, band by band. The bar shows how much of each band your income fills; the highlighted row is where the next dollar lands."
         actions={
           <Segmented
-            options={[{ value: "all", label: "All" }, ...cols.map((c) => ({ value: c.id, label: c.id === "joint" ? "Joint" : `${c.name} (sep.)` }))]}
+            options={[{ value: "all", label: "All" }, ...cols.map((c) => ({ value: c.id, label: c.id === "joint" ? c.name : `${c.name} (sep.)` }))]}
             value={focus}
             onChange={setFocus}
           />
@@ -223,7 +223,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
         <ScheduleGrid
           columns={shown.map((c) => ({
             id: c.id,
-            title: c.id === "joint" ? FILING_STATUS_LABEL.MFJ : `${c.name} ${FILING_STATUS_LABEL.MFS.toLowerCase()}`,
+            title: c.id === "joint" ? FILING_STATUS_LABEL[c.r.filingStatus] : `${c.name} ${FILING_STATUS_LABEL.MFS.toLowerCase()}`,
             schedules: returnSchedules(c.r, c.incomes, params),
           }))}
         />

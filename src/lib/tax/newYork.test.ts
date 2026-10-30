@@ -73,6 +73,11 @@ describe("New York State tax (IT-201 rate schedule and tax computation worksheet
     expect(nyStateTax(NY, "MFJ", $(120_000), $(100_000))).toEqual({ schedule: $(5_168), recapture: $(82) });
   });
 
+  it("phases a single filer toward the flat 6% (the bracket holding $107,650) in worksheet 1", () => {
+    // Schedule $4,271 + 6% of $41,350; flat $7,320; (130,000 − 107,650) ÷ 50,000 = .4470 of the $568 difference.
+    expect(nyStateTax(NY, "SINGLE", $(130_000), $(122_000))).toEqual({ schedule: $(6_752), recapture: $(254) });
+  });
+
   it("adds the recapture base and the phased incremental benefit (worksheets 2 and 3)", () => {
     // 6% bracket: recapture base $333, incremental benefit $808 × .7690.
     expect(total(nyStateTax(NY, "MFJ", $(200_000), $(183_950)))).toBe($(9_897 + 333 + 621));

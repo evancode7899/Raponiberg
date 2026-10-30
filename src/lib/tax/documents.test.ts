@@ -203,6 +203,7 @@ function report(income: PersonIncome, settled: ReturnResult | null = null): TaxR
     inputs,
     profile: { persons: [{ id: "pat", name: "Pat", match: ["PAT"] }] },
     residency: { ct: "FULL", movedIn: null, investmentShare: 1, sourceIncome: null, source: "DEFAULT" },
+    filingStatus: "MFJ",
     scenarios: { mfj },
   } as unknown as TaxReport;
 }
