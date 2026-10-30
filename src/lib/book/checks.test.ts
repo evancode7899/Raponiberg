@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Lane } from "../classifier/taxonomy";
 import { CLASSIFIER_VERSION } from "../classifier/version";
-import { NO_HOUSEHOLD } from "../household/patterns";
+import { compileHousehold, NO_HOUSEHOLD, type HouseholdPatterns } from "../household/patterns";
 import type { StubLine } from "../ingest/payroll/types";
 import { groupFor } from "../ledger/loadLedger";
 import { buildTimeline, type SegmentInput } from "../ledger/timeline";
@@ -362,7 +362,7 @@ describe("a payment to a private fund whose statement isn't out yet", () => {
   // Checking is on file through Nov; the fund's one capital statement ends Sep 30 (the edge).
   type Acct = Parameters<typeof makeBook>[0]["accounts"][number];
   const fund = (id = "fund", idents = ["7788"], subtype = "OTHER"): Acct => ({ id, name: `Example Partners LP ••${idents[0]}`, subtype, institution: "Example Partners", idents, segs: [{ start: "2025-07-01", end: "2025-09-30", open: 0, close: 0 }] });
-  const fundBook = (o: { date?: string; payee?: string; cents?: number; others?: Acct[]; lp?: string[]; edit?: (r: BookRow) => void; on?: Acct } = {}) => {
+  const fundBook = (o: { date?: string; payee?: string; cents?: number; others?: Acct[]; lp?: string[]; edit?: (r: BookRow) => void; on?: Acct; household?: HouseholdPatterns } = {}) => {
     const row = { date: o.date ?? "2025-10-14", cents: o.cents ?? -25_000, lane: "TRANSFER" as Lane, payee: o.payee ?? "ONLINE TRANSFER TO ACCT 7788", id: "wire" };
     const from = o.on ?? { id: "chk", name: "Checking ••1234", subtype: "CHECKING", institution: "Bank", idents: ["1234"], segs: [{ start: "2025-01-01", end: "2025-11-30", open: 100_000, close: 100_000 + row.cents, rows: [row] }] };
     const lp = o.lp ?? ["fund"];
@@ -376,6 +376,7 @@ describe("a payment to a private fund whose statement isn't out yet", () => {
           book.statements.push({ id: `st-${id}`, accountId: id, documentId: `doc-${id}`, documentTitle: "fund.pdf", importedAt: "2025-10-20T00:00:00.000Z", status: "COMMITTED", isSummary: false, periodStart: "2025-07-01", periodEnd: "2025-09-30", deltaCents: 0 });
         }
         if (o.edit) o.edit(book.rowById.get("wire")!);
+        if (o.household) book.household = o.household;
       },
     });
     b.horizon.cashFlow = cashFlowThrough(b);
@@ -415,6 +416,32 @@ describe("a payment to a private fund whose statement isn't out yet", () => {
 
   it("stays strict when only the institution points at the fund", () => {
     strict(fundBook({ payee: "ONLINE TRANSFER TO EXAMPLE PARTNERS", edit: (r) => (r.counterpartyInstitution = "Example Partners") }));
+  });
+
+  describe("a wire with no account number, matched by the household file's fund entry", () => {
+    // The fund's statements came from an earlier reader (lp: []): the household file says it's a fund.
+    const named = { ...fund(), name: "Example Growth Fund II LP (private equity) ••7788" };
+    const entry = { institution: "Example Partners", statementName: "Example Growth Fund II LP", accountName: "Example Growth Fund II LP (private equity)", wirePattern: "EXAMPLE GROWTH FUND II\\b" };
+    const wire = (payee: string, f: Partial<typeof entry> = {}) =>
+      fundBook({
+        payee,
+        others: [named],
+        lp: [],
+        edit: (r) => (r.counterpartyInstitution = "Example Partners"),
+        household: compileHousehold({ version: 1, funds: [{ ...entry, ...f }] }),
+      });
+
+    it("holds back net worth only when the fund's wire pattern names it", () => {
+      const b = wire("Online Wire Transfer A/C: Example Growth Fund II New York NY Ref: Capitalcall");
+      expect(finding(b)).toMatchObject({ status: "MISSING", atEdge: true, scope: { affects: ["NET_WORTH"] }, needs: { accountIds: ["fund"] } });
+      expect(b.horizon.cashFlow).toBe("2025-11-30");
+    });
+
+    it("stays strict when the pattern doesn't match, the fund has no pattern, or the entry is another account's", () => {
+      strict(wire("Online Wire Transfer A/C: Example Growth Fund III Ref: Capitalcall"));
+      strict(wire("Online Wire Transfer A/C: Example Growth Fund II", { wirePattern: undefined }));
+      strict(wire("Online Wire Transfer A/C: Example Growth Fund II", { accountName: "Example Value Fund I LP" }));
+    });
   });
 
   it("stays strict for a gap inside the proven range", () => {

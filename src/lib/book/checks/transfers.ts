@@ -135,17 +135,20 @@ export function checkTransfers(book: Book, c: Collector) {
 
 /**
  * A bank payment out to a private fund whose statement for those days isn't out yet: the
- * payment is past the data edge, names the fund's account (not just its manager), the fund
- * is its only possible other leg, and the bank's own statement holds the row. The fund's
- * side is all that's awaited, and it only moves the household's money between its own
- * accounts, so the finding holds back net worth, not cash flow (or taxes).
+ * payment is past the data edge, names the fund's account (its number, or with no number
+ * the household file's wire pattern for that fund, not just its manager), the fund is its
+ * only possible other leg, and the bank's own statement holds the row. The fund's side is
+ * all that's awaited, and it only moves the household's money between its own accounts, so
+ * the finding holds back net worth, not cash flow (or taxes).
  */
 function awaitsFundStatement(book: Book, r: BookRow, candidates: BookAccount[], notCovered: BookAccount[]): boolean {
   if (candidates.length !== 1 || notCovered.length !== 1 || r.date <= book.horizon.netWorth) return false;
   const fund = notCovered[0]!;
   if (!isPrivateFund(book, fund)) return false;
   const named = namedAccounts(book, r);
-  if (named.length !== 1 || named[0]!.id !== fund.id) return false;
+  const payee = r.payee.toUpperCase();
+  const byWire = named.length === 0 ? book.accounts.filter((a) => a.id !== r.accountId && !!householdFund(book, a)?.wire?.test(payee)) : named;
+  if (byWire.length !== 1 || byWire[0]!.id !== fund.id) return false;
   const account = book.accounts.find((a) => a.id === r.accountId);
   return (
     account?.group === "Cash" &&
@@ -158,11 +161,20 @@ function awaitsFundStatement(book: Book, r: BookRow, candidates: BookAccount[], 
   );
 }
 
-/** A private fund (LP) interest: an "Other" account whose statements the fund's capital-statement reader read. */
+/**
+ * A private fund (LP) interest: an "Other" account whose statements the fund's capital-statement
+ * reader read, or that the household file lists as a fund (statements read by an earlier reader).
+ */
 function isPrivateFund(book: Book, a: BookAccount): boolean {
   if (a.group !== "Other") return false;
+  if (householdFund(book, a)) return true;
   const lpDocs = new Set(book.documents.filter((d) => d.parserId === LP_CAPITAL_PARSER_ID).map((d) => d.id));
   return book.statements.some((s) => s.accountId === a.id && s.status === "COMMITTED" && lpDocs.has(s.documentId));
+}
+
+/** The household file's entry for a fund account, found by the account name it gives. */
+function householdFund(book: Book, a: BookAccount) {
+  return book.household.funds.find((f) => f.accountName && a.institution === f.institution && a.name.startsWith(f.accountName));
 }
 
 /** The accounts whose number the row's description or classifier names. */
