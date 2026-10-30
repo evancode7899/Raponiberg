@@ -19,9 +19,16 @@ const span = (from: string, to: string) =>
     MONTHS[Number(to.slice(5, 7)) - 1]
   } ${Number(to.slice(8))}, ${to.slice(0, 4)}`;
 
-const isMonthEnd = (iso: string) => new Date(`${iso}T12:00:00Z`).getUTCMonth() !== new Date(Date.parse(`${iso}T12:00:00Z`) + 864e5).getUTCMonth();
+const maxIso = (a: string, b: string) => (a > b ? a : b);
+const isMonthEnd =(iso: string) => new Date(`${iso}T12:00:00Z`).getUTCMonth() !== new Date(Date.parse(`${iso}T12:00:00Z`) + 864e5).getUTCMonth();
 const neededBy =(s: PlanStatement, end: string) => LANES.some((l) => (s.neededFrom[l.id] ?? "9999") <= end);
 const lanesFor = (s: PlanStatement, lane: PlanLane, end: string) => (s.neededFrom[lane] ?? "9999") <= end;
+/** A card cycle the issuer sends no statement for when it had no activity: there may be nothing to download. */
+const mayNotIssue = (s: PlanStatement) => s.kind === "next" && s.ifIdle != null && !s.ifIdle.onFile;
+/** Out now and sure to exist. */
+const downloadable = (s: PlanStatement) => s.status === "ready" && !mayNotIssue(s);
+/** Out now if the card had activity: worth a look on the issuer's site. */
+const toCheck = (s: PlanStatement) => s.status === "ready" && mayNotIssue(s);
 
 /** "Net worth & cash flow from Jul 2026 · taxes from Aug 2026". */
 function neededText(s: PlanStatement): string {
@@ -40,11 +47,17 @@ function neededText(s: PlanStatement): string {
 
 function StatusBadge({ s, today }: { s: PlanStatement; today: string }) {
   if (s.kind !== "next") return <Badge tone="neg">missing</Badge>;
+  if (toCheck(s))
+    return (
+      <Badge tone="warn" title="The issuer sends no statement for a cycle without activity. Download it if one is listed; otherwise the bank statements prove the cycle.">
+        check if issued
+      </Badge>
+    );
   if (s.status === "ready") return <Badge tone="pos">ready to download</Badge>;
   if (s.status === "posting")
     return (
       <Badge tone="warn" title={`Closed ${date(s.end)}. Monthly statements usually post about a week after closing; quarterly ones five to nine weeks after.`}>
-        closed · expected ~{date(s.readyBy)}
+        closed · {mayNotIssue(s) ? "if issued, " : ""}expected ~{date(s.readyBy)}
       </Badge>
     );
   const days = Math.round((Date.parse(s.end) - Date.parse(today)) / 864e5);
@@ -78,15 +91,20 @@ export function StatementPlan({ plan }: { plan: Plan }) {
       const other = plan.other.filter((o) => (o.neededFrom[l.id] ?? "9999") <= end);
       // A stub is out on its pay date.
       const latest = [...need.map((s) => (s.status === "ready" ? plan.today : s.readyBy)), ...stubs.map((s) => (s.status === "ready" ? plan.today : s.date))].sort().at(-1);
-      return { ...l, unlocked: target.unlocked[l.id] && !stubs.length && !other.length, need, stubs, other, latest };
+      // If an idle card issues no statement, its cycle waits on the bank statements instead ("9999": not predictable yet).
+      const idle = need.filter(mayNotIssue);
+      const ifNone = idle.length ? [latest ?? plan.today, ...idle.map((s) => (s.ifIdle!.readyBy ? maxIso(s.ifIdle!.readyBy, plan.today) : "9999"))].sort().at(-1)! : null;
+      return { ...l, unlocked: target.unlocked[l.id] && !stubs.length && !other.length, need, stubs, other, latest, idle, ifNone };
     });
+    const label = (i: { name: string }, a: PlanAccount, s: PlanStatement) => `${i.name} ${shortName(a)} — ${s.label}`;
     const ready = [
-      ...institutions.flatMap((i) => i.accounts.flatMap((x) => x.need.filter((s) => s.status === "ready").map((s) => `${i.name} ${shortName(x.a)} — ${s.label}`))),
+      ...institutions.flatMap((i) => i.accounts.flatMap((x) => x.need.filter(downloadable).map((s) => label(i, x.a, s)))),
       ...employers.flatMap((x) => x.need.filter((s) => s.status === "ready").map((s) => `${x.e.employer} stub — ${date(s.date)}`)),
     ];
+    const check = institutions.flatMap((i) => i.accounts.flatMap((x) => x.need.filter(toCheck).map((s) => label(i, x.a, s))));
     // Accounts that need nothing for this period (whatever they need comes later).
     const clear = plan.institutions.flatMap((i) => i.accounts.filter((a) => !a.statements.some((s) => neededBy(s, end))).map((a) => ({ inst: i.name, a })));
-    return { institutions, employers, stubCount: employers.flatMap((x) => x.need).length, lanes, ready, clear };
+    return { institutions, employers, stubCount: employers.flatMap((x) => x.need).length, lanes, ready, check, clear };
   }, [plan, target]);
 
   if (!target || !view) {
@@ -147,12 +165,20 @@ export function StatementPlan({ plan }: { plan: Plan }) {
                 {l.need.length + l.stubs.length > 0 && (
                   <>
                     {" "}
-                    · <span className="text-pos">{[...l.need, ...l.stubs].filter((s) => s.status === "ready").length} ready now</span>
+                    · <span className="text-pos">{l.need.filter(downloadable).length + l.stubs.filter((s) => s.status === "ready").length} ready now</span>
                   </>
                 )}
+                {l.idle.length > 0 && <span className="text-warn"> · {l.idle.length} may not be issued</span>}
                 {l.other.length > 0 && <span className="text-neg"> · {l.other.length} to fix</span>}
                 {l.latest && (
-                  <div className="text-faint">{l.latest <= plan.today ? "Unlocks as soon as they're imported" : `Earliest unlock ~${date(l.latest)}, when the last one posts`}</div>
+                  <div className="text-faint">
+                    {l.latest <= plan.today ? "Unlocks as soon as they're imported" : `Earliest unlock ~${date(l.latest)}, when the last one posts`}
+                    {l.ifNone &&
+                      l.ifNone > l.latest &&
+                      (l.ifNone === "9999"
+                        ? "; if an idle card issues none, once the bank statements cover its cycle"
+                        : `; ~${date(l.ifNone)} if an idle card issues none (the bank statements prove it then)`)}
+                  </div>
                 )}
               </div>
             )}
@@ -164,6 +190,12 @@ export function StatementPlan({ plan }: { plan: Plan }) {
         <div className="mt-3 rounded-md border border-pos/30 bg-pos-soft px-3 py-2 text-xs">
           <span className="font-semibold text-pos">Download now ({view.ready.length}):</span>{" "}
           <span className="text-fg-2">{view.ready.join(" · ")}</span>
+        </div>
+      )}
+      {view.check.length > 0 && (
+        <div className="mt-2 rounded-md border border-warn/30 bg-warn-soft px-3 py-2 text-xs">
+          <span className="font-semibold text-warn">Check whether issued ({view.check.length}):</span> <span className="text-fg-2">{view.check.join(" · ")}</span>
+          <div className="text-muted">These issuers send no statement for a cycle without activity. Download one if it&apos;s listed; if not, there&apos;s nothing to do — the bank statements prove the cycle.</div>
         </div>
       )}
 
@@ -296,16 +328,17 @@ function AccountRow({ a, need, today }: { a: PlanAccount; need: PlanStatement[];
         {need.map((s) => (
           <li key={`${s.kind}-${s.start}`} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 rounded bg-surface px-2 py-1.5">
             <span className="w-4 shrink-0 text-center text-faint" aria-hidden>
-              {s.status === "ready" || s.kind !== "next" ? "☐" : "○"}
+              {downloadable(s) || s.kind !== "next" ? "☐" : "○"}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="font-semibold text-fg">{s.kind === "next" ? `${s.label} statement` : s.kind === "history" ? `History ${s.label}` : `Missing ${s.label}`}</span>
+              <span className="font-semibold text-fg">{s.kind === "next" ? `${s.label} statement${mayNotIssue(s) ? " (if issued)" : ""}` : s.kind === "history" ? `History ${s.label}` : `Missing ${s.label}`}</span>
               <span className="text-muted"> · {span(s.start, s.end)}</span>
               {s.kind === "next" && !isMonthEnd(s.end) && <span className="text-faint"> (closing date predicted)</span>}
               <div className="text-faint">Needed for {neededText(s)}</div>
               {s.ifIdle && (
-                <div className="text-faint">
-                  If the card had no activity, no statement comes: {s.ifIdle.banks.join(" and ")} statements through {date(s.ifIdle.through)} prove the cycle instead
+                <div className="text-fg-2">
+                  If the card had no activity, no statement comes and there&apos;s nothing to download:{s.ifIdle.banks.join(" and ")} statements through{" "}
+                  {date(s.ifIdle.through)} prove the cycle instead
                   {s.ifIdle.onFile ? " (on file)" : s.ifIdle.readyBy ? (s.ifIdle.readyBy <= today ? " (ready to download now)" : ` (expected ~${date(s.ifIdle.readyBy)})`) : ""}.
                 </div>
               )}
