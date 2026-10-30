@@ -3,14 +3,17 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Stat } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { useProof, type ProofTarget } from "@/components/ui/proof/context";
+import type { MerchantMonth, SpendingMonth } from "@/lib/book/reports/spending";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx, Drill } from "./CashFlowClient";
-import { categoryCents, median, mergeMerchants, sum } from "./model";
-import { categoryColor, Eyebrow, TxnList } from "./parts";
+import { categoryCents, KINDS, median, mergeMerchants, sum } from "./model";
+import { categoryColor, Dot, Eyebrow, TxnList } from "./parts";
 
 function laneOf(category: string): string {
   const def = CATEGORIES.find((c) => c.name === category);
@@ -20,14 +23,26 @@ function laneOf(category: string): string {
 
 const metricOf: Record<string, CashFlowMetric> = { EXPENSE: "spending", INCOME: "income", EXTERNAL_TRANSFER: "external" };
 
-function MonthBars({ ctx, values, color, name }: { ctx: Ctx; values: number[]; color: string; name: string }) {
+/** Bars per month of the range; clicking a month opens the rows behind that month's bar. */
+function MonthBars({ ctx, values, color, name, proofAt }: { ctx: Ctx; values: number[]; color: string; name: string; proofAt: (m: SpendingMonth, cents: number) => ProofTarget | undefined }) {
   const ui = chartChrome(ctx.chart);
+  const openProof = useProof();
   const data = ctx.slice.months.map((m, i) => ({ label: m.label, v: values[i]! / 100 }));
   const avg = sum(values, (v) => v) / Math.max(1, values.length) / 100;
   return (
     <div className="h-[200px] w-full min-w-0">
       <RechartsResponsive>
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <BarChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          className="cursor-pointer"
+          onClick={(s) => {
+            const i = s?.activeTooltipIndex == null ? -1 : Number(s.activeTooltipIndex);
+            const m = ctx.slice.months[i];
+            const proof = m && proofAt(m, values[i]!);
+            if (proof && openProof) openProof(proof);
+          }}
+        >
           <CartesianGrid {...ui.grid} />
           <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
           <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
@@ -65,7 +80,8 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
         Click the total for the rows behind it, statement by statement, with every check over them. The transactions below are listed by posting date for editing, so a row near a month&apos;s edge or a rent
         payment may sit in a different month here.
       </p>
-      <MonthBars ctx={ctx} values={values} color={color} name={category} />
+      <p className="-mt-3 text-xs text-muted">Click a month&apos;s bar for the rows behind it.</p>
+      <MonthBars ctx={ctx} values={values} color={color} name={category} proofAt={(m, cents) => ctx.proof(metricOf[lane]!, [m], { category, shownCents: cents })} />
       {category === "Housing & utilities" && <RentTiming ctx={ctx} />}
       {merchants.length > 0 && (
         <div>
@@ -152,10 +168,125 @@ export function MerchantDrill({ ctx, drill }: { ctx: Ctx; drill: Extract<Drill, 
           sub={recurring ? `${recurring.active ? "active" : "stopped"} · ${usd0(recurring.annualCents)}/yr` : undefined}
         />
       </div>
-      <MonthBars ctx={ctx} values={values} color={color} name={drill.name} />
+      <MonthBars
+        ctx={ctx}
+        values={values}
+        color={color}
+        name={drill.name}
+        proofAt={(m, cents) => ctx.proof(drill.lane === "EXPENSE" ? "spending" : "income", [m], { merchantKey: drill.key, shownCents: cents })}
+      />
       <div>
         <Eyebrow>Transactions</Eyebrow>
         <TxnList api={ctx.api} query={{ q: drill.key, lane: drill.lane, from: slice.months[0]!.start, to: slice.months.at(-1)!.end }} onChanged={ctx.reload} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One month, audited: its income, spending and net, the three bands of spending, every
+ * category (a net credit flagged) and the merchants that paid money back, each amount
+ * opening the rows behind it. Opened by clicking a month on any of the tab's charts.
+ */
+export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }) {
+  const { chart } = ctx;
+  const one = [m];
+  const credits = m.merchants.filter((x) => x.cents < 0).sort((a, b) => a.cents - b.cents);
+  const top = m.merchants.filter((x) => x.cents > 0).slice(0, 12);
+  const merchant = (x: MerchantMonth) => (
+    <li key={x.key}>
+      <button
+        type="button"
+        className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,9rem)_3rem_6rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+        onClick={() => ctx.open({ kind: "merchant", key: x.key, name: x.name, lane: "EXPENSE" })}
+        title={x.key}
+      >
+        <span className="truncate text-fg-2">{x.name}</span>
+        <span className="truncate text-xs text-muted">{x.category}</span>
+        <span className="num text-right text-xs text-muted">{x.count}×</span>
+        <span className={`num text-right font-medium ${x.cents < 0 ? "text-pos" : ""}`}>
+          <ProofValue proof={ctx.proof("spending", one, { merchantKey: x.key, shownCents: x.cents })}>{usd0(x.cents)}</ProofValue>
+        </span>
+      </button>
+    </li>
+  );
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat label="Income" value={usd0(m.incomeCents)} proof={ctx.proof("income", one, { shownCents: m.incomeCents })} />
+        <Stat label="Spending" value={usd0(m.spendingCents)} proof={ctx.proof("spending", one, { shownCents: m.spendingCents })} sub="net of refunds and credits" />
+        <Stat label="Net saved" value={usd0(m.netCents)} proof={ctx.proof("net", one, { shownCents: m.netCents })} />
+        <Stat label="Savings rate" value={m.savingsRate == null ? "—" : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
+      </div>
+      {(m.through || m.unreviewed.rows > 0) && (
+        <p className="-mt-2 text-xs text-muted">
+          {m.through ? `The month isn't over: figures run through ${m.through}. ` : ""}
+          {m.unreviewed.rows > 0 &&
+            `${m.unreviewed.rows} row${m.unreviewed.rows === 1 ? "" : "s"} (${usd0(m.unreviewed.cents)}) count as the classifier filed them but still wait for your review (Statements → Review).`}
+        </p>
+      )}
+
+      <div>
+        <Eyebrow>Spending by kind</Eyebrow>
+        <ul className="flex flex-col">
+          {KINDS.map((k, i) => (
+            <li key={k.id} className="grid grid-cols-[minmax(0,1fr)_6rem] items-baseline gap-2 px-1 py-1 text-[13px]">
+              <span className="flex min-w-0 items-center gap-2">
+                <Dot color={[chart.series[6]!, chart.spending, chart.neutral][i]!} />
+                <span className="text-fg-2">{k.label}</span>
+                <span className="truncate text-xs text-muted">{k.hint}</span>
+              </span>
+              <span className={`num text-right font-medium ${m.kinds[k.id] < 0 ? "text-pos" : ""}`}>
+                <ProofValue proof={ctx.proof("spending", one, { spendingKind: k.kind, shownCents: m.kinds[k.id] })}>{usd0(m.kinds[k.id])}</ProofValue>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <Eyebrow>Spending by category</Eyebrow>
+        <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+          {m.spendingByCategory.map((c) => (
+            <li key={c.category}>
+              <button
+                type="button"
+                className="grid w-full grid-cols-[minmax(0,1fr)_6rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+                onClick={() => ctx.open({ kind: "category", category: c.category })}
+              >
+                <span className="flex min-w-0 items-center gap-2 truncate text-fg-2">
+                  <Dot color={categoryColor(chart, c.category)} />
+                  <span className="truncate">{c.category}</span>
+                  {c.cents < 0 && <span className="shrink-0 rounded bg-pos-soft px-1 text-[10px] font-medium text-pos">net credit</span>}
+                </span>
+                <span className={`num text-right font-medium ${c.cents < 0 ? "text-pos" : ""}`}>
+                  <ProofValue proof={ctx.proof("spending", one, { category: c.category, shownCents: c.cents })}>{usd0(c.cents)}</ProofValue>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {credits.length > 0 && (
+        <div>
+          <Eyebrow>Credits and refunds</Eyebrow>
+          <p className="mb-1 text-xs text-muted">
+            Merchants that paid back more than they charged this month (a refund, a reimbursement, a tax refund). Each takes spending down; check it&apos;s filed under the
+            category it pays back.
+          </p>
+          <ul className="flex flex-col">{credits.map(merchant)}</ul>
+        </div>
+      )}
+
+      <div>
+        <Eyebrow>Largest merchants</Eyebrow>
+        <ul className="flex flex-col">{top.map(merchant)}</ul>
+      </div>
+
+      <div>
+        <Eyebrow>Transactions</Eyebrow>
+        <TxnList api={ctx.api} query={{ lane: "EXPENSE", from: m.start, to: m.end }} onChanged={ctx.reload} />
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ import { btn, Drawer, EmptyState, ErrorNote, Loading, PageBody, Segmented, selec
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BudgetTab } from "./BudgetTab";
-import { CategoryDrill, MerchantDrill } from "./Drills";
+import { CategoryDrill, MerchantDrill, MonthDrill } from "./Drills";
 import { IncomeTab } from "./IncomeTab";
 import { MerchantsTab } from "./MerchantsTab";
 import { monthKey, proofTarget, sliceRange, type ProofOptions, type RangeId, type Report, type Slice } from "./model";
@@ -25,7 +25,11 @@ import { YoyTab } from "./YoyTab";
 const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", "recurring", "budget", "income"] as const;
 export type CashTab = (typeof TABS)[number];
 
-export type Drill = { kind: "category"; category: string } | { kind: "merchant"; key: string; name: string; lane: "EXPENSE" | "INCOME" };
+export type Drill =
+  | { kind: "category"; category: string }
+  | { kind: "merchant"; key: string; name: string; lane: "EXPENSE" | "INCOME" }
+  /** One month, audited: its figures, bands, categories and credits, each opening its rows. */
+  | { kind: "month"; start: string };
 
 /** What every tab gets: the report, the selected months and how to open a drill-down. */
 export type Ctx = {
@@ -89,6 +93,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
   // The accounts the report was asked for (none: every account), so a proof covers the same ones.
   const accountIds = excluded.size && allAccounts.length ? allAccounts.filter((a) => !excluded.has(a.id)).map((a) => a.id) : undefined;
   const monthOptions = data?.months.map((m) => ({ value: monthKey(m.start), label: m.label })) ?? [];
+  const drillMonth = drill?.kind === "month" ? [...(data?.months ?? []), ...(data?.current ? [data.current] : [])].find((m) => m.start === drill.start) : undefined;
   const ctx: Ctx | null =
     data && slice && slice.months.length
       ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o) }
@@ -206,11 +211,19 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
       <Drawer
         open={drill != null && ctx != null}
         onClose={() => setDrill(null)}
-        title={drill ? (drill.kind === "category" ? drill.category : drill.name) : ""}
-        subtitle={slice?.label}
+        title={drill ? (drill.kind === "category" ? drill.category : drill.kind === "month" ? (drillMonth?.label ?? "Month") : drill.name) : ""}
+        subtitle={drill?.kind === "month" ? "One month, figure by figure: click any amount for the rows behind it" : slice?.label}
         width="60rem"
       >
-        {drill && ctx && (drill.kind === "category" ? <CategoryDrill ctx={ctx} category={drill.category} /> : <MerchantDrill ctx={ctx} drill={drill} />)}
+        {drill &&
+          ctx &&
+          (drill.kind === "category" ? (
+            <CategoryDrill ctx={ctx} category={drill.category} />
+          ) : drill.kind === "month" ? (
+            drillMonth && <MonthDrill ctx={ctx} month={drillMonth} />
+          ) : (
+            <MerchantDrill ctx={ctx} drill={drill} />
+          ))}
       </Drawer>
     </>
   );

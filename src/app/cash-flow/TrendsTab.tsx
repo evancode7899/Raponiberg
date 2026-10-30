@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
 import { categoryCents, categoryGroup, KINDS, sliceStart, SPEND_CATEGORIES, sum, trailing } from "./model";
-import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
+import { categoryColor, Delta, DivergingBar, Dot, openMonthOnClick } from "./parts";
 
 type Metric = "all" | "everyday";
 const GROUPS = ["Essentials", "Lifestyle", "Financial"] as const;
@@ -97,6 +97,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         />
         <StatCell
           label="Savings rate, last 12 months"
+          proof={rateNow == null ? undefined : ctx.proof("net", last12, { shownCents: inc12[hi]! - spend12[hi]! })}
           value={rateNow == null ? "—" : formatPercentRatio(rateNow, 0)}
           tone={rateNow == null ? "neutral" : rateNow >= 0.2 ? "pos" : rateNow < 0 ? "neg" : "neutral"}
           sub={rateBefore == null ? `through ${endLabel}` : `${formatPercentRatio(rateBefore, 0)} the 12 months before`}
@@ -104,6 +105,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         <StatCell
           label="Everyday spending, last 3 months"
           value={every3[hi] == null ? "—" : `${usd0(every3[hi]! / 3)}/mo`}
+          proof={every3[hi] == null ? undefined : ctx.proof("spending", all.slice(hi - 2, hi + 1), { spendingKind: "everyday", perMonth: true, shownCents: every3[hi]! })}
           sub={
             every12[hi] == null ? (
               "bills and big one-offs left out"
@@ -119,8 +121,8 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       <Card
         title="Spending, smoothed"
         subtitle={`Bars are single months; the lines are trailing 3- and 12-month averages, which show the direction once lumpy months (tax payments, a big purchase) wash out. ${
-          metric === "everyday" ? "Everyday leaves out recurring bills and charges of $1,500+." : ""
-        }`}
+          metric === "everyday" ? "Everyday leaves out rent and recurring bills, charges of $1,500+, taxes, and big refunds." : ""
+        } Click a month to audit it.`}
         actions={
           <Segmented
             size="xs"
@@ -136,7 +138,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       >
         <div className="h-[300px] w-full min-w-0">
           <RechartsResponsive>
-            <ComposedChart data={smooth} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <ComposedChart data={smooth} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
@@ -158,11 +160,15 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
             {kindTotals.map((k, i) => (
               <span key={k.id}>
                 {i ? " · " : ""}
-                <span className="font-medium text-fg-2">{k.label}</span> {usd0(k.cents / Math.max(1, slice.months.length))}/mo
+                <span className="font-medium text-fg-2" title={k.hint}>
+                  {k.label}
+                </span>{" "}
+                <ProofValue proof={ctx.proof("spending", slice.months, { spendingKind: k.kind, perMonth: true, shownCents: k.cents })}>{usd0(k.cents / Math.max(1, slice.months.length))}</ProofValue>/mo
                 {spent > 0 ? ` (${formatPercentRatio(k.cents / spent, 0)})` : ""}
               </span>
             ))}
-            . Bills are the merchants on the Recurring tab; a big refund shows below zero.
+            . Bills are rent and the merchants on the Recurring tab. A refund counts in the band of what it pays back, so a big refund (or a tax refund) shows below zero in big &
+            one-off, never in everyday. Click a month to audit it.
           </>
         }
         actions={
@@ -180,7 +186,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       >
         <div className="h-[280px] w-full min-w-0">
           <RechartsResponsive>
-            <BarChart data={kinds} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} stackOffset="sign">
+            <BarChart data={kinds} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} stackOffset="sign" className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
               <YAxis {...ui.yAxis} tickFormatter={kindView === "usd" ? axisUsd : pctAxis} domain={kindView === "share" ? [0, 1] : undefined} allowDataOverflow={kindView === "share"} />

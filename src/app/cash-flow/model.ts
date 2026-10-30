@@ -1,5 +1,5 @@
 import type { CategoryAmount } from "@/lib/book/reports/cashFlow";
-import type { MerchantMonth, SpendingMonth, SpendingReport } from "@/lib/book/reports/spending";
+import type { MerchantMonth, SpendingKind, SpendingMonth, SpendingReport } from "@/lib/book/reports/spending";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { savingsRate } from "@/lib/book/definitions";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
@@ -314,12 +314,12 @@ export function trailing(all: SpendingMonth[], n: number, f: (m: SpendingMonth) 
   });
 }
 
-/** The three kinds of spending, in stacking order, with what each means. */
+/** The three kinds of spending, in stacking order, with what each means (spending.ts spendingKindRule). */
 export const KINDS = [
-  { id: "billCents", label: "Bills & subscriptions", hint: "steady charges from recurring merchants" },
-  { id: "everydayCents", label: "Everyday", hint: "everything else under $1,500" },
-  { id: "bigCents", label: "Big & one-off", hint: "single charges of $1,500+, and anything marked one-off" },
-] as const;
+  { id: "billCents", kind: "bill", label: "Bills & subscriptions", hint: "rent and steady charges from recurring merchants" },
+  { id: "everydayCents", kind: "everyday", label: "Everyday", hint: "day-to-day charges under $1,500, net of their refunds" },
+  { id: "bigCents", kind: "big", label: "Big & one-off", hint: "single charges of $1,500+, anything marked one-off, taxes, and big refunds" },
+] as const satisfies readonly { id: string; kind: SpendingKind; label: string; hint: string }[];
 
 /** Where a slice's months sit in the report (the slice is a contiguous run of them). */
 export const sliceStart = (r: Report, s: Slice) => Math.max(0, r.months.indexOf(s.months[0]!));
@@ -332,6 +332,8 @@ export type ProofOptions = {
   perMonth?: boolean;
   /** Spending without the one-offs (Cash flow's "Excluding one-offs"). */
   excludeOneOffs?: boolean;
+  /** One band of spending (Trends' bills / everyday / big & one-off). */
+  spendingKind?: SpendingKind;
   /** The total the page shows (before any per-month split); null for a figure that isn't one. */
   shownCents: number | null;
 };
@@ -360,6 +362,7 @@ export function proofTarget(
       ...(o.merchantKey ? { merchantKey: o.merchantKey, ...(o.charges ? { merchantBasis: "charges" as const } : {}) } : {}),
       ...(accountIds?.length ? { accountIds } : {}),
       ...(o.excludeOneOffs ? { oneOffs: "exclude" as const } : {}),
+      ...(o.spendingKind ? { spendingKind: o.spendingKind } : {}),
     },
     shownCents: o.shownCents,
     ...(o.perMonth && months.length > 1 ? { perMonths: months.length } : {}),

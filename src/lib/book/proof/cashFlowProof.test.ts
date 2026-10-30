@@ -400,6 +400,32 @@ describe("one merchant's part", () => {
     expect(buildCashFlowProof(book, md("STREAMFLIX")).figureCents).toBe(4 * 1_599 - 200);
   });
 
+  it("proves each band of spending (bills, big, everyday) month by month, a big refund and a tax refund kept out of everyday", () => {
+    const tv = { payee: "GADGET SHOP", merchantKey: "GADGET SHOP", category: "Shopping & gifts" };
+    const book = makeBook([
+      ...shops(),
+      row("card", "2025-01-25", -240_000, tv),
+      row("card", "2025-02-25", 240_000, { ...tv, lane: "EXPENSE" }),
+      row("chk", "2025-03-18", 412_300, { payee: "IRS TREAS 310 TAX REF", lane: "EXPENSE", category: "Taxes & fees" }),
+    ]);
+    const settings = { oneOffs: {}, nonRecurringCategories: [] };
+    const report = buildSpendingReport(book, settings);
+    const keys = { bill: "billCents", big: "bigCents", everyday: "everydayCents" } as const;
+    for (const kind of ["bill", "big", "everyday"] as const) {
+      for (const m of report.months) {
+        const proof = buildCashFlowProof(book, d({ spendingKind: kind, start: m.start, end: m.end }), undefined, settings);
+        expect(proof.figureCents, `${kind} ${m.label}`).toBe(m.kinds[keys[kind]]);
+        expect(proof.selfCheck, `${kind} ${m.label}`).toEqual({ ok: true, deltaCents: 0 });
+      }
+    }
+    const mar = report.months.find((m) => m.start === "2025-03-01")!;
+    expect(mar.kinds.everydayCents).toBeGreaterThanOrEqual(0);
+    expect(mar.kinds.bigCents).toBeLessThan(0);
+    const feb = buildCashFlowProof(book, d({ spendingKind: "big", start: "2025-02-01", end: "2025-02-28" }), undefined, settings);
+    expect(feb.sections[0]!.groups.flatMap((g) => g.rows).map((r) => r.amountCents)).toEqual([240_000]);
+    expect(feb.describes).toBe("Big & one-off spending, Feb 2025");
+  });
+
   it("emits only links that parse, build and re-add, and no split by month for a charges sum", async () => {
     const c = { book: makeBook(shops()), db: {} as never };
     for (const desc of [md("CORNER MARKET"), md("EXAMPLE PARTNERS LP PAYROLL", { metric: "income" }), md("STREAMFLIX", { merchantBasis: "charges", start: "2024-05-01" })]) {
