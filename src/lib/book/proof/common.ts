@@ -61,8 +61,10 @@ export function estimatesFor(book: Book, opts: { rowIds: Set<string>; from: stri
       .filter((w) => inScope(w.accountId) && w.from <= opts.to && w.to >= opts.from)
       .map((w) => ({
         id: `idle:${w.accountId}:${w.from}`,
-        title: `${name(w.accountId) ?? "A card"}: no statement ${w.from} – ${w.to}, counted as $0`,
-        detail: "The issuer sends no statement for a cycle without activity; the paying bank's statements prove nothing happened.",
+        title: `${name(w.accountId) ?? "A card"}: no statement ${w.from} – ${w.to}, counted as $0${w.provisionalFrom ? ` (provisional from ${w.provisionalFrom})` : ""}`,
+        detail: w.provisionalFrom
+          ? "The issuer sends no statement for a cycle without activity; the paying bank's statements show no payment to it, though from the provisional date a payment could still come on the next bank statement."
+          : "The issuer sends no statement for a cycle without activity; the paying bank's statements prove nothing happened.",
       })),
   ];
 }

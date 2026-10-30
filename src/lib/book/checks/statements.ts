@@ -164,10 +164,14 @@ export function checkStatements(book: Book, c: Collector) {
         id: `statement.idle:${ref}:${w.from}`,
         check: "statement.gap",
         title: paidOff
-          ? `${a.name}: no statement ${w.from} – ${w.to}, paid off then idle — counted as $0`
-          : `${a.name}: no statement ${w.from} – ${w.to}, no activity — counted as $0`,
+          ? `${a.name}: no statement ${w.from} – ${w.to}, paid off then idle — counted as $0${w.provisionalFrom ? ` (provisional from ${w.provisionalFrom})` : ""}`
+          : `${a.name}: no statement ${w.from} – ${w.to}, no activity — counted as $0${w.provisionalFrom ? ` (provisional from ${w.provisionalFrom})` : ""}`,
         detail: w.trailing
-          ? `${institutionOf(a.id)} sends no statement for a cycle without activity. ${paidOff ? `${paidOff}, and after that` : `The last statement closed at $0, and`} ${payers} shows no payment to the card through ${PAYMENT_GRACE_DAYS} days after each of these cycles closed.`
+          ? `${institutionOf(a.id)} sends no statement for a cycle without activity. ${paidOff ? `${paidOff}, and after that` : `The last statement closed at $0, and`} ${payers} shows no payment to the card ${
+              w.provisionalFrom
+                ? `through ${w.to}. From ${w.provisionalFrom} it's provisional: a payment for those days could still show up on the next ${payers} statement, which would take it back.`
+                : `through ${PAYMENT_GRACE_DAYS} days after each of these cycles closed.`
+            }`
           : `${institutionOf(a.id)} sends no statement for a cycle without activity. ${paidOff ? `${paidOff}; the next statement opens at $0, and` : `The balance was $0 before and after, and`} ${payers} (statements on file for the whole window) shows no other unpaired payment to the card in between.`,
       });
     }

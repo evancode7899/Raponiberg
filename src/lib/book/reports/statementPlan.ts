@@ -65,6 +65,8 @@ export type PlanAccount = {
   last: { title: string; start: string; end: string } | null;
   /** Where coverage ends (past `last` when later cycles are proven idle). */
   coveredThrough: string;
+  /** When the idle cycles after `last` are counted on the bank statements alone from this day (idleCards.ts). */
+  provisionalFrom: string | null;
   statements: PlanStatement[];
 };
 
@@ -91,7 +93,7 @@ export type StatementPlan = {
   /** Institutions with statements to get, the one needed earliest first. */
   institutions: PlanInstitution[];
   /** Open accounts already on file through the last target. */
-  upToDate: { name: string; institution: string; coveredThrough: string; lastTitle: string | null }[];
+  upToDate: { name: string; institution: string; coveredThrough: string; lastTitle: string | null; provisionalFrom: string | null }[];
   /** Pay stubs to download, per person and employer: taxes wait on them as they do on statements. */
   stubs: PlanEmployer[];
   other: PlanOther[];
@@ -240,6 +242,7 @@ export function buildStatementPlan(book: Book): StatementPlan {
     };
   });
 
+  const provisionalFrom = (id: string) => book.idle.proven.find((w) => w.accountId === id && w.provisionalFrom)?.provisionalFrom ?? null;
   const accounts = new Map<string, PlanAccount>();
   const planFor = (id: string): PlanAccount | null => {
     const hit = accounts.get(id);
@@ -260,6 +263,7 @@ export function buildStatementPlan(book: Book): StatementPlan {
       cadence: (lengths[Math.floor(lengths.length / 2)] ?? 31) >= 80 ? "quarterly" : "monthly",
       last: st ? { title: st.documentTitle, start: st.periodStart, end: st.periodEnd } : null,
       coveredThrough: la.timeline.lastDay,
+      provisionalFrom: provisionalFrom(id),
       statements: [],
     };
     accounts.set(id, p);
@@ -406,7 +410,13 @@ export function buildStatementPlan(book: Book): StatementPlan {
       .filter((a) => !a.closed && a.timeline.lastDay && a.timeline.lastDay >= lastTarget && !planned.has(a.id))
       .map((a) => {
         const st = book.statements.filter((s) => s.accountId === a.id && !s.isSummary && s.status === "COMMITTED").sort((x, y) => x.periodEnd.localeCompare(y.periodEnd)).at(-1);
-        return { name: a.name, institution: book.accounts.find((x) => x.id === a.id)?.institution ?? "Other", coveredThrough: a.timeline.lastDay!, lastTitle: st?.documentTitle ?? null };
+        return {
+          name: a.name,
+          institution: book.accounts.find((x) => x.id === a.id)?.institution ?? "Other",
+          coveredThrough: a.timeline.lastDay!,
+          lastTitle: st?.documentTitle ?? null,
+          provisionalFrom: provisionalFrom(a.id),
+        };
       })
       .sort((a, b) => a.institution.localeCompare(b.institution) || a.name.localeCompare(b.name)),
     stubs,

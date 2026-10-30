@@ -22,8 +22,13 @@ import type { BookRow, BookTransferMatch } from "./load.ts";
  * The window's balance is the carried-in balance until the payoff, then $0; the payoff
  * is the card's side of those bank payments.
  *
- * After a card's last statement, cycles count as idle only once their payment would
- * have left the bank inside the bank's own statements (cycle end + the grace period).
+ * After a card's last statement, cycles count as idle once their payment would have left
+ * the bank inside the bank's own statements (cycle end + the grace period). Past that,
+ * through the end of the bank statements on file, the card counts as idle provisionally
+ * when the bank shows no payment to the issuer at all after the payoff: waiting a whole
+ * extra bank statement for a payment that almost never comes would hold back every
+ * figure for weeks. A payment showing up on a later bank statement takes it back (the
+ * proof then stops before it, as above).
  *
  * A card the owner marked closed (closedAccounts.ts) gets the same payoff after its last
  * statement, whatever the issuer: the bank payments the transfer matcher found settled
@@ -50,6 +55,11 @@ export type IdleWindow = {
   openingCents: number;
   /** The bank rows that paid it off. */
   payoff: { transactionId: string; date: string; amountCents: number }[];
+  /**
+   * Trailing windows only: the first day counted idle on the bank statements alone, before
+   * a whole payment window has passed (a payment for it could still come on the next one).
+   */
+  provisionalFrom?: string;
 };
 /** A window before a $0 balance that couldn't be proven idle, and why. */
 export type IdleRejection = { accountId: string; from: string; to: string; reason: string };
@@ -187,7 +197,13 @@ export function proveIdleWindows(
     if (stray) limit = addDays(stray.date, -1);
     let to: string | null = null;
     for (let end = nextCycleEnd(fromDayNumber(last.end)); addDays(end, PAYMENT_GRACE_DAYS) <= limit; end = nextCycleEnd(end)) to = end;
-    if (to && (payoff.at(-1)?.date ?? from) <= to) {
+    // No payment to the issuer after the payoff anywhere in the bank statements: idle, provisionally, through their end.
+    const provisional = !stray && limit > (to ?? fromDayNumber(last.end));
+    if (provisional) {
+      const provisionalFrom = addDays(to ?? fromDayNumber(last.end), 1);
+      if ((payoff.at(-1)?.date ?? from) <= limit)
+        report.proven.push({ accountId: card.id, from, to: limit, payerIds, trailing: true, openingCents: last.closing, payoff: payoffOf(payoff), provisionalFrom });
+    } else if (to && (payoff.at(-1)?.date ?? from) <= to) {
       report.proven.push({ accountId: card.id, from, to, payerIds, trailing: true, openingCents: last.closing, payoff: payoffOf(payoff) });
     }
   }

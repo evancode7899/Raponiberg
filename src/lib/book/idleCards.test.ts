@@ -85,16 +85,24 @@ describe("idle card cycles", () => {
     expect(proveIdleWindows(ledgerOf([bank, amex]), [paid], [match("m1", paid, "card")]).proven).toEqual([]);
   });
 
-  it("after the last statement, covers only cycles whose payment window the bank covers", () => {
-    // Bank through Dec 31: cycles ending Aug 19 … Nov 19 are proven (Nov 19 + 30 = Dec 19).
+  it("after the last statement, covers through the bank statements, provisionally past the last payment window", () => {
+    // Bank through Dec 31: cycles ending Aug 19 … Nov 19 are proven (Nov 19 + 30 = Dec 19); the rest provisionally.
     const report = proveIdleWindows(ledgerOf([bank, card]), [paid], [match("m1", paid, "card")]);
-    expect(report.proven.find((w) => w.trailing)).toMatchObject({ from: "2024-07-20", to: "2024-11-19" });
+    expect(report.proven.find((w) => w.trailing)).toMatchObject({ from: "2024-07-20", to: "2024-12-31", provisionalFrom: "2024-11-20" });
+  });
+
+  it("after the last statement, counts cycles idle provisionally before any payment window has passed", () => {
+    const shortBank: Acct = { ...bank, segs: [["2024-01-01", "2024-08-10", 100_00, 100_00]] };
+    const report = proveIdleWindows(ledgerOf([shortBank, card]), [paid], [match("m1", paid, "card")]);
+    expect(report.proven.find((w) => w.trailing)).toMatchObject({ from: "2024-07-20", to: "2024-08-10", provisionalFrom: "2024-07-20" });
   });
 
   it("after the last statement, stops before an unpaired payment", () => {
     const stray = row("p4", "bank", "2024-10-01", -9_99);
     const report = proveIdleWindows(ledgerOf([bank, card]), [paid, stray], [match("m1", paid, "card")]);
-    expect(report.proven.find((w) => w.trailing)).toMatchObject({ from: "2024-07-20", to: "2024-08-19" });
+    const w = report.proven.find((x) => x.trailing);
+    expect(w).toMatchObject({ from: "2024-07-20", to: "2024-08-19" });
+    expect(w!.provisionalFrom).toBeUndefined();
   });
 });
 
@@ -129,8 +137,8 @@ describe("idle card cycles after a payoff (Chase)", () => {
   it("after the last statement, covers the payoff and the idle cycles after it", () => {
     const ledger = ledgerOf([bank, chase]);
     const report = applyIdleWindows(ledger, [pay("c1", "2024-03-08", -110_00), pay("c3", "2024-08-07", -20_00)], [], "2024-12-31", ids);
-    // Bank through Dec 31: cycles ending Aug 10 … Nov 10 (Nov 10 + 30 = Dec 10).
-    expect(report.proven.find((w) => w.trailing)).toMatchObject({ from: "2024-07-11", to: "2024-11-10", openingCents: -20_00 });
+    // Bank through Dec 31: cycles ending Aug 10 … Nov 10 (Nov 10 + 30 = Dec 10), then provisionally to Dec 31.
+    expect(report.proven.find((w) => w.trailing)).toMatchObject({ from: "2024-07-11", to: "2024-12-31", provisionalFrom: "2024-11-11", openingCents: -20_00 });
     const t = ledger.accounts.find((a) => a.id === "chase")!.timeline;
     expect(valueAt(t, "2024-08-01")).toMatchObject({ cents: -20_00 });
     expect(valueAt(t, "2024-09-30")).toMatchObject({ cents: 0, quality: "EXACT" });
