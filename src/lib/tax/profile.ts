@@ -64,7 +64,33 @@ export type PayForecast = { paycheck: "LATEST" | "TYPICAL"; payThrough: string |
 
 export const DEFAULT_PAY_FORECAST: PayForecast = { paycheck: "LATEST", payThrough: null };
 
-export type PersonYearInputs = { extras: PersonExtras; pay: PayForecast };
+/**
+ * What a person's current W-4 and CT-W4 say (Taxes › W-4). Null: not entered, so the W-4
+ * planner assumes the filing status printed on the pay stub and nothing else. All cents.
+ */
+export type W4OnFile = {
+  /** Step 1(c). */
+  filingStatus: "SINGLE" | "MFJ" | "HOH";
+  /** Step 2(c): multiple jobs / spouse works. */
+  multipleJobs: boolean;
+  /** Step 3: dependents and other credits (annual). */
+  credits: number;
+  /** Step 4(a): other income (annual). */
+  otherIncome: number;
+  /** Step 4(b): deductions (annual). */
+  deductions: number;
+  /** Step 4(c): extra withholding per pay period. */
+  extraPerPaycheck: number;
+  /** CT-W4 line 1 code (null: not known), line 2 additional and line 3 reduced withholding per pay period. */
+  ct: { code: CtW4Code | null; additional: number; reduced: number };
+};
+
+export const CT_W4_CODES = ["A", "B", "C", "D", "E", "F"] as const;
+export type CtW4Code = (typeof CT_W4_CODES)[number];
+
+export const EMPTY_W4: W4OnFile = { filingStatus: "MFJ", multipleJobs: false, credits: 0, otherIncome: 0, deductions: 0, extraPerPaycheck: 0, ct: { code: null, additional: 0, reduced: 0 } };
+
+export type PersonYearInputs = { extras: PersonExtras; pay: PayForecast; w4?: W4OnFile | null };
 
 /**
  * Where the household lived for Connecticut's purposes. A part-year resident (moved in
@@ -216,7 +242,7 @@ export function yearInputs(profile: TaxProfile, year: number): YearInputs {
     household: { ...base.household, ...y.household },
     paymentOverrides: { ...y.paymentOverrides },
     people: Object.fromEntries(
-      profile.persons.map((p) => [p.id, { extras: { ...EMPTY_EXTRAS, ...y.people?.[p.id]?.extras }, pay: { ...DEFAULT_PAY_FORECAST, ...y.people?.[p.id]?.pay } }]),
+      profile.persons.map((p) => [p.id, { extras: { ...EMPTY_EXTRAS, ...y.people?.[p.id]?.extras }, pay: { ...DEFAULT_PAY_FORECAST, ...y.people?.[p.id]?.pay }, w4: y.people?.[p.id]?.w4 ?? null }]),
     ),
   };
 }
@@ -287,6 +313,7 @@ export function normalizeProfile(raw: Partial<TaxProfile> | null | undefined): T
               paycheck: p?.pay?.paycheck === "TYPICAL" ? "TYPICAL" : "LATEST",
               payThrough: typeof p?.pay?.payThrough === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.pay.payThrough) ? p.pay.payThrough : null,
             },
+            w4: normalizeW4(p?.w4),
           },
         ]),
       ),
@@ -305,6 +332,24 @@ export function normalizeProfile(raw: Partial<TaxProfile> | null | undefined): T
       .filter((a) => a && typeof a.last4 === "string" && /^\d{4}$/.test(a.last4))
       .map((a) => ({ last4: a.last4, note: typeof a.note === "string" ? a.note.slice(0, 200) : "" })),
     years,
+  };
+}
+
+function normalizeW4(w: Partial<W4OnFile> | null | undefined): W4OnFile | null {
+  if (!w || typeof w !== "object") return null;
+  const cents = (v: unknown) => Math.max(0, int(v));
+  return {
+    filingStatus: w.filingStatus === "SINGLE" || w.filingStatus === "HOH" ? w.filingStatus : "MFJ",
+    multipleJobs: w.multipleJobs === true,
+    credits: cents(w.credits),
+    otherIncome: cents(w.otherIncome),
+    deductions: cents(w.deductions),
+    extraPerPaycheck: cents(w.extraPerPaycheck),
+    ct: {
+      code: CT_W4_CODES.includes(w.ct?.code as CtW4Code) ? (w.ct!.code as CtW4Code) : null,
+      additional: cents(w.ct?.additional),
+      reduced: cents(w.ct?.reduced),
+    },
   };
 }
 

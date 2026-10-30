@@ -14,11 +14,12 @@ import { TaxIncome } from "./TaxIncome";
 import { TaxInputs } from "./TaxInputs";
 import { TaxOverview } from "./TaxOverview";
 import { TaxPayments } from "./TaxPayments";
+import { TaxW4 } from "./TaxW4";
 import { TaxWorksheet } from "./TaxWorksheet";
 
 export type TaxResponse = (TaxReport | TaxReportBlocked) & { supportedYears: number[] };
 export type ProvenTaxResponse = TaxReport & { supportedYears: number[] };
-const TABS = ["overview", "worksheet", "compare", "income", "payments", "filed", "inputs"] as const;
+const TABS = ["overview", "worksheet", "compare", "income", "payments", "w4", "filed", "inputs"] as const;
 
 /**
  * Taxes: what the household will owe for the year, filing jointly vs separately,
@@ -82,6 +83,7 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
           ...(single ? [] : [{ id: "compare" as const, label: "Joint vs separate" }]),
           { id: "income", label: "Income & W-2" },
           { id: "payments", label: "Payments" },
+          { id: "w4", label: "W-4" },
           { id: "filed", label: "Filed return" },
           { id: "inputs", label: "Inputs" },
         ]}
@@ -137,6 +139,8 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
               <TaxIncome r={data} />
             ) : tab === "payments" ? (
               <TaxPayments r={data} onSave={saveProfile} />
+            ) : tab === "w4" ? (
+              <TaxW4 r={data} onSave={saveProfile} />
             ) : tab === "filed" ? (
               <TaxFiled r={data} onSave={saveProfile} />
             ) : (
