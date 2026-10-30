@@ -21,6 +21,7 @@ import {
   cashWaterfall,
   netWorthBridge,
   summarizeBuckets,
+  sumYears,
   ZERO_BUCKETS,
   type BucketTotals,
   type Bridge,
@@ -159,6 +160,12 @@ export type AnnualProfileReport = {
    * starts on last Dec 31 or there are no seeds.
    */
   ytd: YearProfile | null;
+  /**
+   * The proven years added up line by line (the year to date included): from the first year with
+   * a bridge through the last before a withheld one, so a gap is never summed over. Opens at the
+   * first year's Jan 1 net worth, closes at the last's. Null with fewer than two such years.
+   */
+  lifeToDate: { years: number[]; waterfall: CashWaterfall; bridge: Bridge; open: number; close: number } | null;
   /** Null when the base year (or this year's pay, which seeds the projection) isn't proven. */
   seeds: OutlookSeeds | null;
   seedBlockers: BlockerRef[];
@@ -407,11 +414,23 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     persons: persons.map((p) => ({ id: p.id, name: p.name })),
     years: out,
     ytd,
+    lifeToDate: lifeToDate(out),
     seeds,
     seedBlockers,
     expenseCategories: CATEGORIES.filter((c) => c.kind === "EXPENSE" && c.group !== "Money movement").map((c) => c.name),
     settings,
   };
+}
+
+function lifeToDate(years: YearProfile[]): AnnualProfileReport["lifeToDate"] {
+  const run: { year: number; waterfall: CashWaterfall; bridge: Bridge; close: number }[] = [];
+  for (const y of years) {
+    if (y.cash && y.bridge && y.netWorth) run.push({ year: y.year, waterfall: y.cash.waterfall, bridge: y.bridge, close: y.netWorth.netWorth });
+    else if (run.length) break;
+  }
+  if (run.length < 2) return null;
+  const first = run[0]!;
+  return { years: run.map((y) => y.year), ...sumYears(run), open: first.close - first.bridge.total, close: run.at(-1)!.close };
 }
 
 const PER_YEAR: Record<PayFrequency, number> = { WEEKLY: 52, BIWEEKLY: 26, SEMIMONTHLY: 24, MONTHLY: 12 };

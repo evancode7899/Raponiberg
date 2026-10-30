@@ -162,3 +162,15 @@ export function netWorthBridge(i: BridgeInput): Bridge {
   b.total = b.cashSaved + b.investmentGrowth + b.outsideMoney + b.newlyTracked + b.inTransit + b.unexplainedSavings;
   return b;
 }
+
+// ---------------------------------------------------------------- life to date
+
+const CASH_LINES = ["salary", "bonus", "otherIncome", "withholding", "additionalTaxes", "refunds", "otherDeductions", "employer", "partnerKept", "living", "nonRecurring"] as const;
+const BRIDGE_LINES = ["cashSaved", "investmentGrowth", "outsideMoney", "newlyTracked", "inTransit", "unexplainedSavings", "savedPerStatements", "total"] as const;
+
+/** Consecutive years added up line by line: the waterfall re-derived from the summed lines, the bridge summed. */
+export function sumYears(years: { waterfall: CashWaterfall; bridge: Bridge }[]): { waterfall: CashWaterfall; bridge: Bridge } {
+  const add = <K extends string>(keys: readonly K[], pick: (y: (typeof years)[number]) => Record<K, number>) =>
+    Object.fromEntries(keys.map((k) => [k, years.reduce((s, y) => s + pick(y)[k], 0)])) as Record<K, number>;
+  return { waterfall: cashWaterfall(add(CASH_LINES, (y) => y.waterfall)), bridge: add(BRIDGE_LINES, (y) => y.bridge) };
+}
