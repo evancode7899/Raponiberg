@@ -83,6 +83,8 @@ export type W4PersonPlan = W4Paychecks & {
 export type W4Plan = {
   /** Each person with a current employer (none: nothing a W-4 can reach). */
   people: W4PersonPlan[];
+  /** Paychecks the new W-4s reach, across everyone. */
+  reachedPaychecks: number;
   federal: W4Balance;
   ct: W4Balance;
   /** Owed that no paycheck can take (too few left, or take-home too small): pay it as an estimate. */
@@ -253,8 +255,9 @@ export function planW4(r: W4Report, opts: { tooSoonCount?: number } = {}): W4Pla
   const federal = after(fed, (p) => p.federalChange);
   const ctOut = after(ct, (p) => p.ctChange);
   // A balance left owed beyond a cent per paycheck of rounding is one no paycheck could take.
-  const left = (b: W4Balance) => (b.balanceAfter > people.reduce((t, p) => t + p.reached.length, 0) ? b.balanceAfter : 0);
-  return { people, federal, ct: ctOut, unreachable: { federal: left(federal), ct: left(ctOut) } };
+  const reachedPaychecks = people.reduce((t, p) => t + p.reached.length, 0);
+  const left = (b: W4Balance) => (b.balanceAfter > reachedPaychecks ? b.balanceAfter : 0);
+  return { people, reachedPaychecks, federal, ct: ctOut, unreachable: { federal: left(federal), ct: left(ctOut) } };
 }
 
 function changes(gap: number, checks: W4Paychecks[], perCheck: (c: W4Paychecks) => number, room: (c: W4Paychecks) => number): Map<string, number> {

@@ -31,7 +31,7 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
   if (!plan.people.length) {
     return <Callout tone="warn">No current employer with a regular paycheck on file for {r.year}, so there&apos;s no W-4 to set. Upload the latest pay stubs.</Callout>;
   }
-  const reached = plan.people.reduce((t, p) => t + p.reached.length, 0);
+  const reached = plan.reachedPaychecks;
 
   return (
     <div className="flex flex-col gap-4">
