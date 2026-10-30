@@ -33,6 +33,23 @@ describe("filed return lines", () => {
     expect(ret).toMatchObject({ jurisdiction: "FEDERAL", form: "1040", filingStatus: "MFJ", printedOn: "2026-04-05" });
   });
 
+  it("reads the filing status from the spouse line when the box is a graphic", () => {
+    const head = [
+      row(1, 738, [42, 290, "Form 1040 U.S. Individual Income Tax Return"]),
+      row(1, 718, [36, 80, "Filing Status"], [108, 130, "Single"], [151, 230, "Married filing jointly"]),
+      row(1, 676, [40, 200, "Your first name and middle initial"], [242, 280, "Last name"]),
+      row(1, 662, [42, 80, "ALEX Q"], [242, 290, "SAMPLE"]),
+      row(1, 652, [40, 230, "If joint return, spouse’s first name and middle initial"], [242, 280, "Last name"]),
+    ];
+    const tail = [
+      row(1, 332, [96, 105, "1a"], [115, 315, "Total amount from Form(s) W-2, box 1"], [489, 498, "1a"], [519, 577, "90,000."]),
+    ];
+    const single = parseReturns([...head, row(1, 628, [40, 300, "Home address (number and street). If you have a P.O. box, see instructions."]), ...tail], "");
+    expect(single[0]!.filingStatus).toBe("SINGLE");
+    const joint = parseReturns([...head, row(1, 638, [42, 80, "JORDAN R"], [242, 290, "SAMPLE"]), row(1, 628, [40, 300, "Home address (number and street)."]), ...tail], "");
+    expect(joint[0]!.filingStatus).toBe("MFJ");
+  });
+
   it("takes an amount printed just off its line's baseline (Intuit) for the nearest empty line", () => {
     const rows = [
       row(1, 760, [36, 300, "Form 1040 (2023)"]),

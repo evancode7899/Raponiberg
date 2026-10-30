@@ -90,6 +90,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {r.filingStatus === "SINGLE" ? null : (
         <Card
           title="Joint vs separate"
           actions={
@@ -119,6 +120,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
             both {r.scenarios.mfs.itemize ? "itemize" : "take the standard deduction"}, whichever is cheapest.
           </p>
         </Card>
+        )}
         <Card title={r.dependents.length ? `Effect of ${r.dependents.map((d) => d.name).join(", ")} as dependent` : "Dependents"}>
           {r.dependents.length ? (
             <>

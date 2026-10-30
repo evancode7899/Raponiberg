@@ -168,6 +168,21 @@ const STATUS: [RegExp, FiledReturn["filingStatus"]][] = [
   [/X\s*Single\b/, "SINGLE"],
 ];
 
+/**
+ * The filing status box. Where the check is printed as an "X" it says; where it's drawn as
+ * a graphic, the spouse line tells: a joint return prints the spouse's name under "If joint
+ * return, spouse's first name", any other leaves it blank (the home address label comes
+ * next). A blank one is read as Single.
+ */
+function filingStatusOf(rows: LayoutRow[], rowText: string): FiledReturn["filingStatus"] {
+  const marked = STATUS.find(([re]) => re.test(rowText))?.[1];
+  if (marked) return marked;
+  const i = rows.findIndex((r) => r.cells.some((c) => /If joint return, spouse/.test(c.text)));
+  const next = i < 0 ? undefined : rows[i + 1];
+  if (!next || next.page !== rows[i]!.page) return null;
+  return next.cells.some((c) => /^Home address/.test(c.text)) ? "SINGLE" : "MFJ";
+}
+
 /** One filed return per jurisdiction found in the PDF (Intuit prints federal and state in one file). */
 export function parseReturns(rows: LayoutRow[], text: string): FiledReturn[] {
   const printed = /Printed on (\d{2})\/(\d{2})\/(\d{4})/.exec(text);
@@ -182,7 +197,7 @@ export function parseReturns(rows: LayoutRow[], text: string): FiledReturn[] {
     out.push({
       jurisdiction: "FEDERAL",
       form: fed.some((l) => l.form === "1040X") ? "1040X" : "1040",
-      filingStatus: STATUS.find(([re]) => re.test(rowText))?.[1] ?? null,
+      filingStatus: filingStatusOf(rows, rowText),
       printedOn,
       movedOn: null,
       lines: fed,

@@ -190,7 +190,14 @@ export type TaxReport = {
   children: ChildIncome[];
   dependents: { name: string; age: number }[];
   payments: TaxPaymentRow[];
+  /**
+   * How the year is filed: jointly, or Single when the year's filed federal return says so
+   * (before the marriage). A Single year has one person in `people`, the filer, and
+   * `scenarios.mfj` holds their Single return; there's no joint-vs-separate choice.
+   */
+  filingStatus: "MFJ" | "SINGLE";
   scenarios: {
+    /** The household's return: joint, or the filer's Single return (see filingStatus). */
     mfj: ReturnResult;
     mfjNoDependents: ReturnResult;
     mfs: MfsResult;
@@ -318,6 +325,12 @@ export function buildTaxReport(
   const lastYearDocs = yearDocs(book.taxDocs, year - 1, profile.persons);
   const useDocs = !isForecast;
   if (blockers.length && !isForecast && !docs.federal) return { blocked: true, year, today, profile, inputs, blockers };
+  // A Single year (its filed return says so) is the filer's return alone: the person whose
+  // W-2s are on file, else the first. Everyone's names still decide whose accounts and forms
+  // are left off it.
+  const filingStatus: TaxReport["filingStatus"] = useDocs && docs.federal?.filingStatus === "SINGLE" ? "SINGLE" : "MFJ";
+  const w2Owners = [...new Set(docs.w2s.flatMap((w) => (w.personId ? [w.personId] : [])))];
+  const filers = filingStatus === "SINGLE" ? [profile.persons.find((p) => w2Owners.length === 1 && p.id === w2Owners[0]) ?? profile.persons[0]!] : profile.persons;
 
   const personFor = (text: string): TaxPerson | undefined => {
     const u = text.toUpperCase();
@@ -394,7 +407,7 @@ export function buildTaxReport(
   const daysIn = (Date.parse(interestThrough) - Date.parse(`${year}-01-01`)) / 86_400_000 + 1;
   const interestFactor = isCurrentYear && daysIn > 0 ? 365 / daysIn : 1;
   const bankInterest = (personId: string, pick: "ytd" | "projected") => {
-    const own = (interestYtd.get(personId) ?? 0) + (interestYtd.get("JOINT") ?? 0) / profile.persons.length;
+    const own = (interestYtd.get(personId) ?? 0) + (interestYtd.get("JOINT") ?? 0) / filers.length;
     return Math.round(pick === "ytd" ? own : own * interestFactor);
   };
 
@@ -422,8 +435,8 @@ export function buildTaxReport(
   warnings.push(...chet.mismatches);
   const chetByAccount = new Map(chet.accounts.map((a) => [a.accountNumber, a.cents]));
 
-  const nPeople = profile.persons.length;
-  const people: PersonReport[] = profile.persons.map((person) => {
+  const nPeople = filers.length;
+  const people: PersonReport[] = filers.map((person) => {
     const { extras, pay: typedPay } = inputs.people[person.id]!;
     const stubs = stubsByPerson.get(person.id) ?? [];
     // The year in progress follows the forecast: its paycheck basis, and the bonuses it pays after the latest stub counted here.
@@ -606,7 +619,7 @@ export function buildTaxReport(
       const other = residency.ct === "PART_YEAR" ? i.otherIncome : 0;
       ctSource = { total: wages + investment + other, wages, investment, other, investmentShare: share };
       // An entered CT-source total replaces the worked-out one (all of it on the first person's return).
-      if (residency.sourceIncome != null) ctSource = { ...ctSource, total: person.id === profile.persons[0]!.id ? residency.sourceIncome : 0 };
+      if (residency.sourceIncome != null) ctSource = { ...ctSource, total: person.id === filers[0]!.id ? residency.sourceIncome : 0 };
       projectedIncome.ctSourceIncome = ctSource.total;
       incomeYtd.ctSourceIncome = ctSource.total;
     }
@@ -669,15 +682,15 @@ export function buildTaxReport(
   // A child born after the year isn't that year's dependent.
   const dependents = profile.dependents.map((d) => ({ name: d.name, age: ageAtYearEnd(d, year) })).filter((d) => d.age >= 0);
   const incomes = people.map((p) => p.income);
-  const mfj = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents, ny: nyFiling });
-  const mfjNoDependents = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents: [], ny: nyFiling });
+  const mfj = computeReturn({ params, filingStatus, people: incomes, dependents, ny: nyFiling });
+  const mfjNoDependents = computeReturn({ params, filingStatus, people: incomes, dependents: [], ny: nyFiling });
   const mfs = bestSeparate(params, incomes, dependents, profile.mfsDependentClaimant, nyFiling);
   const mfsNoDependents = bestSeparate(params, incomes, [], profile.mfsDependentClaimant, nyFiling);
 
   // Marginal rates: one more $1,000 of wages for the highest earner.
   const top = [...people].sort((a, b) => sumW2(b.income) - sumW2(a.income))[0];
   const bumped = incomes.map((i) => (i.id === top?.id && i.w2s.length ? bumpWages(i, 100_000) : i));
-  const mfjBumped = computeReturn({ params, filingStatus: "MFJ", people: bumped, dependents, ny: nyFiling });
+  const mfjBumped = computeReturn({ params, filingStatus, people: bumped, dependents, ny: nyFiling });
   const marginal = {
     federal: (mfjBumped.federal.totalTax - mfj.federal.totalTax) / 100_000,
     ct: (mfjBumped.ct.totalTax - mfj.ct.totalTax) / 100_000,
@@ -688,7 +701,7 @@ export function buildTaxReport(
   // Figures typed under Inputs stand on the owner's word alone (no statement, stub or tax
   // document shows them): listed, so none of them passes for a proven figure.
   const typedNow = [
-    ...profile.persons.flatMap((p) =>
+    ...filers.flatMap((p) =>
       EXTRA_FIELDS.filter(([k]) => inputs.people[p.id]!.extras[k]).map(([k, label]) => `${p.name}: ${label.toLowerCase()} ${usd(inputs.people[p.id]!.extras[k])}`),
     ),
     ...(
@@ -750,7 +763,7 @@ export function buildTaxReport(
     estimatesPaid: mfj.federal.estimatedPayments,
     priorYearTax: priorFederal.tax,
     priorYearAgi: priorFederal.agi,
-    highAgiThreshold: fp.safeHarborHighAgi.MFJ,
+    highAgiThreshold: fp.safeHarborHighAgi[filingStatus],
     rules: fp.safeHarborRules,
   });
   const ct = safeHarbor({
@@ -801,8 +814,10 @@ export function buildTaxReport(
     "Expected bonuses are withheld at the 22% federal supplemental rate and 6.99% CT.",
     "Dividends and interest are projected to year end from last year's month-by-month pattern in the same account (or a straight-line run rate); realized gains are not projected — add expected sales under Inputs.",
     `Fund and stock dividends are treated as ${Math.round(profile.qualifiedDividendShare * 100)}% qualified; money-market and bond-fund dividends as ordinary.`,
-    "Married filing separately: each spouse reports their own wages and accounts; joint accounts, joint estimated payments, and household deductions are split evenly; both spouses itemize or both take the standard deduction, whichever costs less in total.",
-    "Additional Medicare tax and the 3.8% net investment income tax are included in federal tax. The 0.9% employers withhold above $200k is credited back against the joint liability.",
+    filingStatus === "SINGLE"
+      ? `Filed Single (the ${year} federal return names no spouse): only ${filers[0]!.name}'s wages, accounts and forms are on it; joint accounts count in full.`
+      : "Married filing separately: each spouse reports their own wages and accounts; joint accounts, joint estimated payments, and household deductions are split evenly; both spouses itemize or both take the standard deduction, whichever costs less in total.",
+    `Additional Medicare tax and the 3.8% net investment income tax are included in federal tax. The 0.9% employers withhold above $200k is credited back against the ${filingStatus === "SINGLE" ? "return's" : "joint"} liability.`,
     "Connecticut: 2025 CT-1040 schedule (Connecticut does not index its brackets); CHET 529 contributions are subtracted up to the per-return cap; the CT property-tax credit is not modeled.",
   );
   if (isCurrentYear && through < today)
@@ -850,6 +865,7 @@ export function buildTaxReport(
     children,
     dependents,
     payments,
+    filingStatus,
     scenarios: { mfj, mfjNoDependents, mfs, mfsNoDependents },
     marginal,
     safeHarbor: { federal, ct },

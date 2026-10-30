@@ -30,7 +30,7 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
         <ChildIncomeCard key={c.name} c={c} showProjected={r.isCurrentYear} />
       ))}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Federal: income to taxable income (joint)">
+        <Card title={`Federal: income to taxable income (${r.filingStatus === "SINGLE" ? "single" : "joint"})`}>
           <NumberTable
             columns={[""]}
             rows={[
@@ -53,7 +53,7 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
             ]}
           />
         </Card>
-        <Card title="Connecticut: AGI to tax (joint)">
+        <Card title={`Connecticut: AGI to tax (${r.filingStatus === "SINGLE" ? "single" : "joint"})`}>
           <NumberTable
             columns={[""]}
             rows={[

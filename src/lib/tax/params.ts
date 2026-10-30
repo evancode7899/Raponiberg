@@ -314,6 +314,80 @@ const FED_2024: FederalParams = {
   kiddie: { exempt: $(1_300), threshold: $(2_600), parentElectionMax: $(13_000) },
 };
 
+/** Rev. Proc. 2022-38 (2023 inflation adjustments), SSA 2023 wage base, IRS Notice 2022-55 limits. */
+const FED_2023: FederalParams = {
+  ...FED_2024,
+  brackets: byStatus(
+    [11_000, 44_725, 95_375, 182_100, 231_250, 578_125].map($),
+    [22_000, 89_450, 190_750, 364_200, 462_500, 693_750].map($),
+    [11_000, 44_725, 95_375, 182_100, 231_250, 346_875].map($),
+    [15_700, 59_850, 95_350, 182_100, 231_250, 578_100].map($),
+  ),
+  standardDeduction: byStatus($(13_850), $(27_700), $(13_850), $(20_800)),
+  capitalGains: byStatus(
+    { zeroMax: $(44_625), fifteenMax: $(492_300) },
+    { zeroMax: $(89_250), fifteenMax: $(553_850) },
+    { zeroMax: $(44_625), fifteenMax: $(276_900) },
+    { zeroMax: $(59_750), fifteenMax: $(523_050) },
+  ),
+  childTaxCredit: { ...FED_2024.childTaxCredit, refundablePerChild: $(1_600) },
+  qbiThreshold: byStatus($(182_100), $(364_200), $(182_100), $(182_100)),
+  amt: {
+    exemption: byStatus($(81_300), $(126_500), $(63_250), $(81_300)),
+    phaseoutStart: byStatus($(578_150), $(1_156_300), $(578_150), $(578_150)),
+    phaseoutRate: 0.25,
+    rate28Above: byStatus($(220_700), $(220_700), $(110_350), $(220_700)),
+  },
+  socialSecurity: { wageBase: $(160_200), rate: 0.062 },
+  limits: { k401: $(22_500), ira: $(6_500), hsaSelf: $(3_850), hsaFamily: $(7_750) },
+  retirement: {
+    ...FED_2024.retirement,
+    annualAdditions: $(66_000),
+    rothIraPhaseout: byStatus({ start: $(138_000), end: $(153_000) }, { start: $(218_000), end: $(228_000) }, { start: 0, end: $(10_000) }, { start: $(138_000), end: $(153_000) }),
+    tradIraCoveredPhaseout: byStatus({ start: $(73_000), end: $(83_000) }, { start: $(116_000), end: $(136_000) }, { start: 0, end: $(10_000) }, { start: $(73_000), end: $(83_000) }),
+    tradIraSpouseCoveredPhaseout: { start: $(218_000), end: $(228_000) },
+  },
+  kiddie: { exempt: $(1_250), threshold: $(2_500), parentElectionMax: $(12_500) },
+};
+
+/** Rev. Proc. 2021-45 (2022 inflation adjustments), SSA 2022 wage base, IRS Notice 2021-61 limits. */
+const FED_2022: FederalParams = {
+  ...FED_2023,
+  brackets: byStatus(
+    [10_275, 41_775, 89_075, 170_050, 215_950, 539_900].map($),
+    [20_550, 83_550, 178_150, 340_100, 431_900, 647_850].map($),
+    [10_275, 41_775, 89_075, 170_050, 215_950, 323_925].map($),
+    [14_650, 55_900, 89_050, 170_050, 215_950, 539_900].map($),
+  ),
+  standardDeduction: byStatus($(12_950), $(25_900), $(12_950), $(19_400)),
+  capitalGains: byStatus(
+    { zeroMax: $(41_675), fifteenMax: $(459_750) },
+    { zeroMax: $(83_350), fifteenMax: $(517_200) },
+    { zeroMax: $(41_675), fifteenMax: $(258_600) },
+    { zeroMax: $(55_800), fifteenMax: $(488_500) },
+  ),
+  childTaxCredit: { ...FED_2024.childTaxCredit, refundablePerChild: $(1_500) },
+  qbiThreshold: byStatus($(170_050), $(340_100), $(170_050), $(170_050)),
+  amt: {
+    exemption: byStatus($(75_900), $(118_100), $(59_050), $(75_900)),
+    phaseoutStart: byStatus($(539_900), $(1_079_800), $(539_900), $(539_900)),
+    phaseoutRate: 0.25,
+    rate28Above: byStatus($(206_100), $(206_100), $(103_050), $(206_100)),
+  },
+  socialSecurity: { wageBase: $(147_000), rate: 0.062 },
+  limits: { k401: $(20_500), ira: $(6_000), hsaSelf: $(3_650), hsaFamily: $(7_300) },
+  retirement: {
+    ...FED_2023.retirement,
+    k401CatchUp: $(6_500),
+    k401CatchUp60to63: $(6_500),
+    annualAdditions: $(61_000),
+    rothIraPhaseout: byStatus({ start: $(129_000), end: $(144_000) }, { start: $(204_000), end: $(214_000) }, { start: 0, end: $(10_000) }, { start: $(129_000), end: $(144_000) }),
+    tradIraCoveredPhaseout: byStatus({ start: $(68_000), end: $(78_000) }, { start: $(109_000), end: $(129_000) }, { start: 0, end: $(10_000) }, { start: $(68_000), end: $(78_000) }),
+    tradIraSpouseCoveredPhaseout: { start: $(204_000), end: $(214_000) },
+  },
+  kiddie: { exempt: $(1_150), threshold: $(2_300), parentElectionMax: $(11_500) },
+};
+
 const tier = (start: number, step: number, per: number, max: number): RecaptureTier => ({
   start: $(start),
   step: $(step),
@@ -409,6 +483,24 @@ const CT_2026: CtParams = {
 };
 
 /**
+ * Before 2024 Connecticut's two lowest rates were 3% and 5% (2023 HB 6941 cut them to 2% and
+ * 4.5%), so Table C's add-back phased out a 2-point benefit instead of 2.5. Tables A, D and E
+ * are carried from 2024's.
+ */
+const CT_2023: CtParams = {
+  ...CT_2025,
+  brackets: Object.fromEntries(
+    Object.entries(CT_2025.brackets).map(([fs, rows]) => [fs, rows.map(([u, rate], i) => [u, i === 0 ? 0.03 : i === 1 ? 0.05 : rate] as [number, number])]),
+  ) as ByStatus<[number, number][]>,
+  addBack: byStatus(
+    tier(56_500, 5_000, 20, 200),
+    tier(100_500, 5_000, 40, 400),
+    tier(50_250, 2_500, 20, 200),
+    tier(78_500, 4_000, 32, 320),
+  ),
+};
+
+/**
  * New York State (IT-201 / IT-203) and New York City (resident tax, IT-360.1). Brackets are
  * [upper bound, rate]; the last upper bound is Infinity. New York doesn't index them.
  */
@@ -474,9 +566,39 @@ const NY_2026: NyParams = {
   ) as ByStatus<[number, number][]>,
 };
 
+/** 2022: the middle-class cuts were still phasing in, so the fourth and fifth rates were 5.85% and 6.25% (5.5% and 6% from 2023). */
+const NY_2022: NyParams = {
+  ...NY_2025,
+  brackets: Object.fromEntries(
+    Object.entries(NY_2025.brackets).map(([fs, rows]) => [fs, rows.map(([u, rate], i) => [u, i === 3 ? 0.0585 : i === 4 ? 0.0625 : rate] as [number, number])]),
+  ) as ByStatus<[number, number][]>,
+};
+
 export type TaxYearParams = { year: number; federal: FederalParams; ct: CtParams; ny: NyParams; notes: string[] };
 
 export const TAX_YEARS: Record<number, TaxYearParams> = {
+  2022: {
+    year: 2022,
+    federal: FED_2022,
+    ct: CT_2023,
+    ny: NY_2022,
+    notes: [
+      "Federal: Rev. Proc. 2021-45.",
+      "Connecticut: 3% and 5% lowest rates (before the 2024 cut); exemption, recapture and credit tables carried from 2024's.",
+      "New York State and City: 2022 IT-201/IT-203 rate schedules (5.85% and 6.25% middle rates); New York City unchanged.",
+    ],
+  },
+  2023: {
+    year: 2023,
+    federal: FED_2023,
+    ct: CT_2023,
+    ny: NY_2025,
+    notes: [
+      "Federal: Rev. Proc. 2022-38.",
+      "Connecticut: 3% and 5% lowest rates (before the 2024 cut); exemption, recapture and credit tables carried from 2024's.",
+      "New York State and City: IT-201/IT-203 rate schedules and tax computation worksheets (the same from 2023 to 2025).",
+    ],
+  },
   2024: {
     year: 2024,
     federal: FED_2024,

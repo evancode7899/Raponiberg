@@ -70,13 +70,16 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
     [api],
   );
 
+  // A year filed Single (before the marriage) has no joint-vs-separate choice.
+  const single = !!data && !data.blocked && data.filingStatus === "SINGLE";
+
   return (
     <>
       <Tabs
         tabs={[
           { id: "overview", label: "Overview" },
           { id: "worksheet", label: "Worksheet" },
-          { id: "compare", label: "Joint vs separate" },
+          ...(single ? [] : [{ id: "compare" as const, label: "Joint vs separate" }]),
           { id: "income", label: "Income & W-2" },
           { id: "payments", label: "Payments" },
           { id: "filed", label: "Filed return" },
@@ -124,7 +127,7 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
               blockers={data.unverified}
               limit={4}
             />
-            {tab === "overview" ? (
+            {tab === "overview" || (tab === "compare" && single) ? (
               <TaxOverview r={data} onGo={setTab} />
             ) : tab === "worksheet" ? (
               <TaxWorksheet r={data} />

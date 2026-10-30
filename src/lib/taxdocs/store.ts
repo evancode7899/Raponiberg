@@ -8,7 +8,7 @@ import type { TaxDocsFile } from "./types.ts";
  * PDF is read again on the next scan. Kept here (not in scan.ts) so the integrity checks
  * can compare a stored scan against it without loading the PDF libraries.
  */
-export const TAX_DOCS_VERSION = 1;
+export const TAX_DOCS_VERSION = 2;
 
 /**
  * data/tax-documents.json: what the tax documents folder held when last scanned (the

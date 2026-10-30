@@ -16,9 +16,9 @@ import { applyWhatIf, bestSeparate, NO_WHAT_IF, type MfsResult, type WhatIf } fr
 /** Year to date (as if the year ended at the latest stub and statement) or projected to December 31. */
 export type EstimateBasis = "projected" | "ytd";
 
-/** One return the page shows: a spouse filing separately, or the joint return. */
+/** One return the page shows: a spouse filing separately, or the household's return (joint, or Single in a Single year). */
 export type EstimateColumn = {
-  /** A person's id, or "joint". */
+  /** A person's id, or "joint" for the household's return. */
   id: string;
   name: string;
   sub: string;
@@ -33,17 +33,19 @@ export type EstimateColumn = {
   wholeDollars?: boolean;
 };
 
-export type EstimateInput = Pick<TaxReport, "year" | "people" | "dependents" | "ny"> & { profile: Pick<TaxReport["profile"], "mfsDependentClaimant"> };
+export type EstimateInput = Pick<TaxReport, "year" | "people" | "dependents" | "ny" | "filingStatus"> & { profile: Pick<TaxReport["profile"], "mfsDependentClaimant"> };
 
-/** The page's returns for a basis: each spouse's separate return (as bestSeparate picks them), then the joint one. */
+/** The page's returns for a basis: each spouse's separate return (as bestSeparate picks them), then the joint one; a Single year has only the filer's return. */
 export function estimateColumns(r: EstimateInput, basis: EstimateBasis, whatIf: WhatIf = NO_WHAT_IF): { joint: ReturnResult; mfs: MfsResult; cols: EstimateColumn[] } {
   const params = taxYearParams(r.year);
   const base = r.people.map((p) => (basis === "ytd" ? p.incomeYtd : p.income));
   const incomes = applyWhatIf(base, whatIf, params);
   const ny = r.ny?.filing ?? null;
-  const joint = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents: r.dependents, ny });
+  const joint = computeReturn({ params, filingStatus: r.filingStatus, people: incomes, dependents: r.dependents, ny });
   const mfs = bestSeparate(params, incomes, r.dependents, r.profile.mfsDependentClaimant, ny);
   const pays = r.people.map((p) => payFor(p, basis, whatIf));
+  const pay = pays.reduce(addPay, { ...ZERO_AMOUNTS });
+  if (r.filingStatus === "SINGLE") return { joint, mfs, cols: [{ id: "joint", name: "Single", sub: "filing single", r: joint, incomes, pay, dependents: r.dependents }] };
   const cols: EstimateColumn[] = [
     ...r.people.map((p, i) => ({
       id: p.id,
@@ -54,7 +56,7 @@ export function estimateColumns(r: EstimateInput, basis: EstimateBasis, whatIf: 
       pay: pays[i]!,
       dependents: mfs.claimant === p.id ? r.dependents : [],
     })),
-    { id: "joint", name: "Joint", sub: "filing jointly", r: joint, incomes, pay: pays.reduce(addPay, { ...ZERO_AMOUNTS }), dependents: r.dependents },
+    { id: "joint", name: "Joint", sub: "filing jointly", r: joint, incomes, pay, dependents: r.dependents },
   ];
   return { joint, mfs, cols };
 }
@@ -190,7 +192,7 @@ export const ESTIMATE_LINES = L({
   "all.totalTaxes": { label: "Total taxes", value: (c) => totalTaxes(c) },
   "all.jointValue": {
     label: "Value of filing jointly",
-    value: (c, all) => (c.id === "joint" ? all.filter((x) => x.id !== "joint").reduce((s, x) => s + totalTaxes(x), 0) - totalTaxes(c) : null),
+    value: (c, all) => (c.id === "joint" && all.length > 1 ? all.filter((x) => x.id !== "joint").reduce((s, x) => s + totalTaxes(x), 0) - totalTaxes(c) : null),
   },
   "all.earnedPlusInvestment": { label: "Earned + investment income", value: (c) => earnedPlusInvestment(c) },
   "all.takeHome": { label: "Take-home income (after all taxes)", value: (c) => earnedPlusInvestment(c) - totalTaxes(c) },
