@@ -254,7 +254,12 @@ export function StatementPlan({ plan }: { plan: Plan }) {
           <ul className="mt-1.5 flex flex-col gap-0.5 text-fg-2">
             {plan.upToDate.map((u) => (
               <li key={u.name}>
-                <span className="text-muted">{u.institution}</span> {u.name} <span className="text-faint">— on file through {date(u.coveredThrough)}{u.lastTitle ? ` (${u.lastTitle})` : ""}</span>
+                <span className="text-muted">{u.institution}</span> {u.name}{" "}
+                <span className="text-faint">
+                  — {u.provisionalFrom ? "covered" : "on file"} through {date(u.coveredThrough)}
+                  {u.lastTitle ? ` (${u.lastTitle})` : ""}
+                </span>
+                {u.provisionalFrom && <ProvisionalNote from={u.provisionalFrom} />}
               </li>
             ))}
             {view.clear.map(({ inst, a }) => (
@@ -307,6 +312,19 @@ function shortName(a: PlanAccount) {
   return a.name.replace(/^(Amex|American Express|Chase|Capital One|Fidelity|Vanguard|Bilt)\s+/i, "");
 }
 
+/** Idle on the bank statements alone: a payment on the next one would take it back. */
+function ProvisionalNote({ from }: { from: string }) {
+  return (
+    <span
+      className="text-warn"
+      title="The issuer sends no statement for a cycle without activity, and the bank statements on file show no payment to it. A payment on the next bank statement would take this back."
+    >
+      {" "}
+      · provisional from {date(from)}
+    </span>
+  );
+}
+
 function AccountRow({ a, need, today }: { a: PlanAccount; need: PlanStatement[]; today: string }) {
   return (
     <li className="rounded-md bg-surface-2 px-2.5 py-2 text-xs">
@@ -318,7 +336,13 @@ function AccountRow({ a, need, today }: { a: PlanAccount; need: PlanStatement[];
         {a.last ? (
           <>
             Last on file: <span className="font-medium text-fg-2">{a.last.title}</span> · {span(a.last.start, a.last.end)}
-            {a.coveredThrough > a.last.end && <> · idle (no statement issued) through {date(a.coveredThrough)}</>}
+            {a.coveredThrough > a.last.end && (
+              <>
+                {" "}
+                · idle (no statement issued) through {date(a.coveredThrough)}
+                {a.provisionalFrom && <ProvisionalNote from={a.provisionalFrom} />}
+              </>
+            )}
           </>
         ) : (
           "No statements on file"
