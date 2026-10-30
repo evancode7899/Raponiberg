@@ -5,7 +5,7 @@ import { NO_HOUSEHOLD } from "../household/patterns";
 import type { StubLine } from "../ingest/payroll/types";
 import { groupFor } from "../ledger/loadLedger";
 import { buildTimeline, type SegmentInput } from "../ledger/timeline";
-import { blockersFor, netWorthAtBlockers, netWorthBlockers, passesFor } from "./blockers";
+import { blockersFor, netWorthAtBlockers, netWorthBlockers, passesFor, taxBlockers } from "./blockers";
 import { runChecksWithPasses } from "./checks/index";
 import { Collector } from "./checks/collector";
 import { checkHoldings } from "./checks/holdings";
@@ -17,6 +17,8 @@ import { buildCashFlowReport } from "./reports/cashFlow";
 import { bookTotalsFor } from "./rowTotals";
 import type { StandingException } from "./types";
 import { TAX_DOCS_VERSION } from "../taxdocs/store";
+import { LP_CAPITAL_PARSER_ID, VERSION as LP_CAPITAL_VERSION } from "../ingest/parsers/lpCapitalStatement";
+import { buildStatementPlan } from "./reports/statementPlan";
 import type { TaxDocsFile } from "../taxdocs/types";
 
 // A tiny synthetic household (all names and amounts invented).
@@ -31,6 +33,8 @@ function makeBook(opts: {
   horizon?: Book["horizon"];
   persons?: Book["persons"];
   taxDocs?: TaxDocsFile | null;
+  /** Adds to the Book (statements, documents, row details) before the checks run. */
+  before?: (book: Book) => void;
 }): Book {
   const rows: BookRow[] = [];
   const accounts: BookAccount[] = [];
@@ -75,6 +79,7 @@ function makeBook(opts: {
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
     passes: [],
   };
+  opts.before?.(book);
   const checked = runChecksWithPasses(book, opts.exceptions);
   book.integrity = checked.report;
   book.passes = checked.passes;
@@ -350,6 +355,85 @@ describe("the data edge", () => {
     const [f] = b.integrity.findings.filter((x) => x.check === "transfer.unmatched");
     expect(f).toMatchObject({ status: "FAIL" });
     expect(f!.atEdge).toBeUndefined();
+  });
+});
+
+describe("a payment to a private fund whose statement isn't out yet", () => {
+  // Checking is on file through Nov; the fund's one capital statement ends Sep 30 (the edge).
+  type Acct = Parameters<typeof makeBook>[0]["accounts"][number];
+  const fund = (id = "fund", idents = ["7788"], subtype = "OTHER"): Acct => ({ id, name: `Example Partners LP ••${idents[0]}`, subtype, institution: "Example Partners", idents, segs: [{ start: "2025-07-01", end: "2025-09-30", open: 0, close: 0 }] });
+  const fundBook = (o: { date?: string; payee?: string; cents?: number; others?: Acct[]; lp?: string[]; edit?: (r: BookRow) => void; on?: Acct } = {}) => {
+    const row = { date: o.date ?? "2025-10-14", cents: o.cents ?? -25_000, lane: "TRANSFER" as Lane, payee: o.payee ?? "ONLINE TRANSFER TO ACCT 7788", id: "wire" };
+    const from = o.on ?? { id: "chk", name: "Checking ••1234", subtype: "CHECKING", institution: "Bank", idents: ["1234"], segs: [{ start: "2025-01-01", end: "2025-11-30", open: 100_000, close: 100_000 + row.cents, rows: [row] }] };
+    const lp = o.lp ?? ["fund"];
+    const b = makeBook({
+      today: "2025-12-15",
+      horizon: { cashFlow: "2025-11-30", netWorth: "2025-09-30" },
+      accounts: [from, ...(o.others ?? [fund()])],
+      before: (book) => {
+        for (const id of lp) {
+          book.documents.push({ id: `doc-${id}`, title: "Fund capital statement", institution: "Example Partners", parserId: LP_CAPITAL_PARSER_ID, parserVersion: LP_CAPITAL_VERSION, factsVersion: 0, periodStart: "2025-07-01", periodEnd: "2025-09-30" });
+          book.statements.push({ id: `st-${id}`, accountId: id, documentId: `doc-${id}`, documentTitle: "fund.pdf", importedAt: "2025-10-20T00:00:00.000Z", status: "COMMITTED", isSummary: false, periodStart: "2025-07-01", periodEnd: "2025-09-30", deltaCents: 0 });
+        }
+        if (o.edit) o.edit(book.rowById.get("wire")!);
+      },
+    });
+    b.horizon.cashFlow = cashFlowThrough(b);
+    return b;
+  };
+  const finding = (b: Book) => b.integrity.findings.find((f) => f.check === "transfer.unmatched")!;
+  const strict = (b: Book) => {
+    expect(finding(b)).toMatchObject({ scope: { affects: ["CASH_FLOW", "NET_WORTH"] } });
+    expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-10-01", to: "2025-10-31" }).map((f) => f.id)).toContain(finding(b).id);
+  };
+
+  it("holds back net worth only: still missing, cash flow and taxes run past it", () => {
+    const b = fundBook();
+    const f = finding(b);
+    expect(f).toMatchObject({ status: "MISSING", atEdge: true, date: "2025-10-14", scope: { accountId: "chk", affects: ["NET_WORTH"] }, needs: { accountIds: ["fund"] } });
+    expect(b.horizon.cashFlow).toBe("2025-11-30");
+    expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-10-01", to: "2025-10-31" })).toEqual([]);
+    expect(taxBlockers(b, 2025).map((x) => x.id)).not.toContain(f.id);
+    expect(netWorthBlockers(b, "2025-10-01", "2025-10-31").map((x) => x.id)).toContain(f.id);
+    // Still a transfer: never counted as spending.
+    expect(b.rowById.get("wire")!.lane).toBe("TRANSFER");
+    expect(buildCashFlowReport(b, { granularity: "month", from: "2025-10-01" }).periods.every((p) => p.spendingCents === 0)).toBe(true);
+    // The fund's statement is still asked for, for net worth only.
+    const next = buildStatementPlan(b).institutions.flatMap((i) => i.accounts).find((p) => p.accountId === "fund")!.statements.find((s) => s.settles.some((x) => x.id === f.id))!;
+    expect(next.neededFrom).toEqual({ netWorth: "2025-10-01" });
+  });
+
+  it("stays strict when two accounts could hold the other leg", () => {
+    strict(fundBook({ payee: "ONLINE TRANSFER TO ACCT 7788 / 5566", others: [fund(), fund("fund2", ["5566"])], lp: ["fund", "fund2"] }));
+  });
+
+  it("stays strict when the named account isn't a private fund", () => {
+    strict(fundBook({ others: [fund("brk", ["7788"], "BROKERAGE")], lp: [] }));
+    // An "Other" account with no fund capital statement on file isn't one either.
+    strict(fundBook({ lp: [] }));
+  });
+
+  it("stays strict when only the institution points at the fund", () => {
+    strict(fundBook({ payee: "ONLINE TRANSFER TO EXAMPLE PARTNERS", edit: (r) => (r.counterpartyInstitution = "Example Partners") }));
+  });
+
+  it("stays strict for a gap inside the proven range", () => {
+    // The fund's statements stop at June; a payment in September is before the edge.
+    const inside = fundBook({ date: "2025-09-10", others: [{ ...fund(), segs: [{ start: "2025-01-01", end: "2025-06-30", open: 0, close: 0 }] }] });
+    expect(finding(inside).atEdge).toBeUndefined();
+    expect(finding(inside)).toMatchObject({ status: "MISSING", scope: { affects: ["CASH_FLOW", "NET_WORTH"] } });
+  });
+
+  it("stays strict for a card payment", () => {
+    // Paid from a card rather than the bank: the bank-side condition fails.
+    strict(fundBook({ on: { id: "card", name: "Card ••9999", subtype: "CREDIT_CARD", institution: "Card Co", idents: ["9999"], segs: [{ start: "2025-01-01", end: "2025-11-30", open: 0, close: -25_000, rows: [{ date: "2025-10-14", cents: -25_000, lane: "TRANSFER", payee: "ONLINE TRANSFER TO ACCT 7788", id: "wire" }] }] } }));
+    // A bank payment to a card on file only through the edge.
+    strict(fundBook({ payee: "PAYMENT TO CARD 7788", others: [{ ...fund("card", ["7788"], "CREDIT_CARD"), name: "Card ••7788" }], lp: [] }));
+  });
+
+  it("stays strict for money coming back from the fund, or a row awaiting review", () => {
+    strict(fundBook({ cents: 25_000, payee: "TRANSFER FROM ACCT 7788" }));
+    strict(fundBook({ edit: (r) => (r.needsReview = true) }));
   });
 });
 

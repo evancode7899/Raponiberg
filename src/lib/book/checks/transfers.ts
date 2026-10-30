@@ -1,5 +1,6 @@
 import { addDays } from "../../dates/isoDate.ts";
 import { BILL_PAYMENTS } from "../../ingest/billContinuation.ts";
+import { LP_CAPITAL_PARSER_ID } from "../../ingest/parsers/lpCapitalStatement.ts";
 import { accountsByLast4, money, uncovered } from "../coverage.ts";
 import { accountRef, rowRefs } from "../findingKeys.ts";
 import type { Book, BookAccount, BookRow } from "../load.ts";
@@ -11,7 +12,9 @@ import type { Collector } from "./collector.ts";
  * leg is missing data; when every candidate's statement covers them and still nothing
  * pairs, the rows contradict each other (or the row isn't an own-account transfer).
  * Either way the money's destination is unknown, so the period's cash flow and the net
- * worth breakdown can't be proven.
+ * worth breakdown can't be proven. One exception (awaitsFundStatement): a bank payment past
+ * the data edge to a private fund it names, whose next statement isn't out yet, holds back
+ * net worth only.
  */
 export function checkTransfers(book: Book, c: Collector) {
   const nameOf = (id: string) => book.accounts.find((a) => a.id === id)?.name ?? "Account";
@@ -73,15 +76,18 @@ export function checkTransfers(book: Book, c: Collector) {
       continue;
     }
     if (notCovered.length > 0) {
+      const fundOnly = awaitsFundStatement(book, r, candidates, notCovered);
       c.add({
         id: `transfer.unmatched:${refs.get(r.id)}`,
         accounts: accountRef(book, r.accountId).accounts,
         check: "transfer.unmatched",
         status: "MISSING",
         title: `${r.date} ${money(r.amountCents)} ${direction} ${notCovered.map((a) => a.name).join(" / ")} isn't on that account's statements`,
-        detail: `${nameOf(r.accountId)} shows "${r.payee}", but no statement for ${notCovered.map((a) => a.name).join(" or ")} covers ${from} – ${to}, so where the money went (or came from) can't be seen.`,
+        detail: fundOnly
+          ? `${nameOf(r.accountId)} shows "${r.payee}", but ${notCovered[0]!.name} has no statement covering ${from} – ${to} yet. The bank's side is on its statement, so cash flow and taxes count it; net worth waits for the fund's statement.`
+          : `${nameOf(r.accountId)} shows "${r.payee}", but no statement for ${notCovered.map((a) => a.name).join(" or ")} covers ${from} – ${to}, so where the money went (or came from) can't be seen.`,
         fix: `Download the ${notCovered[0]!.institution ?? ""} statement covering ${r.date} into the statements folder and scan it.`,
-        scope,
+        scope: fundOnly ? { ...scope, affects: ["NET_WORTH"] } : scope,
         date: r.date,
         needs: { accountIds: notCovered.map((a) => a.id), from: r.date, to: r.date },
       });
@@ -127,18 +133,56 @@ export function checkTransfers(book: Book, c: Collector) {
   }
 }
 
-/** Accounts that could hold a transfer row's other leg. */
-function otherLegCandidates(book: Book, r: BookRow): BookAccount[] {
+/**
+ * A bank payment out to a private fund whose statement for those days isn't out yet: the
+ * payment is past the data edge, names the fund's account (not just its manager), the fund
+ * is its only possible other leg, and the bank's own statement holds the row. The fund's
+ * side is all that's awaited, and it only moves the household's money between its own
+ * accounts, so the finding holds back net worth, not cash flow (or taxes).
+ */
+function awaitsFundStatement(book: Book, r: BookRow, candidates: BookAccount[], notCovered: BookAccount[]): boolean {
+  if (candidates.length !== 1 || notCovered.length !== 1 || r.date <= book.horizon.netWorth) return false;
+  const fund = notCovered[0]!;
+  if (!isPrivateFund(book, fund)) return false;
+  const named = namedAccounts(book, r);
+  if (named.length !== 1 || named[0]!.id !== fund.id) return false;
+  const account = book.accounts.find((a) => a.id === r.accountId);
+  return (
+    account?.group === "Cash" &&
+    r.amountCents < 0 &&
+    r.precision === "EXACT" &&
+    !r.pending &&
+    !r.partOf &&
+    !r.needsReview &&
+    uncovered(book, r.accountId, r.date, r.date).length === 0
+  );
+}
+
+/** A private fund (LP) interest: an "Other" account whose statements the fund's capital-statement reader read. */
+function isPrivateFund(book: Book, a: BookAccount): boolean {
+  if (a.group !== "Other") return false;
+  const lpDocs = new Set(book.documents.filter((d) => d.parserId === LP_CAPITAL_PARSER_ID).map((d) => d.id));
+  return book.statements.some((s) => s.accountId === a.id && s.status === "COMMITTED" && lpDocs.has(s.documentId));
+}
+
+/** The accounts whose number the row's description or classifier names. */
+function namedAccounts(book: Book, r: BookRow): BookAccount[] {
   const others = book.accounts.filter((a) => a.id !== r.accountId);
   const digits = (s: string) => s.replace(/\D/g, "");
-  // The description or classifier names the other account's number.
   const hint = r.counterpartyAccountHint ? digits(r.counterpartyAccountHint) : "";
-  const named = others.filter((a) =>
+  return others.filter((a) =>
     a.identifiers.some((i) => {
       const last4 = digits(i).slice(-4);
       return last4.length === 4 && ((hint && hint.endsWith(last4)) || new RegExp(`\\d*${last4}\\b`).test(r.payee));
     }),
   );
+}
+
+/** Accounts that could hold a transfer row's other leg. */
+function otherLegCandidates(book: Book, r: BookRow): BookAccount[] {
+  const others = book.accounts.filter((a) => a.id !== r.accountId);
+  // The description or classifier names the other account's number.
+  const named = namedAccounts(book, r);
   if (named.length > 0) return named;
   const inst = (r.counterpartyInstitution ?? "").toUpperCase().split(" ")[0];
   if (inst) {
