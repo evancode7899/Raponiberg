@@ -13,6 +13,11 @@ import { EMPTY_W4, type W4OnFile } from "./profile.ts";
  * - less: first take back any 4(c) / line 2 already on file, then Step 3 (annual credits:
  *   payroll subtracts Step 3 ÷ pay periods per year from each paycheck) / CT-W4 line 3.
  *
+ * Paychecks after the latest stub on file (the data edge) are taken to withhold what that
+ * stub's regular paycheck did. Which of them are already paid is the person's own say (the
+ * latest stub they've received, which can be well past the edge), else every pay date
+ * through today: the new W-4 reaches only the ones after it.
+ *
  * Filing status, Step 2 and Steps 4(a)/(b) stay as they are: changing them moves the
  * base withholding in ways only the tables can say. The gap is shared in proportion to
  * the pay each person has left (more) or the withholding they have left to give back
@@ -33,9 +38,13 @@ export type W4Paychecks = {
   frequency: PayFrequency;
   periodsPerYear: number;
   latestStub: string;
-  /** Pay dates after the latest stub, through today: forecast at the current W-4. */
+  /** The last pay date already paid: the one entered (the latest stub received), else the last through today. */
+  paidThrough: string;
+  /** Whether `paidThrough` was entered rather than taken from today. */
+  paidThroughEntered: boolean;
+  /** Pay dates after the latest stub on file, through `paidThrough`: forecast at the current W-4. */
   sinceStub: string[];
-  /** Pay dates after today a new W-4 is too late for (the employer's lead time). */
+  /** Pay dates after `paidThrough` a new W-4 is too late for (the employer's lead time). */
   tooSoon: string[];
   /** Pay dates the new W-4 reaches. */
   reached: string[];
@@ -127,14 +136,21 @@ const filingFromStub = (status: string | null): W4OnFile["filingStatus"] => {
   return s ? "SINGLE" : "MFJ";
 };
 
-/** The paychecks a W-4 change can still reach, per person with a current employer. */
-export function w4Paychecks(r: Pick<W4Report, "today" | "people">, tooSoonCount: number): W4Paychecks[] {
+/**
+ * The paychecks a W-4 change can still reach, per person with a current employer.
+ * `paidThrough`: per person, the date of the latest stub they've received (on file or not);
+ * a date before the latest stub on file counts from that stub.
+ */
+export function w4Paychecks(r: Pick<W4Report, "today" | "people">, tooSoonCount: number, paidThrough: Record<string, string | undefined> = {}): W4Paychecks[] {
   const out: W4Paychecks[] = [];
   for (const p of r.people) {
     const pay = p.payroll.find((x) => x.active);
     const reg = pay?.regularPaycheck;
     if (!pay || !reg) continue;
-    const future = pay.remainingPayDates.filter((d) => d > r.today);
+    const entered = paidThrough[p.id] || null;
+    const cut = entered && entered > pay.latestPayDate ? entered : entered ? pay.latestPayDate : r.today;
+    const paid = pay.remainingPayDates.filter((d) => d <= cut);
+    const future = pay.remainingPayDates.filter((d) => d > cut);
     const takeHome =
       reg.gross -
       reg.retirementPretax -
@@ -155,7 +171,9 @@ export function w4Paychecks(r: Pick<W4Report, "today" | "people">, tooSoonCount:
       frequency: pay.frequency,
       periodsPerYear: PERIODS_PER_YEAR[pay.frequency],
       latestStub: pay.latestPayDate,
-      sinceStub: pay.remainingPayDates.filter((d) => d <= r.today),
+      paidThrough: entered ? cut : (paid.at(-1) ?? pay.latestPayDate),
+      paidThroughEntered: !!entered,
+      sinceStub: paid,
       tooSoon: future.slice(0, tooSoonCount),
       reached: future.slice(tooSoonCount),
       gross: reg.gross,
@@ -205,10 +223,11 @@ function balance(
 
 /**
  * The W-4s that bring the joint return to $0 at filing. `tooSoonCount`: upcoming
- * paychecks a new W-4 won't reach in time (payroll usually needs a cycle).
+ * paychecks a new W-4 won't reach in time (payroll usually needs a cycle). `paidThrough`:
+ * per person, the latest stub received (see w4Paychecks).
  */
-export function planW4(r: W4Report, opts: { tooSoonCount?: number } = {}): W4Plan {
-  const checks = w4Paychecks(r, opts.tooSoonCount ?? 0);
+export function planW4(r: W4Report, opts: { tooSoonCount?: number; paidThrough?: Record<string, string | undefined> } = {}): W4Plan {
+  const checks = w4Paychecks(r, opts.tooSoonCount ?? 0, opts.paidThrough);
   const fed = balance(r.people, checks, (a) => a.federalWithheld, (c) => c.federalPerCheck, r.scenarios.mfj.federal);
   const ct = balance(r.people, checks, (a) => a.stateWithheld, (c) => c.ctPerCheck, r.scenarios.mfj.ct);
 
