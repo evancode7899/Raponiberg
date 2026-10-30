@@ -12,15 +12,19 @@ import type { Col } from "./AnnualStatement";
 import { axisUsd, usd } from "./profileUi";
 
 type Step = { name: string; full: string; kind: "up" | "down" | "total"; delta: number; range: [number, number]; running: number; label: string };
+type Flow = { label: string; full: string; cents: number };
+/** A column's statement lines: pay down to what was saved, then everything else that moved net worth. */
+type Lines = { flows: Flow[]; saved: number; moved: Flow[]; total: number; open: number | null; close: number | null };
+
+const LTD = "ltd";
 
 const compact = (dollars: number, signed: boolean) => `${signed ? (dollars < 0 ? "−" : "+") : dollars < 0 ? "−" : ""}${axisUsd(Math.abs(dollars))}`;
 
-/** A column's flows as waterfall steps: pay down to what was saved, then everything else that moved net worth. */
-function steps(c: Col, partner: string | null): { steps: Step[]; open: number | null; close: number | null } | null {
+function lines(c: Col, partner: string | null): Lines | null {
   const w = c.y?.cash?.waterfall;
   const b = c.y ? c.y.bridge : c.est?.bridge;
   if (!b) return null;
-  let flows: { label: string; full: string; cents: number }[];
+  let flows: Flow[];
   if (w) {
     flows = [
       { label: "Income", full: "Gross income", cents: w.grossCash },
@@ -48,9 +52,43 @@ function steps(c: Col, partner: string | null): { steps: Step[]; open: number | 
     { label: "In transit", full: "Transfers in transit", cents: b.inTransit },
     { label: "Timing", full: "Timing: statements vs. paychecks", cents: b.unexplainedSavings },
   ];
+  const close = c.y ? (c.y.netWorth?.netWorth ?? null) : (c.est?.flows.close?.netWorth ?? null);
+  return { flows, saved: b.cashSaved, moved, total: b.total, open: close != null ? close - b.total : null, close };
+}
+
+/** Line-by-line sums of consecutive years: opens where the first did, closes where the last did. */
+function sumLines(ls: Lines[]): Lines {
+  const sum = (pick: (l: Lines) => Flow[]) => pick(ls[0]!).map((f, i) => ({ ...f, cents: ls.reduce((s, l) => s + pick(l)[i]!.cents, 0) }));
+  return {
+    flows: sum((l) => l.flows),
+    saved: ls.reduce((s, l) => s + l.saved, 0),
+    moved: sum((l) => l.moved),
+    total: ls.reduce((s, l) => s + l.total, 0),
+    open: ls[0]!.open,
+    close: ls.at(-1)!.close,
+  };
+}
+
+/**
+ * Life to date: the proven years (the estimate is a forecast, not history), from the first with a
+ * bridge through the last before a gap: a withheld year in between would leave a hole in the sum.
+ */
+function lifeToDate(cols: Col[], partner: string | null): { cols: Col[]; lines: Lines } | null {
+  const run: { c: Col; l: Lines }[] = [];
+  for (const c of cols) {
+    if (!c.y) continue;
+    const l = lines(c, partner);
+    if (l) run.push({ c, l });
+    else if (run.length) break;
+  }
+  return run.length > 1 ? { cols: run.map((x) => x.c), lines: sumLines(run.map((x) => x.l)) } : null;
+}
+
+/** Statement lines as waterfall steps. */
+function steps(l: Lines): Step[] {
   const out: Step[] = [];
   let run = 0;
-  const add = (s: { label: string; full: string; cents: number }) => {
+  const add = (s: Flow) => {
     // Leave out steps under $50 (a zero partner line, no one-offs): they'd be slivers.
     if (Math.abs(s.cents) < 50_00) return;
     const from = run;
@@ -61,45 +99,60 @@ function steps(c: Col, partner: string | null): { steps: Step[]; open: number | 
     run = cents / 100;
     out.push({ name, full, kind: "total", delta: run, range: [Math.min(0, run), Math.max(0, run)], running: run, label: compact(run, false) });
   };
-  flows.forEach(add);
-  total("Saved", "Saved incl. retirement", b.cashSaved);
-  moved.forEach(add);
-  total("Change", "Change in net worth", b.total);
-  const close = c.y ? (c.y.netWorth?.netWorth ?? null) : (c.est?.flows.close?.netWorth ?? null);
-  return { steps: out, open: close != null ? close - b.total : null, close };
+  l.flows.forEach(add);
+  total("Saved", "Saved incl. retirement", l.saved);
+  l.moved.forEach(add);
+  total("Change", "Change in net worth", l.total);
+  return out;
 }
 
 /**
- * One year's change in net worth as a waterfall: gross income stepped down through taxes,
- * employer money and spending to what was saved, then growth, outside money and timing up
- * to the change in net worth. Every bar is a line of the statement above.
+ * One year's (or life to date's) change in net worth as a waterfall: gross income stepped down
+ * through taxes, employer money and spending to what was saved, then growth, outside money and
+ * timing up to the change in net worth. Every bar is a line of the statement above, or its sum.
  */
 export function NetWorthWaterfall({ r, cols }: { r: AnnualProfileReport; cols: Col[] }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const partner = r.persons.length > 1 ? r.persons.slice(1).map((p) => p.name).join(" & ") : null;
-  const usable = cols.filter((c) => steps(c, partner));
+  const usable = cols.filter((c) => lines(c, partner));
+  const ltd = lifeToDate(cols, partner);
   const [pick, setPick] = useState<string | null>(null);
-  const col = usable.find((c) => c.key === pick) ?? usable.at(-1);
-  if (!col) return null;
-  const s = steps(col, partner)!;
+  const col = pick === LTD && ltd ? null : (usable.find((c) => c.key === pick) ?? usable.at(-1) ?? null);
+  const l = col ? lines(col, partner) : (ltd?.lines ?? null);
+  if (!l) return null;
+  const s = steps(l);
+  const first = ltd?.cols[0];
+  const last = ltd?.cols.at(-1);
+  const head = col ? col.head : `Life to date · ${first!.head}–${last!.head}`;
+  const endOf = (c: Col) => (c.est ? "estimated for Dec 31" : c.y?.isCurrent ? `on ${c.y.netWorthAsOf}` : col ? "on Dec 31" : `on Dec 31, ${c.y!.year}`);
   const color = (k: Step["kind"]) => (k === "up" ? chart.income : k === "down" ? chart.spending : chart.neutral);
   return (
     <Card
-      title={`What moved net worth · ${col.head}`}
+      title={`What moved net worth · ${head}`}
       subtitle={
-        s.open != null && s.close != null ? (
+        l.open != null && l.close != null ? (
           <>
-            {usd(s.open)} on Jan 1 → {usd(s.close)} {col.est ? "estimated for Dec 31" : col.y?.isCurrent ? `on ${col.y.netWorthAsOf}` : "on Dec 31"}. Income steps down to what was saved, then growth and outside money
-            step up to the change.
+            {usd(l.open)} on Jan 1{col ? "" : `, ${first!.y!.year}`} → {usd(l.close)} {endOf(col ?? last!)}.{" "}
+            {col
+              ? "Income steps down to what was saved, then growth and outside money step up to the change."
+              : `Each line summed over ${ltd!.cols.length} years of statements${cols.some((c) => c.est) ? "; the estimate is left out" : ""}.`}
           </>
         ) : undefined
       }
-      actions={<Segmented ariaLabel="Year" size="xs" value={col.key} onChange={setPick} options={usable.map((c) => ({ value: c.key, label: c.head }))} />}
+      actions={
+        <Segmented
+          ariaLabel="Year"
+          size="xs"
+          value={col?.key ?? LTD}
+          onChange={setPick}
+          options={[...usable.map((c) => ({ value: c.key, label: c.head })), ...(ltd ? [{ value: LTD, label: "Life to date", title: `${first!.head}–${last!.head}, each line summed` }] : [])]}
+        />
+      }
     >
-      <div className="h-[340px] w-full min-w-0" role="img" aria-label={`Waterfall of ${col.head}: ${s.steps.map((x) => `${x.full} ${x.label}`).join(", ")}`}>
+      <div className="h-[340px] w-full min-w-0" role="img" aria-label={`Waterfall of ${head}: ${s.map((x) => `${x.full} ${x.label}`).join(", ")}`}>
         <RechartsResponsive>
-          <BarChart data={s.steps} margin={{ top: 20, right: 8, left: 8, bottom: 4 }} barCategoryGap="18%">
+          <BarChart data={s} margin={{ top: 20, right: 8, left: 8, bottom: 4 }} barCategoryGap="18%">
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} interval={0} tick={{ ...ui.xAxis.tick, fontSize: 10.5 }} />
             <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
@@ -119,8 +172,8 @@ export function NetWorthWaterfall({ r, cols }: { r: AnnualProfileReport; cols: C
               }}
             />
             <Bar dataKey="range" isAnimationActive={false} radius={3}>
-              {s.steps.map((x, i) => (
-                <Cell key={i} fill={color(x.kind)} fillOpacity={col.est && x.kind !== "total" ? 0.8 : 1} />
+              {s.map((x, i) => (
+                <Cell key={i} fill={color(x.kind)} fillOpacity={col?.est && x.kind !== "total" ? 0.8 : 1} />
               ))}
               {/* Value labels collide on a phone: there the tooltip carries them. */}
               <LabelList dataKey="label" position="top" className="max-sm:hidden" style={{ fill: chart.axis, fontSize: 10.5 }} />
