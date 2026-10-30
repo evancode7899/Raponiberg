@@ -97,6 +97,12 @@ export type AccountIncome = {
   source: "STATEMENTS" | "1099";
   doc: DocRef | null;
   fromStatements: InvestmentFigures | null;
+  /**
+   * The statements' dividends paid in January that aren't money-market (ISO date, cents).
+   * A fund's December-declared dividend paid in January is taxed in the year before (IRC
+   * §852(b)(7)), so the year's 1099 may not print it.
+   */
+  januaryDividends: { date: string; amount: number }[];
   /** Qualified and REIT (199A) shares of dividends taken from last year's 1099 for the account, when there is one. */
   calibratedFrom: number | null;
 };
@@ -1006,6 +1012,7 @@ function applyBrokerage1099s(accounts: AccountIncome[], docs: YearDocs | null, l
         source: "1099",
         doc: f.doc,
         fromStatements: null,
+        januaryDividends: [],
         calibratedFrom: null,
       });
     }
@@ -1242,6 +1249,7 @@ export function investmentAccounts(
       source: "STATEMENTS",
       doc: null,
       fromStatements: null,
+      januaryDividends: rows.filter((r) => !r.moneyMarket && r.date.slice(5, 7) === "01").map((r) => ({ date: r.date, amount: r.amount })),
       calibratedFrom: null,
     });
   }

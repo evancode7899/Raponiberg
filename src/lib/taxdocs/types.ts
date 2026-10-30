@@ -72,6 +72,14 @@ export type Brokerage1099 = {
   };
   int: { interest: number; earlyWithdrawalPenalty: number; usTreasury: number; federalWithheld: number; foreignTax: number; taxExempt: number };
   misc: { other: number; substitutePayments: number };
+  /**
+   * "Proceeds Investment Expenses" from the supplemental page (not reported to the IRS), as
+   * printed: negative. Statements net these fees (a gold trust's sponsor fee) into realized
+   * gains; the 1099-B figures leave them out.
+   */
+  proceedsInvestmentExpenses: number;
+  /** Every dated payment line the 1099 prints (ISO date, cents): which dividends it counts for the year. */
+  dividendPayments: { date: string; amount: number }[];
   b: { shortTermProceeds: number; shortTermBasis: number; shortTermGain: number; longTermProceeds: number; longTermBasis: number; longTermGain: number; unknownTermGain: number; washDisallowed: number };
 };
 

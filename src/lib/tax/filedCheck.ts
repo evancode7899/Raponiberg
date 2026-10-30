@@ -57,6 +57,8 @@ export type FiledCheck = {
 const dollars = (cents: number | null) => (cents == null ? null : Math.round(cents / 100));
 const usd = (cents: number) => `${cents < 0 ? "−" : ""}$${Math.abs(Math.round(cents / 100)).toLocaleString("en-US")}`;
 
+const usdCents = (cents: number) => `${cents < 0 ? "−" : ""}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 function compare(filed: number | null, model: number | null, tolerance = 3): CheckStatus {
   if (filed == null && model == null) return "MATCH";
   if (filed == null) return model === 0 ? "MATCH" : "MODEL_ONLY";
@@ -388,8 +390,13 @@ function explainNy(lines: CheckLine[], report: TaxReport, federal: CheckLine[], 
 
 /** Each W-2 against its pay stubs; each 1099 against its statements; each 1099-INT against the bank. */
 function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
-  const push = (label: string, document: string, documentValue: number, ledgerValue: number | null, note: string | null = null) => {
-    const status = ledgerValue == null ? "LEDGER_MISSING" : Math.abs(documentValue - ledgerValue) <= 100 ? "MATCH" : "DIFFERENT";
+  /** `explained`: a known difference in how the document and the statements count (added to the ledger side); a gap it fully closes is a match, with its note. */
+  const push = (label: string, document: string, documentValue: number, ledgerValue: number | null, note: string | null = null, explained?: { amount: number; note: string }) => {
+    let status: SourceCheck["status"] = ledgerValue == null ? "LEDGER_MISSING" : Math.abs(documentValue - ledgerValue) <= 100 ? "MATCH" : "DIFFERENT";
+    if (status === "DIFFERENT" && explained && explained.amount !== 0 && Math.abs(documentValue - (ledgerValue! + explained.amount)) <= 100) {
+      status = "MATCH";
+      note = explained.note;
+    }
     out.push({ label, document, documentValue, ledgerValue, status, note });
   };
   for (const p of report.people) {
@@ -409,11 +416,31 @@ function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
   }
   for (const a of report.accounts.filter((x) => x.source === "1099")) {
     const s = a.fromStatements;
-    push(`${a.label} · ordinary dividends`, a.doc!.file, a.ytd.ordinaryDividends + a.ytd.capGainDistShort, s ? s.ordinaryDividends + s.capGainDistShort : null, s ? null : "No statements for this account are on file.");
+    const form = docs.brokerage.find((f) => f.doc.id === a.doc!.id)?.form;
+    // A January payment the 1099 doesn't print was taxed the year before (a December-declared
+    // fund dividend, IRC §852(b)(7)); only when the form lists dated payments to look it up in.
+    // (A scan from before these fields were read has neither: it ties as it did, until rescanned.)
+    const priorYear = form?.dividendPayments?.length
+      ? a.januaryDividends.filter((r) => !form.dividendPayments.some((p) => p.date === r.date && p.amount === r.amount)).reduce((t, r) => t + r.amount, 0)
+      : 0;
+    push(
+      `${a.label} · ordinary dividends`,
+      a.doc!.file,
+      a.ytd.ordinaryDividends + a.ytd.capGainDistShort,
+      s ? s.ordinaryDividends + s.capGainDistShort : null,
+      s ? null : "No statements for this account are on file.",
+      { amount: -priorYear, note: `The statements' January dividend of ${usdCents(priorYear)} isn't on this 1099: a fund dividend declared in December and paid in January is taxed in ${report.year - 1}.` },
+    );
     if (!s) continue;
     push(`${a.label} · qualified dividends`, a.doc!.file, a.ytd.qualifiedDividends, s.qualifiedDividends, "The statements can't tell qualified from not; the app's estimate is checked here.");
     push(`${a.label} · interest`, a.doc!.file, a.ytd.interest, s.interest);
-    push(`${a.label} · realized gains`, a.doc!.file, a.ytd.shortTermGain + a.ytd.longTermGain + a.ytd.capGainDistLong, s.shortTermGain + s.longTermGain + s.capGainDistLong);
+    // The statements net a gold trust's sponsor fees into realized gains; the 1099-B leaves
+    // them out and lists them as supplemental investment expenses.
+    const fees = -(form?.proceedsInvestmentExpenses ?? 0);
+    push(`${a.label} · realized gains`, a.doc!.file, a.ytd.shortTermGain + a.ytd.longTermGain + a.ytd.capGainDistLong, s.shortTermGain + s.longTermGain + s.capGainDistLong, null, {
+      amount: fees,
+      note: `The statements net ${usdCents(fees)} of proceeds investment expenses (trust fees) into gains; the 1099 lists them as supplemental information, not in its gains.`,
+    });
   }
   for (const f of docs.ints) {
     const part = report.bankInterest.parts.find((p) => p.doc?.id === f.doc.id);
