@@ -20,9 +20,11 @@ const LTD = "ltd";
 
 const compact = (dollars: number, signed: boolean) => `${signed ? (dollars < 0 ? "−" : "+") : dollars < 0 ? "−" : ""}${axisUsd(Math.abs(dollars))}`;
 
-function lines(c: Col, partner: string | null): Lines | null {
-  const w = c.y?.cash?.waterfall;
-  const b = c.y ? c.y.bridge : c.est?.bridge;
+/** A column's lines, or (no column) life to date's, which the report sums. */
+function lines(c: Col | null, r: AnnualProfileReport, partner: string | null): Lines | null {
+  const ltd = c ? null : r.lifeToDate;
+  const w = ltd ? ltd.waterfall : c?.y?.cash?.waterfall;
+  const b = ltd ? ltd.bridge : c?.y ? c.y.bridge : c?.est?.bridge;
   if (!b) return null;
   let flows: Flow[];
   if (w) {
@@ -34,7 +36,7 @@ function lines(c: Col, partner: string | null): Lines | null {
       { label: "Living", full: "Living expenses", cents: -w.living },
       { label: "One-offs", full: "One-off expenses", cents: -w.nonRecurring },
     ];
-  } else if (c.est) {
+  } else if (c?.est) {
     const f = c.est.flows;
     flows = [
       { label: "Income", full: "Gross income", cents: (f.salary ?? 0) + (f.bonus ?? 0) + (f.otherIncome ?? 0) },
@@ -52,36 +54,8 @@ function lines(c: Col, partner: string | null): Lines | null {
     { label: "In transit", full: "Transfers in transit", cents: b.inTransit },
     { label: "Timing", full: "Timing: statements vs. paychecks", cents: b.unexplainedSavings },
   ];
-  const close = c.y ? (c.y.netWorth?.netWorth ?? null) : (c.est?.flows.close?.netWorth ?? null);
-  return { flows, saved: b.cashSaved, moved, total: b.total, open: close != null ? close - b.total : null, close };
-}
-
-/** Line-by-line sums of consecutive years: opens where the first did, closes where the last did. */
-function sumLines(ls: Lines[]): Lines {
-  const sum = (pick: (l: Lines) => Flow[]) => pick(ls[0]!).map((f, i) => ({ ...f, cents: ls.reduce((s, l) => s + pick(l)[i]!.cents, 0) }));
-  return {
-    flows: sum((l) => l.flows),
-    saved: ls.reduce((s, l) => s + l.saved, 0),
-    moved: sum((l) => l.moved),
-    total: ls.reduce((s, l) => s + l.total, 0),
-    open: ls[0]!.open,
-    close: ls.at(-1)!.close,
-  };
-}
-
-/**
- * Life to date: the proven years (the estimate is a forecast, not history), from the first with a
- * bridge through the last before a gap: a withheld year in between would leave a hole in the sum.
- */
-function lifeToDate(cols: Col[], partner: string | null): { cols: Col[]; lines: Lines } | null {
-  const run: { c: Col; l: Lines }[] = [];
-  for (const c of cols) {
-    if (!c.y) continue;
-    const l = lines(c, partner);
-    if (l) run.push({ c, l });
-    else if (run.length) break;
-  }
-  return run.length > 1 ? { cols: run.map((x) => x.c), lines: sumLines(run.map((x) => x.l)) } : null;
+  const close = ltd ? ltd.close : c?.y ? (c.y.netWorth?.netWorth ?? null) : (c?.est?.flows.close?.netWorth ?? null);
+  return { flows, saved: b.cashSaved, moved, total: b.total, open: ltd ? ltd.open : close != null ? close - b.total : null, close };
 }
 
 /** Statement lines as waterfall steps. */
@@ -115,11 +89,12 @@ export function NetWorthWaterfall({ r, cols }: { r: AnnualProfileReport; cols: C
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const partner = r.persons.length > 1 ? r.persons.slice(1).map((p) => p.name).join(" & ") : null;
-  const usable = cols.filter((c) => lines(c, partner));
-  const ltd = lifeToDate(cols, partner);
+  const usable = cols.filter((c) => lines(c, r, partner));
+  // Life to date's years, as the statement's columns (the year to date, never the estimate).
+  const ltd = r.lifeToDate ? { cols: cols.filter((c) => c.y && r.lifeToDate!.years.includes(c.y.year)) } : null;
   const [pick, setPick] = useState<string | null>(null);
   const col = pick === LTD && ltd ? null : (usable.find((c) => c.key === pick) ?? usable.at(-1) ?? null);
-  const l = col ? lines(col, partner) : (ltd?.lines ?? null);
+  const l = lines(col, r, partner);
   if (!l) return null;
   const s = steps(l);
   const first = ltd?.cols[0];

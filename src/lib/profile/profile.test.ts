@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { taxYearParams } from "../tax/params";
 import { payBreakdown } from "../book/pay";
 import type { StubLine } from "../ingest/payroll/types";
-import { cashWaterfall, netWorthBridge, summarizeBuckets, ZERO_BUCKETS } from "./annualMath";
+import { cashWaterfall, netWorthBridge, summarizeBuckets, sumYears, ZERO_BUCKETS } from "./annualMath";
 import { defaultBonusPct, resolveBasePay, taxOnPay, type OutlookSeeds, type PaycheckSeed, type PersonSeed } from "./basePay";
 import { financialIndependenceYear, projectOutlook, retirementTax, walkAwayTable, type OutlookPlan } from "./outlook";
 import { DEFAULT_BONUS_LAYER, DEFAULT_OUTLOOK, normalizeSettings } from "./settings";
@@ -71,6 +71,23 @@ describe("net worth", () => {
     expect(b.total).toBe(ledgerChange);
     expect(b.investmentGrowth).toBe(65);
     expect(b.unexplainedSavings).toBe(550 + 15 - 600);
+  });
+
+  it("adds years up line by line, so life to date's lines still tie", () => {
+    const year = (salary: number, living: number, growth: number) => {
+      const waterfall = cashWaterfall({ salary, bonus: 0, otherIncome: 0, withholding: salary / 4, additionalTaxes: 0, refunds: 0, otherDeductions: 0, employer: 10, partnerKept: 0, living, nonRecurring: 0 });
+      const ledger = { income: 0, spending: 0, retirementEmployee: 0, retirementEmployer: 0, external: 0, newlyTracked: 0, growthNetOfFees: growth, transferResidual: 0, unexplained: 0 };
+      return { waterfall, bridge: netWorthBridge({ cashSaved: waterfall.saved, dividendsCounted: 0, ledger }) };
+    };
+    const a = year(400, 100, 50);
+    const b = year(800, 200, -30);
+    const s = sumYears([a, b]);
+    expect(s.waterfall.grossCash).toBe(1_200);
+    expect(s.waterfall.saved).toBe(a.waterfall.saved + b.waterfall.saved);
+    expect(s.waterfall.cashTaxRate).toBe(0.25);
+    expect(s.bridge.investmentGrowth).toBe(20);
+    expect(s.bridge.total).toBe(a.bridge.total + b.bridge.total);
+    expect(s.bridge.total).toBe(s.bridge.cashSaved + s.bridge.investmentGrowth + s.bridge.outsideMoney + s.bridge.newlyTracked + s.bridge.inTransit + s.bridge.unexplainedSavings);
   });
 });
 
