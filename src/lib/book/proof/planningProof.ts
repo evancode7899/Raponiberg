@@ -724,7 +724,7 @@ function planCellProof(c: FireCtx, row: string, col: string): Built {
     describes: `FIRE › Plan, long-term table: ${cell.label}`,
     figure: value,
     selfCheck: null,
-    rederived: rederivePlanCell(t, full, row, col, value, { birthYear: c.fa.plan.birthYear ?? null, nwAt: (iso) => ledgerNetWorthAt(c.book, iso) }),
+    rederived: rederivePlanCell(t, full, row, col, value, { birthYear: c.fa.plan.birthYear ?? null, nwAt: (iso) => ledgerNetWorthAt(c.book, iso) + (c.data.profile.years.find((y) => `${y.year}-12-31` === iso)?.netWorth?.inTransit ?? 0) }),
     blocks: [{ kind: "chain", title: forecast ? `The plan in ${year}` : "Proven", lines }, driversBlock(c), fireSettingsBlock(c)],
     checks,
     withheld,

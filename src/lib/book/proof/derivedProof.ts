@@ -1,5 +1,5 @@
 import { DERIVED_PAGES, derivedList } from "../derived/load.ts";
-import { derivedKey, type DerivedDescriptor, type DerivedPage, type DerivedScope } from "../derived/types.ts";
+import { derivedKey, type DerivedDescriptor, type DerivedFigure, type DerivedPage, type DerivedScope } from "../derived/types.ts";
 export type { DerivedScope };
 import { checksFor } from "./common.ts";
 import type { Proof, ProofBlock, ProofContext, ProofKind } from "./types.ts";
@@ -21,9 +21,17 @@ export function parseDerivedDescriptor(d: Record<string, unknown>): DerivedDescr
   return { report: "derived", page: d.page as DerivedPage, figure: d.figure, ...(d.key != null ? { key: d.key as string } : {}) };
 }
 
+/** A page's figures by derivedKey, once per list: a cash-flow list runs to tens of thousands, each its own proof. */
+const indexes = new WeakMap<readonly DerivedFigure[], Map<string, DerivedFigure>>();
+function indexOf(figures: readonly DerivedFigure[]): Map<string, DerivedFigure> {
+  let m = indexes.get(figures);
+  if (!m) indexes.set(figures, (m = new Map(figures.map((f) => [derivedKey(f), f]))));
+  return m;
+}
+
 export async function buildDerivedProof(ctx: ProofContext, d: DerivedDescriptor): Promise<Proof> {
   const { figures, scope, through, rederived } = await derivedList(ctx, d.page);
-  const f = figures.find((x) => x.figure === d.figure && (x.key ?? null) === (d.key ?? null));
+  const f = indexOf(figures).get(derivedKey(d));
   if (!f?.value) throw new Error(`The ${d.page} page shows no "${d.figure}"${d.key ? ` for ${d.key}` : ""}.`);
   const s = f.scope ?? scope;
   const { checks, withheld } = s ? checksFor(ctx.book, s.query, s.checks) : { checks: [], withheld: false };

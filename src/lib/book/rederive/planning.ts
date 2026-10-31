@@ -30,7 +30,7 @@ const MODEL = { none: "A year of the plan's model on the saved drivers and FIRE 
 const TYPED = { none: "A rate typed on the FIRE page or the forecast's drivers: an assumption, nothing to re-derive." };
 const PROVEN = { none: "A proven year as the annual statement shows it: the Annual page's own proof re-adds it from the statements." };
 
-/** A long-term table cell (FIRE › Plan). `nwAt` sums the ledger's balances on a day, account by account. */
+/** A long-term table cell (FIRE › Plan). `nwAt` is a proven Dec 31 from the ledger's balances, account by account, plus the money the annual statement counts in transit between the household's accounts. */
 export function rederivePlanCell(t: LongTermTable, full: Outlook, row: string, col: string, value: ProofValue, o: { birthYear: number | null; nwAt: (iso: string) => number }): Rederivation {
   const j = t.columns.findIndex((c) => c.id === col);
   const cell = (id: string, k: number) => {
@@ -76,7 +76,7 @@ export function rederivePlanCell(t: LongTermTable, full: Outlook, row: string, c
           centsRoute("Jan 1 + saved + growth", value, y.startNetWorth + saved + growth, "the year's opening balance and the table's saved and growth cells", 2),
           prevNw != null ? invariant("the columns chain", value, Math.abs(y.startNetWorth - prevNw) <= 2, `this year opens on ${Math.round(y.startNetWorth) / 100}, last column closed on ${prevNw / 100}`) : null,
         ])!;
-      if (!isPlan && !isYtd && j < firstPlan) return routes([centsRoute("the ledger's balances on Dec 31, account by account", value, o.nwAt(`${year}-12-31`), "every account's balance that day, summed")])!;
+      if (!isPlan && !isYtd && j < firstPlan) return routes([centsRoute("the ledger's balances on Dec 31, account by account, plus money in transit", value, o.nwAt(`${year}-12-31`), "every account's balance that day, and what was mid-move between them")])!;
       return routes([centsRoute("liquid + illiquid", value, (cents(cell("liquid", j)) ?? 0) + (cents(cell("illiquid", j)) ?? 0), "the two parts, added", 1)])!;
     }
     case "liquid":

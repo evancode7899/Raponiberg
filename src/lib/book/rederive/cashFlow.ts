@@ -3,11 +3,11 @@ import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { bookedCents } from "../booking.ts";
 import { savingsRate } from "../definitions.ts";
 import type { DerivedFigure } from "../derived/types.ts";
-import { household } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
 import { centsRoute, ratioRoute, rederiveList, textRoute } from "../proof/independence.ts";
 import type { ProofValue, Rederivation, RederivedRoute } from "../proof/types.ts";
 import { cashFlowRows, dayOfFor } from "../reports/cashFlow.ts";
+import { contributionRows } from "./netWorth.ts";
 import { median } from "../reports/cashFlowWindows.ts";
 import { detectRecurring, merchantKeyOf, reversals, spendingKindRule, type Cadence, type SpendingReport } from "../reports/spending.ts";
 
@@ -29,7 +29,8 @@ type Month = {
   /** By lane ("EXPENSE" | "INCOME" | "EXTERNAL"), category → cents, rounded and zeros dropped as the month shows them. */
   lanes: Record<string, Map<string, number>>;
   merchants: Record<"EXPENSE" | "INCOME", Map<string, Agg>>;
-  retirement: number;
+  /** Null where a summary statement fills part of the month (its flows are on no row). */
+  retirement: number | null;
   daily: { all: number[]; everyday: number[] };
 };
 
@@ -56,8 +57,6 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
   const windowRows = inScope.filter((r) => dayOf(r) <= windowEnd);
   const last12From = monthStarts(first.start, windowEnd).slice(-12)[0]!;
   const kindOf = spendingKindRule(book, settings, detectRecurring(windowRows, windowEnd, last12From));
-  const investment = new Set(household(book).ledger.accounts.filter((a) => a.isInvestment).map((a) => a.id));
-  const payroll = household(book).rows.filter((r) => investment.has(r.accountId) && (r.lane === "CONTRIBUTION_EMPLOYEE" || r.lane === "CONTRIBUTION_PERSONAL" || r.lane === "CONTRIBUTION_EMPLOYER"));
 
   const memo = new Map<string, Month>();
   const month = (start: string): Month => {
@@ -99,8 +98,7 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       }
     }
     for (const m of Object.values(merchants)) for (const [k, v] of m) if (v.cents === 0) m.delete(k);
-    let retirement = 0;
-    for (const r of payroll) retirement += bookedCents(r, start, end);
+    const retirement = contributionRows(book, start, end, true);
     m = { start, end, income: Math.round(income), spending: Math.round(spending), lanes, merchants, retirement, daily };
     memo.set(start, m);
     return m;
@@ -142,8 +140,9 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       }
       case "retirement": {
         const ms = windowOf(k);
-        // The engine reads each account's timeline: a cent a month either way is rounding.
-        return [centsRoute("contribution rows on the investment accounts", v, ms.reduce((s, m) => s + m.retirement, 0), "employee, personal and employer contributions booked in the window", ms.length)];
+        if (ms.some((m) => m.retirement == null)) return { none: "A summary statement fills part of these months on an investment account: its contributions are on no row to re-add." };
+        // The engine reads each account's timeline: a statement total spread over days rounds a cent or two a month either way.
+        return [centsRoute("contribution rows on the investment accounts", v, ms.reduce((s, m) => s + m.retirement!, 0), "employee, personal and employer contributions booked in the window", 2 * ms.length)];
       }
       case "typical-income":
         return [centsRoute(ROWS, v, median(windowOf(k).map((m) => m.income)), "the middle month's re-added income")];
