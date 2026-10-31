@@ -1,4 +1,5 @@
 import { addDays, maxIso, minIso } from "../dates/isoDate.ts";
+import { findingStart } from "./checks/collector.ts";
 import type { Book } from "./load.ts";
 import type { AcceptedFinding, CheckPass, Finding, FindingScope } from "./types.ts";
 
@@ -16,26 +17,30 @@ export type BlockerQuery = {
 /**
  * The findings that make a figure unprovable: failures or missing data of the right kind
  * whose window overlaps the figure's period (and its accounts/person, when given). A
- * finding past the data edge (Finding.atEdge) only ever blocks days after the edge: its
- * window's lead-in (a transfer's matching days) doesn't reach back into proven data.
+ * finding past the data edge (Finding.atEdge) only ever blocks from the day it starts
+ * (its date): its window's lead-in (a transfer's matching days) doesn't reach back into
+ * proven data — cash flow runs past the net-worth edge up to the day before such a finding
+ * (load.ts cashFlowThrough), so a lead-in clipped only at the edge would block it.
  */
 export function blockersFor(book: Book, q: BlockerQuery): Finding[] {
   const hits = scopeHits(book, q);
-  return book.integrity.findings.filter((f) => [f.scope, ...(f.extraScopes ?? [])].some((s) => hits(s, !!f.atEdge)));
+  return book.integrity.findings.filter((f) => [f.scope, ...(f.extraScopes ?? [])].some((s) => hits(s, edgeStart(f))));
 }
+
+/** The first day an at-edge finding blocks (see blockersFor); undefined for any other. */
+export const edgeStart = (f: Finding): string | undefined => (f.atEdge ? findingStart(f) : undefined);
 
 /**
  * Whether a scope bears on a figure: the right kind, a window overlapping the figure's
  * period, and its accounts/person when both name one. The one test behind blockers, the
  * exceptions and the passes a figure's proof lists (book/proof), so they can't disagree
- * about what covers a figure.
+ * about what covers a figure. `startsAt`: an at-edge finding's first day (edgeStart).
  */
-export function scopeHits(book: Book, q: BlockerQuery): (s: FindingScope, atEdge?: boolean) => boolean {
-  // Only findings past the data edge need it; a figure's passes ask thousands of times.
-  let afterEdge: string | undefined;
-  return (s, atEdge = false) => {
+export function scopeHits(book: Book, q: BlockerQuery): (s: FindingScope, startsAt?: string) => boolean {
+  return (s, startsAt) => {
     if (!s.affects.includes(q.affects)) return false;
-    const from = atEdge ? maxIso(s.from, (afterEdge ??= addDays(book.horizon.netWorth, 1))) : s.from;
+    // An at-edge finding starts after the edge (Collector.add), so this never reaches back before it.
+    const from = startsAt ? maxIso(s.from, startsAt) : s.from;
     if (s.to < q.from || from > q.to) return false;
     if (q.accountIds && s.accountId && !q.accountIds.includes(s.accountId)) return false;
     if (q.personId && s.personId && s.personId !== q.personId) return false;
@@ -89,7 +94,7 @@ export function passesFor(book: Book, q: BlockerQuery): CheckPass[] {
 /** The owner's accepted exceptions that cover a figure: listed, never blocking. */
 export function acceptedFor(book: Book, q: BlockerQuery): AcceptedFinding[] {
   const hits = scopeHits(book, q);
-  return book.integrity.accepted.filter((f) => [f.scope, ...(f.extraScopes ?? [])].some((s) => hits(s, !!f.atEdge)));
+  return book.integrity.accepted.filter((f) => [f.scope, ...(f.extraScopes ?? [])].some((s) => hits(s, edgeStart(f))));
 }
 
 /**
