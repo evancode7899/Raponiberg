@@ -1,6 +1,8 @@
 "use client";
 
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
+import { calendarDerived } from "@/lib/book/derived/planning";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, Callout, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented } from "@/components/ui/kit";
@@ -8,7 +10,6 @@ import type { CalendarItem, CalendarKind, MoneyCalendarReport } from "@/lib/book
 import { usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const CALENDAR_URL = "/api/calendar";
 
@@ -131,7 +132,7 @@ function Item({ i, showYear }: { i: CalendarItem; showYear: boolean }) {
       <div className="ml-8 flex shrink-0 flex-col items-end gap-0.5 sm:ml-0">
         {amount != null && (
           <span className={`num text-sm font-semibold ${refund ? "text-pos" : "text-fg"}`}>
-            <ProofValue proof={i.proof ? { descriptor: i.proof, shownCents: i.cents! } : unswept("no recipe for this calendar item")}>{amount}</ProofValue>
+            <ProofValue proof={i.proof ? { descriptor: i.proof, shownCents: i.cents! } : derivedTarget("calendar", calendarDerived({ items: [i] }), "item", i.id)}>{amount}</ProofValue>
             {i.perPaycheck ? <span className="font-normal text-muted"> /paycheck</span> : refund ? <span className="font-normal text-muted"> back</span> : null}
           </span>
         )}

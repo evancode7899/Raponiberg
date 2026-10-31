@@ -3,6 +3,17 @@ import { CAR_KEY, normalizeGarage } from "../../car/settings.ts";
 import { CASH_FLOW_CHECKS } from "../proof/cashFlowProof.ts";
 import { carDerived } from "./car.ts";
 import { cashFlowDerived } from "./cashFlow.ts";
+import { fundsDerived } from "./funds.ts";
+import { loadFundsPage } from "../../funds/page.ts";
+import { accountLimitsDerived, calendarDerived, hsaDerived } from "./planning.ts";
+import { loadHsaReport } from "../../hsa/loadReport.ts";
+import { taxLink } from "../../forecast/forecast.ts";
+import { loadForecast } from "../../forecast/load.ts";
+import { buildTaxReport } from "../../tax/buildTaxReport.ts";
+import { TAX_YEARS } from "../../tax/params.ts";
+import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxAccounts/settings.ts";
+import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
+import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { integrityDerived } from "./integrity.ts";
 import { changeStepsDerived, netWorthDerived } from "./netWorth.ts";
 import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
@@ -62,12 +73,33 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     return { figures: [...netWorthDerived(r), ...steps], scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },
   integrity: async ({ book }) => ({ figures: integrityDerived({ ...book.integrity, horizon: book.horizon }), scope: null, through: book.horizon.netWorth }),
-  hsa: null,
-  "account-limits": null,
-  calendar: null,
-  "lp-funds": null,
+  hsa: async ({ db, book }) => ({ figures: hsaDerived(await loadHsaReport(db)), scope: null, through: book.horizon.netWorth }),
+  "account-limits": async (ctx) => {
+    const ys = await taxYears(ctx);
+    return { figures: ys.flatMap((y) => accountLimitsDerived(y.accounts)), scope: null, through: ctx.book.horizon.cashFlow };
+  },
+  calendar: async (ctx) => {
+    const ys = await taxYears(ctx);
+    const on = calendarYears(ctx.book.today, Object.keys(TAX_YEARS).map(Number));
+    return { figures: calendarDerived(buildMoneyCalendar(ctx.book.today, ys.filter((y) => on.includes(y.year)))), scope: null, through: ctx.book.horizon.cashFlow };
+  },
+  "lp-funds": async ({ book, db }) => ({ figures: fundsDerived((await loadFundsPage(db, book)).funds), scope: null, through: book.horizon.netWorth }),
   insurance: null,
 };
+
+/** Each tax year to date, its tax report and account limits as the Taxes, Account limits and Calendar routes build them. */
+function taxYears(ctx: ProofContext): Promise<CalendarYear[]> {
+  return perBook(ctx, "derived:tax-years", async () => {
+    const { book, db } = ctx;
+    const [{ forecast }, retirement] = await Promise.all([loadForecast(db, book), loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings)]);
+    const link = forecast ? taxLink(forecast) : null;
+    const year = Number(book.today.slice(0, 4));
+    return Object.keys(TAX_YEARS)
+      .map(Number)
+      .filter((y) => y <= year)
+      .map((y) => ({ year: y, tax: buildTaxReport(book, y, { forecast: link }), accounts: buildTaxAccounts(book, y, retirement, link) }));
+  });
+}
 
 export const DERIVED_PAGES = Object.keys(LOADERS) as DerivedPage[];
 
