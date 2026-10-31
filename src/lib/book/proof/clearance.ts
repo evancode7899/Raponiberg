@@ -15,11 +15,11 @@ import type { ProofValue } from "./types.ts";
  * recipe the sweep never held to its proof. Nothing shows just because nobody objected.
  */
 
-export type SweepProblemKind = "DIFFERS" | "SELF_CHECK" | "CHAIN" | "WITHHELD" | "LINK" | "ERROR" | "SKIPPED";
+export type SweepProblemKind = "DIFFERS" | "SELF_CHECK" | "CHAIN" | "REDERIVE" | "WITHHELD" | "LINK" | "ERROR" | "SKIPPED";
 export type SweepProblem = { kind: SweepProblemKind; page: string; descriptor: ProofDescriptor | null; detail: string };
 
 /** The kinds that keep a figure from clearing. A LINK problem is the linked proof's, not this figure's. */
-export const BLOCKING_KINDS: readonly SweepProblemKind[] = ["DIFFERS", "SELF_CHECK", "CHAIN", "WITHHELD", "ERROR"];
+export const BLOCKING_KINDS: readonly SweepProblemKind[] = ["DIFFERS", "SELF_CHECK", "CHAIN", "REDERIVE", "WITHHELD", "ERROR"];
 
 /** How a cleared figure stands, when not plainly proven. */
 export type ClearedBasis = Exclude<FigureBasis, "proven">;

@@ -37,6 +37,10 @@ if (process.argv.includes("--child")) {
   const r = await sweepProofs({ book, db: prisma }, { stamp });
   console.log(`Swept ${r.figures} figures and ${r.links} links in ${r.ms}ms (Book as of ${r.today}, data ${r.stamp}): ${Object.keys(r.cleared).length} cleared\n`);
   for (const p of r.pages) console.log(`${p.page.padEnd(40)} ${String(p.figures).padStart(6)} figures ${String(p.ms).padStart(7)}ms  ${p.problems ? `${p.problems} problem(s)` : "all tie"}`);
+  const i = r.independence;
+  console.log(`
+Independent proofs: ${i.rederived} re-derived by a second route, ${i.declared} that can't be (each says why), ${i.unchecked} on the page's own route only; ${i["own-route"]} re-derived from the Book by their proof kind.`);
+  for (const p of r.pages.filter((p) => p.independence.unchecked && (!only || p.page.startsWith(only)))) console.log(`   ${p.page.padEnd(37)} ${String(p.independence.unchecked).padStart(6)} on their own route only`);
   console.log(`${"Links".padEnd(40)} ${String(r.links).padStart(6)} proofs  ${String(r.linkMs).padStart(7)}ms`);
   for (const p of r.skipped.filter((p) => !only || p.page.startsWith(only))) console.log(`\n[NOT SWEPT] ${p.page}\n   ${p.detail}`);
   const shown = r.listing.filter((p) => !only || p.page.startsWith(only));

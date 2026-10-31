@@ -16,6 +16,7 @@ const KIND_WORDS: Record<SweepProblemKind, string> = {
   DIFFERS: "page and proof differ",
   SELF_CHECK: "parts don't re-add",
   CHAIN: "a step doesn't add up",
+  REDERIVE: "a second route disagrees",
   WITHHELD: "shown though withheld",
   LINK: "a link fails",
   ERROR: "couldn't be built",
@@ -65,6 +66,8 @@ function SweepCard({ api }: { api: Api }) {
                 <tr>
                   <th className={table.th}>Page</th>
                   <th className={table.thR}>Figures</th>
+                  <th className={table.thR} title="Worked out again by a second route that shares nothing with the page's report">Re-derived</th>
+                  <th className={table.thR} title="Re-run on the page's own report or model only: no second route yet">Own route only</th>
                   <th className={table.thR}>Problems</th>
                 </tr>
               </thead>
@@ -73,6 +76,10 @@ function SweepCard({ api }: { api: Api }) {
                   <tr key={p.page} className={table.tr}>
                     <td className={table.td}>{p.page}</td>
                     <td className={table.tdR}>{p.figures.toLocaleString()}</td>
+                    <td className={table.tdR}>{p.independence?.rederived || "—"}</td>
+                    <td className={`${table.tdR} ${p.independence?.unchecked ? "text-muted" : ""}`} title={p.independence?.declared ? `${p.independence.declared} can't be re-derived (each proof says why)` : undefined}>
+                      {p.independence?.unchecked || "—"}
+                    </td>
                     <td className={`${table.tdR} ${p.problems ? "font-semibold text-neg" : ""}`}>{p.problems || "—"}</td>
                   </tr>
                 ))}

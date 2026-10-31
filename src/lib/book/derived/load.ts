@@ -31,7 +31,7 @@ import { loadJsonSetting } from "../../settingsStore.ts";
 import { perBook } from "../proof/common.ts";
 import type { DerivedScope } from "../proof/derivedProof.ts";
 import { INVESTMENTS_CHECKS } from "../proof/investmentsProof.ts";
-import type { ProofContext } from "../proof/types.ts";
+import type { ProofContext, Rederivation } from "../proof/types.ts";
 import { buildInvestments } from "../reports/investments.ts";
 import { investmentsDerived } from "./investments.ts";
 import type { DerivedFigure, DerivedPage } from "./types.ts";
@@ -42,7 +42,12 @@ import type { DerivedFigure, DerivedPage } from "./types.ts";
  * them here, so the sweep holds exactly the list the proofs prove.
  */
 
-export type DerivedList = { figures: DerivedFigure[]; scope: DerivedScope | null; through: string };
+/**
+ * `rederived`: figures worked out again on the server by a route that shares nothing with
+ * the page's report (F5's independent proofs, proof/independence.ts), by derivedKey; a
+ * figure without one re-reads the page's report only.
+ */
+export type DerivedList = { figures: DerivedFigure[]; scope: DerivedScope | null; through: string; rederived?: Readonly<Record<string, Rederivation>> };
 
 const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>) | null> = {
   investments: async ({ book, db }) => {

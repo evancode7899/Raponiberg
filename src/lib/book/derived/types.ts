@@ -47,6 +47,9 @@ export type DerivedFigure = {
 /** The findings that can withhold a derived figure: the data it reads, and which checks look at it. */
 export type DerivedScope = { query: BlockerQuery | BlockerQuery[]; checks: CheckId[] };
 
+/** A derived figure's key within its page: the figure, and which one. */
+export const derivedKey = (f: Pick<DerivedFigure, "figure" | "key">) => (f.key != null ? `${f.figure}|${f.key}` : f.figure);
+
 export const derivedDescriptor = (page: DerivedPage, f: Pick<DerivedFigure, "figure" | "key">): DerivedDescriptor => ({ report: "derived", page, figure: f.figure, ...(f.key != null ? { key: f.key } : {}) });
 
 /** What a page hands a figure component: the recipe and the value it shows, held to the cleared one. */
