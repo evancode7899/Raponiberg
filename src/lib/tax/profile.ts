@@ -250,12 +250,22 @@ export function yearInputs(profile: TaxProfile, year: number): YearInputs {
 export const TAX_PROFILE_KEY = "taxProfile.v1";
 
 export async function loadTaxProfile(db: Db): Promise<TaxProfile> {
+  return (await readTaxProfile(db)).profile;
+}
+
+/**
+ * The saved tax profile, and why it couldn't be read when it's damaged. The defaults stand
+ * in for a damaged one so Settings can show (and overwrite) it, but the Book reports it as
+ * a finding (check data.readable) that withholds every figure: taxes worked out for the
+ * default household would be someone else's.
+ */
+export async function readTaxProfile(db: Db): Promise<{ profile: TaxProfile; error?: string }> {
   const row = await db.appSetting.findUnique({ where: { key: TAX_PROFILE_KEY } });
-  if (!row) return structuredClone(DEFAULT_PROFILE);
+  if (!row) return { profile: structuredClone(DEFAULT_PROFILE) };
   try {
-    return normalizeProfile(JSON.parse(row.value) as Partial<TaxProfile>);
-  } catch {
-    return structuredClone(DEFAULT_PROFILE);
+    return { profile: normalizeProfile(JSON.parse(row.value) as Partial<TaxProfile>) };
+  } catch (e) {
+    return { profile: structuredClone(DEFAULT_PROFILE), error: `The saved tax profile (Settings → Household) can't be read: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 

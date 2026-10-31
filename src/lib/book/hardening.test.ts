@@ -323,3 +323,35 @@ describe("net worth reconciles month by month", () => {
     expect(findings(b, "networth.reconciles").map((x) => x.id)).toEqual(["networth.reconciles:2025-02"]);
   });
 });
+
+describe("saved settings and files that can't be read (SSOT F · G)", () => {
+  it("withhold every figure they could change, never standing in as defaults quietly", () => {
+    const b = makeBook({ accounts: [bank(), card()], matches: paired });
+    b.unreadable = [{ source: "tax-profile", what: "Your tax profile", error: "Unexpected token", fix: "Re-enter it.", affects: ["CASH_FLOW", "NET_WORTH", "PAY", "TAX"] }];
+    recheck(b);
+    expect(findings(b, "data.readable").map((f) => f.id)).toEqual(["data.readable:tax-profile"]);
+    expect(netWorthBlockers(b, "2025-02-01", "2025-02-28").map((f) => f.id)).toContain("data.readable:tax-profile");
+    expect(taxBlockers(b, 2025).map((f) => f.id)).toContain("data.readable:tax-profile");
+  });
+
+  it("a damaged reimbursement links file withholds cash flow only", () => {
+    const b = makeBook({ accounts: [bank(), card()], matches: paired });
+    b.unreadable = [{ source: "reimbursements", what: "Your reimbursement links", error: "not valid JSON", fix: "Restore it.", affects: ["CASH_FLOW"] }];
+    recheck(b);
+    expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-02-01", to: "2025-02-28" }).map((f) => f.id)).toEqual(["data.readable:reimbursements"]);
+    expect(netWorthBlockers(b, "2025-02-01", "2025-02-28")).toEqual([]);
+  });
+});
+
+describe("an account with no statements (SSOT F · K)", () => {
+  it("is said, not quietly left out of every figure", () => {
+    const b = makeBook({ accounts: [bank(), card()], matches: paired });
+    b.accounts = [...b.accounts, { id: "sav", name: "Example Savings ••9999", institution: "Example Bank", type: "SAVINGS", subtype: "SAVINGS", group: "Cash", identifiers: ["9999"] }];
+    recheck(b);
+    const none = () => findings(b, "statement.overdue").filter((f) => f.id.endsWith(":none"));
+    expect(none().map((f) => f.title)).toEqual(["Example Savings ••9999: no statements on file"]);
+    b.accounts = b.accounts.map((a) => (a.id === "sav" ? { ...a, archived: true } : a));
+    recheck(b);
+    expect(none()).toEqual([]);
+  });
+});

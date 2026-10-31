@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "attention", async (book) => {
+    await cachedBuilt(prisma, "attention", async (book) => {
       const needsReview = await prisma.transaction.count({ where: { needsReview: true, statementImport: { isSummary: false } } });
       const findings = book.integrity.findings.filter((f) => !f.atEdge);
       return {

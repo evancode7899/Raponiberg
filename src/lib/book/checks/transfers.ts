@@ -20,7 +20,7 @@ export function checkTransfers(book: Book, c: Collector) {
   const nameOf = (id: string) => book.accounts.find((a) => a.id === id)?.name ?? "Account";
   // Accounts the household is known to have (named on pay stubs) with no statements on file.
   const untracked = [...new Set(book.stubs.flatMap((s) => s.deposits.map((d) => d.last4)).filter((l): l is string => !!l && accountsByLast4(book, l).length === 0))];
-  const refs = rowRefs(book, (r) => r.lane === "TRANSFER" && !r.transferMatchId);
+  const refs = rowRefs(book, (r) => r.lane === "TRANSFER" && !r.transferMatchId, (r) => r.lane === "TRANSFER");
   // Bank payments that paid off a card in a cycle it sent no statement for: the idle
   // window holds their other leg (see idleCards.ts).
   const paidIdle = new Set(book.idle.proven.flatMap((w) => w.payoff.map((p) => p.transactionId)));

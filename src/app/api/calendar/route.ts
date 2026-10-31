@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildMoneyCalendar, calendarYears } from "@/lib/book/reports/moneyCalendar";
 import { buildTaxAccounts } from "@/lib/book/reports/taxAccounts";
 import { prisma } from "@/lib/db";
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "calendar", async (book) => {
+    await cachedBuilt(prisma, "calendar", async (book) => {
       const [settings, { forecast }] = await Promise.all([loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadForecast(prisma, book)]);
       const link = forecast ? taxLink(forecast) : null;
       const years = calendarYears(book.today, Object.keys(TAX_YEARS).map(Number));

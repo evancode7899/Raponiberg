@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, getBook, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, getBook, jsonBody, type Built } from "@/lib/book/cache";
 import { addException, retireException } from "@/lib/book/exceptionStore";
 import { bonusesOf, bonusFindingId } from "@/lib/book/reports/bonuses";
 import { prisma } from "@/lib/db";
@@ -8,8 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 /** `{ report }` as JSON text. The award letters are a file in data/, read into the Book (which the cache watches). */
-function report(): Promise<string> {
-  return cachedReport(prisma, "bonuses", (book) => ({ report: bonusesOf(book) }));
+function report(): Promise<Built> {
+  return cachedBuilt(prisma, "bonuses", (book) => ({ report: bonusesOf(book) }));
 }
 
 /** Every bonus award letter checked against the bonus lines on the pay stubs. */

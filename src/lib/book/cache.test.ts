@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The loader is stubbed: these tests are about when the Book is (re)built, not what's in it.
 const loadBook = vi.fn();
 vi.mock("./load.ts", () => ({ loadBook: (...a: unknown[]) => loadBook(...a) }));
-const { cachedReport, dataStamp, deepFreeze, getBook, keepBookWarm } = await import("./cache.ts");
+const { cachedBuilt, cachedReport, dataStamp, deepFreeze, ENV_FILES, getBook, keepBookWarm, stampTag, UNSTAMPED_ENV_FILES, jsonBody } = await import("./cache.ts");
 
 const db = {} as Parameters<typeof getBook>[0];
 let dir: string;
@@ -103,5 +103,56 @@ describe("Book cache", () => {
   it("deepFreeze reaches into Maps", () => {
     const m = deepFreeze(new Map([["a", { x: 1 }]]));
     expect(Object.isFrozen(m.get("a"))).toBe(true);
+  });
+});
+
+describe("Book cache, hardened (SSOT F)", () => {
+  it("refuses writes to a frozen Book's Maps and Sets", () => {
+    const b = deepFreeze({ byId: new Map([["a", 1]]), ids: new Set(["a"]) });
+    expect(() => b.byId.set("b", 2)).toThrow(/frozen Map/);
+    expect(() => b.byId.delete("a")).toThrow();
+    expect(() => b.ids.add("b")).toThrow(/frozen Set/);
+    expect(b.byId.get("a")).toBe(1);
+  });
+
+  it("tags a report with the stamp of the data it was built from, not the stamp when it's sent", async () => {
+    const before = dataStamp();
+    const built = await cachedBuilt(db, "r", () => ({ ok: true }));
+    expect(built.stamp).toBe(before);
+    touch("finance.db", "changed meanwhile");
+    expect(jsonBody(built).headers.get("x-data-stamp")).toBe(stampTag(before));
+  });
+
+  it("reads the database path the way the app does (any case, spaces)", () => {
+    vi.stubEnv("DATABASE_URL", `  FILE:${path.join(dir, "finance.db")}  `);
+    const a = dataStamp();
+    touch("finance.db", "changed again");
+    expect(dataStamp()).not.toBe(a);
+  });
+
+  it("rebuilds a Book whose data changed while it was read", async () => {
+    let calls = 0;
+    loadBook.mockImplementation(async () => {
+      calls++;
+      if (calls === 1) touch("finance.db", "an import landed mid-build");
+      return { id: calls, rows: [] };
+    });
+    const book = (await getBook(db)) as unknown as { id: number };
+    expect(book.id).toBe(2);
+  });
+
+  it("watches every data file the code reads, or says no figure reads it", () => {
+    const root = path.resolve(__dirname, "../..");
+    const seen = new Set<string>();
+    const walk = (d: string) => {
+      for (const f of readdirSync(d)) {
+        const p = path.join(d, f);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f)) for (const m of readFileSync(p, "utf8").matchAll(/process\.env\.([A-Z_]+_FILE)\b/g)) seen.add(m[1]!);
+      }
+    };
+    walk(root);
+    const listed = new Set([...ENV_FILES, ...UNSTAMPED_ENV_FILES]);
+    expect([...seen].filter((v) => !listed.has(v)).sort()).toEqual([]);
   });
 });

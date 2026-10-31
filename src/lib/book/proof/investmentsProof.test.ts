@@ -202,12 +202,23 @@ describe("buildInvestmentsProof", () => {
     ]);
   });
 
-  it("calls out a printed total that differs from the positions, and the change since older holdings", () => {
+  it("never uses positions whose printed total differs (the holdings.ties check's own test, SSOT F · E)", () => {
     const p = proof({ accountId: "ira" });
     expect(p.figure).toEqual({ cents: 520_250 });
     const printed = block(p, "Printed total vs positions");
     if (printed?.kind !== "chain") throw new Error("no printed chain");
     expect(printed.lines.at(-1)).toMatchObject({ label: "Difference", value: { cents: -1 }, note: "The positions come to $0.01 less than the printed total." });
+    expect(block(p, "Positions on file at 2025-01-31 (not used)")?.note).toMatch(/prints \$5,000\.01/);
+    const shown = block(p, "What the page shows");
+    expect(shown?.kind === "breakdown" && shown.items.map((i) => [i.label, i.value])).toEqual([["Whole account (positions on file don't tie)", { cents: 520_250 }]]);
+    const nw = block(p, "Against the net-worth balance");
+    expect(nw?.kind === "chain" && nw.lines.map((l) => l.label)).toEqual(["Positions at 2025-01-31", "Net-worth balance at 2025-01-31", "Difference"]);
+  });
+
+  it("uses older positions that tie, and shows the change since", () => {
+    const fixed = makeBook();
+    (fixed.holdings.find((h) => h.id === "h-ira-jan") as { printedTotalCents: number | null }).printedTotalCents = 500_000;
+    const p = proof({ accountId: "ira" }, SETTINGS, fixed);
     const nw = block(p, "Against the net-worth balance");
     if (nw?.kind !== "chain") throw new Error("no balance chain");
     expect(nw.lines.at(-1)).toMatchObject({ label: "Change since holdings of 2025-01-31", value: { cents: 20_250 } });
@@ -218,7 +229,7 @@ describe("buildInvestmentsProof", () => {
     const p = proof({ accountId: "k401" });
     expect(p.describes).toContain("don't tie");
     const shown = block(p, "What the page shows");
-    expect(shown?.kind === "breakdown" && shown.items.map((i) => [i.label, i.value])).toEqual([["Whole account (no holdings on file)", { cents: 300_000 }]]);
+    expect(shown?.kind === "breakdown" && shown.items.map((i) => [i.label, i.value])).toEqual([["Whole account (positions on file don't tie)", { cents: 300_000 }]]);
     expect(block(p, "Positions on file at 2025-02-28 (not used)")).toBeTruthy();
     const nw = block(p, "Against the net-worth balance");
     expect(nw?.kind === "chain" && nw.lines.at(-1)).toMatchObject({ value: { cents: -1_000 }, note: "The positions come to $10.00 less than the balance: not used." });

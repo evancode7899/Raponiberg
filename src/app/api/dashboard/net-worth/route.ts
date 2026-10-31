@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildNetWorth } from "@/lib/book/reports/netWorth";
 import { isIsoDate, type Granularity } from "@/lib/dates/isoDate";
 import { prisma } from "@/lib/db";
@@ -25,5 +25,5 @@ export async function GET(request: NextRequest) {
   if ((from && !isIsoDate(from)) || (to && !isIsoDate(to))) {
     return NextResponse.json({ error: "from/to must be YYYY-MM-DD" }, { status: 400 });
   }
-  return jsonBody(await cachedReport(prisma, `net-worth|${granularity}|${from ?? ""}|${to ?? ""}`, (book) => buildNetWorth(book, { granularity, from, to })));
+  return jsonBody(await cachedBuilt(prisma, `net-worth|${granularity}|${from ?? ""}|${to ?? ""}`, (book) => buildNetWorth(book, { granularity, from, to })));
 }

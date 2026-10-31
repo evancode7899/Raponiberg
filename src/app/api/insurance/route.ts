@@ -1,6 +1,6 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { stampTag } from "@/lib/book/cache";
+import { dataStamp, stampTag } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { INSURANCE_NOTES_KEY, normalizeInsuranceNotes } from "@/lib/insurance/notes";
 import { loadInsurancePage } from "@/lib/insurance/page";
@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    return NextResponse.json(await loadInsurancePage(prisma), { headers: { "x-data-stamp": stampTag() } });
+    // The stamp of the data read, taken before reading it: a change during the read makes it stale, never newer.
+    const stamp = dataStamp();
+    return NextResponse.json(await loadInsurancePage(prisma), { headers: { "x-data-stamp": stampTag(stamp) } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not read the insurance documents" }, { status: 500 });
   }

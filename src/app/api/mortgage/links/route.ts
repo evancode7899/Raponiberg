@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "mortgage-links", async (book) => {
+    await cachedBuilt(prisma, "mortgage-links", async (book) => {
       const [{ forecast }, profile] = await Promise.all([loadForecast(prisma, book), loadProfileSettings(prisma)]);
       const a = profile.outlook;
       const year = Number(book.today.slice(0, 4));

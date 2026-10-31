@@ -1,4 +1,4 @@
-import { exceptionMatches } from "../exceptions.ts";
+import { exceptionDrift, exceptionMatches } from "../exceptions.ts";
 import {
   CHECKS,
   type AcceptedFinding,
@@ -50,15 +50,22 @@ export class Collector {
   add(f: Finding) {
     if (this.findings.some((x) => x.id === f.id) || this.accepted.some((x) => x.id === f.id)) return;
     const ex = this.exceptions.find((e) => exceptionMatches(e, f));
-    if (ex) {
+    // An exception covers the finding the owner accepted, not whatever later takes its id:
+    // if its status or amounts changed, it's open again and says what it was.
+    const drift = ex ? exceptionDrift(ex, f) : null;
+    if (ex && drift) {
+      this.matched.add(ex.id);
+      f = { ...f, detail: `${f.detail} It changed since you accepted it as an exception (${drift}), so it withholds figures again until you accept it anew.` };
+    } else if (ex) {
       this.matched.add(ex.id);
       this.accepted.push({ ...f, exceptionId: ex.id, note: ex.note, acceptedAt: ex.acceptedAt });
       this.tally(f.check).accepted++;
       return;
     }
-    const atEdge = !!this.edge && findingStart(f) > this.edge;
+    // Past the data edge, missing data is most likely a statement still on its way; a
+    // contradiction (FAIL) is wrong whenever it's dated, and stays a failure.
+    const atEdge = !!this.edge && f.status === "MISSING" && findingStart(f) > this.edge;
     this.findings.push(atEdge ? { ...f, atEdge: true } : f);
-    // Past the data edge it's a statement still on its way, not a check that fails.
     if (atEdge) this.tally(f.check).awaiting++;
     else if (f.status === "FAIL") this.tally(f.check).failed++;
     else this.tally(f.check).missing++;

@@ -144,12 +144,21 @@ export const DEFAULT_SETTINGS: FinancialProfileSettings = {
 export const PROFILE_SETTINGS_KEY = "financialProfile.v1";
 
 export async function loadProfileSettings(db: Db): Promise<FinancialProfileSettings> {
+  return (await readProfileSettings(db)).settings;
+}
+
+/**
+ * The saved profile settings, and why they couldn't be read when damaged: the defaults
+ * stand in (so Settings can show and overwrite them), and the Book reports a finding
+ * (check data.readable) rather than counting birth years and one-offs that aren't the owner's.
+ */
+export async function readProfileSettings(db: Db): Promise<{ settings: FinancialProfileSettings; error?: string }> {
   const row = await db.appSetting.findUnique({ where: { key: PROFILE_SETTINGS_KEY } });
-  if (!row) return structuredClone(DEFAULT_SETTINGS);
+  if (!row) return { settings: structuredClone(DEFAULT_SETTINGS) };
   try {
-    return normalizeSettings(JSON.parse(row.value) as Partial<FinancialProfileSettings>);
-  } catch {
-    return structuredClone(DEFAULT_SETTINGS);
+    return { settings: normalizeSettings(JSON.parse(row.value) as Partial<FinancialProfileSettings>) };
+  } catch (e) {
+    return { settings: structuredClone(DEFAULT_SETTINGS), error: `The saved profile settings can't be read: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 

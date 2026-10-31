@@ -1,5 +1,5 @@
 import type { AwardLetter, AwardsFile, ScheduledPayment } from "../../bonuses/awardStore.ts";
-import { addDays, endOfMonth } from "../../dates/isoDate.ts";
+import { addDays, endOfMonth, minIso } from "../../dates/isoDate.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
 import { blockersFor, type BlockerQuery } from "../blockers.ts";
 import { findingStart } from "../checks/collector.ts";
@@ -320,7 +320,7 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string): Bonus
         const py = personPayYear(book, personId, a.year);
         const parts = py.employers.filter((e) => e.breakdown.salary > 0).map((e) => ({ employer: e.employer.replace(/ · payroll .*$/, ""), cents: e.breakdown.salary }));
         if (parts.length)
-          row.base = { cents: py.totals.salary, from: "STUBS", parts, payQuery: { affects: "PAY", personId, from: `${a.year}-01-01`, to: `${a.year}-12-31` }, blockers: refs(py.blockers) };
+          row.base = { cents: py.totals.salary, from: "STUBS", parts, payQuery: { affects: "PAY", personId, from: `${a.year}-01-01`, to: minIso(`${a.year}-12-31`, book.horizon.cashFlow) }, blockers: refs(py.blockers) };
         for (const b of refs(py.blockers)) blockers.set(b.id, b);
       }
       if (row.totalCompCents != null) row.totalComp = { cents: row.totalCompCents, from: "LETTER" };

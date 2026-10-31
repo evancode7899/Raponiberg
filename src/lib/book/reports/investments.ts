@@ -1,4 +1,5 @@
 import { addDays } from "../../dates/isoDate.ts";
+import { holdingsProblems } from "../checks/holdings.ts";
 import type { Holding, HoldingKind } from "../../ingest/holdings/types.ts";
 import { ASSET_CLASSES, describeSecurity, securityKey, type AssetClass, type SecurityInfo, type Weights } from "../../investments/securities.ts";
 import type { InvestmentSettings } from "../../investments/settings.ts";
@@ -171,7 +172,10 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
     // The latest snapshot that ties to the balance on its own date.
     const snaps = (byAccount.get(a.id) ?? []).filter((s) => s.asOf <= lastDay).sort((x, y) => x.asOf.localeCompare(y.asOf));
     const latest = snaps.at(-1) ?? null;
-    const ties = (s: BookHoldings) => s.totalCents === valueAt(a.timeline, s.asOf).cents;
+    // The holdings.ties check's own test, on the account as its statements print it: a list
+    // whose printed total disagrees, or that doesn't match the balance that day, is never used.
+    const printed = book.ledger.accounts.find((x) => x.id === a.id)?.timeline;
+    const ties = (s: BookHoldings) => holdingsProblems(s, printed)?.length === 0;
     const usable = [...snaps].reverse().find(ties) ?? null;
     let status: HoldingsStatus = "NONE";
     if (usable) status = usable.asOf === lastDay ? "TIES" : "STALE";
@@ -211,7 +215,7 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
     }
     if (covered !== value) {
       // The balance the positions don't explain: the whole account, or what changed since.
-      const label = usable ? `Change since holdings of ${usable.asOf}` : "Whole account (no holdings on file)";
+      const label = usable ? `Change since holdings of ${usable.asOf}` : latest ? "Whole account (positions on file don't tie)" : "Whole account (no holdings on file)";
       // Classified per account ("ACCOUNT:<name>"), e.g. a private fund with no holdings list.
       const whole: Holding = { symbol: null, name: `ACCOUNT:${a.name}`, kind: a.group === "Cash" ? "CASH" : "OTHER", quantity: null, price: null, valueCents: value - covered, costBasisCents: null, expenseRatio: null };
       const info = describeSecurity(whole, year, settings.securities);

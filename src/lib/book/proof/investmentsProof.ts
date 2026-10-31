@@ -1,4 +1,5 @@
 import { sumPositions, type Holding } from "../../ingest/holdings/types.ts";
+import { holdingsProblems } from "../checks/holdings.ts";
 import { INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings, type InvestmentSettings } from "../../investments/settings.ts";
 import { valueAt } from "../../ledger/timeline.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
@@ -138,7 +139,7 @@ function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: Investmen
         kind: "breakdown",
         title: `Positions on file at ${snap.asOf} (not used)`,
         items: snap.positions.map((p) => ({ label: positionLabel(p), sub: p.symbol ? p.name : undefined, value: { cents: p.valueCents } })),
-        note: "These don't add up to the balance on the same day, so the page shows the account as one line instead.",
+        note: `These don't tie (${(holdingsProblems(snap, book.ledger.accounts.find((x) => x.id === a.accountId)?.timeline) ?? ["no statement covers their day"]).join("; ")}), so the page shows the account as one line instead.`,
       });
     }
     blocks.push({ kind: "chain", title: "Printed total vs positions", lines });
@@ -156,7 +157,7 @@ function accountProof({ book, positions }: Ctx, a: AccountHoldings, d: Investmen
         note: computed === onSnap ? undefined : `The positions come to ${usd(Math.abs(computed - onSnap))} ${computed > onSnap ? "more" : "less"} than the balance: not used.`,
       },
     ];
-    if (snap.asOf !== a.asOf && computed === onSnap)
+    if (snap.asOf !== a.asOf && a.status !== "MISMATCH")
       vs.push(
         { label: `Net-worth balance at ${a.asOf}`, value: { cents: a.valueCents }, source: "proven", note: "the proven-through date" },
         { op: "−", label: `Positions at ${snap.asOf}`, value: { cents: computed }, source: "derived" },

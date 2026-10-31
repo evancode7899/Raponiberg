@@ -113,10 +113,14 @@ export function IssuesPanel({ r, onAccept, onRetire, onGo }: { r: BookReport; on
         <StatCell
           label="Proven through"
           value={date(r.horizon.netWorth)}
-          sub={`the data edge${r.horizon.cashFlow > r.horizon.netWorth ? ` · cash flow through ${date(r.horizon.cashFlow)}` : ""}${edge.length ? ` · ${edge.length} awaiting newer statements` : ""}`}
+          sub={`the data edge: every figure stops here${edge.length ? ` · ${edge.length} awaiting newer statements` : ""}`}
         />
         <StatCell label="Checks fully passing" value={`${passingChecks} / ${r.checks.length}`} tone={passingChecks === r.checks.length ? "pos" : "neutral"} sub="details on Checks" />
-        <StatCell label="Inferred" value={String(r.inferences.length)} sub="proven from two other sources" />
+        <StatCell
+          label="Inferred"
+          value={String(r.inferences.length)}
+          sub={r.inferences.some((i) => i.partial) ? `${r.inferences.filter((i) => !i.partial).length} proven from two other sources · ${r.inferences.filter((i) => i.partial).length} from one source (partial)` : "proven from two other sources"}
+        />
         <StatCell
           label="Accepted exceptions"
           value={String(r.accepted.length)}

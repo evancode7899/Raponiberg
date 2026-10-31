@@ -1,4 +1,4 @@
-import { taxBlockers, taxYearThrough } from "../book/blockers.ts";
+import { taxBlockers, taxYearThrough, yearProvenToEnd } from "../book/blockers.ts";
 import type { Book, BookBrokerage, BookStub } from "../book/load.ts";
 import { personPayYear } from "../book/pay.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
@@ -330,6 +330,16 @@ export function buildTaxReport(
   const docs = yearDocs(book.taxDocs, year, profile.persons);
   const lastYearDocs = yearDocs(book.taxDocs, year - 1, profile.persons);
   const useDocs = !isForecast;
+  // A finished year whose statements don't reach December 31st yet (the spring, before every
+  // account's December statement is on file) would show part of a year as the whole: it
+  // waits for them, unless its filed return is on file as the year's figures of record.
+  if (!isForecast && !yearProvenToEnd(book, year) && !docs.federal)
+    blockers.push({
+      id: `tax.year-awaiting:${year}`,
+      status: "MISSING",
+      title: `${year} is proven only through ${through}`,
+      fix: `Add every account's statements through December 31, ${year}: until then the year's pay, interest and payments would cover only part of it.`,
+    });
   if (blockers.length && !isForecast && !docs.federal) return { blocked: true, year, today, profile, inputs, blockers };
   // A Single year (its filed return says so) is the filer's return alone: the person whose
   // W-2s are on file, else the first. Everyone's names still decide whose accounts and forms
@@ -358,7 +368,7 @@ export function buildTaxReport(
   for (const d of [lastYearDocs, docs]) {
     filedBalances[d.year] = { FEDERAL: filedBalance(d.federal), CT: filedBalance(d.ct), OTHER_STATE: filedBalance(d.ny) };
   }
-  const payments = taxPaymentsFrom(taxRows(book, `${year}-01-01`, `${year + 1}-04-30`), inputs.paymentOverrides, filedBalances);
+  const payments = taxPaymentsFrom(taxRows(book, `${year}-01-01`, minIso(`${year + 1}-04-30`, book.horizon.cashFlow)), inputs.paymentOverrides, filedBalances);
   const forYear = (a: TaxPaymentRow["authority"], kind: string) =>
     payments.filter((p) => p.authority === a && p.attribution.taxYear === year && p.attribution.kind === kind);
   const estFederal = forYear("FEDERAL", "ESTIMATE").reduce((s, p) => s + p.amount, 0);

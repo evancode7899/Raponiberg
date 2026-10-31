@@ -636,7 +636,8 @@ export function buildEstimateProof(book: Book, x: EstimateInputs, d: Extract<Bon
   blocks.push({ kind: "chain", title: `${seed.name} · ${d.awardYear} award (estimate)`, lines, note: pattern ? undefined : "No award letter from the current employer: the whole award is expected in the usual bonus month." });
 
   const from = used.length ? `${used[0]!.year}-01-01` : `${startYear}-01-01`;
-  const { checks, withheld } = checksFor(book, { affects: "PAY", personId: d.personId, from, to: book.today }, PAY_CHECKS);
+  // Through the data edge, as the page's figures run (a finding past it withholds nothing shown).
+  const { checks, withheld } = checksFor(book, { affects: "PAY", personId: d.personId, from, to: book.horizon.cashFlow }, PAY_CHECKS);
   return {
     report: "bonuses",
     descriptor: d,

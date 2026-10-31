@@ -2,7 +2,7 @@ import { endOfPeriod, periodLabel, periodsBetween, startOfPeriod, type Granulari
 import { decompose } from "../../ledger/timeline.ts";
 import { blockersFor } from "../blockers.ts";
 import { household } from "../householdView.ts";
-import { bookedShare } from "../booking.ts";
+import { bookedCents, bookedShare } from "../booking.ts";
 import type { Book, BookRow } from "../load.ts";
 import { withReimbursements } from "../reimbursements.ts";
 import { countsOn } from "../rent.ts";
@@ -46,7 +46,7 @@ export type CashFlowReport = {
   periods: CashFlowPeriod[];
 };
 
-/** One row's part in one period's cash flow: `cents` is its signed amount times `share`, unrounded. */
+/** One row's part in one period's cash flow: `cents` is its signed amount's whole cents in the period (booking.ts bookedCents), `share` the exact fraction. */
 export type CashFlowContribution = { row: BookRow; periodIndex: number; share: number; cents: number; countedOn: string };
 
 /** Cash flow's income category for money a tax authority paid back. */
@@ -104,7 +104,7 @@ export function cashFlowContributions(book: Book, periods: { start: string; end:
     }
     periods.forEach((p, i) => {
       const share = bookedShare(r, p.start, p.end);
-      if (share > 0) out.push({ row: r, periodIndex: i, share, cents: r.amountCents * share, countedOn: r.statement.start });
+      if (share > 0) out.push({ row: r, periodIndex: i, share, cents: bookedCents(r, p.start, p.end), countedOn: r.statement.start });
     });
   }
   return out;

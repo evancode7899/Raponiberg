@@ -6,11 +6,11 @@ import type { HouseholdPatterns } from "../household/patterns.ts";
 import { payrollCodeOf, type PayStubFacts, type PayStubSource, type StubLineKind } from "../ingest/payroll/types.ts";
 import type { BrokerageFacts, HoldingsFacts } from "../ingest/types.ts";
 import { getHouseholdView, type HouseholdViewMode } from "../ledger/householdSettings.ts";
-import { groupFor, loadLedger, type AccountGroup, type Ledger } from "../ledger/loadLedger.ts";
-import { loadTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.ts";
-import { loadProfileSettings } from "../profile/settings.ts";
+import { groupFor, loadLedger, openAccountsEdge, type AccountGroup, type Ledger } from "../ledger/loadLedger.ts";
+import { readTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.ts";
+import { readProfileSettings } from "../profile/settings.ts";
 import { readAwards, type AwardsFile } from "../bonuses/awardStore.ts";
-import { readTaxDocs } from "../taxdocs/store.ts";
+import { readTaxDocsChecked } from "../taxdocs/store.ts";
 import type { TaxDocsFile } from "../taxdocs/types.ts";
 import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts";
 import { readReimbursementLinks } from "../reimbursements/store.ts";
@@ -22,7 +22,7 @@ import { reviewExceptions } from "../bonuses/migrateReviews.ts";
 import { applyIdleWindows, type IdleReport } from "./idleCards.ts";
 import { localToday } from "../dates/isoDate.ts";
 import { runChecksWithPasses } from "./checks/index.ts";
-import type { CheckPass, IntegrityReport } from "./types.ts";
+import type { CheckPass, FindingScope, IntegrityReport } from "./types.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -214,6 +214,12 @@ export type Book = {
   /** The tax documents folder as last scanned (lib/taxdocs): filed returns, W-2s, 1099s, K-1s. Null before the first scan. */
   taxDocs: TaxDocsFile | null;
   persons: TaxPerson[];
+  /**
+   * Saved settings and data files that couldn't be read (check data.readable): each stands
+   * in as its defaults or as nothing, and withholds every figure it could change. Absent
+   * or empty: everything read as saved.
+   */
+  unreadable?: { source: string; what: string; error: string; fix: string; affects: readonly FindingScope["affects"][number][] }[];
   /** Card cycles with no statement because nothing happened, proven from the bank side (filled into the ledger at $0). */
   idle: IdleReport;
   integrity: IntegrityReport;
@@ -268,7 +274,20 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     decisions = { error: e instanceof Error ? e.message : String(e) };
   }
   const household = householdPatterns();
-  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfile, documents, classifiedWith, classifiedWithHousehold, profileSettings, viewMode] = await Promise.all([
+  // Every figure kind: a damaged household-wide setting could change any of them.
+  const EVERY = ["CASH_FLOW", "NET_WORTH", "PAY", "TAX", "HOLDINGS", "BONUS"] as const;
+  const unreadable: NonNullable<Book["unreadable"]> = [];
+  const taxDocs = readTaxDocsChecked();
+  if (taxDocs.error) unreadable.push({ source: "tax-documents", what: "The tax documents scan", error: taxDocs.error, fix: "Scan the tax documents folder again (Statements), or restore data/tax-documents.json from a backup.", affects: ["TAX", "PAY"] });
+  // Read here so a damaged file is a finding the checks see; resolved against the Book after them.
+  let links: ReturnType<typeof readReimbursementLinks> | null = null;
+  try {
+    links = readReimbursementLinks(opts.reimbursementsFile);
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    unreadable.push({ source: "reimbursements", what: "Your reimbursement links", error, fix: "Restore data/reimbursement-links.json from the journal beside it, then refresh.", affects: ["CASH_FLOW"] });
+  }
+  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfileRead, documents, classifiedWith, classifiedWithHousehold, profileSettingsRead, viewMode] = await Promise.all([
     loadLedger(db, { today }),
     // Archived accounts included: archiving hides an account from pickers, never its history from figures.
     db.account.findMany({ include: { aliases: { select: { identifier: true } } } }),
@@ -317,17 +336,21 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
         legs: { select: { transaction: { select: { id: true, accountId: true, date: true, amountCents: true } } } },
       },
     }),
-    loadTaxProfile(db),
+    readTaxProfile(db),
     db.sourceDocument.findMany({
       orderBy: { createdAt: "asc" },
       select: { id: true, title: true, originalFileName: true, institution: true, parserId: true, parserVersion: true, factsVersion: true, periodStart: true, periodEnd: true, filePath: true, fileHash: true },
     }),
     db.appSetting.findUnique({ where: { key: CLASSIFIER_VERSION_SETTING } }).then((s) => (s && Number.isFinite(Number(s.value)) ? Number(s.value) : null)),
     db.appSetting.findUnique({ where: { key: CLASSIFIER_HOUSEHOLD_SETTING } }).then((s) => s?.value ?? null),
-    loadProfileSettings(db),
+    readProfileSettings(db),
     getHouseholdView(db),
   ]);
 
+  const taxProfile = taxProfileRead.profile;
+  const profileSettings = profileSettingsRead.settings;
+  if (taxProfileRead.error) unreadable.push({ source: "tax-profile", what: "Your tax profile", error: taxProfileRead.error, fix: "Re-enter the household (Settings → Household) or restore the database from a backup.", affects: EVERY });
+  if (profileSettingsRead.error) unreadable.push({ source: "profile-settings", what: "Your profile settings", error: profileSettingsRead.error, fix: "Re-save the profile settings (Settings) or restore the database from a backup.", affects: EVERY });
   const persons = taxProfile.persons;
   const personFor = (employee: string) => {
     const u = employee.toUpperCase();
@@ -529,7 +552,8 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
         return { error: e instanceof Error ? e.message : String(e) };
       }
     })(),
-    taxDocs: readTaxDocs(),
+    taxDocs: taxDocs.docs,
+    unreadable,
     persons,
     idle,
     integrity: { checks: [], findings: [], inferences: [], accepted: [], stale: [], retired: [] },
@@ -541,12 +565,8 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   const checked = runChecksWithPasses(book, [...exceptions.exceptions, ...pending]);
   book.integrity = { ...checked.report, retired: exceptions.retired };
   book.passes = checked.passes;
-  // A damaged links file applies no link (every figure stays as the statements print it) and says so where links are shown.
-  try {
-    book.reimbursements = resolveReimbursements(readReimbursementLinks(opts.reimbursementsFile), book);
-  } catch (e) {
-    book.reimbursements = { ...EMPTY_REIMBURSEMENTS, error: e instanceof Error ? e.message : String(e) };
-  }
+  // A damaged links file applies no link, and is a finding (data.readable) that withholds cash flow.
+  book.reimbursements = links ? resolveReimbursements(links, book) : { ...EMPTY_REIMBURSEMENTS, error: unreadable.find((u) => u.source === "reimbursements")!.error };
   return book;
 }
 
@@ -556,7 +576,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
  * worth it can't prove, nor a balance from before the day its cash runs to.
  */
 export function provenThrough(accounts: { closed: boolean; timeline: { lastDay: string | null } }[], today: string): string {
-  return accounts.filter((a) => !a.closed).map((a) => a.timeline.lastDay!).sort()[0] ?? today;
+  return openAccountsEdge(accounts) ?? today;
 }
 
 /** A statement's stored parser checks (commitDocument.ts checksJson); derived markers and entries without amounts are skipped. */

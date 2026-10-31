@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { loadForecastData } from "@/lib/forecast/load";
 import { NextRequest, NextResponse } from "next/server";
@@ -16,5 +16,5 @@ export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return jsonBody(await cachedReport(prisma, "forecast", (book) => loadForecastData(prisma, book)));
+  return jsonBody(await cachedBuilt(prisma, "forecast", (book) => loadForecastData(prisma, book)));
 }

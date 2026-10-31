@@ -1,6 +1,6 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { prisma } from "@/lib/db";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
 import { buildTaxReport } from "@/lib/tax/buildTaxReport";
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   const asked = Number(request.nextUrl.searchParams.get("year"));
   try {
     return jsonBody(
-      await cachedReport(prisma, `tax|${supported.includes(asked) ? asked : "current"}`, async (book) => {
+      await cachedBuilt(prisma, `tax|${supported.includes(asked) ? asked : "current"}`, async (book) => {
         // No year asked: the Book's year (book.today), the one every figure is built as of.
         const raw = supported.includes(asked) ? asked : Number(book.today.slice(0, 4));
         const year = supported.includes(raw) ? raw : Math.max(...supported);

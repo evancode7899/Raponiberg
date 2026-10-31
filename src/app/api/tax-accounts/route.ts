@@ -1,6 +1,6 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildTaxAccounts } from "@/lib/book/reports/taxAccounts";
 import { prisma } from "@/lib/db";
 import { taxLink } from "@/lib/forecast/forecast";
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   const years = Object.keys(TAX_YEARS).map(Number).sort();
   const asked = Number(request.nextUrl.searchParams.get("year"));
   return jsonBody(
-    await cachedReport(prisma, `tax-accounts|${years.includes(asked) ? asked : "current"}`, async (book) => {
+    await cachedBuilt(prisma, `tax-accounts|${years.includes(asked) ? asked : "current"}`, async (book) => {
       // No year asked: the Book's year (book.today), the one every figure is built as of.
       const thisYear = Number(book.today.slice(0, 4));
       const year = years.includes(asked) ? asked : years.includes(thisYear) ? thisYear : years.at(-1)!;

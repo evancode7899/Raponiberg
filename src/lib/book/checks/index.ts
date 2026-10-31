@@ -11,6 +11,7 @@ import { checkHoldings } from "./holdings.ts";
 import { checkHsaContributions } from "./hsa.ts";
 import { checkNetWorth } from "./networth.ts";
 import { checkPay } from "./pay.ts";
+import { checkReadable } from "./readable.ts";
 import { checkRetirement } from "./retirement.ts";
 import { checkStatements } from "./statements.ts";
 import { checkTaxCoverage, checkTaxParams } from "./tax.ts";
@@ -25,6 +26,7 @@ export function runChecks(book: Book, exceptions: StandingException[] = []): Int
 /** runChecks, plus what every passing check covered (Book.passes): kept apart from the report. */
 export function runChecksWithPasses(book: Book, exceptions: StandingException[] = []): { report: IntegrityReport; passes: CheckPass[] } {
   const c = new Collector(exceptions, book.horizon.netWorth);
+  checkReadable(book, c);
   checkConsistency(book, c);
   checkFreshness(book, c);
   checkStatements(book, c);

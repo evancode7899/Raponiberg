@@ -460,7 +460,10 @@ function depreciationChain(car: Car, r: CarReport, d: CarFigureDescriptor, figur
   const dep = r.depreciation;
   const miles = d.span === "toDate" ? r.odometer.driven : d.span === "last12" ? r.last12.miles : r.months.filter((m) => m.month.startsWith(d.span)).reduce((t, m) => t + m.miles, 0);
   const mi = (n: number) => ({ text: `${Math.round(n).toLocaleString("en-US")} mi` });
-  const lines: ChainLine[] = [{ label: "All-in purchase (price, fees, warranty, registration, sales tax)", value: { cents: a }, source: "assumption", note: "typed in Car details" }];
+  const purchase: ChainLine = { label: "All-in purchase (price, fees, warranty, registration, sales tax)", value: { cents: a }, source: "assumption", note: "typed in Car details" };
+  // A span's change in market value doesn't start from the purchase: it's the value checks'
+  // line at the span's two ends, so it stands alone (the purchase belongs to "to date" only).
+  const lines: ChainLine[] = dep.method === "MARKET" && d.span !== "toDate" ? [] : [purchase];
   if (dep.method === "SOLD") {
     lines.push({ op: "−", label: "What it sold for", value: { cents: car.sale!.priceCents }, source: "assumption", note: "typed in Car details" });
     if (d.span === "toDate") lines.push({ op: "=", label: "Lost over the time you owned it", value: { cents: figureCents }, source: "derived" });
@@ -474,7 +477,13 @@ function depreciationChain(car: Car, r: CarReport, d: CarFigureDescriptor, figur
     if (d.span === "toDate") {
       lines.push({ op: "−", label: "What it's worth now", value: { cents: dep.marketValueNow ?? 0 }, source: "estimate", note: "your latest value check, moved along the trend in your checks" });
       lines.push({ op: "=", label: "Lost to date", value: { cents: figureCents }, source: "estimate" });
-    } else lines.push({ op: "=", label: "Change in market value over the span", value: { cents: figureCents }, source: "estimate", note: "your value checks, a straight line between them, extended along their trend" });
+    } else
+      lines.push({
+        label: "Change in market value over the span",
+        value: { cents: figureCents },
+        source: "estimate",
+        note: "what the car was worth the day before the span less what it's worth at its end: your value checks, a straight line between them, extended along their trend",
+      });
   } else {
     const life = car.plan.sellAtMiles - (car.vehicle.purchaseOdometer ?? 0);
     lines.push(

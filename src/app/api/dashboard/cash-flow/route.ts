@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildSpendingReport } from "@/lib/book/reports/spending";
 import { prisma } from "@/lib/db";
 import { loadProfileSettings } from "@/lib/profile/settings";
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   }
   const accountIds = request.nextUrl.searchParams.get("accountIds")?.split(",").map((s) => s.trim()).filter(Boolean);
   return jsonBody(
-    await cachedReport(prisma, `cash-flow|${accountIds?.join(",") ?? ""}`, async (book) => ({
+    await cachedBuilt(prisma, `cash-flow|${accountIds?.join(",") ?? ""}`, async (book) => ({
       ...buildSpendingReport(book, await loadProfileSettings(prisma), { accountIds }),
       accounts: book.ledger.accounts.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name })),
     })),
