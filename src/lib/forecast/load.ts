@@ -27,7 +27,7 @@ export async function loadForecastData(db: Db, book?: Book): Promise<ForecastDat
   try {
     // The letters the Book read (Book.bonusAwards), as the Bonuses page reads them.
     const awards = awardsOf(b);
-    facts = bonusFacts(buildBonuses(b, awards, b.today), awards.letters);
+    facts = bonusFacts(buildBonuses(b, awards, b.horizon.cashFlow), awards.letters);
   } catch (e) {
     lettersError = (e as Error).message;
   }

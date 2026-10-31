@@ -429,7 +429,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
   lines.push({ label: "Illiquid", muted: true, get: (c) => nw(c, (n, y) => ({ v: n.illiquid, proof: nwP(y, "illiquid", n.illiquid) }), (e) => (e.flows.close ? { v: e.flows.close.illiquid } : null)) });
   const transit = (c: Col): V => nw(c, (n, y) => ({ v: n.inTransit, proof: nwP(y, "in-transit", n.inTransit) }));
   if (any(transit))
-    lines.push({ label: "incl. transfers in transit", muted: true, help: "Money between two of your accounts on Dec 31, counted in the bucket it was headed for.", get: transit });
+    lines.push({ label: "incl. transfers in transit", muted: true, help: "Money that had left one of your accounts by that day and reached another only after it (rent paid before the bill credits it, a rollover): already gone from the first account, so it counts where it was headed.", get: transit });
 
   // ------------------------------------------------------------ what moved it
   lines.push({ heading: "What moved net worth" });

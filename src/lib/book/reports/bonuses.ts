@@ -200,7 +200,8 @@ export function awardsOf(book: Book): AwardsFile {
 }
 
 /** The Bonuses page's report, as GET /api/bonuses, its proofs and the proof sweep build it. */
-export const bonusesOf = (book: Book): BonusesReport => buildBonuses(book, awardsOf(book), book.today);
+// As of the proven-through date: a bonus paid after it shows once every statement reaches it.
+export const bonusesOf = (book: Book): BonusesReport => buildBonuses(book, awardsOf(book), book.horizon.cashFlow);
 
 export type StaleReview = { id: string; warning: string; note: string; reviewedAt: string };
 
@@ -230,7 +231,9 @@ const sameEmployer = (stubKey: string, key: string) => stubKey === key || stubKe
  */
 export function buildBonuses(book: Book, file: AwardsFile, today: string): BonusesReport {
   const nameOf = (id: string) => book.persons.find((p) => p.id === id)?.name ?? "Unassigned";
+  // `today` is the as-of date (the proven-through date): a bonus paid after it isn't counted yet.
   const payments: BonusPayment[] = book.stubs
+    .filter((s: BookStub) => s.payDate <= today)
     .flatMap((s: BookStub) =>
       s.lines
         .filter((l) => l.kind === "BONUS" && (l.current ?? 0) !== 0)

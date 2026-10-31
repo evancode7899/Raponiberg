@@ -354,7 +354,7 @@ describe("forecast seed proofs", () => {
     expect(ls[0]!.descriptor).toMatchObject({ report: "pay", basis: "paid", personId: "pat", lines: ["base"] });
     expect(p.blocks.some((b) => b.kind === "breakdown" && b.title.startsWith("The last regular checks"))).toBe(true);
     const def = chains(p).find((b) => b.title.startsWith("Your 401(k)"))!;
-    expect(def.lines[0]!.link?.descriptor).toMatchObject({ report: "pay", basis: "ytd", lines: ["deferrals"], year: 2026, through: "2026-04-10" });
+    expect(def.lines[0]!.link?.descriptor).toMatchObject({ report: "pay", basis: "ytd", lines: ["deferrals"], year: 2026, through: "2026-03-27" });
     expect(def.lines.some((l) => l.source === "estimate")).toBe(true);
   });
 
@@ -372,12 +372,12 @@ describe("forecast seed proofs", () => {
     expect(chains(th).find((b) => b.title === "Law and settings")!.lines[0]).toMatchObject({ label: "Tax law year", source: "law" });
   });
 
-  it("lists bonuses paid on stubs after the start and the estimates still to come", async () => {
+  it("never counts a stub past the proven-through date: its bonus waits, the estimates still come", async () => {
+    // The Apr 10 stub (with a bonus) is after the Mar 31 edge: nothing reads it yet.
     const p = await buildProof(ctx(), seed({ which: "bonus" }));
-    const paid = p.blocks.find((b) => b.kind === "breakdown" && b.title.startsWith("Paid on stubs"));
-    expect(paid?.kind === "breakdown" && paid.items.map((i) => [i.label, i.value])).toEqual([["2026-04-10", { cents: 250_000 }]]);
+    expect(p.blocks.some((b) => b.kind === "breakdown" && b.title.startsWith("Paid on stubs"))).toBe(false);
     const f = buildForecast(forecastInputs(data)!, data.profile.settings.outlook);
-    expect(p.figure).toEqual({ text: expect.stringMatching(/^1 on stubs · 0 from letters · /) });
+    expect(p.figure).toEqual({ text: expect.stringMatching(/^0 on stubs · 0 from letters · /) });
     expect(f.schedule.some((b) => b.source === "ESTIMATE")).toBe(true);
   });
 
@@ -481,10 +481,9 @@ describe("forecast ledger cells", () => {
     expect(chains(p2)[0]!.lines[0]).toMatchObject({ value: { cents: first!.liquid }, link: { descriptor: { report: "forecast", figure: "month", month: first!.key, line: "liquid" } } });
   });
 
-  it("pays the stub bonus after the start as proven, with its pay proof", async () => {
+  it("doesn't pay a stub's bonus from past the proven-through date as proven", async () => {
     const p = await buildProof(ctx(), { report: "forecast", figure: "month", month: "2026-04", line: "bonus" });
-    expect(p.figure).toEqual({ cents: 250_000 });
-    expect(chains(p)[0]!.lines[0]).toMatchObject({ source: "proven", link: { descriptor: { report: "pay", basis: "paid", lines: ["bonus"], start: "2026-04-10" } } });
+    expect(chains(p).flatMap((b) => b.lines).some((l) => l.source === "proven" && l.link?.descriptor.report === "pay")).toBe(false);
   });
 
   it("says an actual column is actual, linking to Cash flow and the net-worth proofs", async () => {
