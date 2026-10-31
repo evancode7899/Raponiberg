@@ -114,11 +114,13 @@ export type PersonPayYear = {
 };
 
 /**
- * A person's pay for a calendar year, from stubs paid on or before `through` (default: year
- * end). With `from` inside the year (a partner's pay counts only from the merge), only the
+ * A person's pay for a calendar year, from stubs paid on or before `upTo` (default: year
+ * end), never past the proven-through date (Book.horizon): a stub after it isn't shown
+ * anywhere until every account's statements reach it, so pay never runs ahead. With `from` inside the year (a partner's pay counts only from the merge), only the
  * checks paid from then on, added check by check (the pay proof's "paid" basis).
  */
-export function personPayYear(book: Book, personId: string, year: number, through = `${year}-12-31`, from?: string): PersonPayYear {
+export function personPayYear(book: Book, personId: string, year: number, upTo = `${year}-12-31`, from?: string): PersonPayYear {
+  const through = upTo < book.horizon.cashFlow ? upTo : book.horizon.cashFlow;
   const start = from && from > `${year}-01-01` ? from : `${year}-01-01`;
   const byCheck = start !== `${year}-01-01`;
   const employers: EmployerYear[] = [];

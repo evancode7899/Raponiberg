@@ -426,7 +426,11 @@ export const cashFlowKind: ProofKind<CashFlowDescriptor> = {
  */
 function kindView(book: Book, d: CashFlowDescriptor, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, periods: CashFlowPeriod[]) {
   const report = buildSpendingReport(book, settings, { accountIds: d.accountIds });
-  const kindOf = spendingKindRule(book, settings, report.recurring);
+  const rule = spendingKindRule(book, settings, report.recurring);
+  // A charge and its exact credit (reversals) stay out of the bills and big bands, so their
+  // figures never hold them; everyday is the rest of the month's spending, so it does.
+  const reversed = new Set(spendingRows(book, d.accountIds).reversed.map((r) => r.id));
+  const kindOf = (r: BookRow): SpendingKind => (reversed.has(r.id) ? "everyday" : rule(r));
   const months = [...report.months, ...(report.current ? [report.current] : [])];
   const key = ({ bill: "billCents", big: "bigCents", everyday: "everydayCents" } as const)[d.spendingKind!];
   const perPeriod = periods.map((p) => months.filter((m) => m.start >= p.start && m.end <= p.end).reduce((t, m) => t + m.kinds[key], 0));

@@ -13,7 +13,7 @@ import type { Collector } from "./collector.ts";
 export function checkBonusLetters(book: Book, c: Collector) {
   let report;
   try {
-    report = buildBonuses(book, awardsOf(book), book.today);
+    report = buildBonuses(book, awardsOf(book), book.horizon.cashFlow);
   } catch (e) {
     c.add({
       id: "bonus.letters:file",

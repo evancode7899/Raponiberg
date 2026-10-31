@@ -20,8 +20,7 @@ import { bookedOn } from "./booking.ts";
 import { readExceptions } from "./exceptionStore.ts";
 import { reviewExceptions } from "../bonuses/migrateReviews.ts";
 import { applyIdleWindows, type IdleReport } from "./idleCards.ts";
-import { addDays, localToday, startOfMonth } from "../dates/isoDate.ts";
-import { findingStart } from "./checks/collector.ts";
+import { localToday } from "../dates/isoDate.ts";
 import { runChecksWithPasses } from "./checks/index.ts";
 import type { CheckPass, IntegrityReport } from "./types.ts";
 
@@ -167,10 +166,10 @@ export type BookTransferMatch = {
 export type Book = {
   today: string;
   /**
-   * The last day each kind of figure is complete through: every open account involved
-   * has a statement covering it. Figures past these dates aren't produced. `netWorth` is
-   * also the data edge (every open account is on file through it); cash flow stops at
-   * the last whole month before any open finding past the edge (see cashFlowThrough).
+   * The proven-through date (the data edge): the last day every open account has a
+   * statement for. Every figure on every page stops there — cash flow, pay, taxes and
+   * net worth alike — so no view runs past what the others can prove. Both names hold
+   * the same date; they say which kind of figure reads it.
    */
   horizon: { cashFlow: string; netWorth: string };
   /** Every statement as printed: what the checks and the statement pages read. Figures read the household view (householdView.ts). */
@@ -414,14 +413,10 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   // Months a card issuer sent no statement for because nothing happened: $0, covered.
   const idle = applyIdleWindows(ledger, bookRows, bookMatches, today, new Map(accounts.map((a) => [a.id, a.aliases.map((x) => x.identifier)])));
 
-  const lastDayOf = (pick: (a: Ledger["accounts"][number]) => boolean) =>
-    ledger.accounts.filter((a) => !a.closed && pick(a)).map((a) => a.timeline.lastDay!).sort()[0] ?? today;
+  const edge = provenThrough(ledger.accounts, today);
   const book: Book = {
     today,
-    horizon: {
-      cashFlow: lastDayOf((a) => a.group === "Cash" || a.group === "Credit cards"),
-      netWorth: lastDayOf(() => true),
-    },
+    horizon: { cashFlow: edge, netWorth: edge },
     ledger,
     viewMode,
     accounts: accounts.map((a) => ({
@@ -546,7 +541,6 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   const checked = runChecksWithPasses(book, [...exceptions.exceptions, ...pending]);
   book.integrity = { ...checked.report, retired: exceptions.retired };
   book.passes = checked.passes;
-  book.horizon.cashFlow = cashFlowThrough(book);
   // A damaged links file applies no link (every figure stays as the statements print it) and says so where links are shown.
   try {
     book.reimbursements = resolveReimbursements(readReimbursementLinks(opts.reimbursementsFile), book);
@@ -554,6 +548,15 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     book.reimbursements = { ...EMPTY_REIMBURSEMENTS, error: e instanceof Error ? e.message : String(e) };
   }
   return book;
+}
+
+/**
+ * The proven-through date (Book.horizon): the last day every open account has a statement
+ * for. One date for every figure, so no page shows cash, pay or taxes past a day whose net
+ * worth it can't prove, nor a balance from before the day its cash runs to.
+ */
+export function provenThrough(accounts: { closed: boolean; timeline: { lastDay: string | null } }[], today: string): string {
+  return accounts.filter((a) => !a.closed).map((a) => a.timeline.lastDay!).sort()[0] ?? today;
 }
 
 /** A statement's stored parser checks (commitDocument.ts checksJson); derived markers and entries without amounts are skipped. */
@@ -566,19 +569,3 @@ function storedChecks(raw: unknown): NonNullable<BookStatement["checks"]> {
   });
 }
 
-/**
- * Cash flow runs past the data edge (net worth's horizon) only while nothing is wrong
- * there: the first finding past the edge that touches cash flow — usually a statement
- * that hasn't arrived yet — pulls the horizon back to the last whole month before it
- * (never before the edge), so pages end tidily at the latest data that's complete.
- */
-export function cashFlowThrough(book: Book): string {
-  const { netWorth: edge, cashFlow } = book.horizon;
-  const first = book.integrity.findings
-    .filter((f) => f.atEdge && [f.scope, ...(f.extraScopes ?? [])].some((s) => s.affects.includes("CASH_FLOW")))
-    .map(findingStart)
-    .sort()[0];
-  if (!first || first > cashFlow) return cashFlow;
-  const monthBefore = addDays(startOfMonth(first), -1);
-  return monthBefore > edge ? monthBefore : edge;
-}

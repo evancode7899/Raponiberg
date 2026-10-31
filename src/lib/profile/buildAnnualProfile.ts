@@ -519,7 +519,7 @@ function outlookSeeds(x: {
 
   // ------------------------------------------------------------ base pay, per person
   const people: PersonSeed[] = book.persons.map((p) => {
-    // Every stub to date (pay runs past the statements' data edge); the proven cut if a recent stub has problems.
+    // Every stub through the proven-through date; the proven cut if a recent stub has problems.
     const all = personPayYear(book, p.id, currentYear);
     const thisYear = all.blockers.length === 0 ? all : x.pays.get(`${p.id}|${currentYear}`);
     const lastYear = personPayYear(book, p.id, base.year);

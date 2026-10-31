@@ -11,7 +11,7 @@ import { Collector } from "./checks/collector";
 import { checkHoldings } from "./checks/holdings";
 import { checkHsaContributions } from "./checks/hsa";
 import { staleEvidence } from "./exceptions";
-import { cashFlowThrough, type Book, type BookAccount, type BookRow, type BookStub } from "./load";
+import { provenThrough, type Book, type BookAccount, type BookRow, type BookStub } from "./load";
 import { estimatesFor } from "./proof/common";
 import { buildCashFlowReport } from "./reports/cashFlow";
 import { bookTotalsFor } from "./rowTotals";
@@ -342,24 +342,23 @@ describe("the data edge", () => {
     expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-10-01", to: "2025-10-31" }).map((x) => x.id)).toEqual([f!.id]);
   });
 
-  it("withholds nothing before its own date when cash flow runs past the edge", () => {
-    // Nov 1's matching window reaches back to Oct 29: past the edge (Sep 30), but cash flow
-    // runs to Oct 31, and October must stay proven there.
+  it("withholds nothing before its own date", () => {
+    // Nov 1's matching window reaches back to Oct 29: past the edge, but it blocks only from Nov 1.
     const b = edgeBook([{ date: "2025-11-01", cents: -500 }]);
     const [f] = b.integrity.findings.filter((x) => x.check === "transfer.unmatched");
     expect(f).toMatchObject({ atEdge: true, date: "2025-11-01" });
-    expect(cashFlowThrough(b)).toBe("2025-10-31");
     expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-01-01", to: "2025-10-31" })).toEqual([]);
     expect(netWorthAtBlockers(b, "2025-10-31").map((x) => x.id)).not.toContain(f!.id);
     expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-11-01", to: "2025-11-30" }).map((x) => x.id)).toEqual([f!.id]);
   });
 
-  it("pulls cash flow back to the last whole month before the first finding past the edge", () => {
-    expect(cashFlowThrough(edgeBook([{ date: "2025-11-12", cents: -500 }]))).toBe("2025-10-31");
-    // Never before the edge itself.
-    expect(cashFlowThrough(edgeBook([{ date: "2025-10-02", cents: -500 }]))).toBe("2025-09-30");
-    // Nothing open past the edge: cash flow runs as far as its statements go.
-    expect(cashFlowThrough(edgeBook([]))).toBe("2025-11-30");
+  it("is one date for every figure: the last day every open account is on file", () => {
+    const acct = (lastDay: string, closed = false) => ({ closed, timeline: { lastDay } });
+    // Checking runs to Nov 30, the card to Sep 30: cash flow stops with net worth, at Sep 30.
+    expect(provenThrough([acct("2025-11-30"), acct("2025-09-30")], "2025-12-15")).toBe("2025-09-30");
+    // A closed account doesn't hold it back.
+    expect(provenThrough([acct("2025-11-30"), acct("2025-03-31", true)], "2025-12-15")).toBe("2025-11-30");
+    expect(provenThrough([], "2025-12-15")).toBe("2025-12-15");
   });
 
   it("doesn't mark findings inside the proven range", () => {
@@ -391,7 +390,6 @@ describe("a payment to a private fund whose statement isn't out yet", () => {
         if (o.household) book.household = o.household;
       },
     });
-    b.horizon.cashFlow = cashFlowThrough(b);
     return b;
   };
   const finding = (b: Book) => b.integrity.findings.find((f) => f.check === "transfer.unmatched")!;
@@ -404,7 +402,6 @@ describe("a payment to a private fund whose statement isn't out yet", () => {
     const b = fundBook();
     const f = finding(b);
     expect(f).toMatchObject({ status: "MISSING", atEdge: true, date: "2025-10-14", scope: { accountId: "chk", affects: ["NET_WORTH"] }, needs: { accountIds: ["fund"] } });
-    expect(b.horizon.cashFlow).toBe("2025-11-30");
     expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-10-01", to: "2025-10-31" })).toEqual([]);
     expect(taxBlockers(b, 2025).map((x) => x.id)).not.toContain(f.id);
     expect(netWorthBlockers(b, "2025-10-01", "2025-10-31").map((x) => x.id)).toContain(f.id);
@@ -446,8 +443,7 @@ describe("a payment to a private fund whose statement isn't out yet", () => {
     it("holds back net worth only when the fund's wire pattern names it", () => {
       const b = wire("Online Wire Transfer A/C: Example Growth Fund II New York NY Ref: Capitalcall");
       expect(finding(b)).toMatchObject({ status: "MISSING", atEdge: true, scope: { affects: ["NET_WORTH"] }, needs: { accountIds: ["fund"] } });
-      expect(b.horizon.cashFlow).toBe("2025-11-30");
-    });
+      });
 
     it("stays strict when the pattern doesn't match, the fund has no pattern, or the entry is another account's", () => {
       strict(wire("Online Wire Transfer A/C: Example Growth Fund III Ref: Capitalcall"));
