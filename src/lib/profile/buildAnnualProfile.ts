@@ -175,6 +175,7 @@ export type AnnualProfileReport = {
 
 const unique = (bs: BlockerRef[]) => [...new Map(bs.map((b) => [b.id, b])).values()];
 const minIso = (a: string, b: string) => (a < b ? a : b);
+const maxIso = (a: string, b: string) => (a > b ? a : b);
 const byCents = (m: Map<string, number>): CategoryCents[] =>
   [...m].map(([category, cents]) => ({ category, cents })).filter((c) => c.cents !== 0).sort((a, b) => b.cents - a.cents);
 
@@ -229,6 +230,8 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
 
   const pays = new Map<string, PersonPayYear>();
   const out: YearProfile[] = [];
+  // This year's latest proven net worth, where the forecast starts (may be earlier than the column's date).
+  let latestProven: { asOf: string; netWorth: YearNetWorth } | null = null;
   // One calendar year's profile, its cash figures through `cashEnd` (`record`: keep its pay for the seeds).
   const yearProfile = (year: number, cashEnd: string, prev: YearProfile | undefined, record = true): YearProfile => {
     const isCurrent = year === currentYear;
@@ -315,19 +318,40 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
 
     // ------------------------------------------------------------ net worth
     const period = nw.periods.find((p) => p.start === start);
-    const nwAsOf = period?.end ?? minIso(book.horizon.netWorth, `${year}-12-31`);
-    const nwBlockers = period ? refs(netWorthAtBlockers(book, nwAsOf)) : [{ id: "networth.none", status: "MISSING" as const, title: `No statements cover ${year}`, fix: "Add statements for the year." }];
-    const changeBlockers = period ? period.blockers : nwBlockers;
-    let netWorth: YearNetWorth | null = null;
-    if (period && nwBlockers.length === 0) {
+    // The balances on file run to the period's end; a year in progress is measured where its
+    // cash is (one column, one date), so balances proven only to an earlier day are withheld,
+    // never shown under the later date. The forecast still starts from them (latestProven).
+    const provenTo = period?.end ?? minIso(book.horizon.netWorth, `${year}-12-31`);
+    const nwAsOf = isCurrent ? maxIso(cashEnd, provenTo) : provenTo;
+    const atBlockers = (at: string) => refs(netWorthAtBlockers(book, at));
+    const shortBlocker: BlockerRef = {
+      id: `networth.through:${provenTo}`,
+      status: "MISSING",
+      title: `Net worth is proven through ${provenTo}, not ${nwAsOf}`,
+      fix: `Add the statements that cover ${nwAsOf} (Statements › Plan lists them).`,
+    };
+    const nwBlockers = !period
+      ? [{ id: "networth.none", status: "MISSING" as const, title: `No statements cover ${year}`, fix: "Add statements for the year." }]
+      : nwAsOf === provenTo
+        ? atBlockers(nwAsOf)
+        : // Past the balances on file: what's awaited, or (none overdue yet) that they stop earlier.
+          (() => {
+            const bs = atBlockers(nwAsOf);
+            return bs.length ? bs : [shortBlocker];
+          })();
+    const changeBlockers = period && nwAsOf === provenTo ? period.blockers : nwBlockers;
+    const netWorthAt = (at: string): YearNetWorth => {
       const signed: BucketTotals = { ...ZERO_BUCKETS };
-      for (const g of period.byGroup) signed[bucketForGroup(g.group)] += g.closingCents;
-      const transit = inTransitAt(nwAsOf);
+      for (const g of period!.byGroup) signed[bucketForGroup(g.group)] += g.closingCents;
+      const transit = inTransitAt(at);
       for (const b of BUCKETS) signed[b.id] += transit[b.id];
       const allTransit = Object.values(transit).reduce((s, v) => s + v, 0);
       const liquidTransit = BUCKETS.filter((b) => b.liquid).reduce((s, b) => s + transit[b.id], 0);
-      netWorth = { ...summarizeBuckets(signed), quality: period.household.quality, inTransit: allTransit, inTransitSplit: { liquid: liquidTransit, illiquid: allTransit - liquidTransit } };
-    }
+      return { ...summarizeBuckets(signed), quality: period!.household.quality, inTransit: allTransit, inTransitSplit: { liquid: liquidTransit, illiquid: allTransit - liquidTransit } };
+    };
+    const netWorth = period && nwBlockers.length === 0 ? netWorthAt(nwAsOf) : null;
+    if (isCurrent && record && period)
+      latestProven = netWorth ? { asOf: nwAsOf, netWorth } : atBlockers(provenTo).length === 0 ? { asOf: provenTo, netWorth: netWorthAt(provenTo) } : null;
     const change =
       netWorth && prev?.netWorth && changeBlockers.length === 0
         ? { cents: netWorth.netWorth - prev.netWorth.netWorth, pct: prev.netWorth.netWorth > 0 ? (netWorth.netWorth - prev.netWorth.netWorth) / prev.netWorth.netWorth : null }
@@ -396,7 +420,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
     ...refs(persons.flatMap((p) => pays.get(`${p.id}|${currentYear}`)?.blockers ?? [])),
   ]);
   const seeds =
-    seedBlockers.length === 0 && base ? outlookSeeds({ book, out, base, currentYear, settings, pays, cashRows, livingTrail, nwReturn: nw.returns.portfolio?.annualized ?? null, dependents }) : null;
+    seedBlockers.length === 0 && base ? outlookSeeds({ book, out, base, currentYear, settings, pays, cashRows, livingTrail, nwReturn: nw.returns.portfolio?.annualized ?? null, dependents, latestProven }) : null;
 
   // The year in progress cut where the forecast starts, so actual to date + the forecast's rest of the year = the whole year.
   let ytd: YearProfile | null = null;
@@ -463,23 +487,25 @@ function outlookSeeds(x: {
   livingTrail: (from: string, to: string, rows: CashRows, payReimbursements: number) => LivingTrail;
   nwReturn: number | null;
   dependents: TaxDependent[];
+  /** This year's latest proven net worth (it can be earlier than the year column's date). */
+  latestProven: { asOf: string; netWorth: YearNetWorth } | null;
 }): OutlookSeeds {
-  const { book, out, base, currentYear, settings } = x;
+  const { book, out, base, currentYear, settings, latestProven: proven } = x;
   const taxYear = Math.max(...Object.keys(TAX_YEARS).map(Number).filter((y) => y <= currentYear), Math.min(...Object.keys(TAX_YEARS).map(Number)));
   const fp = TAX_YEARS[taxYear]!.federal;
   const cur = out.find((y) => y.isCurrent);
 
   // ------------------------------------------------------------ starting point
   // The latest proven net worth: this year's statements if they pass, else last Dec 31.
-  const start: OutlookSeeds["start"] = cur?.netWorth
+  const start: OutlookSeeds["start"] = proven
     ? {
-        asOf: cur.netWorthAsOf,
-        year: Number(cur.netWorthAsOf.slice(0, 4)),
-        month: Number(cur.netWorthAsOf.slice(5, 7)),
-        liquid: cur.netWorth.liquid,
-        illiquid: cur.netWorth.illiquid,
-        note: `Latest proven net worth (statements through ${cur.netWorthAsOf})`,
-        inTransit: cur.netWorth.inTransitSplit,
+        asOf: proven.asOf,
+        year: Number(proven.asOf.slice(0, 4)),
+        month: Number(proven.asOf.slice(5, 7)),
+        liquid: proven.netWorth.liquid,
+        illiquid: proven.netWorth.illiquid,
+        note: `Latest proven net worth (statements through ${proven.asOf})`,
+        inTransit: proven.netWorth.inTransitSplit,
       }
     : {
         asOf: `${base.year}-12-31`,

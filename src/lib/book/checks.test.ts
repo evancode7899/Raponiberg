@@ -342,6 +342,18 @@ describe("the data edge", () => {
     expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-10-01", to: "2025-10-31" }).map((x) => x.id)).toEqual([f!.id]);
   });
 
+  it("withholds nothing before its own date when cash flow runs past the edge", () => {
+    // Nov 1's matching window reaches back to Oct 29: past the edge (Sep 30), but cash flow
+    // runs to Oct 31, and October must stay proven there.
+    const b = edgeBook([{ date: "2025-11-01", cents: -500 }]);
+    const [f] = b.integrity.findings.filter((x) => x.check === "transfer.unmatched");
+    expect(f).toMatchObject({ atEdge: true, date: "2025-11-01" });
+    expect(cashFlowThrough(b)).toBe("2025-10-31");
+    expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-01-01", to: "2025-10-31" })).toEqual([]);
+    expect(netWorthAtBlockers(b, "2025-10-31").map((x) => x.id)).not.toContain(f!.id);
+    expect(blockersFor(b, { affects: "CASH_FLOW", from: "2025-11-01", to: "2025-11-30" }).map((x) => x.id)).toEqual([f!.id]);
+  });
+
   it("pulls cash flow back to the last whole month before the first finding past the edge", () => {
     expect(cashFlowThrough(edgeBook([{ date: "2025-11-12", cents: -500 }]))).toBe("2025-10-31");
     // Never before the edge itself.

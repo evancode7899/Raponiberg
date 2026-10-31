@@ -534,6 +534,25 @@ describe("annual statement proofs", () => {
     expect(month.blocks.some((b) => b.kind === "facts")).toBe(false);
   });
 
+  it("withholds this year's net worth on the column's date when balances are proven only to an earlier day", () => {
+    // Cash proven through Mar 31, every balance only through Feb 28.
+    const b = makeBook();
+    b.horizon = { cashFlow: EDGE, netWorth: "2026-02-28" };
+    const r = buildAnnualProfile(b, SETTINGS);
+    const y = r.years.find((x) => x.isCurrent)!;
+    expect(y.asOf).toBe(EDGE);
+    expect(y.cash).toBeTruthy();
+    // Never the Feb 28 balance under a Mar 31 column.
+    expect(y.netWorthAsOf).toBe(EDGE);
+    expect(y.netWorth).toBeNull();
+    expect(y.change).toBeNull();
+    expect(y.bridge).toBeNull();
+    expect(y.blockers.netWorth.map((x) => x.id)).toEqual(["networth.through:2026-02-28"]);
+    expect(buildAnnualProof(b, r, { report: "annual", figure: "net-worth", year: 2026, line: "net-worth" }).withheld).toBe(true);
+    // The forecast still starts from the latest proven balance.
+    expect(r.seeds?.start).toMatchObject({ asOf: "2026-02-28", year: 2026, month: 2 });
+  });
+
   it("withholds a figure whose section is withheld, and says what's missing", () => {
     const p = buildAnnualProof(book, profile, { report: "annual", figure: "net-worth", year: 2024, line: "change" });
     expect(p.withheld).toBe(true);

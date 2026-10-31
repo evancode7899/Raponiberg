@@ -1,4 +1,5 @@
 import { addBusinessDays, addDays, daysBetween, endOfMonth, maxIso, minIso, periodLabel, periodsBetween, startOfMonth } from "../../dates/isoDate.ts";
+import { edgeStart } from "../blockers.ts";
 import { issuerOf, PAYMENT_GRACE_DAYS } from "../idleCards.ts";
 import type { Book } from "../load.ts";
 import { employerDeposits, stubGroups, UNKNOWN_PERSON } from "../pay.ts";
@@ -121,11 +122,11 @@ function addMonths(iso: string, n: number): string {
 }
 
 /** Which figures a finding holds back, and from which day (past the edge, only after it). */
-function neededFrom(book: Book, f: Finding): Partial<Record<PlanLane, string>> {
-  const afterEdge = addDays(book.horizon.netWorth, 1);
+function neededFrom(f: Finding): Partial<Record<PlanLane, string>> {
+  const startsAt = edgeStart(f);
   const out: Partial<Record<PlanLane, string>> = {};
   for (const s of [f.scope, ...(f.extraScopes ?? [])]) {
-    const from = f.atEdge ? maxIso(s.from, afterEdge) : s.from;
+    const from = startsAt ? maxIso(s.from, startsAt) : s.from;
     const set = (lane: PlanLane) => (out[lane] = out[lane] ? minIso(out[lane]!, from) : from);
     if (s.affects.includes("CASH_FLOW")) set("cashFlow");
     if (s.affects.includes("NET_WORTH")) set("netWorth");
@@ -324,7 +325,7 @@ export function buildStatementPlan(book: Book): StatementPlan {
   const other: PlanOther[] = [];
   const nameOf = (id: string) => book.accounts.find((a) => a.id === id)?.name ?? "an account";
   for (const f of book.integrity.findings) {
-    const lanes = neededFrom(book, f);
+    const lanes = neededFrom(f);
     if (!Object.keys(lanes).length || byStub.has(f.id)) continue;
     if (!f.needs) {
       other.push({ id: f.id, title: f.title, fix: f.fix, status: f.status, neededFrom: lanes });
