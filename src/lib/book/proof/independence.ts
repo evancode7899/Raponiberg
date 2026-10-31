@@ -1,7 +1,8 @@
 import { RENT_VS_BUY_FIGURES } from "../../home-budget/rentVsBuy.ts";
 import { showValue } from "./clearance.ts";
 import type { ProofDescriptor } from "./index.ts";
-import type { Proof, ProofLink, ProofValue, RederivedRoute } from "./types.ts";
+import { derivedKey, type DerivedFigure } from "../derived/types.ts";
+import type { Proof, ProofLink, ProofValue, Rederivation, RederivedRoute } from "./types.ts";
 
 /**
  * Independent proofs (SSOT F5): a figure worked out a second way that shares nothing with
@@ -66,6 +67,27 @@ export function route(name: string, figure: ProofValue, value: ProofValue, expla
 export function invariant(name: string, figure: ProofValue, holds: boolean, explain: string): RederivedRoute {
   return { route: name, value: figure, ok: holds, explain };
 }
+
+/**
+ * A page's re-derivations, by derivedKey: `by` works each figure out a second way (routes),
+ * says why it can't (none), or leaves it (null). Routes are held to the figure's value.
+ */
+export function rederiveList(figures: readonly DerivedFigure[], by: (f: DerivedFigure & { value: ProofValue }) => RederivedRoute[] | { none: string } | null): Record<string, Rederivation> {
+  const out: Record<string, Rederivation> = {};
+  for (const f of figures) {
+    if (!f.value) continue;
+    const r = by(f as DerivedFigure & { value: ProofValue });
+    if (r) out[derivedKey(f)] = Array.isArray(r) ? { routes: r } : r;
+  }
+  return out;
+}
+
+/** A route over money worked out in cents, held to the figure. */
+export const centsRoute = (name: string, figure: ProofValue, cents: number, explain: string, tolerance = 0) => route(name, figure, { cents }, explain, { tolerance: { cents: tolerance } });
+/** A route over a ratio. */
+export const ratioRoute = (name: string, figure: ProofValue, ratio: number | null, explain: string, tolerance = 1e-9) => route(name, figure, ratio == null ? { text: "—" } : { ratio }, explain, { tolerance: { ratio: tolerance } });
+/** A route over a count or words. */
+export const textRoute = (name: string, figure: ProofValue, text: string, explain: string) => route(name, figure, { text }, explain);
 
 /** The routes that didn't tie, in words for the sweep's listing. */
 export function failedRoutes(p: Pick<Proof, "describes" | "figure" | "rederived">): string[] {

@@ -11,7 +11,10 @@ import { defaultFunds, linkHome, type FundsBook, type FundsConfig, type HomeLink
 import { employerKey } from "../../ingest/payroll/types.ts";
 import { RENT_VS_BUY_FIGURES, rentVsBuyFigures, SIM_YEARS, type RentVsBuyFigure } from "../../home-budget/rentVsBuy.ts";
 import { MORTGAGE_FIGURES, mortgageFigures, type MortgageFigure } from "../../mortgage/figures.ts";
-import { LINKED_KEYS, normalizeMortgageInputs, withLinks, type MortgageInputs } from "../../mortgage/inputs.ts";
+import { comparePrepayVsInvest } from "../../mortgage/prepayVsInvest.ts";
+import { ledgerNetWorthAt } from "../rederive/netWorth.ts";
+import { rederiveAccess, rederiveEstimate, rederiveMortgage, rederivePlanCell, rederiveRentVsBuy, rederiveStress } from "../rederive/planning.ts";
+import { LINKED_KEYS, normalizeMortgageInputs, toPlan, withLinks, type MortgageInputs } from "../../mortgage/inputs.ts";
 import { buildMortgageLinks } from "../../mortgage/links.ts";
 import { estimateFigures, yearEstimate } from "../../profile/yearEstimate.ts";
 import { taxOnPay, type OutlookSeeds, type PayForTax } from "../../profile/basePay.ts";
@@ -721,6 +724,7 @@ function planCellProof(c: FireCtx, row: string, col: string): Built {
     describes: `FIRE › Plan, long-term table: ${cell.label}`,
     figure: value,
     selfCheck: null,
+    rederived: rederivePlanCell(t, full, row, col, value, { birthYear: c.fa.plan.birthYear ?? null, nwAt: (iso) => ledgerNetWorthAt(c.book, iso) }),
     blocks: [{ kind: "chain", title: forecast ? `The plan in ${year}` : "Proven", lines }, driversBlock(c), fireSettingsBlock(c)],
     checks,
     withheld,
@@ -741,6 +745,7 @@ function accessProof(c: FireCtx, metric: AccessFigure): Built {
     describes: `FIRE › Plan, bridging to 59½: ${ACCESS_WORDS[metric]}`,
     figure: value,
     selfCheck: null,
+    rederived: rederiveAccess(metric, value, { walkAway: a.walkAway, birthYear: c.fa.plan.birthYear ?? null, plan: fireTableOf(c).full }),
     blocks: [
       {
         kind: "chain",
@@ -775,6 +780,7 @@ function stressProof(c: FireCtx, metric: StressFigure, volatility: number): Buil
     describes: `FIRE › Stress test: ${STRESS_WORDS[metric]}`,
     figure: value,
     selfCheck: null,
+    rederived: rederiveStress(metric, value, st, c.fa.fi?.year ?? null),
     blocks: [
       {
         kind: "chain",
@@ -1380,6 +1386,7 @@ function rentVsBuyProof(c: HomeCtx, figure: RentVsBuyFigure): Built {
     describes: RVB_WORDS[figure],
     figure: figureV,
     selfCheck: null,
+    rederived: rederiveRentVsBuy(figure, figureV, r),
     blocks: [
       { kind: "chain", title: "Rent vs buy", lines },
       {
@@ -1466,6 +1473,7 @@ async function buildAnnualEstimate(ctx: ProofContext, d: Extract<PlanningDescrip
       describes: `${e.year} est. (annual statement): ${word}`,
       figure: value,
       selfCheck: null,
+      rederived: rederiveEstimate(d.line, value, e, estimateFigures(e)),
       blocks: [
         {
           kind: "chain",
@@ -1547,6 +1555,7 @@ async function buildMortgage(ctx: ProofContext, d: Extract<PlanningDescriptor, {
     describes: `Mortgage: ${MORTGAGE_WORDS[d.figure]}`,
     figure: value,
     selfCheck: null,
+    rederived: rederiveMortgage(d.figure, value, eff, m, (rr) => comparePrepayVsInvest(toPlan({ ...eff, investReturn: rr })).advantage),
     blocks: [
       { kind: "chain", title: "The comparison", lines: result },
       { kind: "chain", title: "What it runs on", lines: inputs, note: "The Mortgage page's inputs as saved; a linked figure is used unless one is typed over it." },

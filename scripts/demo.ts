@@ -12,6 +12,7 @@
  *   npm run demo              next start on the last production build (.next-app, else .next)
  *   npm run demo -- --dev     next dev, in its own build folder (.next-dev-demo)
  *   npm run demo -- --build-only   rebuild data/demo and exit
+ *   npm run demo -- --sweep        rebuild data/demo and run the proof sweep on it (CI): exits 1 on any problem
  * DEMO_PORT changes the port (default 3001).
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -79,7 +80,9 @@ function buildDir(): string {
 
 try {
   buildDemoData();
-  if (!process.argv.includes("--build-only")) {
+  if (process.argv.includes("--sweep")) {
+    node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "proof-sweep.ts")], "The demo's proof sweep");
+  } else if (!process.argv.includes("--build-only")) {
     const dir = buildDir();
     if (!dev && !existsSync(path.join(ROOT, dir, "BUILD_ID"))) throw new Error(`No production build in ${dir}: run npm run build first, or use npm run demo -- --dev.`);
     console.log(`\nDemo on http://127.0.0.1:${PORT} (data: ${path.relative(ROOT, DEMO_DIR)})`);
