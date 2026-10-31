@@ -470,7 +470,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                     <tr className={`${table.trHover} cursor-pointer ${isOpen ? "bg-surface-2" : ""}`} onClick={() => setOpenRow(isOpen ? null : p.start)}>
                       <td className={`${table.td} whitespace-nowrap font-medium`}>
                         <span className="text-faint">{isOpen ? "▾" : "▸"}</span>{" "}
-                        <ProofValue proof={changeProof(granularity, p.start, p.end, h.closingCents - h.openingCents)}>{p.label}</ProofValue>
+                        <ProofValue proof={changeProof(granularity, p.start, p.end, h.closingCents - h.openingCents)} drawn="words">{p.label}</ProofValue>
                         <QualityBadge quality={h.quality} />
                       </td>
                       <td className={table.tdR}>

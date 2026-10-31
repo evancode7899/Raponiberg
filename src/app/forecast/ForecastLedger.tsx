@@ -198,7 +198,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                       {shown == null ? (
                         <span className="text-faint">—</span>
                       ) : (
-                        <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : unswept("a forecast line with no proof")}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
+                        <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : unswept("a forecast line with no proof")} drawn={units === "usd" ? undefined : { per: 1000 }}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
                       )}
                     </td>
                   );

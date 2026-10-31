@@ -54,7 +54,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
         <StatCell label="Cost of ownership" value={usd0(t.tco)} proof={carProof(r.carId, { span: "toDate" }, t.tco)} sub={`${miles(r.odometer.daysOwned / 30.44, 0)} months, all-in · ${usd0(t.statementCents)} on statements, ${usd0(t.typedCents)} typed by you (price, interest, off-statement)`} />
         <StatCell label="All-in per mile" value={perMile(t.perMile)} proof={t.perMile != null ? carProof(r.carId, { span: "toDate", per: "mile" }, null) : noFigure("no miles to divide by yet")} tone="accent" sub={r.last12.perMile != null ? `${perMile(r.last12.perMile)} over the last 12 months` : undefined} />
         <StatCell label="Per month" value={usd0(t.perMonth)} proof={t.perMonth != null ? carProof(r.carId, { span: "toDate", per: "month" }, null) : noFigure("not a month owned yet")} sub={t.perDay != null ? `${perMile(t.perDay)} a day` : undefined} />
-        <StatCell proof={ctx.dp("marginal-per-mile")}
+        <StatCell proof={ctx.dp("marginal-per-mile")} drawn={{ per: 100 }}
           label="One more mile"
           value={perMile(t.marginalPerMile)}
           sub={t.operatingPerMile != null ? `${perMile(t.operatingPerMile)} fuel & upkeep + ${perMile(r.depreciation.plannedPerMile)} wear` : "needs odometer readings"}
@@ -139,7 +139,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
           <Card title="Owning vs driving" subtitle="What the car costs standing still, and what each mile adds.">
             <StatGrid cols={2}>
               <StatCell proof={ctx.dp("fixed-per-month")} label="Owning it, per month" value={usd0(t.fixedPerMonth)} sub="insurance, parking, taxes, interest — accrued to date" />
-              <StatCell proof={ctx.dp("operating-per-mile")} label="Driving it, per mile" value={perMile(t.operatingPerMile)} sub="fuel, maintenance, repairs, care" />
+              <StatCell proof={ctx.dp("operating-per-mile")} drawn={{ per: 100 }} label="Driving it, per mile" value={perMile(t.operatingPerMile)} sub="fuel, maintenance, repairs, care" />
               <StatCell proof={ctx.dp("cash-out-the-door")} label="Cash out the door" value={usd0(t.cashOutTheDoor)} sub="purchase, interest and every cost paid" />
               <StatCell proof={ctx.dp("prepaid")} label="Prepaid, not yet used" value={usd0(r.prepaidCents)} sub="the rest of premiums and annual bills" />
             </StatGrid>

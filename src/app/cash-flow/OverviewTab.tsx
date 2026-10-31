@@ -83,7 +83,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                     {TONE[i.tone].icon}
                   </span>
                   <div className="min-w-0">
-                    <div className="text-[13px] font-semibold text-fg">{i.proof ? <ProofValue proof={i.proof}>{i.title}</ProofValue> : i.title}</div>
+                    <div className="text-[13px] font-semibold text-fg">{i.proof ? <ProofValue proof={i.proof} drawn="words">{i.title}</ProofValue> : i.title}</div>
                     <div className="mt-0.5 text-xs leading-relaxed text-muted">{i.body}</div>
                     {i.action && (
                       <button type="button" className="mt-1 text-xs font-medium text-accent hover:underline" onClick={() => ctx.goTo((i.action!.tab ?? "spending") as CashTab, i.action!.category)}>

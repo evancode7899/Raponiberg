@@ -2,6 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { last12At, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
+import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -99,7 +100,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         />
         <StatCell
           label="Savings rate, last 12 months"
-          proof={rateNow == null ? noFigure("not twelve proven months yet") : ctx.proof("net", last12, { shownCents: inc12[hi]! - spend12[hi]! })}
+          proof={rateNow == null ? noFigure("not twelve proven months yet") : ctx.dp("savings-rate", windowKey(last12))}
           value={rateNow == null ? "—" : formatPercentRatio(rateNow, 0)}
           tone={rateNow == null ? "neutral" : rateNow >= 0.2 ? "pos" : rateNow < 0 ? "neg" : "neutral"}
           sub={rateBefore == null ? `through ${endLabel}` : `${formatPercentRatio(rateBefore, 0)} the 12 months before`}

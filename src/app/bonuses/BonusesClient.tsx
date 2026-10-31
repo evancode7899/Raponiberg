@@ -4,7 +4,7 @@ import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Loading, PageBody, StatCell, StatGrid, table, Tabs, useTabParam, type Tone } from "@/components/ui/kit";
-import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import type { PaymentKind } from "@/lib/bonuses/awardStore";
 import type { AwardMeasure, BonusesDescriptor } from "@/lib/book/proof/bonusesProof";
@@ -59,9 +59,9 @@ const heldBy = (r: BonusesReport | null, proof: ProofTarget) => {
 };
 
 /** A Bonuses figure: its proof, or "missing data" with the finding when one withholds it. */
-function BonusValue({ proof, children }: { proof: ProofTarget; children: ReactNode }) {
+function BonusValue({ proof, children, drawn }: { proof: ProofTarget; children: ReactNode; drawn?: FigureProps["drawn"] }) {
   const held = heldBy(useContext(Report), proof);
-  return held.length ? <BlockedValue blockers={held} /> : <ProofValue proof={proof}>{children}</ProofValue>;
+  return held.length ? <BlockedValue blockers={held} /> : <ProofValue proof={proof} drawn={drawn}>{children}</ProofValue>;
 }
 const awardProof = (a: AwardRow, measure: AwardMeasure, cents: number) => bon({ figure: "award", letterId: a.letterId, year: a.year, measure }, cents);
 const trancheProof = (a: AwardRow, t: Tranche) => bon({ figure: "tranche", letterId: a.letterId, year: a.year, window: t.window, kind: t.kind }, t.amountCents);
@@ -650,7 +650,7 @@ function Payouts({ r }: { r: BonusesReport }) {
                     )}
                   </td>
                   <td className={table.td}>
-                    <BonusValue proof={bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }, y.explainedCents)}>
+                    <BonusValue proof={bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }, y.explainedCents)} drawn="words">
                       {y.explainedCents === y.cents ? (
                         <Badge tone="pos">On a letter</Badge>
                       ) : y.explainedCents ? (
@@ -713,5 +713,5 @@ function Payouts({ r }: { r: BonusesReport }) {
 function PaysCell({ p, r }: { p: BonusPayment; r: BonusesReport }) {
   const w = r.windows.find((x) => x.payments.some((q) => q.stubId === p.stubId && q.line === p.line));
   const text = <span className="text-fg-2">{p.explains!.window} payment</span>;
-  return w ? <BonusValue proof={windowProof(w, "paid")}>{text}</BonusValue> : text;
+  return w ? <BonusValue proof={windowProof(w, "paid")} drawn="words">{text}</BonusValue> : text;
 }

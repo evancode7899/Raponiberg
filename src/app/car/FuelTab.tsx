@@ -27,7 +27,7 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
         <StatCell proof={ctx.dp("mpg")} label="Lifetime MPG" value={f.mpg ? f.mpg.toFixed(1) : "—"} sub={`${f.fills.length} full fills measured`} />
         <StatCell proof={ctx.dp("recent-mpg")} label="Last 5 fills" value={f.recentMpg ? f.recentMpg.toFixed(1) : "—"} tone={f.recentMpg && f.mpg ? (f.recentMpg >= f.mpg ? "pos" : "warn") : "neutral"} sub={f.bestMpg ? `best ${f.bestMpg.toFixed(1)} · worst ${f.worstMpg!.toFixed(1)}` : undefined} />
         <StatCell proof={ctx.dp("price-per-gallon")} label="Avg price paid" value={f.pricePerGallon ? `${usd2(Math.round(f.pricePerGallon))}/gal` : "—"} sub={`${miles(f.gallons, 1)} gallons`} />
-        <StatCell proof={ctx.dp("fuel-per-mile")} label="Fuel per mile" value={perMile(f.fuelPerMile, 3)} sub={`${usd2(r.accrued.FUEL)} on ${f.fillsCount} fill-ups`} />
+        <StatCell proof={ctx.dp("fuel-per-mile")} drawn={{ per: 100 }} label="Fuel per mile" value={perMile(f.fuelPerMile, 3)} sub={`${usd2(r.accrued.FUEL)} on ${f.fillsCount} fill-ups`} />
         <StatCell proof={ctx.dp("range")} label="Range on a tank" value={f.avgRange ? `${miles(f.avgRange)} mi` : "—"} sub={ctx.car.vehicle.tankGallons ? `${ctx.car.vehicle.tankGallons} gal tank` : "set the tank size"} />
         <StatCell proof={ctx.dp("recent-per-day")} label="Driving" value={r.odometer.recentPerDay ? `${r.odometer.recentPerDay.toFixed(1)} mi/day` : "—"} sub={r.odometer.perDay ? `${r.odometer.perDay.toFixed(1)} mi/day since purchase` : undefined} />
       </StatGrid>

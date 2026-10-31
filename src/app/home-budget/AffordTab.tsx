@@ -102,7 +102,7 @@ export function AffordTab({
           <div className="min-w-0">
             <div className="text-xs font-medium uppercase tracking-wide text-muted">You can afford up to</div>
             <div className="num mt-1 text-4xl font-semibold tracking-tight text-fg sm:text-5xl">
-              <ProofValue proof={proof("max-price", max.impliedMaxHomeValue)}>{formatUsd(price)}</ProofValue>
+              <ProofValue proof={proof("max-price", max.impliedMaxHomeValue)} drawn={{ step: 1000 }}>{formatUsd(price)}</ProofValue>
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg-2">
               <span className="num font-semibold text-fg">{formatUsd(at.monthlyTotalHousing)}</span>/mo all-in — {formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross,{" "}
@@ -297,7 +297,7 @@ function LenderCard({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <div className="num text-3xl font-semibold tracking-tight text-fg">
-            <ProofValue proof={proof("lender-max", max.impliedMaxHomeValue)}>{formatUsd(price)}</ProofValue>
+            <ProofValue proof={proof("lender-max", max.impliedMaxHomeValue)} drawn={{ step: 1000 }}>{formatUsd(price)}</ProofValue>
           </div>
           <p className="mt-1 text-xs text-fg-2">
             <span className="num font-semibold text-fg">{formatUsd(counted)}</span>/mo counted against{" "}
