@@ -164,7 +164,7 @@ export function cachedBuilt(db: Db, key: string, build: (book: Book) => unknown)
 }
 
 /** A short tag for the data as it is (dataStamp): pages and proofs carry it, so the proof drawer can tell changed data from a bug. */
-export const stampTag = (stamp = dataStamp()) => createHash("sha1").update(stamp).digest("hex").slice(0, 12);
+export const stampTag = (stamp = dataStamp()) => createHash("sha256").update(stamp).digest("hex").slice(0, 12);
 
 /**
  * A JSON response from a report already serialized (cachedBuilt), tagged with the data it was
