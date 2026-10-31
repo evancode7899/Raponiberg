@@ -55,8 +55,18 @@ export function figureReads(r: Pick<BonusesReport, "windows" | "awards" | "byYea
 
 // ------------------------------------------------------------------ pay figures
 
-/** A person's calendar year of pay as the stubs give it (year to date on each employer's last stub). */
-export const yearPayDescriptor = (personId: string, year: number, lines: PayLine[]): PayDescriptor => ({ report: "pay", basis: "ytd", personId, year, lines });
+/**
+ * A person's calendar year of pay as the stubs give it (year to date on each employer's last
+ * stub), as of the report's date: a year still under way stops there, as the page does.
+ */
+export const yearPayDescriptor = (personId: string, year: number, lines: PayLine[], asOf: string): PayDescriptor => ({
+  report: "pay",
+  basis: "ytd",
+  personId,
+  year,
+  lines,
+  ...(asOf.startsWith(`${year}-`) && asOf < `${year}-12-31` ? { through: asOf } : {}),
+});
 
 /** One stub date's bonus lines from one employer: the page shows the day's total, the proof re-adds the day. */
 export function stubPayFigure(p: BonusPayment, all: BonusPayment[]): { descriptor: PayDescriptor; cents: number } {
@@ -67,15 +77,15 @@ export function stubPayFigure(p: BonusPayment, all: BonusPayment[]): { descripto
   };
 }
 
-/** A year's bonus paychecks from one employer, to date (Bonus paychecks' by-year table). */
-export const paidYearDescriptor = (y: BonusYear): PayDescriptor => ({
+/** A year's bonus paychecks from one employer, to date (Bonus paychecks' by-year table): cut at a gap in the stubs, else at the report's date. */
+export const paidYearDescriptor = (y: BonusYear, asOf: string): PayDescriptor => ({
   report: "pay",
   basis: "paid",
   personId: y.personId,
   employerKeys: y.employerKeys,
   lines: ["bonus"],
   start: `${y.year}-01-01`,
-  end: y.through ?? `${y.year}-12-31`,
+  end: y.through ?? (asOf < `${y.year}-12-31` ? asOf : `${y.year}-12-31`),
 });
 
 /** The next award the forecast expects, per person: its estimated payments (no letter or stub shows them yet). */
@@ -98,14 +108,14 @@ export const estimateDescriptor = (b: Forecast["schedule"][number]): BonusesDesc
  */
 export function bonusPayFigures(r: BonusesReport): { descriptor: PayDescriptor; cents: number }[] {
   const out: { descriptor: PayDescriptor; cents: number }[] = [];
-  for (const a of r.awards) if (a.base?.from === "STUBS" && !a.base.blockers?.length) out.push({ descriptor: yearPayDescriptor(a.personId, a.year, ["base"]), cents: a.base.cents });
+  for (const a of r.awards) if (a.base?.from === "STUBS" && !a.base.blockers?.length) out.push({ descriptor: yearPayDescriptor(a.personId, a.year, ["base"], r.today), cents: a.base.cents });
   for (const y of r.payYears)
     out.push(
-      { descriptor: yearPayDescriptor(y.personId, y.year, ["base"]), cents: y.baseCents },
-      { descriptor: yearPayDescriptor(y.personId, y.year, ["bonus"]), cents: y.bonusCents },
-      { descriptor: yearPayDescriptor(y.personId, y.year, ["base", "bonus"]), cents: y.baseCents + y.bonusCents },
+      { descriptor: yearPayDescriptor(y.personId, y.year, ["base"], r.today), cents: y.baseCents },
+      { descriptor: yearPayDescriptor(y.personId, y.year, ["bonus"], r.today), cents: y.bonusCents },
+      { descriptor: yearPayDescriptor(y.personId, y.year, ["base", "bonus"], r.today), cents: y.baseCents + y.bonusCents },
     );
-  for (const y of r.byYear) if (!y.blockers.length) out.push({ descriptor: paidYearDescriptor(y), cents: y.cents });
+  for (const y of r.byYear) if (!y.blockers.length) out.push({ descriptor: paidYearDescriptor(y, r.today), cents: y.cents });
   for (const p of r.payments) out.push(stubPayFigure(p, r.payments));
   return out;
 }

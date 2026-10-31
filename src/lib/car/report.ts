@@ -539,9 +539,12 @@ export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: s
         splitWays: null,
       };
     });
+  // Counted costs stop where the statements are proven, as every car's totals do: a bill
+  // printed ahead (a landlord's next month) waits until the rest of its month is in.
+  const proven = (i: CostItem) => !opts.statementsThrough || i.date <= opts.statementsThrough;
   const log: LogRow[] = [
-    ...base.map((i) => ({ ...i, counted: true, match: i.entryIds.length ? (hintById.get(i.entryIds[0]!) ?? null) : null })),
-    ...rent.map((i) => ({ ...i, counted: true, match: null })),
+    ...base.filter(proven).map((i) => ({ ...i, counted: true, match: i.entryIds.length ? (hintById.get(i.entryIds[0]!) ?? null) : null })),
+    ...rent.filter(proven).map((i) => ({ ...i, counted: true, match: null })),
     ...quiet.map((i) => ({ ...i, counted: false, match: hintById.get(i.entryIds[0]!) ?? null })),
   ].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 
@@ -551,10 +554,12 @@ export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: s
   const of = (s: HintMatch["status"]) => hints.filter((h) => h.status === s);
   const sumCents = (hs: HintMatch[]) => hs.reduce((s, h) => s + h.cents, 0);
   const matched = of("MATCHED");
+  // The statement totals stop at the proven date too; the double-count check still sees every row.
+  const onStatements = base.filter((i) => i.source === "STATEMENT" && proven(i));
   const audit: Audit = {
-    rows: seen.size,
-    rowsCents: base.filter((i) => i.source === "STATEMENT").reduce((s, i) => s + i.cents, 0),
-    paymentCents: base.filter((i) => i.source === "STATEMENT" && i.kind === "PAYMENT").reduce((s, i) => s + i.cents, 0),
+    rows: new Set(base.filter(proven).flatMap((i) => i.rowIds)).size,
+    rowsCents: onStatements.reduce((s, i) => s + i.cents, 0),
+    paymentCents: onStatements.filter((i) => i.kind === "PAYMENT").reduce((s, i) => s + i.cents, 0),
     rowsFromLog: counted.filter((c) => c.entryIds.length).length,
     rowsOnOwn: counted.filter((c) => !c.entryIds.length).length,
     doubleCounted: [...seen].filter(([, n]) => n > 1).map(([r]) => r),

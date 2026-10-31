@@ -107,7 +107,8 @@ function warrantyRoutes(figure: string, v: ProofValue, car: CarReport): Rederive
 
 function garageRoutes(figure: string, v: ProofValue, g: GarageReport): RederivedRoute[] | { none: string } | null {
   if (figure === "statement-costs") {
-    const items = g.cars.flatMap((c) => c.items).filter((i) => i.source === "STATEMENT" && i.kind !== "PAYMENT");
+    // Through the proven date, as the audit counts them (a card printed ahead holds later charges).
+    const items = g.cars.flatMap((c) => c.items).filter((i) => i.source === "STATEMENT" && i.kind !== "PAYMENT" && i.date <= g.statementsThrough);
     const seen = new Set<string>();
     const cents = items.filter((i) => (seen.has(i.id) ? false : (seen.add(i.id), true))).reduce((s, i) => s + i.cents, 0);
     return [centsRoute("every car's statement items, re-added", v, cents, "each car's cost items read off statements, less the purchase payments")];

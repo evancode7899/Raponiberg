@@ -71,10 +71,9 @@ export function sortCredits(product: CardProduct | null, rows: PerkRow[]): Sorte
     const candidates = [...byCredit, ...byMerchant];
     if (candidates.length) {
       // The charge it pays back, to date it: the latest unclaimed one at the perk's merchants within 40 days.
+      const since = addDays(r.date, -40);
       const charge = (c: Compiled) =>
-        c.merchants
-          ? rows.filter((x) => x.amountCents < 0 && !claimed.has(x.id) && x.date <= r.date && x.date >= addDays(r.date, -40) && c.merchants!.test(textOf(x))).at(-1)
-          : undefined;
+        c.merchants ? rows.filter((x) => x.amountCents < 0 && !claimed.has(x.id) && x.date <= r.date && x.date >= since && c.merchants!.test(textOf(x))).at(-1) : undefined;
       const on = (c: Compiled) => charge(c)?.date ?? r.date;
       const room = (c: Compiled) => {
         const d = on(c);

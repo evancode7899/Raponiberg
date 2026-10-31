@@ -5,9 +5,9 @@ import { PARTNER_SHARE_CARDS, PARTNER_SHARE_RENT } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
 import { oneOffSubject } from "../reimbursements.ts";
 import { taxAuthority } from "../../tax/facts/payments.ts";
-import { countsOn, rentPayments, type RentPayment } from "../rent.ts";
+import { rentPayments, type RentPayment } from "../rent.ts";
 import type { BlockerRef } from "./blockerRef.ts";
-import { buildCashFlowReport, cashFlowRows, type CashFlowPeriod } from "./cashFlow.ts";
+import { buildCashFlowReport, cashFlowRows, dayOfFor, type CashFlowPeriod } from "./cashFlow.ts";
 
 /**
  * The spending app's data: every proven calendar month with category and merchant
@@ -263,13 +263,27 @@ export function provenMonths(book: Book, accountIds?: string[]) {
  * tax refund is income, never a credit against spending. The merchant proof reads these same rows
  * (proof/cashFlowProof.ts).
  */
-export function spendingRows(book: Book, accountIds?: string[]) {
+export function spendingRows(book: Book, accountIds?: string[]): SpendingRows {
+  // Once per Book and accounts: every merchant and band proof reads the same rows, and the Book never changes.
+  const key = accountIds?.length ? [...accountIds].sort().join(",") : "";
+  let byKey = spendingRowsMemo.get(book);
+  if (!byKey) spendingRowsMemo.set(book, (byKey = new Map()));
+  let out = byKey.get(key);
+  if (!out) byKey.set(key, (out = buildSpendingRows(book, accountIds)));
+  return out;
+}
+
+type SpendingRows = ReturnType<typeof buildSpendingRows>;
+const spendingRowsMemo = new WeakMap<Book, Map<string, SpendingRows>>();
+
+function buildSpendingRows(book: Book, accountIds?: string[]) {
   const proven = provenMonths(book, accountIds);
   const accountFilter = accountIds?.length ? new Set(accountIds) : null;
   const from = proven.window[0]?.start;
   const to = (proven.current ?? proven.window.at(-1))?.end;
   const windowEnd = proven.window.at(-1)?.end;
-  const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
+  // The day each row counts on, worked out once per Book (rent detection reads every row).
+  const dayOf = dayOfFor(book);
   const inRange = cashFlowRows(book).filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
   const reversed = reversals(inRange);
   const inScope = inRange.filter((r) => !reversed.has(r.id));
@@ -379,6 +393,21 @@ export function spendingKindRule(
   };
 }
 
+const reportMemo = new WeakMap<Book, Map<string, SpendingReport>>();
+
+/**
+ * The spending report, once per Book, accounts and one-off settings: every spending-band
+ * proof reads the same report, and none may change it (read only).
+ */
+export function spendingReportFor(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
+  const key = JSON.stringify([opts.accountIds?.length ? [...opts.accountIds].sort() : [], settings.nonRecurringCategories, settings.oneOffs]);
+  let byKey = reportMemo.get(book);
+  if (!byKey) reportMemo.set(book, (byKey = new Map()));
+  let r = byKey.get(key);
+  if (!r) byKey.set(key, (r = buildSpendingReport(book, settings, opts)));
+  return r;
+}
+
 export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, opts: { accountIds?: string[] } = {}): SpendingReport {
   const { report, window, current, withheldAfter, withheldBefore, from, to, windowEnd, dayOf, inScope, windowRows, last12From } = spendingRows(book, opts.accountIds);
   const accountFilter = opts.accountIds?.length ? new Set(opts.accountIds) : null;
@@ -472,10 +501,21 @@ export function spendingShape(
 
 /** Ids of expense rows that cancel in pairs: a charge and its exact credit on one account within seven days. */
 export function reversals(rows: BookRow[]): Set<string> {
+  // Each credit takes the first charge, in row order, of its exact amount on its account
+  // within a week that no earlier credit took. Charges are looked up by account and amount,
+  // so a Book of thousands of rows pairs in one pass rather than a scan per credit.
+  const charges = new Map<string, BookRow[]>();
+  for (const r of rows) {
+    if (r.lane !== "EXPENSE" || r.amountCents >= 0) continue;
+    const k = `${r.accountId}|${-r.amountCents}`;
+    const list = charges.get(k);
+    if (list) list.push(r);
+    else charges.set(k, [r]);
+  }
   const out = new Set<string>();
   for (const c of rows) {
     if (c.lane !== "EXPENSE" || c.amountCents <= 0) continue;
-    const charge = rows.find((r) => !out.has(r.id) && r.lane === "EXPENSE" && r.accountId === c.accountId && r.amountCents === -c.amountCents && Math.abs(daysBetween(r.date, c.date)) <= 7);
+    const charge = charges.get(`${c.accountId}|${c.amountCents}`)?.find((r) => !out.has(r.id) && Math.abs(daysBetween(r.date, c.date)) <= 7);
     if (!charge) continue;
     out.add(charge.id);
     out.add(c.id);

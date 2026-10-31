@@ -1,9 +1,9 @@
 import type { Granularity } from "../../dates/isoDate.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import type { Book, BookRow } from "../load.ts";
-import { countsOn, rentCovers } from "../rent.ts";
-import { buildCashFlowReport, cashFlowContributions, type CashFlowContribution, type CashFlowPeriod, type CashFlowReport } from "../reports/cashFlow.ts";
-import { buildSpendingReport, detectRecurring, merchantKeyOf, merchantName, merchantsIn, oneOffTest, spendingKindRule, spendingRows, type SpendingKind } from "../reports/spending.ts";
+import { rentCovers } from "../rent.ts";
+import { buildCashFlowReport, cashFlowContributions, dayOfFor, type CashFlowContribution, type CashFlowPeriod, type CashFlowReport } from "../reports/cashFlow.ts";
+import { detectRecurring, merchantKeyOf, merchantName, oneOffTest, spendingKindRule, spendingReportFor, spendingRows, type SpendingKind } from "../reports/spending.ts";
 import { loadProfileSettings, type FinancialProfileSettings } from "../../profile/settings.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor, isIsoDate, sumCheck } from "./common.ts";
@@ -163,6 +163,50 @@ function viewFor(book: Book, d: CashFlowDescriptor, withRows: boolean): { report
   return { report: v.report, contributions: (withRows && v.contributions) || [] };
 }
 
+/** The spending rows by lane and merchant, in row order, once per row list: a merchant's proof reads only its own. */
+const merchantIndexes = new WeakMap<readonly BookRow[], Map<string, BookRow[]>>();
+function byMerchant(rows: readonly BookRow[]): Map<string, BookRow[]> {
+  let m = merchantIndexes.get(rows);
+  if (!m) {
+    m = new Map();
+    for (const r of rows) {
+      const k = `${r.lane}|${merchantKeyOf(r)}`;
+      const list = m.get(k);
+      if (list) list.push(r);
+      else m.set(k, [r]);
+    }
+    merchantIndexes.set(rows, m);
+  }
+  return m;
+}
+
+/** The recurring charges through `end` (last twelve months from `start`), once per spending rows and dates. */
+const recurringMemo = new WeakMap<object, Map<string, ReturnType<typeof detectRecurring>>>();
+function recurringThrough(s: object, end: string, start: string, rows: BookRow[]): ReturnType<typeof detectRecurring> {
+  let m = recurringMemo.get(s);
+  if (!m) recurringMemo.set(s, (m = new Map()));
+  let r = m.get(`${end}|${start}`);
+  if (!r) m.set(`${end}|${start}`, (r = detectRecurring(rows, end, start)));
+  return r;
+}
+
+/** What every cash-flow proof on a Book looks rows up in, worked out once per Book: rent detection reads every row. */
+const lookupMemo = new WeakMap<Book, { accountName: Map<string, string>; statementById: Map<string, Book["statements"][number]>; rent: ReturnType<typeof rentCovers>; dayOf: (r: BookRow) => string }>();
+function lookups(book: Book) {
+  let l = lookupMemo.get(book);
+  if (!l)
+    lookupMemo.set(
+      book,
+      (l = {
+        accountName: new Map(book.accounts.map((a) => [a.id, a.name])),
+        statementById: new Map(book.statements.map((s) => [s.id, s])),
+        rent: rentCovers(book.rows, book.accounts, book.household.merchantRules),
+        dayOf: dayOfFor(book),
+      }),
+    );
+  return l;
+}
+
 export function buildCashFlowProof(
   book: Book,
   d: CashFlowDescriptor,
@@ -173,10 +217,7 @@ export function buildCashFlowProof(
   const dropOneOffs = d.oneOffs === "exclude";
   const { report, contributions } = viewFor(book, d, !d.merchantKey);
   const periods = report.periods;
-  const accountName = new Map(book.accounts.map((a) => [a.id, a.name]));
-  const statementById = new Map(book.statements.map((s) => [s.id, s]));
-  const rent = rentCovers(book.rows, book.accounts, book.household.merchantRules);
-  const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
+  const { accountName, statementById, rent, dayOf } = lookups(book);
 
   // A band of spending: the spending report's own figure per month, and its rule for which rows are in it.
   const band = d.spendingKind ? kindView(book, d, settings, periods) : null;
@@ -197,16 +238,18 @@ export function buildCashFlowProof(
     if (d.merchantBasis === "charges") {
       // The recurring charge's own sum (detectRecurring), over the rows counted through `end`.
       const rows = s.windowRows.filter((r) => s.dayOf(r) <= d.end);
-      figureCents = detectRecurring(rows, d.end, d.start).find((c) => c.key === d.merchantKey)?.last12Cents ?? 0;
+      figureCents = recurringThrough(s, d.end, d.start, rows).find((c) => c.key === d.merchantKey)?.last12Cents ?? 0;
       mine = rows.filter((r) => isMine(r) && r.amountCents < 0 && r.date >= d.start).map((row) => ({ row, periodIndex: Math.max(0, at(s.dayOf(row))), share: 1, cents: row.amountCents }));
       if (!figureCents && mine.length) merchantNotes.push("This merchant isn't a recurring charge through this date, so the Recurring tab shows no figure for it.");
     } else {
-      merchantPeriods = periods.map((p) => merchantsIn(s.inScope, p, s.dayOf)[lane === "EXPENSE" ? "merchants" : "payers"].find((m) => m.key === d.merchantKey)?.cents ?? 0);
-      figureCents = merchantPeriods.reduce((t, v) => t + v, 0);
-      mine = s.inScope.flatMap((row) => {
-        const i = isMine(row) ? at(s.dayOf(row)) : -1;
+      // The merchant's own rows, each in its period: what merchantsIn groups for this one merchant (a net of zero is no figure, so zero either way).
+      mine = (byMerchant(s.inScope).get(`${lane}|${d.merchantKey}`) ?? []).flatMap((row) => {
+        const i = at(s.dayOf(row));
         return i < 0 ? [] : [{ row, periodIndex: i, share: 1, cents: row.amountCents }];
       });
+      merchantPeriods = periods.map(() => 0);
+      for (const x of mine) merchantPeriods[x.periodIndex]! += lane === "EXPENSE" ? -x.row.amountCents : x.row.amountCents;
+      figureCents = merchantPeriods.reduce((t, v) => t + v, 0);
     }
     const from = periods[0]?.start ?? d.start;
     const to = periods.at(-1)?.end ?? d.end;
@@ -425,7 +468,7 @@ export const cashFlowKind: ProofKind<CashFlowDescriptor> = {
  * exact refund) can make the rows differ from it: the note says so.
  */
 function kindView(book: Book, d: CashFlowDescriptor, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, periods: CashFlowPeriod[]) {
-  const report = buildSpendingReport(book, settings, { accountIds: d.accountIds });
+  const report = spendingReportFor(book, settings, { accountIds: d.accountIds });
   const rule = spendingKindRule(book, settings, report.recurring);
   // A charge and its exact credit (reversals) stay out of the bills and big bands, so their
   // figures never hold them; everyday is the rest of the month's spending, so it does.
