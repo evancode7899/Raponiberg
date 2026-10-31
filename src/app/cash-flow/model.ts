@@ -1,15 +1,28 @@
-import type { CategoryAmount } from "@/lib/book/reports/cashFlow";
-import type { MerchantMonth, SpendingKind, SpendingMonth, SpendingReport } from "@/lib/book/reports/spending";
+import type { SpendingKind, SpendingMonth, SpendingReport } from "@/lib/book/reports/spending";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { savingsRate } from "@/lib/book/definitions";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { unswept } from "@/lib/book/proof/clearance";
+import { cashFlowDescriptor, mergeCategories, sum, type CashFlowRecipe, type Slice } from "@/lib/book/reports/cashFlowWindows";
+
+export {
+  byYear,
+  mergeCategories,
+  mergeMerchants,
+  monthKey,
+  shiftMonth,
+  sliceRange,
+  sliceStart,
+  sum,
+  trailing,
+  type MerchantTotal,
+  type RangeId,
+  type Slice,
+} from "@/lib/book/reports/cashFlowWindows";
 
 export type Report = SpendingReport & { accounts: { id: string; name: string }[] };
-export type RangeId = "3m" | "6m" | "12m" | "ytd" | "all" | "custom";
-
 /** The spending categories in the taxonomy's order; each keeps its color slot everywhere. */
 export const SPEND_CATEGORIES = CATEGORIES.filter((c) => c.kind === "EXPENSE" && c.group !== "Money movement").map((c) => c.name);
 /** Fixed chart slot per category (eight slots; the rest share the neutral "Other" color). */
@@ -26,38 +39,6 @@ export const categorySlot = (c: string): number | null => CATEGORY_SLOT[c] ?? nu
 export const categoryGroup = (c: string) => CATEGORIES.find((x) => x.name === c)?.group ?? "Other";
 export const SPEND_GROUPS = ["Essentials", "Lifestyle", "Financial"] as const;
 
-export type Slice = {
-  months: SpendingMonth[];
-  /** Up to as many months just before, for comparison (empty when fewer than three are proven). */
-  prior: SpendingMonth[];
-  label: string;
-};
-
-export function sliceRange(r: Report, range: RangeId, custom: { from: string; to: string }): Slice {
-  const all = r.months;
-  if (!all.length) return { months: [], prior: [], label: "" };
-  let lo = 0;
-  let hi = all.length - 1;
-  if (range === "custom") {
-    lo = Math.max(0, all.findIndex((m) => m.start >= custom.from));
-    const h = all.findLastIndex((m) => m.start <= custom.to);
-    hi = h < 0 ? all.length - 1 : h;
-    if (lo > hi) lo = hi;
-  } else if (range === "ytd") {
-    const y = all[hi]!.start.slice(0, 4);
-    lo = Math.max(0, all.findIndex((m) => m.start.startsWith(y)));
-  } else if (range !== "all") {
-    lo = Math.max(0, hi - ({ "3m": 3, "6m": 6, "12m": 12 }[range] - 1));
-  }
-  const months = all.slice(lo, hi + 1);
-  const n = months.length;
-  // Compared per month, so a shorter run before still works (at least three months).
-  const prior = all.slice(Math.max(0, lo - n), lo);
-  if (prior.length < Math.min(3, n)) prior.length = 0;
-  return { months, prior, label: n === 1 ? months[0]!.label : `${months[0]!.label} – ${months.at(-1)!.label}` };
-}
-
-export const sum = <T,>(xs: T[], f: (x: T) => number) => xs.reduce((s, x) => s + f(x), 0);
 export const median = (xs: number[]) => {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
@@ -105,38 +86,7 @@ export function totals(months: SpendingMonth[]): Totals {
   };
 }
 
-export function mergeCategories(months: SpendingMonth[], pick: (m: SpendingMonth) => CategoryAmount[]): CategoryAmount[] {
-  const m = new Map<string, CategoryAmount>();
-  for (const p of months) {
-    for (const c of pick(p)) {
-      const cur = m.get(c.category) ?? { ...c, cents: 0 };
-      cur.cents += c.cents;
-      m.set(c.category, cur);
-    }
-  }
-  return [...m.values()].filter((c) => c.cents !== 0).sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents));
-}
-
 export const categoryCents = (m: SpendingMonth, category: string) => m.spendingByCategory.find((c) => c.category === category)?.cents ?? 0;
-
-export type MerchantTotal = MerchantMonth & { months: number; lastMonth: string; series: number[] };
-
-/** Merchants (or payers) summed over months, with how many months they appear in. */
-export function mergeMerchants(months: SpendingMonth[], pick: (m: SpendingMonth) => MerchantMonth[] = (m) => m.merchants): MerchantTotal[] {
-  const out = new Map<string, MerchantTotal>();
-  months.forEach((p, i) => {
-    for (const x of pick(p)) {
-      const cur = out.get(x.key) ?? { ...x, cents: 0, count: 0, months: 0, lastMonth: p.label, series: months.map(() => 0) };
-      cur.cents += x.cents;
-      cur.count += x.count;
-      cur.months++;
-      cur.lastMonth = p.label;
-      cur.series[i] = x.cents;
-      out.set(x.key, cur);
-    }
-  });
-  return [...out.values()].filter((x) => x.cents > 0).sort((a, b) => b.cents - a.cents);
-}
 
 /** `proof`: the figure the title names, so a number in a sentence is as provable as one in a tile. */
 export type Insight = { tone: "good" | "bad" | "info" | "warn"; title: string; body: string; action?: { label: string; tab?: string; category?: string }; proof?: ProofRef };
@@ -291,29 +241,7 @@ export function buildInsights(slice: Slice, r: Report, proof?: ProofOf): Insight
   return out.sort((a, b) => rank(a) - rank(b)).slice(0, 6);
 }
 
-/** "2026-06" style month keys for selects. */
-export const monthKey = (iso: string) => iso.slice(0, 7);
-
 export const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "2026-06" moved by a number of months. */
-export const shiftMonth = (ym: string, months: number) => {
-  const [y, m] = ym.split("-").map(Number) as [number, number];
-  return new Date(Date.UTC(y, m - 1 + months, 1)).toISOString().slice(0, 7);
-};
-
-/**
- * The sum of `f` over the `n` months ending at each month (null until `n` are available).
- * The report's months are one unbroken run, so a window never spans a gap.
- */
-export function trailing(all: SpendingMonth[], n: number, f: (m: SpendingMonth) => number): (number | null)[] {
-  let run = 0;
-  return all.map((m, i) => {
-    run += f(m);
-    if (i >= n) run -= f(all[i - n]!);
-    return i >= n - 1 ? run : null;
-  });
-}
 
 /** The three kinds of spending, in stacking order, with what each means (spending.ts spendingKindRule). */
 export const KINDS = [
@@ -322,19 +250,8 @@ export const KINDS = [
   { id: "bigCents", kind: "big", label: "Big & one-off", hint: "single charges of $1,500+, anything marked one-off, taxes, and big merchant refunds" },
 ] as const satisfies readonly { id: string; kind: SpendingKind; label: string; hint: string }[];
 
-/** Where a slice's months sit in the report (the slice is a contiguous run of them). */
-export const sliceStart = (r: Report, s: Slice) => Math.max(0, r.months.indexOf(s.months[0]!));
-
-export type ProofOptions = {
-  category?: string;
-  merchantKey?: string;
-  /** With merchantKey: the merchant's charges dated in the twelve months ending with the last of `months` (Recurring's "last 12 months"). */
-  charges?: boolean;
+export type ProofOptions = CashFlowRecipe & {
   perMonth?: boolean;
-  /** Spending without the one-offs (Cash flow's "Excluding one-offs"). */
-  excludeOneOffs?: boolean;
-  /** One band of spending (Trends' bills / everyday / big & one-off). */
-  spendingKind?: SpendingKind;
   /** The total the page shows (before any per-month split); null for a figure that isn't one. */
   shownCents: number | null;
 };
@@ -353,18 +270,7 @@ export function proofTarget(
 ): ProofRef {
   if (!months.length) return unswept("no months in the range");
   return {
-    descriptor: {
-      report: "cash-flow",
-      metric,
-      granularity: "month",
-      start: o.charges ? `${shiftMonth(monthKey(months.at(-1)!.start), -11)}-01` : months[0]!.start,
-      end: months.at(-1)!.end,
-      ...(o.category ? { category: o.category } : {}),
-      ...(o.merchantKey ? { merchantKey: o.merchantKey, ...(o.charges ? { merchantBasis: "charges" as const } : {}) } : {}),
-      ...(accountIds?.length ? { accountIds } : {}),
-      ...(o.excludeOneOffs ? { oneOffs: "exclude" as const } : {}),
-      ...(o.spendingKind ? { spendingKind: o.spendingKind } : {}),
-    },
+    descriptor: cashFlowDescriptor(metric, months, accountIds, o),
     shownCents: o.shownCents,
     ...(o.perMonth && months.length > 1 ? { perMonths: months.length } : {}),
   };

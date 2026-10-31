@@ -18,7 +18,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LpPanel, PrivateFunds } from "./LpView";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { growthKey, investmentsDerived } from "@/lib/book/derived/investments";
+import { derivedTarget } from "@/lib/book/derived/types";
 
 const TABS = ["overview", "holdings", "fees", "gains", "growth", "funds"] as const;
 type Data = { report: InvestmentsReport; settings: InvestmentSettings; /** The forecast's return. */ returnRate: number };
@@ -129,14 +130,16 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
   const r = data.report;
   const classified = r.allocation.filter((c) => c.cls !== "UNCLASSIFIED");
   const stocks = classified.filter((c) => c.cls === "US_STOCK" || c.cls === "INTL_STOCK").reduce((s, c) => s + c.share, 0);
+  const d = investmentsDerived(r);
+  const dt = (figure: string) => derivedTarget("investments", d, figure);
   const unclassified = r.allocation.find((c) => c.cls === "UNCLASSIFIED");
   return (
     <>
       <StatGrid cols={4}>
         <StatCell label="Invested" value={usd0(r.totalCents)} proof={accountTarget(null, r.totalCents)}sub={`as of ${r.asOf}, as on Net worth`} />
-        <StatCell proof={unswept("Stocks")} label="Stocks" value={pct(stocks)} sub="US + international, of all holdings" />
-        <StatCell proof={unswept("Fund costs")} label="Fund costs" value={usd0(r.fees.annualCents)} sub={`a year · ${ratio(r.fees.weightedRatio)} weighted expense ratio`} />
-        <StatCell proof={unswept("Unrealized gain (taxable)")} label="Unrealized gain (taxable)" value={usdDelta(r.gains.taxable.unrealizedCents)} tone={r.gains.taxable.unrealizedCents < 0 ? "neg" : "pos"} sub="where cost basis is on the statement" />
+        <StatCell proof={dt("stocks")} label="Stocks" value={pct(stocks)} sub="US + international, of all holdings" />
+        <StatCell proof={dt("fund-costs")} label="Fund costs" value={usd0(r.fees.annualCents)} sub={`a year · ${ratio(r.fees.weightedRatio)} weighted expense ratio`} />
+        <StatCell proof={dt("unrealized")} label="Unrealized gain (taxable)" value={usdDelta(r.gains.taxable.unrealizedCents)} tone={r.gains.taxable.unrealizedCents < 0 ? "neg" : "pos"} sub="where cost basis is on the statement" />
       </StatGrid>
       {unclassified && (
         <Callout tone="info" title={`${usd0(unclassified.cents)} isn't classified yet (${pct(unclassified.share)})`}>
@@ -430,13 +433,15 @@ function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSett
 function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
   const funds = r.positions.filter((p) => (p.annualFeeCents ?? 0) > 0).sort((a, b) => (b.annualFeeCents ?? 0) - (a.annualFeeCents ?? 0));
   const unknown = r.positions.filter((p) => p.expenseRatio == null && p.valueCents > 0).sort((a, b) => b.valueCents - a.valueCents);
+  const d = investmentsDerived(r);
+  const dt = (figure: string) => derivedTarget("investments", d, figure);
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={unswept("Fund expenses")} label="Fund expenses" value={usd0(r.fees.annualCents)} sub="a year, at today's balances" />
-        <StatCell proof={unswept("Weighted expense ratio")} label="Weighted expense ratio" value={ratio(r.fees.weightedRatio)} sub={`over ${usd0(r.fees.knownCents)} with a known ratio`} />
-        <StatCell proof={unswept("Account fees, last 12 months")} label="Account fees, last 12 months" value={usd0(-r.fees.accountFeesLast12Cents)} sub="advisory, admin and plan fees the statements deducted" />
-        <StatCell proof={unswept("Ratio unknown")} label="Ratio unknown" value={usd0(r.fees.unknownCents)} tone={r.fees.unknownCents ? "warn" : "neutral"} sub="plan funds without a ticker, unlisted securities" />
+        <StatCell proof={dt("fund-costs")} label="Fund expenses" value={usd0(r.fees.annualCents)} sub="a year, at today's balances" />
+        <StatCell proof={dt("weighted-ratio")} label="Weighted expense ratio" value={ratio(r.fees.weightedRatio)} sub={`over ${usd0(r.fees.knownCents)} with a known ratio`} />
+        <StatCell proof={dt("account-fees")} label="Account fees, last 12 months" value={usd0(-r.fees.accountFeesLast12Cents)} sub="advisory, admin and plan fees the statements deducted" />
+        <StatCell proof={dt("ratio-unknown")} label="Ratio unknown" value={usd0(r.fees.unknownCents)} tone={r.fees.unknownCents ? "warn" : "neutral"} sub="plan funds without a ticker, unlisted securities" />
       </StatGrid>
       <Card title="What each fund costs" subtitle="Expense ratios come out of a fund's returns, so they never appear on a statement as a fee. Ratios are from the statement where printed (Slavic's fund menu), else published figures for common funds, else yours.">
         <div className={table.wrap}>
@@ -509,13 +514,15 @@ const costOver = (cents: number, er: number, years: number, rate: number) => Mat
 
 function Gains({ r }: { r: InvestmentsReport }) {
   const g = r.gains.taxable;
+  const d = investmentsDerived(r);
+  const dt = (figure: string) => derivedTarget("investments", d, figure);
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={unswept("Taxable unrealized")} label="Taxable unrealized" value={usdDelta(g.unrealizedCents)} tone={g.unrealizedCents < 0 ? "neg" : "pos"} sub={`on ${usd0(g.costKnownCents)} with known cost`} />
-        <StatCell proof={unswept("Gains")} label="Gains" value={usd0(g.gainCents)} tone="pos" sub="positions above cost" />
-        <StatCell proof={unswept("Losses")} label="Losses" value={usd0(g.lossCents)} tone={g.lossCents < 0 ? "neg" : "neutral"} sub="positions below cost" />
-        <StatCell proof={unswept("Cost unknown")} label="Cost unknown" value={usd0(g.costUnknownCents)} tone={g.costUnknownCents ? "warn" : "neutral"} sub="taxable positions without a printed basis" />
+        <StatCell proof={dt("unrealized")} label="Taxable unrealized" value={usdDelta(g.unrealizedCents)} tone={g.unrealizedCents < 0 ? "neg" : "pos"} sub={`on ${usd0(g.costKnownCents)} with known cost`} />
+        <StatCell proof={dt("gains")} label="Gains" value={usd0(g.gainCents)} tone="pos" sub="positions above cost" />
+        <StatCell proof={dt("losses")} label="Losses" value={usd0(g.lossCents)} tone={g.lossCents < 0 ? "neg" : "neutral"} sub="positions below cost" />
+        <StatCell proof={dt("cost-unknown")} label="Cost unknown" value={usd0(g.costUnknownCents)} tone={g.costUnknownCents ? "warn" : "neutral"} sub="taxable positions without a printed basis" />
       </StatGrid>
       <Card
         title="Tax-loss harvesting candidates"
@@ -599,7 +606,8 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
   // view still opens here.
   const lpOnly = (funds?.funds ?? []).filter((f) => f.accountId && !r.growth.some((g) => g.accountId === f.accountId));
   const lp = which === "all" ? undefined : funds?.funds.find((f) => f.accountId === which);
-  const found = r.growth.find((x) => (x.accountId ?? "all") === which);
+  const found = r.growth.find((x) => growthKey(x.accountId) === which);
+  const d = investmentsDerived(r);
   const picker = (
     <div className="flex flex-wrap items-center gap-2">
       <select className={selectCls} value={which} onChange={(e) => setWhich(e.target.value)} aria-label="Account">
@@ -635,9 +643,9 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
       {lp && <LpPanel fund={lp} />}
       {last && (
         <StatGrid cols={3}>
-          <StatCell proof={unswept("Value")} label="Value" value={usd0(last.valueCents)} sub={`end of ${last.label}`} />
-          <StatCell proof={unswept("Money in")} label="Money in" value={usd0(last.investedCents)} sub="deposits, rollovers and opening balances, net of withdrawals" />
-          <StatCell proof={unswept("Growth")} label="Growth" value={usdDelta(last.valueCents - last.investedCents)} tone={last.valueCents < last.investedCents ? "neg" : "pos"} sub="market change net of fees" />
+          <StatCell proof={derivedTarget("investments", d, "growth-value", growthKey(s.accountId))} label="Value" value={usd0(last.valueCents)} sub={`end of ${last.label}`} />
+          <StatCell proof={derivedTarget("investments", d, "growth-money-in", growthKey(s.accountId))} label="Money in" value={usd0(last.investedCents)} sub="deposits, rollovers and opening balances, net of withdrawals" />
+          <StatCell proof={derivedTarget("investments", d, "growth-growth", growthKey(s.accountId))} label="Growth" value={usdDelta(last.valueCents - last.investedCents)} tone={last.valueCents < last.investedCents ? "neg" : "pos"} sub="market change net of fees" />
         </StatGrid>
       )}
       {blocked > 0 && (

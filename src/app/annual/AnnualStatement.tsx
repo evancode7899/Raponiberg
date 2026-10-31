@@ -15,6 +15,7 @@ import type { YearEstimate } from "./estimate";
 import { NetWorthWaterfall } from "./NetWorthWaterfall";
 import { blockedCell, pct, usd, YearTable, type Cell, type TableRow } from "./profileUi";
 import { unswept } from "@/lib/book/proof/clearance";
+import { annualPayDescriptor } from "@/lib/profile/annualPay";
 
 /** A figure that opens its annual proof (shown: the proof's own figure, for the drawer's stale-data warning). */
 const proofOf = (descriptor: AnnualDescriptor, shown: number | null): ProofTarget => ({ descriptor, shownCents: shown });
@@ -22,12 +23,7 @@ const cashP = (y: YearProfile, line: AnnualCashLine, shown: number | null) => pr
 const nwP = (y: YearProfile, line: AnnualNetWorthLine, shown: number | null) => proofOf({ report: "annual", figure: "net-worth", year: y.year, line }, shown);
 const bridgeP = (y: YearProfile, line: AnnualBridgeLine, shown: number) => proofOf({ report: "annual", figure: "bridge", year: y.year, line }, shown);
 // A partner's merge year: the checks paid from the merge on, not the stub's year to date.
-const payP = (y: YearProfile, p: PersonYear, line: PayLine, shown: number): ProofTarget => ({
-  descriptor: p.from
-    ? { report: "pay", basis: "paid", personId: p.personId, start: p.from, end: y.asOf, lines: [line] }
-    : { report: "pay", basis: "ytd", personId: p.personId, year: y.year, through: y.asOf, lines: [line] },
-  shownCents: shown,
-});
+const payP = (y: YearProfile, p: PersonYear, line: PayLine, shown: number): ProofTarget => ({ descriptor: annualPayDescriptor(y, p, line), shownCents: shown });
 
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (iso: string) => `${SHORT_MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}`;
@@ -281,7 +277,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     lines.push({
       label,
       strong: false,
-      get: (c) => cash(c, (w) => ({ v: w[what], title: c.y?.people?.map((p) => `${p.name}: ${usd(p[what])}`).join("\n") }), (e) => (e.flows[what] != null ? { v: e.flows[what]! } : null)),
+      get: (c) => cash(c, (w, _, y) => ({ v: w[what], proof: cashP(y, what, w[what]), title: c.y?.people?.map((p) => `${p.name}: ${usd(p[what])}`).join("\n") }), (e) => (e.flows[what] != null ? { v: e.flows[what]! } : null)),
     });
     if (persons.length > 1)
       for (const p of persons)
@@ -338,7 +334,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     help: "Medical/dental/vision premiums, FSA and after-tax deductions on pay stubs. 401(k) and HSA deferrals aren't subtracted: they're savings.",
     get: (c) => cash(c, (w, _, y) => ({ v: -w.otherDeductions, proof: cashP(y, "deductions", w.otherDeductions) })),
   });
-  lines.push({ label: "Total taxes & deductions", strong: true, get: (c) => cash(c, (w) => ({ v: -taxesAndDeductions(w) }), (e) => (e.flows.taxes != null ? { v: -e.flows.taxes } : null)) });
+  lines.push({ label: "Total taxes & deductions", strong: true, get: (c) => cash(c, (w, _, y) => ({ v: -taxesAndDeductions(w), proof: cashP(y, "taxes-deductions", taxesAndDeductions(w)) }), (e) => (e.flows.taxes != null ? { v: -e.flows.taxes } : null)) });
   lines.push({
     label: "Cash tax rate",
     muted: true,
@@ -392,7 +388,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     get: (c) =>
       cash(
         c,
-        (_, x) => ({ v: x.toRetirement }),
+        (_, x, y) => ({ v: x.toRetirement, proof: cashP(y, "to-retirement", x.toRetirement) }),
         (e) => (e.flows.toRetirement != null ? { v: e.flows.toRetirement } : null),
       ),
   });
@@ -487,7 +483,7 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
         ) : (
           fmtV(x.v, l.fmt)
         ),
-        proof: x.proof ?? unswept(`${l.label}: no recipe for this line`),
+        proof: x.proof ?? unswept(c.est ? "the year-end estimate is worked out in the browser (annual/estimate.ts): F4 moves it server-side" : `${l.label}: no recipe for this line`),
         title: x.title,
       };
     if (l.fmt === "plain") return { text: fmtV(x.v, l.fmt), dim: true, proof: unswept("a change between years") };

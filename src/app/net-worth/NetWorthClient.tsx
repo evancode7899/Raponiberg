@@ -288,7 +288,8 @@ function Overview({ r }: { r: NetWorthReport }) {
               </tr>
             </thead>
             {byGroup.map(([g, list]) => {
-              const sub = r.summary.groups.find((x) => x.group === g)?.cents ?? 0;
+              const group = r.summary.groups.find((x) => x.group === g);
+              const sub = group?.cents ?? 0;
               const subBlockers = uniq(list.flatMap((a) => forAccount(cur, a.id)));
               return (
                 <tbody key={g}>
@@ -297,7 +298,7 @@ function Overview({ r }: { r: NetWorthReport }) {
                       <span className="mr-2 inline-block h-2.5 w-2.5 rounded-sm align-middle" style={{ background: groupColor(chart, g) }} aria-hidden />
                       {g}
                     </td>
-                    <td className={`${table.tdR} font-semibold ${sub < 0 ? "text-neg" : ""}`}>{subBlockers.length ? shown(usd0(sub), subBlockers) : <ProofValue proof={balanceProof(r.current.asOf, sub, { accountIds: list.map((a) => a.id) })}>{usd0(sub)}</ProofValue>}</td>
+                    <td className={`${table.tdR} font-semibold ${sub < 0 ? "text-neg" : ""}`}>{subBlockers.length ? shown(usd0(sub), subBlockers) : <ProofValue proof={balanceProof(r.current.asOf, sub, { accountIds: group?.accountIds ?? list.map((a) => a.id) })}>{usd0(sub)}</ProofValue>}</td>
                     <td className={`${table.tdR} text-muted`}>{!cur.length && sub > 0 ? formatPercentRatio(sub / assets, 0) : ""}</td>
                   </tr>
                   {list.map((a) => (

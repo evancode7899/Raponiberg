@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { last12At, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -53,7 +54,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
   const rateBefore = rate(prevAt(inc12), prevAt(spend12));
   const endLabel = slice.months.at(-1)!.label;
   // The twelve months the trailing totals at the end of the range sum (none until twelve exist).
-  const last12 = hi >= 11 ? all.slice(hi - 11, hi + 1) : [];
+  const last12 = last12At(all, hi);
 
   const kinds = slice.months.map((m) => {
     const total = Math.max(1, m.spendingCents);
@@ -289,8 +290,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
 /** Which categories are heating up: the last three months against the twelve before them. */
 function Momentum({ ctx, hi }: { ctx: Ctx; hi: number }) {
   const { report, chart } = ctx;
-  const recent = report.months.slice(Math.max(0, hi - 2), hi + 1);
-  const before = report.months.slice(Math.max(0, hi - 14), Math.max(0, hi - 2));
+  const { recent, before } = momentumWindows(report.months, hi);
   const rows = SPEND_CATEGORIES.map((c) => {
     const nowCents = sum(recent, (m) => categoryCents(m, c));
     const thenCents = sum(before, (m) => categoryCents(m, c));
