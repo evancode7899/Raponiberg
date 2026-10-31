@@ -142,24 +142,24 @@ export function MortgageClient() {
           )}
 
           <StatGrid cols={4}>
-            <StatCell proof={unswept("Invest − pay down")}
+            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
               label="Invest − pay down"
               value={hasChoice ? signed(advantage) : "—"}
               tone={advantage > 0 ? "pos" : advantage < 0 ? "warn" : "neutral"}
               sub={`net worth after ${ins.horizonYears} yr, ${unit}`}
             />
-            <StatCell proof={unswept("Break-even return")}
+            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
               label="Break-even return"
               value={cmp.breakEvenReturn !== null && hasChoice ? formatPercentRatio(cmp.breakEvenReturn, 2) : "—"}
               sub="investing wins above this"
             />
-            <StatCell proof={unswept("Chance investing wins")}
+            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
               label="Chance investing wins"
               value={hasChoice && mcFresh ? `${Math.round(mc.chanceInvestWins * 100)}%` : "—"}
               tone={tossUp ? "neutral" : mc.chanceInvestWins > 0.5 ? "pos" : "warn"}
               sub={`${formatPercentRatio(ins.volatility, 0)} volatility · ${mc.paths} markets`}
             />
-            <StatCell proof={unswept("Paying down saves")}
+            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
               label="Paying down saves"
               value={formatUsd(interestSaved)}
               sub={sooner !== null && sooner > 0 ? `interest · loan gone ${span(sooner)} sooner` : "interest by the horizon"}

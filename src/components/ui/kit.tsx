@@ -342,6 +342,21 @@ export function StatCell(props: Parameters<typeof Stat>[0]) {
   );
 }
 
+/**
+ * A cell of a StatGrid that holds words, never a figure: a save status, a mode. Its value
+ * is a plain string the page chose, not a number read from the data, so it has no proof
+ * and isn't withheld. Anything read from the data goes in a StatCell, with its proof.
+ */
+export function WordsCell({ label, value, sub, tone = "neutral" }: { label: ReactNode; value: string; sub?: ReactNode; tone?: Tone }) {
+  return (
+    <div className="min-w-0 bg-surface px-4 py-3" data-words-cell="">
+      <div className="truncate text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
+      <div className={`mt-1 text-xl font-semibold tracking-tight ${TONE_TEXT[tone]}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-xs leading-snug text-muted">{sub}</div>}
+    </div>
+  );
+}
+
 export function Badge({ tone = "neutral", children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
     <span

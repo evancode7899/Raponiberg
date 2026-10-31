@@ -1,19 +1,22 @@
 import type { GarageReport } from "../../car/report.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
+import { analyzeFire, firePlans } from "../../fire/fire.ts";
 import { monthPeriods, yearPeriods } from "../../forecast/periods.ts";
 import { COST_LINES } from "../../car/report.ts";
 import { CAR_KINDS } from "../../car/settings.ts";
 import type { HsaReport } from "../../hsa/report.ts";
 import type { AnnualProfileReport } from "../../profile/buildAnnualProfile.ts";
+import { annualPayDescriptor } from "../../profile/annualPay.ts";
 import { rollTotalValue, rollValue } from "../../profile/rollLines.ts";
 import type { RollforwardReport } from "../../profile/rollforwards.ts";
 import { BUCKETS } from "../../profile/settings.ts";
-import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateKey } from "../../tax/estimateLines.ts";
+import { ESTIMATE_LINES, estimateColumns, estimatesFound, lineValue, type EstimateKey } from "../../tax/estimateLines.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
 import type { BonusesReport } from "../reports/bonuses.ts";
-import { figureReads } from "../reports/bonusFigures.ts";
+import { bonusPayFigures, estimateDescriptor, expectedBonuses, figureReads } from "../reports/bonusFigures.ts";
 import type { CashFlowPeriod } from "../reports/cashFlow.ts";
-import type { SpendingKinds } from "../reports/spending.ts";
+import type { SpendingKinds, SpendingReport } from "../reports/spending.ts";
+import { cashFlowDescriptor, cashFlowWindows, windowFigures } from "../reports/cashFlowWindows.ts";
 import type { CashFlowDescriptor } from "./cashFlowProof.ts";
 import type { GoalsReport } from "../reports/goals.ts";
 import type { InvestmentsReport } from "../reports/investments.ts";
@@ -25,11 +28,16 @@ import type { buildHomeSummary } from "../../dashboard/homeSummary.ts";
 import type { AccountLimitsDescriptor } from "./accountLimitsProof.ts";
 import type { AnnualCashLine, AnnualDescriptor } from "./annualProof.ts";
 import type { BonusesDescriptor } from "./bonusesProof.ts";
+import type { FireFigure, FireSettings, HomeFigure } from "./planningProof.ts";
+import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "../../home-budget/homeBudgetModel.ts";
+import { defaultFunds, type FundsConfig } from "../../home-budget/homeLinked.ts";
 import type { CarFigureDescriptor } from "./carProof.ts";
 import { LEDGER_LINES, ledgerValue, type LedgerLine } from "./forecastProof.ts";
 import type { ProofDescriptor } from "./index.ts";
 import type { Book } from "../load.ts";
 import type { ProofValue } from "./types.ts";
+import { derivedDescriptor, type DerivedFigure, type DerivedPage } from "../derived/types.ts";
+import { descriptorKey } from "./key.ts";
 
 /**
  * Every figure each page shows, with the descriptor of its proof and the value the page
@@ -70,6 +78,27 @@ export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKin
       for (const [spendingKind, shown] of [["bill", p.kinds.billCents], ["big", p.kinds.bigCents], ["everyday", p.kinds.everydayCents]] as const)
         out.push({ page: "Cash flow", descriptor: { ...(d("spending") as CashFlowDescriptor), spendingKind }, shown: cents(shown) });
   }
+  return out;
+}
+
+/**
+ * Every figure the Cash flow tabs sum over a run of months (cashFlowWindows: each preset
+ * range and the run before it, each year, the year-over-year sides, Trends' windows), each
+ * merchant and payer in each, and Recurring's twelve months of each recurring merchant's
+ * charges. Built with the page's own helpers, so the recipes are the ones it renders.
+ */
+export function cashFlowWindowFigures(r: Pick<SpendingReport, "months" | "recurring">): PageFigure[] {
+  const page = "Cash flow";
+  const seen = new Set<string>();
+  const out: PageFigure[] = [];
+  const add = (descriptor: ProofDescriptor, c: number) => {
+    const k = descriptorKey(descriptor);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ page, descriptor, shown: cents(c) });
+  };
+  for (const months of cashFlowWindows(r)) for (const f of windowFigures(months)) add(f.descriptor, f.cents);
+  if (r.months.length) for (const c of r.recurring) add(cashFlowDescriptor("spending", r.months, undefined, { merchantKey: c.key, charges: true }), c.last12Cents);
   return out;
 }
 
@@ -172,6 +201,10 @@ export function investmentsFigures(r: InvestmentsReport): PageFigure[] {
 // ------------------------------------------------------------------ Annual
 
 const CASH: [AnnualCashLine, (y: AnnualProfileReport["years"][number]) => number | null][] = [
+  ["salary", (y) => y.cash!.waterfall.salary],
+  ["bonus", (y) => y.cash!.waterfall.bonus],
+  ["taxes-deductions", (y) => { const w = y.cash!.waterfall; return w.withholding + w.additionalTaxes - w.refunds + w.otherDeductions; }],
+  ["to-retirement", (y) => y.cash!.toRetirement],
   ["other-income", (y) => y.cash!.waterfall.otherIncome],
   ["gross", (y) => y.cash!.waterfall.grossCash],
   ["withholding", (y) => y.cash!.waterfall.withholding],
@@ -200,6 +233,9 @@ export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardRe
       for (const [line, f] of CASH) add("Annual", { report: "annual", figure: "cash", year, line }, f(y));
       for (const s of y.cash.spending) add("Annual", { report: "annual", figure: "category", year, category: s.category }, s.cents);
     }
+    // Each member's salary and bonus (a partner before the merge shows nothing).
+    for (const q of y.people ?? [])
+      if (q.member) for (const [line, v] of [["base", q.salary], ["bonus", q.bonus]] as const) out.push({ page: "Annual", descriptor: annualPayDescriptor(y, q, line), shown: cents(v) });
     const n = y.netWorth;
     if (n) {
       for (const b of BUCKETS) if (n.buckets[b.id] !== 0) add("Annual", { report: "annual", figure: "bucket", year, bucket: b.id }, b.debt ? -n.buckets[b.id] : n.buckets[b.id]);
@@ -236,8 +272,12 @@ export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardRe
 
 const bon = (d: Record<string, unknown>) => ({ report: "bonuses", ...d }) as BonusesDescriptor;
 
-/** The totals, each award, tranche and vesting window, each letter's totals, and each year's reconciliation. */
-export function bonusesFigures(r: BonusesReport): PageFigure[] {
+/**
+ * The totals, each award, tranche and vesting window, each letter's totals, each year's
+ * reconciliation; the pay beside them (bonusPayFigures); and, with a forecast, the next
+ * award it expects.
+ */
+export function bonusesFigures(r: BonusesReport, forecast?: Forecast | null): PageFigure[] {
   const page = "Bonuses";
   const t = r.totals;
   const out: [BonusesDescriptor, number][] = [
@@ -270,7 +310,11 @@ export function bonusesFigures(r: BonusesReport): PageFigure[] {
   }
   for (const y of r.byYear) out.push([bon({ figure: "reconcile", year: y.year, personId: y.personId, employer: y.employer }), y.explainedCents]);
   // A figure a pay finding withholds shows as withheld, not as a number (figureReads: the page's own rule).
-  return out.map(([descriptor, v]) => ({ page, descriptor, shown: figureReads(r, descriptor).blockers.length ? null : cents(v) }));
+  return [
+    ...out.map(([descriptor, v]) => ({ page, descriptor, shown: figureReads(r, descriptor).blockers.length ? null : cents(v) })),
+    ...bonusPayFigures(r).map((f) => ({ page, descriptor: f.descriptor, shown: cents(f.cents) })),
+    ...(forecast ? expectedBonuses(forecast).map((b) => ({ page, descriptor: estimateDescriptor(b), shown: cents(b.gross) })) : []),
+  ];
 }
 
 // ------------------------------------------------------------------ HSA
@@ -322,6 +366,8 @@ export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
       f({ account: "hsa", personId, figure: "limit" }, p.hsa.limit),
       f({ account: "hsa", personId, figure: "room" }, p.hsa.room),
       f({ account: "hsa", personId, figure: "used", part: "employee" }, p.hsa.employee.ytd),
+      f({ account: "hsa", personId, figure: "projected", part: "employee" }, p.hsa.employee.projected),
+      f({ account: "hsa", personId, figure: "used", part: "employer" }, p.hsa.employer.ytd),
       f({ account: "hsa", personId, figure: "projected", part: "employer" }, p.hsa.employer.projected),
       f({ account: "ira", personId, figure: "used" }, p.ira.total),
       f({ account: "ira", personId, figure: "limit" }, p.ira.limit),
@@ -348,7 +394,13 @@ export function calendarFigures(r: MoneyCalendarReport): PageFigure[] {
 
 // ------------------------------------------------------------------ Car
 
-/** Each car's cost per line and in total: to date, the last 12 months, each year and each month; and what was paid to date, kind by kind. */
+/**
+ * Each car's cost per line and in total: to date, the last 12 months, each year and each
+ * month; the same to date, over 12 months and each year as a rate per mile and per month
+ * (rates the page shows only once there are miles or a month to divide by, held to no
+ * value: the proof works the rate out); what was paid to date, kind by kind; and each
+ * counted line of the log.
+ */
 export function carFigures(g: GarageReport): PageFigure[] {
   const out: PageFigure[] = [];
   const page = "Car";
@@ -365,9 +417,11 @@ export function carFigures(g: GarageReport): PageFigure[] {
           : span === "last12" ? (line ? r.last12.lines[line] : r.last12.total)
           : r.months.filter((m) => m.month.startsWith(span)).reduce((t, m) => t + (line ? m.lines[line] : m.total), 0);
         out.push({ page, descriptor: fig({ span, ...(line ? { line } : {}) }), shown: cents(shown) });
+        if (span.length !== 7) for (const per of ["mile", "month"] as const) out.push({ page, descriptor: fig({ span, ...(line ? { line } : {}), per }), shown: null });
       }
     for (const line of [...CAR_KINDS, "INTEREST" as const]) out.push({ page, descriptor: fig({ basis: "cash", line }), shown: cents(line === "INTEREST" ? r.cash.INTEREST : r.cash[line]) });
   }
+  for (const i of g.log) if (i.counted) out.push({ page, descriptor: { report: "car", itemId: i.id }, shown: cents(i.cents) });
   return out;
 }
 
@@ -375,9 +429,21 @@ export function carFigures(g: GarageReport): PageFigure[] {
 
 const KEYS = Object.keys(ESTIMATE_LINES) as EstimateKey[];
 
-/** Every Worksheet line of every return (each spouse separately, and joint), projected and year to date. */
-export function taxEstimateFigures(report: TaxReport): PageFigure[] {
+/**
+ * Every Worksheet line of every return (each spouse separately, and joint), projected and
+ * year to date; the estimated payments found on Payments; and, for the year in progress,
+ * each person's gross pay projected to Dec 31 (Income & W-2, the first employer still paying).
+ */
+export function taxEstimateFigures(report: TaxReport, inProgress = false): PageFigure[] {
   const out: PageFigure[] = [];
+  const page = `Taxes ${report.year}`;
+  for (const a of ["FEDERAL", "CT"] as const)
+    out.push({ page, descriptor: { report: "tax-estimate", year: report.year, basis: "projected", key: `found.${a}` }, shown: { cents: estimatesFound(report.payments, report.year, a) } });
+  if (inProgress)
+    for (const p of report.people) {
+      const e = p.payroll.find((x) => x.active);
+      if (e) out.push({ page, descriptor: { report: "planning", page: "taxes", figure: "projected-gross", year: report.year, personId: p.id }, shown: { cents: e.projected.gross } });
+    }
   for (const basis of ["projected", "ytd"] as const) {
     const { cols } = estimateColumns(report, basis);
     for (const col of cols)
@@ -431,7 +497,82 @@ export function forecastFigures(f: Forecast, r: AnnualProfileReport): PageFigure
       const through = p.through.slice(0, 7);
       out.push({ page: "Forecast", descriptor: { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line }, shown: { cents: v } });
     }
+  // The inputs panel's seeds, as ForecastInputs shows them on the saved drivers.
+  const s = r.seeds;
+  if (s) {
+    const paycheck = Object.fromEntries(f.pay.people.map((p) => [p.personId, p.basis]));
+    const seed = (x: Record<string, unknown>, c: number | null) => out.push({ page: "Forecast", descriptor: { report: "forecast", figure: "seed", ...x } as ProofDescriptor, shown: cents(c) });
+    seed({ which: "start" }, s.start.liquid + s.start.illiquid);
+    seed({ which: "deferrals", paycheck }, f.pay.people.reduce((x, p) => x + p.deferrals, 0));
+    seed({ which: "employer", paycheck }, f.pay.people.reduce((x, p) => x + p.employer, 0));
+    const basis = r.settings.outlook.livingBasis;
+    if (s.living[basis]) seed({ which: "living", basis }, s.living[basis]!.cents);
+  }
   return out;
+}
+
+// ------------------------------------------------------------------ FIRE
+
+/** The figures an analysis shows (FIRE › Overview): each flavor's year and number, the rates, and each milestone. */
+export function fireFigureList(fa: ReturnType<typeof analyzeFire>): { figure: FireFigure; cents: number | null; milestone?: string }[] {
+  const n = fa.now;
+  const out: { figure: FireFigure; cents: number | null; milestone?: string }[] = [
+    { figure: "fire-number", cents: n.fireNumber },
+    { figure: "lean-number", cents: n.leanNumber },
+    { figure: "fat-number", cents: n.fatNumber },
+    ...(n.coastNumber != null ? [{ figure: "coast-number" as const, cents: n.coastNumber }] : []),
+    ...(["fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "years-saved", "runway", "progress"] as const).map((figure) => ({ figure, cents: null })),
+  ];
+  const named = new Set(["coast", "lean", "fi", "fat"]);
+  for (const m of fa.milestones) if (!named.has(m.id)) out.push({ figure: "milestone", cents: null, milestone: m.id });
+  return out;
+}
+
+/** FIRE on the saved settings, analysed as FireClient analyses it: the forecast, FIRE's two plans, the analysis. */
+export function fireFigures(f: Forecast, r: AnnualProfileReport): PageFigure[] {
+  const a = r.settings.outlook;
+  if (!r.seeds) return [];
+  const fire: FireSettings = { walkAwayYear: a.walkAwayYear, withdrawalRate: a.withdrawalRate, stateTaxRate: a.stateTaxRate, retirementAge: a.retirementAge };
+  const plans = firePlans(f);
+  const fa = analyzeFire(plans.full, plans.base, { asOf: r.seeds.start.asOf, retirementAge: a.retirementAge });
+  return fireFigureList(fa).map((x) => ({ page: "FIRE", descriptor: { report: "planning", page: "fire", figure: x.figure, fire, ...(x.milestone ? { milestone: x.milestone } : {}) }, shown: cents(x.cents) }));
+}
+
+// ------------------------------------------------------------------ Home budget
+
+const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "lender-max", "lender-income"];
+
+/**
+ * Each linked Home budget figure on the calculator's saved inputs and funds choices, as the
+ * page loads them (useSavedState: the defaults with the saved values over them). The page
+ * works the values out as you type, so none is stated here: the page's own value is held to
+ * the one the proof clears. Inputs typed since the last sweep make a recipe no sweep has seen.
+ */
+export function homeBudgetFigures(saved: { inputs: Record<string, unknown> | null; funds: Record<string, unknown> | null }): PageFigure[] {
+  const inputs: HomeBudgetInputs = { ...defaultHomeBudgetInputs(), ...(saved.inputs ?? {}) };
+  const funds: FundsConfig = { ...defaultFunds(), ...(saved.funds ?? {}) };
+  return HOME_FIGURES.map((figure) => ({ page: "Home budget", descriptor: { report: "planning", page: "home", figure, inputs, funds }, shown: null }));
+}
+
+// ------------------------------------------------------------------ Derived
+
+const DERIVED_PAGE_NAME: Record<DerivedPage, string> = {
+  investments: "Investments",
+  car: "Car",
+  "cash-flow": "Cash flow",
+  "card-perks": "Card perks",
+  "net-worth": "Net worth",
+  integrity: "Statements › Issues",
+  hsa: "HSA",
+  "account-limits": "Account limits",
+  calendar: "Calendar",
+  "lp-funds": "Investments › Private funds",
+  insurance: "Insurance",
+};
+
+/** A page's derived figures (derived/types.ts), each at the value its list states. */
+export function derivedFigures(page: DerivedPage, list: DerivedFigure[]): PageFigure[] {
+  return list.flatMap((f) => (f.value ? [{ page: DERIVED_PAGE_NAME[page], descriptor: derivedDescriptor(page, f), shown: f.value }] : []));
 }
 
 // ------------------------------------------------------------------ Sources

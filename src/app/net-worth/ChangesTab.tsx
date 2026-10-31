@@ -1,6 +1,8 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { changeStepKey, changeStepsDerived } from "@/lib/book/derived/netWorth";
+import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -45,6 +47,7 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
   if (!r.periods.length) return <EmptyState title={`No ${UNIT[granularity]} that both net worth and cash flow can prove yet`} />;
   const i = picked ? Math.max(0, r.periods.findIndex((p) => p.start === picked)) : r.periods.length - 1;
   const p = r.periods[i]!;
+  const steps = changeStepsDerived(r);
   const go = (j: number) => setPicked(r.periods[j]!.start);
   const picker = (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -65,10 +68,10 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
       {control}
     </div>
   );
-  return <Period p={p} granularity={granularity} compareWith={r.compareWith} picker={picker} />;
+  return <Period p={p} granularity={granularity} compareWith={r.compareWith} picker={picker} steps={steps} />;
 }
 
-function Period({ p, granularity, compareWith, picker }: { p: NetWorthChange; granularity: Granularity; compareWith: number; picker: ReactNode }) {
+function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthChange; granularity: Granularity; compareWith: number; picker: ReactNode; steps: DerivedFigure[] }) {
   const unit = UNIT[granularity];
   const t = p.typical;
   const typicalSub = (cents: number | undefined) => (t && cents != null ? `average ${usd0(cents)}` : undefined);
@@ -135,7 +138,7 @@ function Period({ p, granularity, compareWith, picker }: { p: NetWorthChange; gr
                     </span>
                   </td>
                   <td className={table.tdR}>
-                    <ProofValue proof={proofOf(s.proof, s.key === "spending" ? p.spendingCents : s.cents)}>{s.key === "spending" ? usd0(p.spendingCents) : usd0(s.cents)}</ProofValue>
+                    <ProofValue proof={s.proof ? proofOf(s.proof, s.key === "spending" ? p.spendingCents : s.cents) : derivedTarget("net-worth", steps, "change-step", changeStepKey(granularity, p.start, s.key))}>{s.key === "spending" ? usd0(p.spendingCents) : usd0(s.cents)}</ProofValue>
                   </td>
                   {t && <td className={`${table.tdR} text-muted`}>{s.typicalCents == null ? "—" : s.key === "spending" ? usd0(-s.typicalCents) : usd0(s.typicalCents)}</td>}
                   {t && (

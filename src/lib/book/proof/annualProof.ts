@@ -37,13 +37,17 @@ import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstim
  */
 
 export type AnnualCashLine =
+  | "salary"
+  | "bonus"
   | "other-income"
   | "gross"
   | "withholding"
   | "taxes-paid"
   | "refunds"
   | "deductions"
+  | "taxes-deductions"
   | "employer"
+  | "to-retirement"
   | "partner-kept"
   | "net-cash"
   | "living"
@@ -67,13 +71,17 @@ export type AnnualDescriptor =
   | { report: "annual"; figure: "rollforward-total"; year: number; line: RollTotalLine };
 
 const CASH_LINES: AnnualCashLine[] = [
+  "salary",
+  "bonus",
   "other-income",
   "gross",
   "withholding",
   "taxes-paid",
   "refunds",
   "deductions",
+  "taxes-deductions",
   "employer",
+  "to-retirement",
   "partner-kept",
   "net-cash",
   "living",
@@ -330,6 +338,32 @@ function cashProof(c: Ctx, y: YearProfile, cash: YearCash, ln: AnnualCashLine): 
           },
         ],
       });
+    }
+    case "salary":
+    case "bonus": {
+      const what = ln === "salary" ? "Salary" : "Bonus";
+      const lines: ChainLine[] = people.map((p) => line("+", `${p.name} — ${what.toLowerCase()}`, p[ln], "proven", { link: { label: `${p.name}'s ${what.toLowerCase()}`, descriptor: payD(p.personId, ln === "salary" ? "base" : "bonus") } }));
+      lines.push(line("=", what, w[ln], "derived"));
+      return chainProof(`${what} · ${label}`, w[ln], "Each person's pay stubs", startChain(lines), { ...base, blocks: [stubsBlock()] });
+    }
+    case "taxes-deductions": {
+      const total = w.withholding + w.additionalTaxes - w.refunds + w.otherDeductions;
+      const lines = startChain([
+        line("+", "Taxes withheld", w.withholding, "proven", { link: cashLink("Taxes withheld", yr, "withholding") }),
+        line("+", "Additional taxes paid", w.additionalTaxes, "proven", { link: cashLink("Taxes paid", yr, "taxes-paid") }),
+        line("−", "Tax refunds", w.refunds, "proven", { link: cashLink("Refunds", yr, "refunds") }),
+        line("+", "Benefits & other deductions", w.otherDeductions, "proven", { link: cashLink("Deductions", yr, "deductions") }),
+        line("=", "Total taxes & deductions", total, "derived"),
+      ]);
+      return chainProof(`Total taxes & deductions · ${label}`, total, "Withheld + paid − refunds + deductions", lines, base);
+    }
+    case "to-retirement": {
+      const lines: ChainLine[] = people
+        .filter((p) => p.deferrals)
+        .map((p) => line("+", `${p.name}: 401(k) and HSA deferrals`, p.deferrals, "proven", { link: { label: `${p.name}'s deferrals`, descriptor: payD(p.personId, "deferrals") } }));
+      lines.push(line("+", "Employer retirement & HSA money", w.employer, "proven", { link: cashLink("Employer money", yr, "employer") }));
+      lines.push(line("=", "To retirement accounts", cash.toRetirement, "derived"));
+      return chainProof(`Of which to retirement accounts · ${label}`, cash.toRetirement, "Deferrals + employer money", startChain(lines), { ...base, blocks: [stubsBlock()] });
     }
     case "gross": {
       const lines: ChainLine[] = [];

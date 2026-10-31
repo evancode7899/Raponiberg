@@ -1,6 +1,8 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { netWorthDerived } from "@/lib/book/derived/netWorth";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
@@ -288,7 +290,8 @@ function Overview({ r }: { r: NetWorthReport }) {
               </tr>
             </thead>
             {byGroup.map(([g, list]) => {
-              const sub = r.summary.groups.find((x) => x.group === g)?.cents ?? 0;
+              const group = r.summary.groups.find((x) => x.group === g);
+              const sub = group?.cents ?? 0;
               const subBlockers = uniq(list.flatMap((a) => forAccount(cur, a.id)));
               return (
                 <tbody key={g}>
@@ -297,7 +300,7 @@ function Overview({ r }: { r: NetWorthReport }) {
                       <span className="mr-2 inline-block h-2.5 w-2.5 rounded-sm align-middle" style={{ background: groupColor(chart, g) }} aria-hidden />
                       {g}
                     </td>
-                    <td className={`${table.tdR} font-semibold ${sub < 0 ? "text-neg" : ""}`}>{subBlockers.length ? shown(usd0(sub), subBlockers) : <ProofValue proof={balanceProof(r.current.asOf, sub, { accountIds: list.map((a) => a.id) })}>{usd0(sub)}</ProofValue>}</td>
+                    <td className={`${table.tdR} font-semibold ${sub < 0 ? "text-neg" : ""}`}>{subBlockers.length ? shown(usd0(sub), subBlockers) : <ProofValue proof={balanceProof(r.current.asOf, sub, { accountIds: group?.accountIds ?? list.map((a) => a.id) })}>{usd0(sub)}</ProofValue>}</td>
                     <td className={`${table.tdR} text-muted`}>{!cur.length && sub > 0 ? formatPercentRatio(sub / assets, 0) : ""}</td>
                   </tr>
                   {list.map((a) => (
@@ -563,13 +566,14 @@ function Returns({ r }: { r: NetWorthReport }) {
   const older = uniq(r.periods.filter((x) => !p || x.start < p.from).flatMap(blockersOf));
   const bars = r.periods.filter((x) => x.household.portfolioReturn != null && !blockersOf(x).length).map((x) => ({ label: x.label, r: x.household.portfolioReturn! * 100 }));
   const fromLabel = p && r.periods.find((x) => x.start === p.from)?.label;
+  const derived = netWorthDerived(r);
   return (
     <>
       <BlockedNote what={p ? `returns before ${fromLabel}, so they're chained from there` : "chained returns"} blockers={older} limit={3} />
       <StatGrid cols={3}>
-        <StatCell proof={unswept("Annualized")} label={p ? `Since ${fromLabel}` : "Cumulative"} value={p ? formatPercentRatio(p.total, 1) : "—"} sub="cumulative, time-weighted" tone={p && p.total < 0 ? "neg" : "neutral"} />
-        <StatCell proof={unswept("Annualized")} label="Annualized" value={p?.annualized == null ? "—" : formatPercentRatio(p.annualized, 2)} sub="per year (shown after a full year)" />
-        <StatCell proof={unswept("Accounts measured")} label="Accounts measured" value={String(r.proven.returns.byAccount.length)} sub="brokerage, IRAs, 401(k)s, 529, HSA" />
+        <StatCell proof={derivedTarget("net-worth", derived, "return-total")} label={p ? `Since ${fromLabel}` : "Cumulative"} value={p ? formatPercentRatio(p.total, 1) : "—"} sub="cumulative, time-weighted" tone={p && p.total < 0 ? "neg" : "neutral"} />
+        <StatCell proof={derivedTarget("net-worth", derived, "return-annualized")} label="Annualized" value={p?.annualized == null ? "—" : formatPercentRatio(p.annualized, 2)} sub="per year (shown after a full year)" />
+        <StatCell proof={derivedTarget("net-worth", derived, "accounts-measured")} label="Accounts measured" value={String(r.proven.returns.byAccount.length)} sub="brokerage, IRAs, 401(k)s, 529, HSA" />
       </StatGrid>
       <Card
         title="Monthly portfolio return"

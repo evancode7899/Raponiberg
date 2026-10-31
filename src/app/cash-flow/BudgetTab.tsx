@@ -1,6 +1,8 @@
 "use client";
 
 import { Badge, btn, Callout, Card, ErrorNote, Loading, MoneyInput, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { cashFlowDerived, windowKey } from "@/lib/book/derived/cashFlow";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { BudgetSettings } from "@/lib/budget/settings";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
@@ -52,6 +54,9 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
   const budgeted = rows.reduce((s, r) => s + (r.target ?? 0), 0);
   const hasTargets = Object.keys(draft).length > 0;
   const latestTotal = rows.filter((r) => r.target != null).reduce((s, r) => s + r.latest, 0);
+  // On the saved targets: unsaved edits make a recipe no sweep has seen, withheld until saved.
+  const derived = dirty ? null : cashFlowDerived(ctx.report, saved.targets);
+  const dp = (figure: string, key?: string) => (derived ? derivedTarget("cash-flow", derived, figure, key) : unswept("unsaved targets: save them to have the budget's figures proven"));
 
   const save = async () => {
     setSaving(true);
@@ -70,15 +75,15 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={unswept("Monthly budget")} label="Monthly budget" value={hasTargets ? usd0(budgeted) : "—"} sub={hasTargets ? `${Object.keys(draft).length} categories with a target` : "no targets yet"} />
-        <StatCell proof={unswept("… vs budget")}
+        <StatCell proof={dp("budget-monthly")} label="Monthly budget" value={hasTargets ? usd0(budgeted) : "—"} sub={hasTargets ? `${Object.keys(draft).length} categories with a target` : "no targets yet"} />
+        <StatCell proof={dp("budget-latest", windowKey(slice.months))}
           label={`${last.label} vs budget`}
           value={hasTargets ? usd0(latestTotal) : "—"}
           tone={hasTargets ? (latestTotal > budgeted ? "neg" : "pos") : "neutral"}
           sub={hasTargets ? `${latestTotal > budgeted ? "over" : "under"} by ${usd0(Math.abs(budgeted - latestTotal))}` : undefined}
         />
-        <StatCell proof={unswept("Typical income")} label="Typical income" value={usd0(t.typicalIncome)} sub="median month in range" />
-        <StatCell proof={unswept("Planned savings rate")}
+        <StatCell proof={dp("typical-income", windowKey(slice.months))} label="Typical income" value={usd0(t.typicalIncome)} sub="median month in range" />
+        <StatCell proof={dp("budget-savings-rate", windowKey(slice.months))}
           label="Planned savings rate"
           value={hasTargets && t.typicalIncome > 0 ? formatPercentRatio((t.typicalIncome - budgeted) / t.typicalIncome, 0) : "—"}
           sub={hasTargets ? `${usd0(t.typicalIncome - budgeted)}/mo left of a typical month` : "set targets to see it"}

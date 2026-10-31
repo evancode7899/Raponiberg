@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, btn, Card, Callout, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { Badge, btn, Card, Callout, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { fireNumber } from "@/lib/fire/fire";
 import { resolveBasePay } from "@/lib/profile/basePay";
@@ -13,7 +13,7 @@ import { pct, usd } from "./profileUi";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import type { AnnualCashLine } from "@/lib/book/proof/annualProof";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure } from "@/lib/book/proof/clearance";
 
 /**
  * One-off expenses: the big charges that aren't part of a normal year (a wedding, a move,
@@ -78,7 +78,9 @@ export function OneOffsTab({
     const a = r.settings.outlook;
     const pay = resolveBasePay(s, a, TAX_YEARS[s.taxYear]!);
     const number = fireNumber({ tax: s.tax, inflation: a.inflation, stateTaxRate: a.stateTaxRate, withdrawalRate: a.withdrawalRate }, s.start.year, pay.living.cents);
-    return { number, wr: a.withdrawalRate, typed: pay.living.typed, basis: pay.living.seed?.label ?? null };
+    // FIRE's own number on the saved settings: the recipe FIRE › Overview shows and the sweep holds.
+    const settings = { walkAwayYear: a.walkAwayYear, withdrawalRate: a.withdrawalRate, stateTaxRate: a.stateTaxRate, retirementAge: a.retirementAge };
+    return { number, wr: a.withdrawalRate, typed: pay.living.typed, basis: pay.living.seed?.label ?? null, settings };
   }, [r.seeds, r.settings.outlook]);
 
   return (
@@ -89,21 +91,21 @@ export function OneOffsTab({
         <StatCell
           label={`Marked one-off in ${full?.year ?? "—"}`}
           value={full?.cash ? usd(full.cash.waterfall.nonRecurring) : "—"}
-          proof={full?.cash ? cashP(full.year, "one-offs", full.cash.waterfall.nonRecurring) : unswept("no year with proven cash")}
+          proof={full?.cash ? cashP(full.year, "one-offs", full.cash.waterfall.nonRecurring) : noFigure("no year with proven cash")}
           sub={full?.cash ? `${full.oneOffTagged.count} expenses` : undefined}
         />
         <StatCell
           label={`Living expenses ${full?.year ?? ""}`}
           value={full?.cash ? usd(full.cash.waterfall.living) : "—"}
-          proof={full?.cash ? cashP(full.year, "living", full.cash.waterfall.living) : unswept("no year with proven cash")}
+          proof={full?.cash ? cashP(full.year, "living", full.cash.waterfall.living) : noFigure("no year with proven cash")}
           sub={full?.cash ? "one-offs left out" : undefined}
         />
-        <StatCell proof={unswept("Your FIRE number")}
+        <StatCell proof={fire ? { descriptor: { report: "planning", page: "fire", figure: "fire-number", fire: fire.settings }, shownCents: fire.number } : noFigure("needs a proven full year")}
           label="Your FIRE number"
           value={fire ? usd(fire.number) : "—"}
           sub={fire ? (fire.typed ? "uses the living cost typed on FIRE, so tags here don't move it" : `at a ${pct(fire.wr)} withdrawal rate, after tax`) : "needs a proven full year"}
         />
-        <StatCell proof={unswept("Status")} label="Status" value={recalculating ? "Recalculating…" : status?.tone === "neg" ? "Not saved" : "Up to date"} sub={status ? <span className={status.tone === "neg" ? "text-neg" : status.tone === "pos" ? "text-pos" : ""}>{status.text}</span> : "ticks save instantly"} />
+        <WordsCell label="Status" value={recalculating ? "Recalculating…" : status?.tone === "neg" ? "Not saved" : "Up to date"} sub={status ? <span className={status.tone === "neg" ? "text-neg" : status.tone === "pos" ? "text-pos" : ""}>{status.text}</span> : "ticks save instantly"} />
       </StatGrid>
 
       <Card

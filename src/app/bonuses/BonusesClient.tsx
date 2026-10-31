@@ -10,7 +10,7 @@ import type { PaymentKind } from "@/lib/bonuses/awardStore";
 import type { AwardMeasure, BonusesDescriptor } from "@/lib/book/proof/bonusesProof";
 import type { PayLine } from "@/lib/book/proof/payProof";
 import type { AwardRow, BonusesReport, BonusPayment, BonusWarning, Tranche, VestWindow, WindowStatus } from "@/lib/book/reports/bonuses";
-import { figureReads } from "@/lib/book/reports/bonusFigures";
+import { estimateDescriptor, expectedBonuses, figureReads, paidYearDescriptor, stubPayFigure, yearPayDescriptor } from "@/lib/book/reports/bonusFigures";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { buildForecast } from "@/lib/forecast/forecast";
 import type { ForecastData } from "@/lib/forecast/load";
@@ -45,7 +45,7 @@ const KIND: Record<PaymentKind, { title: string; tag: string | null; part: strin
 const ratio = (part: number, whole: number | null) => (whole ? formatPercentRatio(part / whole, 1) : "—");
 
 /** A person's calendar year of pay as the stubs give it (year to date on each employer's last stub). */
-const yearPay = (personId: string, year: number, lines: PayLine[], cents: number) => ({ descriptor: { report: "pay" as const, basis: "ytd" as const, personId, year, lines }, shownCents: cents });
+const yearPay = (personId: string, year: number, lines: PayLine[], cents: number) => ({ descriptor: yearPayDescriptor(personId, year, lines), shownCents: cents });
 
 /** A Bonuses figure's proof (lib/book/proof/bonusesProof.ts), re-derived through the same report. */
 type Fig = BonusesDescriptor extends infer D ? (D extends { report: "bonuses" } ? Omit<D, "report"> : never) : never;
@@ -68,11 +68,8 @@ const trancheProof = (a: AwardRow, t: Tranche) => bon({ figure: "tranche", lette
 const windowProof = (w: VestWindow, measure: "scheduled" | "paid") => bon({ figure: "window", window: w.key, measure }, measure === "paid" ? w.paidCents : w.scheduledCents);
 /** One stub date's bonus lines from one employer (the page shows the line; the proof re-adds the day). */
 const stubPay = (p: BonusPayment, all: BonusPayment[]): ProofTarget => {
-  const day = all.filter((q) => q.personId === p.personId && q.employerKey === p.employerKey && q.date === p.date);
-  return {
-    descriptor: { report: "pay", basis: "paid", personId: p.personId, employerKeys: [p.employerKey], lines: ["bonus"], start: p.date, end: p.date },
-    shownCents: day.reduce((t, q) => t + q.amountCents, 0),
-  };
+  const f = stubPayFigure(p, all);
+  return { descriptor: f.descriptor, shownCents: f.cents };
 };
 
 export function BonusesClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
@@ -427,11 +424,7 @@ function Expected({ fdata }: { fdata: ForecastData | null }) {
   const next = useMemo(() => {
     const seeds = fdata?.profile.seeds;
     if (!fdata || !seeds) return [];
-    const f = buildForecast({ seeds, bonusFacts: fdata.bonusFacts }, fdata.profile.settings.outlook);
-    const est = f.schedule.filter((b) => b.source === "ESTIMATE" && b.awardYear != null);
-    const first = new Map<string, number>();
-    for (const b of est) first.set(b.personId, Math.min(first.get(b.personId) ?? Infinity, b.awardYear!));
-    return est.filter((b) => b.awardYear === first.get(b.personId));
+    return expectedBonuses(buildForecast({ seeds, bonusFacts: fdata.bonusFacts }, fdata.profile.settings.outlook));
   }, [fdata]);
   if (!next.length) return null;
   return (
@@ -444,7 +437,7 @@ function Expected({ fdata }: { fdata: ForecastData | null }) {
               {!b.counted && b.why && <span className="block text-xs text-faint">Not counted in the forecast: {b.why}</span>}
             </span>
             <span className="num font-medium">
-              <BonusValue proof={bon({ figure: "estimate", personId: b.personId, awardYear: b.awardYear!, month: b.key, part: b.label.split(" · ").slice(1).join(" · ") }, b.gross)}>{usd0(b.gross)}</BonusValue>
+              <BonusValue proof={{ descriptor: estimateDescriptor(b), shownCents: b.gross }}>{usd0(b.gross)}</BonusValue>
             </span>
           </li>
         ))}
@@ -648,7 +641,7 @@ function Payouts({ r }: { r: BonusesReport }) {
                     ) : (
                       <ProofValue
                         proof={{
-                          descriptor: { report: "pay", basis: "paid", personId: y.personId, employerKeys: y.employerKeys, lines: ["bonus"], start: `${y.year}-01-01`, end: y.through ?? `${y.year}-12-31` },
+                          descriptor: paidYearDescriptor(y),
                           shownCents: y.cents,
                         }}
                       >

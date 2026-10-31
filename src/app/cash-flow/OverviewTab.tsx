@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -10,7 +11,6 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip
 import type { CashTab, Ctx } from "./CashFlowClient";
 import { buildInsights, categoryCents, median, mergeCategories, totals, type Insight } from "./model";
 import { categoryColor, Delta, Dot, openMonthOnClick } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const TONE: Record<Insight["tone"], { icon: string; cls: string }> = {
   good: { icon: "▲", cls: "bg-pos-soft text-pos" },
@@ -42,13 +42,13 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
           sub={t.oneOff ? `${usd0(t.oneOff)} marked one-off` : "none marked yet"}
         />
         <StatCell label="Net saved" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={`over ${t.n} month${t.n === 1 ? "" : "s"}`} />
-        <StatCell proof={unswept("Savings rate (take-home)")}
+        <StatCell proof={ctx.dp("savings-rate", windowKey(slice.months))}
           label="Savings rate (take-home)"
           value={t.savingsRate == null ? "—" : formatPercentRatio(t.savingsRate, 1)}
           tone={t.savingsRate == null ? "neutral" : t.savingsRate >= 0.2 ? "pos" : t.savingsRate < 0 ? "neg" : "neutral"}
           sub={p?.savingsRate != null ? `was ${formatPercentRatio(p.savingsRate, 0)} before` : "net ÷ income"}
         />
-        <StatCell proof={unswept("401(k) via payroll")} label="401(k) via payroll" value={usd0(t.employee + t.employer)} sub={`${usd0(t.employer)} from employers · not in income`} />
+        <StatCell proof={ctx.dp("retirement", windowKey(slice.months))} label="401(k) via payroll" value={usd0(t.employee + t.employer)} sub={`${usd0(t.employer)} from employers · not in income`} />
       </StatGrid>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">

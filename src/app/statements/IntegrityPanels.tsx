@@ -1,13 +1,14 @@
 "use client";
 
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
+import { integrityDerived } from "@/lib/book/derived/integrity";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { Badge, btn, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { SweepProblemKind, SweepReport } from "@/lib/book/proof/sweep";
 import type { AcceptedFinding, Finding, RetiredException, StaleException } from "@/lib/book/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { useEffect, useMemo, useState } from "react";
 import type { BookReport, OnAccept, OnRetire } from "./useBookReport";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const date = (iso: string) => formatDisplayDateFromYmd(iso);
 
@@ -111,23 +112,26 @@ export function IssuesPanel({ r, onAccept, onRetire, onGo }: { r: BookReport; on
   const { inRange, failing, missing } = openIssues(r);
   const edge = r.findings.filter((f) => f.atEdge);
   const passingChecks = r.checks.filter((c) => c.failed === 0 && c.missing === 0).length;
+  // Each tile is proven from the Book's integrity report: its proof lists what it counts (derived/integrity.ts).
+  const derived = integrityDerived(r);
+  const dp = (figure: string) => derivedTarget("integrity", derived, figure);
   return (
     <>
       <StatGrid cols={6}>
-        <StatCell proof={unswept("Failing")} label="Failing" value={String(failing.length)} tone={failing.length ? "neg" : "pos"} sub="data that contradicts itself" />
-        <StatCell proof={unswept("Missing")} label="Missing" value={String(missing.length)} tone={missing.length ? "warn" : "pos"} sub="statements or stubs not on file" />
-        <StatCell proof={unswept("Proven through")}
+        <StatCell proof={dp("failing")} label="Failing" value={String(failing.length)} tone={failing.length ? "neg" : "pos"} sub="data that contradicts itself" />
+        <StatCell proof={dp("missing")} label="Missing" value={String(missing.length)} tone={missing.length ? "warn" : "pos"} sub="statements or stubs not on file" />
+        <StatCell proof={dp("proven-through")}
           label="Proven through"
           value={date(r.horizon.netWorth)}
           sub={`the data edge: every figure stops here${edge.length ? ` · ${edge.length} awaiting newer statements` : ""}`}
         />
-        <StatCell proof={unswept("Checks fully passing")} label="Checks fully passing" value={`${passingChecks} / ${r.checks.length}`} tone={passingChecks === r.checks.length ? "pos" : "neutral"} sub="details on Checks" />
-        <StatCell proof={unswept("Inferred")}
+        <StatCell proof={dp("checks-passing")} label="Checks fully passing" value={`${passingChecks} / ${r.checks.length}`} tone={passingChecks === r.checks.length ? "pos" : "neutral"} sub="details on Checks" />
+        <StatCell proof={dp("inferred")}
           label="Inferred"
           value={String(r.inferences.length)}
           sub={r.inferences.some((i) => i.partial) ? `${r.inferences.filter((i) => !i.partial).length} proven from two other sources · ${r.inferences.filter((i) => i.partial).length} from one source (partial)` : "proven from two other sources"}
         />
-        <StatCell proof={unswept("Accepted exceptions")}
+        <StatCell proof={dp("accepted")}
           label="Accepted exceptions"
           value={String(r.accepted.length)}
           tone={r.stale.length ? "warn" : "neutral"}

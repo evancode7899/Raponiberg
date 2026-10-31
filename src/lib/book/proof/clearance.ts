@@ -46,9 +46,18 @@ export type ShownFigure = { descriptor: ProofDescriptor; shownCents: number | nu
 /** A figure with no proof yet: always withheld, saying why. F3 gives each one a proof. */
 export type Unswept = { unswept: string };
 export const unswept = (why: string): Unswept => ({ unswept: why });
-export const isUnswept = (x: unknown): x is Unswept => typeof x === "object" && x !== null && "unswept" in x;
+export const isUnswept = (x: unknown): x is Unswept => typeof x === "object" && x !== null && ("unswept" in x || "noFigure" in x);
 
-export type WithheldReason = "unswept" | "blocked" | "flagged" | "mismatch" | "stale" | "failed" | "not-cleared";
+/**
+ * Where a figure would sit but there is none to show (no fill-ups logged, no warranty set):
+ * not a figure at all, so nothing to prove. It renders the same dash a withheld figure
+ * does, and says why; it can never carry a number.
+ */
+export type NoFigure = { noFigure: string };
+export const noFigure = (why: string): Unswept => ({ unswept: why, noFigure: why }) as Unswept & NoFigure;
+export const isNoFigure = (x: unknown): x is NoFigure => typeof x === "object" && x !== null && "noFigure" in x;
+
+export type WithheldReason = "unswept" | "no-figure" | "blocked" | "flagged" | "mismatch" | "stale" | "failed" | "not-cleared";
 
 export type Clearance =
   | { state: "cleared"; key: string; shown: ProofValue | null; cleared: ProofValue; basis: FigureBasis }
@@ -85,6 +94,7 @@ export function clearanceOf(f: ShownFigure | Unswept, s: SweepState, pageStamp: 
   // Findings first: a blocked figure says what blocks it, proof or none.
   if (blockers.length)
     return { state: "withheld", key: isUnswept(f) ? null : descriptorKey(f.descriptor), shown: isUnswept(f) ? null : shownOf(f), reason: "blocked", detail: `Can't be proven: ${blockers.map((b) => b.title).join("; ")}`, blockers: [...blockers] };
+  if (isNoFigure(f)) return { state: "withheld", key: null, shown: null, reason: "no-figure", detail: `Nothing to show: ${f.noFigure}` };
   if (isUnswept(f)) return { state: "withheld", key: null, shown: null, reason: "unswept", detail: `No proof yet: ${f.unswept}` };
   const key = descriptorKey(f.descriptor);
   const shown = shownOf(f);

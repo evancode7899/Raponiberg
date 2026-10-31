@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { categoryKey, merchantKeyOf, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Stat } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -14,7 +15,6 @@ import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } fr
 import type { Ctx, Drill } from "./CashFlowClient";
 import { categoryCents, KINDS, median, mergeMerchants, sum } from "./model";
 import { categoryColor, Dot, Eyebrow, TxnList } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { isUnswept } from "@/lib/book/proof/clearance";
 
@@ -76,8 +76,8 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Total" value={usd0(total)} proof={ctx.proof(metricOf[lane]!, slice.months, { category, shownCents: total })} />
         <Stat label="Per month" value={usd0(total / Math.max(1, values.length))} proof={ctx.proof(metricOf[lane]!, slice.months, { category, perMonth: true, shownCents: total })} />
-        <Stat proof={unswept("Typical month")} label="Typical month" value={usd0(median(values))} />
-        <Stat proof={unswept("this figure")} label={lane === "EXPENSE" ? "Share of spending" : "Months"} value={lane === "EXPENSE" ? (spending > 0 ? formatPercentRatio(total / spending, 0) : "—") : values.filter(Boolean).length} />
+        <Stat proof={ctx.dp("category-typical", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label="Typical month" value={usd0(median(values))} />
+        <Stat proof={ctx.dp(lane === "EXPENSE" ? "category-share" : "category-months", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label={lane === "EXPENSE" ? "Share of spending" : "Months"} value={lane === "EXPENSE" ? (spending > 0 ? formatPercentRatio(total / spending, 0) : "—") : values.filter(Boolean).length} />
       </div>
       <p className="-mt-2 text-xs text-muted">
         Click the total for the rows behind it, statement by statement, with every check over them. The transactions below are listed by posting date for editing, so a row near a month&apos;s edge or a rent
@@ -162,10 +162,10 @@ export function MerchantDrill({ ctx, drill }: { ctx: Ctx; drill: Extract<Drill, 
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat proof={unswept("Total")} label="Total" value={usd0(total)} sub={category} />
-        <Stat proof={unswept("Average")} label={drill.lane === "EXPENSE" ? "Charges" : "Deposits"} value={count} sub={`in ${values.filter(Boolean).length} of ${values.length} months`} />
-        <Stat proof={unswept("Average")} label="Average" value={usd0(count ? total / count : 0)} sub="per charge" />
-        <Stat proof={unswept("Pattern")}
+        <Stat proof={ctx.proof(drill.lane === "EXPENSE" ? "spending" : "income", slice.months, { merchantKey: drill.key, shownCents: total })} label="Total" value={usd0(total)} sub={category} />
+        <Stat proof={ctx.dp("merchant-count", merchantKeyOf(slice.months, drill.lane === "EXPENSE" ? "EXPENSE" : "INCOME", drill.key))} label={drill.lane === "EXPENSE" ? "Charges" : "Deposits"} value={count} sub={`in ${values.filter(Boolean).length} of ${values.length} months`} />
+        <Stat proof={ctx.dp("merchant-avg", merchantKeyOf(slice.months, drill.lane === "EXPENSE" ? "EXPENSE" : "INCOME", drill.key))} label="Average" value={usd0(count ? total / count : 0)} sub="per charge" />
+        <Stat proof={ctx.dp("merchant-pattern", merchantKeyOf(slice.months, drill.lane === "EXPENSE" ? "EXPENSE" : "INCOME", drill.key))}
           label="Pattern"
           value={recurring ? (recurring.kind === "bill" ? "Bill" : "Habit") : "Irregular"}
           sub={recurring ? `${recurring.active ? "active" : "stopped"} · ${usd0(recurring.annualCents)}/yr` : undefined}
@@ -219,7 +219,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <Stat label="Income" value={usd0(m.incomeCents)} proof={ctx.proof("income", one, { shownCents: m.incomeCents })} />
         <Stat label="Spending" value={usd0(m.spendingCents)} proof={ctx.proof("spending", one, { shownCents: m.spendingCents })} sub="net of merchant refunds; tax refunds are income" />
         <Stat label="Net saved" value={usd0(m.netCents)} proof={ctx.proof("net", one, { shownCents: m.netCents })} />
-        <Stat proof={unswept("Savings rate")} label="Savings rate" value={m.savingsRate == null ? "—" : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
+        <Stat proof={ctx.dp("savings-rate", windowKey(one))} label="Savings rate" value={m.savingsRate == null ? "—" : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
       </div>
       {(m.through || m.unreviewed.rows > 0) && (
         <p className="-mt-2 text-xs text-muted">
