@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { buildAccountRollforwards } from "@/lib/profile/rollforwards";
 import { NextRequest, NextResponse } from "next/server";
@@ -15,5 +15,5 @@ export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return jsonBody(await cachedReport(prisma, "net-worth-accounts", buildAccountRollforwards));
+  return jsonBody(await cachedBuilt(prisma, "net-worth-accounts", buildAccountRollforwards));
 }

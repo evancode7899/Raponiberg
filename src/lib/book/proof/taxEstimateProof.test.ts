@@ -377,3 +377,20 @@ describe("the forecast's bonus on its own line", () => {
     expect(splitForecastBonus(1_000_000, 200_000, 0)).toEqual({ rest: 1_000_000, bonus: 0 });
   });
 });
+
+describe("a finished year short of its December statements (SSOT F · A)", () => {
+  // February 2026, with every account's statements reaching only November 2025: the 2025
+  // stubs, interest and payments after the edge aren't proven yet.
+  const early = makeBook("2026-02-10", { horizon: { cashFlow: "2025-11-30", netWorth: "2025-11-30" } });
+
+  it("is withheld as awaiting statements, never shown as eleven months of pay", () => {
+    const r = buildTaxReport(early, 2025);
+    expect(r.blocked).toBe(true);
+    expect(r.blocked && r.blockers.map((b) => b.id)).toEqual(["tax.year-awaiting:2025"]);
+  });
+
+  it("shows the year once its statements reach December 31st", () => {
+    const r = buildTaxReport(makeBook("2026-02-10", { horizon: { cashFlow: "2026-01-31", netWorth: "2026-01-31" } }), 2025);
+    expect(r.blocked).toBeFalsy();
+  });
+});

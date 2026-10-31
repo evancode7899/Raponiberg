@@ -668,7 +668,7 @@ function targetLine(c: GoalsCtx, g: GoalProgress, op?: ChainLine["op"]): ChainLi
 }
 
 function goalChecks(c: GoalsCtx, g: GoalProgress) {
-  return checksFor(c.book, { affects: "NET_WORTH", from: c.r.asOf, to: c.r.asOf, accountIds: g.accounts.map((a) => a.id) }, NET_WORTH_CHECKS);
+  return checksFor(c.book, { affects: "NET_WORTH", from: c.r.asOf, to: c.r.asOf, accountIds: g.blockerAccountIds }, NET_WORTH_CHECKS);
 }
 
 function goalCurrentProof(c: GoalsCtx, g: GoalProgress): Built {

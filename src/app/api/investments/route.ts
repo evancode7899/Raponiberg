@@ -1,6 +1,6 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildInvestments } from "@/lib/book/reports/investments";
 import { prisma } from "@/lib/db";
 import { loadProfileSettings } from "@/lib/profile/settings";
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "investments", async (book) => {
+    await cachedBuilt(prisma, "investments", async (book) => {
       const [settings, profile] = await Promise.all([loadJsonSetting(prisma, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings), loadProfileSettings(prisma)]);
       // The forecast's return prices what a fee costs over time, as it prices every projection.
       return { report: buildInvestments(book, settings), settings, returnRate: profile.outlook.returnRate };

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { resolveSqliteDatabaseFilePath } from "../sqliteDbPath.ts";
 import { localToday } from "../dates/isoDate.ts";
 import { deepFreeze } from "./freeze.ts";
 import { loadBook, type Book } from "./load.ts";
@@ -25,7 +26,9 @@ type Db = Parameters<typeof loadBook>[0];
  */
 
 type Entry = { stamp: string; book: Promise<Book> };
-type Store = { entry: Entry | null; reports: Map<string, Promise<string>>; watching: boolean };
+/** A report's JSON text and the data stamp (dataStamp) of the Book it was built from. */
+export type Built = { body: string; stamp: string };
+type Store = { entry: Entry | null; reports: Map<string, Promise<Built>>; watching: boolean };
 
 // On globalThis: each route is bundled separately, and they must share one cache.
 const g = globalThis as unknown as { __pfBookCache?: Store };
@@ -34,15 +37,29 @@ const state = (): Store => (g.__pfBookCache ??= { entry: null, reports: new Map(
 const REPORT_LIMIT = 50;
 const today = () => localToday();
 
-function databaseFile(): string | null {
-  const url = process.env.DATABASE_URL ?? "";
-  if (!url.startsWith("file:")) return null;
-  const p = url.slice("file:".length).split("?")[0]!;
-  // Prisma resolves a relative SQLite path against the schema's folder.
-  return path.isAbsolute(p) ? p : path.resolve(process.cwd(), "prisma", p);
-}
+/** The database file, read off DATABASE_URL the way the rest of the app reads it (sqliteDbPath.ts). */
+const databaseFile = resolveSqliteDatabaseFilePath;
 
-const ENV_FILES = ["INTEGRITY_EXCEPTIONS_FILE", "TRANSFER_DECISIONS_FILE", "BONUS_AWARDS_FILE", "BONUS_REVIEWS_FILE", "MERCHANT_RULES_FILE", "ROW_DECISIONS_FILE", "HOUSEHOLD_FILE"];
+/**
+ * Every data file a figure reads that its env variable can point outside the data folder
+ * (each is in the stamp wherever it lives). UNSTAMPED_ENV_FILES are the ones no figure reads
+ * (read per request beside the Book); a test holds every `*_FILE` variable the code reads to
+ * one list or the other.
+ */
+export const ENV_FILES = [
+  "INTEGRITY_EXCEPTIONS_FILE",
+  "TRANSFER_DECISIONS_FILE",
+  "BONUS_AWARDS_FILE",
+  "BONUS_REVIEWS_FILE",
+  "MERCHANT_RULES_FILE",
+  "ROW_DECISIONS_FILE",
+  "HOUSEHOLD_FILE",
+  "REIMBURSEMENT_LINKS_FILE",
+  "TAX_DOCUMENTS_FILE",
+  "CLOSED_ACCOUNTS_FILE",
+  "FUND_DOCUMENTS_FILE",
+];
+export const UNSTAMPED_ENV_FILES = ["PAGE_INPUTS_FILE", "APP_PASSWORD_FILE", "HSA_EXPENSES_FILE", "HSA_RECEIPTS_FILE", "INSURANCE_DOCUMENTS_FILE", "CARD_REWARDS_FILE"];
 
 function stat(file: string): string {
   try {
@@ -57,7 +74,9 @@ function stat(file: string): string {
 export function dataStamp(): string {
   const parts = [today()];
   const db = databaseFile();
-  if (db) parts.push(stat(db), stat(`${db}-wal`));
+  // No database file to watch would serve one Book forever: refuse instead.
+  if (!db) throw new Error("DATABASE_URL isn't a SQLite file: the Book can't tell when the data changes.");
+  parts.push(stat(db), stat(`${db}-wal`));
   const dir = dataDir();
   let json: string[] = [];
   try {
@@ -68,8 +87,9 @@ export function dataStamp(): string {
     // the rewards read from card statements (lib/cardPerks/rewardsScan.ts, same).
     const unread = new Set(["page-inputs.json", "app-password.json", "hsa-expenses.json", "insurance-documents.json", "card-rewards.json"]);
     json = readdirSync(dir).filter((f) => f.endsWith(".json") && !unread.has(f)).sort().map((f) => path.join(dir, f));
-  } catch {
-    /* no data folder */
+  } catch (e) {
+    // No data folder yet holds no files; any other failure would leave every file out of the stamp.
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
   for (const k of ENV_FILES) if (process.env[k]) json.push(process.env[k]!);
   for (const f of json) parts.push(`${path.basename(f)}=${stat(f)}`);
@@ -85,7 +105,7 @@ export { deepFreeze };
 export function getBook(db: Db, stamp = dataStamp()): Promise<Book> {
   const store = state();
   if (store.entry?.stamp === stamp) return store.entry.book;
-  const book = loadBook(db).then((b) => deepFreeze(b));
+  const book = buildSettled(db, stamp).then((b) => deepFreeze(b));
   const entry: Entry = { stamp, book };
   store.entry = entry;
   store.reports.clear();
@@ -96,11 +116,36 @@ export function getBook(db: Db, stamp = dataStamp()): Promise<Book> {
 }
 
 /**
+ * Builds the Book, again if the data changed while it was being read (an import landing
+ * mid-build): the reads aren't one snapshot, so such a Book could mix the data before and
+ * after. Gives up after a few tries and keeps the last, which the next request (on the new
+ * stamp) replaces anyway.
+ */
+async function buildSettled(db: Db, stamp: string): Promise<Book> {
+  let seen = stamp;
+  for (let i = 0; ; i++) {
+    const book = await loadBook(db);
+    const now = dataStamp();
+    if (now === seen || i >= 2) return book;
+    seen = now;
+  }
+}
+
+/**
  * A report built from the Book, as JSON text, kept until the data changes. `key` names
  * the report and everything else it depends on (query parameters). Only for reads: the
  * build must not write.
  */
 export function cachedReport(db: Db, key: string, build: (book: Book) => unknown): Promise<string> {
+  return cachedBuilt(db, key, build).then((b) => b.body);
+}
+
+/**
+ * cachedReport, with the stamp of the data it was built from: jsonBody tags the response
+ * with that stamp, never the stamp at the moment it's sent (the data can change in between,
+ * and a page must know which data the figures it shows describe).
+ */
+export function cachedBuilt(db: Db, key: string, build: (book: Book) => unknown): Promise<Built> {
   const store = state();
   const stamp = dataStamp();
   const k = `${stamp}\n${key}`;
@@ -111,7 +156,7 @@ export function cachedReport(db: Db, key: string, build: (book: Book) => unknown
     store.reports.set(k, hit);
     return hit;
   }
-  const body = getBook(db, stamp).then(async (book) => JSON.stringify(await build(book)));
+  const body = getBook(db, stamp).then(async (book): Promise<Built> => ({ body: JSON.stringify(await build(book)), stamp }));
   store.reports.set(k, body);
   body.catch(() => store.reports.delete(k));
   while (store.reports.size > REPORT_LIMIT) store.reports.delete(store.reports.keys().next().value!);
@@ -119,11 +164,16 @@ export function cachedReport(db: Db, key: string, build: (book: Book) => unknown
 }
 
 /** A short tag for the data as it is (dataStamp): pages and proofs carry it, so the proof drawer can tell changed data from a bug. */
-export const stampTag = (stamp = dataStamp()) => createHash("sha1").update(stamp).digest("hex").slice(0, 12);
+export const stampTag = (stamp = dataStamp()) => createHash("sha256").update(stamp).digest("hex").slice(0, 12);
 
-/** A JSON response from text already serialized (cachedReport), tagged with the data it was built from (x-data-stamp). */
-export function jsonBody(body: string): Response {
-  return new Response(body, { headers: { "content-type": "application/json", "x-data-stamp": stampTag() } });
+/**
+ * A JSON response from a report already serialized (cachedBuilt), tagged with the data it was
+ * built from (x-data-stamp). Plain text has no stamp of its own: it's tagged with `stamp` when
+ * given (the sweep's), else as of now.
+ */
+export function jsonBody(body: Built | string, stamp?: string): Response {
+  const b = typeof body === "string" ? { body, stamp: stamp ?? dataStamp() } : body;
+  return new Response(b.body, { headers: { "content-type": "application/json", "x-data-stamp": stampTag(b.stamp) } });
 }
 
 /**

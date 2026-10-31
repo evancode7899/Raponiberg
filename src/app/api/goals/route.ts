@@ -1,6 +1,6 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildGoals, goalForecastOf } from "@/lib/book/reports/goals";
 import { prisma } from "@/lib/db";
 import { loadForecast } from "@/lib/forecast/load";
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "goals", async (book) => {
+    await cachedBuilt(prisma, "goals", async (book) => {
       const [settings, { forecast: f, data }] = await Promise.all([loadJsonSetting(prisma, GOALS_KEY, normalizeGoals), loadForecast(prisma, book)]);
       return { report: buildGoals(book, settings, f ? goalForecastOf(f) : null, data.profile.settings), settings };
     }),

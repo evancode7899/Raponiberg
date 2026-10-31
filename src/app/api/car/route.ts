@@ -1,6 +1,6 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { garagePage } from "@/lib/car/page";
 import { CAR_KEY, normalizeGarage } from "@/lib/car/settings";
 import { prisma } from "@/lib/db";
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "car", async (book) => {
+    await cachedBuilt(prisma, "car", async (book) => {
       const settings = await loadJsonSetting(prisma, CAR_KEY, normalizeGarage);
       const accounts = Object.fromEntries(book.accounts.map((a) => [a.id, a.name]));
       return { report: garagePage(book, settings), settings, accounts };

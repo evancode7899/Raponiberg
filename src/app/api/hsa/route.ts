@@ -1,6 +1,6 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { stampTag } from "@/lib/book/cache";
+import { dataStamp, stampTag } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { loadHsaReport } from "@/lib/hsa/loadReport";
 import { applyHsaOp, type HsaOp } from "@/lib/hsa/store";
@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    return NextResponse.json(await loadHsaReport(prisma), { headers: { "x-data-stamp": stampTag() } });
+    // The stamp of the data read, taken before reading it: a change during the read makes it stale, never newer.
+    const stamp = dataStamp();
+    return NextResponse.json(await loadHsaReport(prisma), { headers: { "x-data-stamp": stampTag(stamp) } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not read the HSA log" }, { status: 500 });
   }

@@ -157,11 +157,15 @@ describe("buildCashFlowProof", () => {
     const [r] = g!.rows;
     expect(r!.precision).toBe("PERIOD");
     expect(r!.share).toBeCloseTo(31 / 90, 10);
-    expect(r!.countedCents).toBeCloseTo((9_001 * 31) / 90, 6);
+    // Whole cents: the line spread day by day, rounded cumulatively (booking.ts bookedCents).
+    expect(r!.countedCents).toBe(Math.round((9_001 * 31) / 90));
     expect(jan.figureCents).toBe(Math.round((9_001 * 31) / 90));
-    // The quarter's three months add back to the whole line.
+    // The quarter's three months add back to the whole line, to the cent.
     const q = buildCashFlowProof(book, d({ category: "Fees", start: "2025-01-01", end: "2025-03-31" }));
     expect(q.sections[0]!.groups[0]!.rows[0]!.share).toBeCloseTo(1, 10);
+    const month = (start: string, end: string) => buildCashFlowProof(book, d({ category: "Fees", start, end })).figureCents;
+    expect(month("2025-01-01", "2025-01-31") + month("2025-02-01", "2025-02-28") + month("2025-03-01", "2025-03-31")).toBe(q.figureCents);
+    expect(Math.abs(q.figureCents)).toBe(9_001);
   });
 
   it("counts rent in the month it pays for and says where it moved", () => {

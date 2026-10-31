@@ -19,8 +19,8 @@ export type BlockerQuery = {
  * whose window overlaps the figure's period (and its accounts/person, when given). A
  * finding past the data edge (Finding.atEdge) only ever blocks from the day it starts
  * (its date): its window's lead-in (a transfer's matching days) doesn't reach back into
- * proven data — cash flow runs past the net-worth edge up to the day before such a finding
- * (load.ts cashFlowThrough), so a lead-in clipped only at the edge would block it.
+ * proven data. Only missing data is marked so (Collector.add): a contradiction blocks its
+ * whole window wherever it's dated.
  */
 export function blockersFor(book: Book, q: BlockerQuery): Finding[] {
   const hits = scopeHits(book, q);
@@ -118,7 +118,9 @@ export function netWorthAtBlockers(book: Book, date: string, accountIds?: string
  * quarter of the integrity timeline).
  */
 export function taxBlockers(book: Book, year: number, window?: { from: string; to: string }): Finding[] {
-  const yearEnd = taxYearThrough(book, year);
+  // Findings anywhere in a finished year bear on it, past the edge too (they're what it awaits);
+  // the year in progress runs to the edge, as its figures do.
+  const yearEnd = Number(book.today.slice(0, 4)) === year ? taxYearThrough(book, year) : minIso(`${year}-12-31`, book.today);
   const from = window?.from ?? `${year}-01-01`;
   const to = window ? minIso(window.to, yearEnd) : yearEnd;
   const bankTo = window?.to ?? minIso(`${year + 1}-04-30`, book.horizon.cashFlow);
@@ -131,8 +133,16 @@ export function taxBlockers(book: Book, year: number, window?: { from: string; t
   return [...new Map(all.map((f) => [f.id, f])).values()];
 }
 
-/** The last day a tax year's figures run through: year end, or for the current year the cash-flow horizon. */
+/**
+ * The last day a tax year's figures run through: its year end, never past the proven-through
+ * date (Book.horizon). That holds for a finished year too: in the spring, before every
+ * account's December statement is on file, a past year runs only to the edge, as its pay
+ * does (pay.ts personPayYear), so pay, interest and payments all stop on one day.
+ * yearProvenToEnd says whether a year reaches its December 31st.
+ */
 export function taxYearThrough(book: Book, year: number): string {
-  const end = `${year}-12-31`;
-  return Number(book.today.slice(0, 4)) === year ? minIso(end, book.horizon.cashFlow) : minIso(end, book.today);
+  return minIso(`${year}-12-31`, minIso(book.horizon.cashFlow, book.today));
 }
+
+/** Whether a tax year's figures run to December 31st (taxYearThrough): a finished year short of it is still awaiting statements. */
+export const yearProvenToEnd = (book: Book, year: number): boolean => taxYearThrough(book, year) === `${year}-12-31`;

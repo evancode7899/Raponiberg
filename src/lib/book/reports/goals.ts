@@ -66,6 +66,12 @@ export type GoalProgress = {
   status: "REACHED" | "ON_TRACK" | "BEHIND" | "IN_PROGRESS" | "NO_PACE" | "NO_TARGET";
   sharedWith: string[];
   blockers: BlockerRef[];
+  /**
+   * The accounts whose findings bear on the goal: its funding accounts, and the cards when
+   * what they owe comes off its bank cash. Its blockers and its proof's checks both read
+   * this one list, so the page and the proof can't disagree about what withholds it.
+   */
+  blockerAccountIds: string[];
 };
 
 /** One funding account as a goal sees it: its balance, what earlier goals claimed, and what this goal counts. */
@@ -116,7 +122,8 @@ export function buildGoals(
   const monthlySpending = typical
     ? { cents: typical.cents, months: typical.months, from: typical.from, to: typical.to, periods: typical.periods.map((p) => ({ start: p.start, end: p.end, cents: p.cents, spendingCents: p.spendingCents })) }
     : null;
-  const cardsOwedCents = -household(book).ledger.accounts.filter((a) => !a.closed && a.group === "Credit cards" && a.timeline.firstDay! <= asOf).reduce((s, a) => s + valueAt(a.timeline, asOf).cents, 0);
+  const owingCards = household(book).ledger.accounts.filter((a) => !a.closed && a.group === "Credit cards" && a.timeline.firstDay! <= asOf);
+  const cardsOwedCents = -owingCards.reduce((s, a) => s + valueAt(a.timeline, asOf).cents, 0);
 
   const fundersOf = (g: Goal) => open.filter((a) => g.groups.includes(a.group) || g.accountIds.includes(a.id));
   const reach = forecast ? forecastFiller(forecast) : null;
@@ -126,6 +133,8 @@ export function buildGoals(
   const goals = settings.goals.map((goal): GoalProgress => {
     const funders = fundersOf(goal);
     const ids = funders.map((a) => a.id);
+    // What the cards owe claims bank cash first: their statements bear on a goal funded from it.
+    const blockerAccountIds = [...ids, ...(cardsOwedCents > 0 && funders.some((a) => a.group === "Cash") ? owingCards.map((a) => a.id) : [])];
     const targetCents = goal.kind === "EMERGENCY_FUND" ? (monthlySpending ? Math.round(monthlySpending.cents * (goal.months ?? 6)) : null) : goal.targetCents;
 
     const track = goal.funding === "TRACK";
@@ -193,7 +202,8 @@ export function buildGoals(
       filled,
       status,
       sharedWith: settings.goals.filter((o) => o.id !== goal.id && fundersOf(o).some((a) => ids.includes(a.id))).map((o) => o.name),
-      blockers: refs(netWorthAtBlockers(book, asOf, ids)),
+      blockers: refs(netWorthAtBlockers(book, asOf, blockerAccountIds)),
+      blockerAccountIds,
     };
   });
 

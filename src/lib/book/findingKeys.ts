@@ -43,18 +43,20 @@ export function personRef(book: Book, personId: string | null | undefined): stri
 
 /**
  * A ledger row: account + date + amount, numbered among the rows that share them (two
- * identical transfers on one day), counting only rows `among` accepts so the number
- * doesn't shift when a sibling pairs up.
+ * identical transfers on one day). Numbered among every row `numberAmong` accepts (all
+ * transfers), not just the ones refs are wanted for (`among`: the unpaired ones), so a
+ * row's number never shifts when a sibling pairs up and leaves `among`: an exception
+ * accepted on one row can't move onto its twin.
  */
-export function rowRefs(book: Book, among: (r: BookRow) => boolean): Map<string, string> {
+export function rowRefs(book: Book, among: (r: BookRow) => boolean, numberAmong: (r: BookRow) => boolean = among): Map<string, string> {
   const seen = new Map<string, number>();
   const refs = new Map<string, string>();
   for (const r of book.rows) {
-    if (!among(r)) continue;
+    if (!numberAmong(r) && !among(r)) continue;
     const base = `${accountRef(book, r.accountId).ref}:${r.date}:${r.amountCents}`;
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
-    refs.set(r.id, `${base}#${n}`);
+    if (among(r)) refs.set(r.id, `${base}#${n}`);
   }
   return refs;
 }

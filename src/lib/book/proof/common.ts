@@ -22,7 +22,10 @@ export function checksFor(book: Book, q: BlockerQuery | BlockerQuery[], ids: Che
   const open = once(qs.flatMap((x) => blockersFor(book, x)));
   const accepted = once(qs.flatMap((x) => acceptedFor(book, x)));
   const passes = once(qs.flatMap((x) => passesFor(book, x)));
-  const checks = ids.map((id): ProofCheck => {
+  // A finding that withholds the figure is always listed, even from a check this kind of
+  // figure doesn't usually name (a damaged settings file): nothing withholds unexplained.
+  const listed = [...ids, ...once(open.map((f) => f.check)).filter((id) => !ids.includes(id))];
+  const checks = listed.map((id): ProofCheck => {
     const def = CHECKS.find((c) => c.id === id)!;
     const mine = passes.filter((p) => p.check === id);
     const o = open.filter((f) => f.check === id);

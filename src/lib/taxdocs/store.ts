@@ -26,14 +26,25 @@ export function taxDocsFile(): string {
   return process.env.TAX_DOCUMENTS_FILE || path.join(dataDir(), "tax-documents.json");
 }
 
-/** The scanned documents, or null before the first scan. A damaged file reads as none: the next scan rebuilds it. */
+/** The scanned documents, or null before the first scan. A damaged file reads as none here (the scanner rebuilds it); the Book reads it with readTaxDocsChecked. */
 export function readTaxDocs(file = taxDocsFile()): TaxDocsFile | null {
-  if (!existsSync(file)) return null;
+  return readTaxDocsChecked(file).docs;
+}
+
+/**
+ * The scanned documents, and why the file can't be read when it's damaged. The Book
+ * reports that as a finding (check data.readable) instead of reading it as "never scanned":
+ * a finished year's W-2s and filed return are its figures of record, and their silent
+ * absence would put the ledger's figures in their place unchecked.
+ */
+export function readTaxDocsChecked(file = taxDocsFile()): { docs: TaxDocsFile | null; error?: string } {
+  if (!existsSync(file)) return { docs: null };
   try {
     const f = JSON.parse(readFileSync(file, "utf8")) as TaxDocsFile;
-    return Array.isArray(f.docs) ? f : null;
-  } catch {
-    return null;
+    if (Array.isArray(f.docs)) return { docs: f };
+    return { docs: null, error: `The tax documents scan (${path.basename(file)}) is damaged: it has no list of documents. Scan the tax documents folder again (Statements).` };
+  } catch (e) {
+    return { docs: null, error: `The tax documents scan (${path.basename(file)}) can't be read: ${e instanceof Error ? e.message : String(e)}. Scan the tax documents folder again (Statements).` };
   }
 }
 

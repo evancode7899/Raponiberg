@@ -12,6 +12,7 @@
  */
 
 export type CheckId =
+  | "data.readable"
   | "ledger.consistency"
   | "ledger.freshness"
   | "statement.held"
@@ -168,6 +169,12 @@ export type IntegrityReport = {
 };
 
 export const CHECKS: CheckDef[] = [
+  {
+    id: "data.readable",
+    title: "Your saved settings and files can be read",
+    description:
+      "The tax profile, profile settings, tax documents scan and reimbursement links are read as saved. A damaged one is never replaced by defaults or left out quietly: it withholds every figure it could change until it's restored.",
+  },
   {
     id: "ledger.consistency",
     title: "The ledger agrees with itself",

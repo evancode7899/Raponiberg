@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildHomeFunds, buildHomeSpending } from "@/lib/book/reports/homeFunds";
 import { prisma } from "@/lib/db";
 import { homeForecast } from "@/lib/forecast/forecast";
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "home-funds", async (book) => {
+    await cachedBuilt(prisma, "home-funds", async (book) => {
       const { forecast, data } = await loadForecast(prisma, book);
       const seeds = data.profile.seeds;
       return {

@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { buildAnnualProfile } from "@/lib/profile/buildAnnualProfile";
 import { loadProfileSettings } from "@/lib/profile/settings";
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return jsonBody(
-    await cachedReport(prisma, "profile", async (book) => {
+    await cachedBuilt(prisma, "profile", async (book) => {
       return buildAnnualProfile(book, await loadProfileSettings(prisma), book.taxProfile.dependents);
     }),
   );

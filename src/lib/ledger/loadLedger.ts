@@ -231,6 +231,17 @@ export async function loadLedger(db: Db, opts: { today: string }): Promise<Ledge
 }
 
 /**
+ * The last day every open account has a statement for (null: no open account). The one
+ * definition of the data edge: Ledger.completeThrough and the Book's proven-through date
+ * (book/load.ts provenThrough) are both this.
+ */
+export function openAccountsEdge(accounts: { closed: boolean; timeline: { lastDay: string | null } }[]): string | null {
+  // Every ledger account has a statement (loadLedger skips one without); an account with
+  // none at all is a finding of its own (statement.history: no statements on file).
+  return accounts.flatMap((a) => (!a.closed && a.timeline.lastDay ? [a.timeline.lastDay] : [])).sort()[0] ?? null;
+}
+
+/**
  * Recomputes each account's closed flag and the ledger's complete-through / first day
  * from the timelines (after the Book fills proven idle windows, for instance).
  */
@@ -239,7 +250,6 @@ export function refreshLedgerStatus(ledger: Ledger, today: string) {
     const last = a.timeline.segments.at(-1)!;
     a.closed = a.closedByOwner != null || (last.closing === 0 && daysBetween(a.timeline.lastDay!, today) > 45);
   }
-  const open = ledger.accounts.filter((a) => !a.closed);
-  ledger.completeThrough = open.length ? open.map((a) => a.timeline.lastDay!).sort()[0]! : null;
+  ledger.completeThrough = openAccountsEdge(ledger.accounts);
   ledger.firstDay = ledger.accounts.length ? ledger.accounts.map((a) => a.timeline.firstDay!).sort()[0]! : null;
 }

@@ -2,7 +2,7 @@ import { amountsFromLines } from "../../tax/facts/payroll.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { LivingTrail } from "../../profile/basePay.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
-import { household } from "../householdView.ts";
+import { household, payJoins } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
 import { oneOffSubject } from "../reimbursements.ts";
 import { countsOn } from "../rent.ts";
@@ -175,9 +175,16 @@ export function livingTrail(from: string, to: string, rows: CashRows, payReimbur
   };
 }
 
-/** Reimbursements paid inside paychecks dated in [from, to] (they offset spending, as Zelle/Venmo ones do). */
+/**
+ * Reimbursements paid inside paychecks dated in [from, to] (they offset spending, as Zelle/Venmo
+ * ones do). A partner's paychecks count from the day their pay joins the household (STRICT:
+ * the merge, householdView.ts payJoins), as their pay does on Annual; before it, what their
+ * employer paid back offset spending on their own accounts, not the household's.
+ */
 export function payReimbursementsIn(book: Book, from: string, to: string): number {
-  return book.stubs.filter((s) => s.personId && s.payDate >= from && s.payDate <= to).reduce((t, s) => t + amountsFromLines(s.lines, "current").nonTaxable, 0);
+  return book.stubs
+    .filter((s) => s.personId && s.payDate >= from && s.payDate <= to && s.payDate >= (payJoins(book, s.personId) ?? ""))
+    .reduce((t, s) => t + amountsFromLines(s.lines, "current").nonTaxable, 0);
 }
 
 /** Living cost over [from, to] (inclusive days), with how it adds up. */

@@ -1,6 +1,6 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { addException, retireException } from "@/lib/book/exceptionStore";
-import { cachedReport, getBook, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, getBook, jsonBody } from "@/lib/book/cache";
 import type { Book } from "@/lib/book/load";
 import { buildCoverage } from "@/lib/book/reports/coverage";
 import { buildStatementPlan } from "@/lib/book/reports/statementPlan";
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return jsonBody(await cachedReport(prisma, "integrity", report));
+  return jsonBody(await cachedBuilt(prisma, "integrity", report));
 }
 
 /**
@@ -84,5 +84,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'action must be "accept" or "retire"' }, { status: 400 });
   }
 
-  return jsonBody(await cachedReport(prisma, "integrity", report));
+  return jsonBody(await cachedBuilt(prisma, "integrity", report));
 }

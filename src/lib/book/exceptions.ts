@@ -14,6 +14,29 @@ export function exceptionMatches(ex: Keyed, f: Keyed): boolean {
   return withoutAccount(ex.id) === withoutAccount(f.id) && ex.accounts.some((a) => f.accounts!.includes(a));
 }
 
+/** Every dollar amount some words state, in order ("$1,234.56", "−$50.00"). */
+const amounts = (text: string): string[] => text.match(/[−-]?\$[\d,]+(?:\.\d+)?/g) ?? [];
+/** Checks whose finding ids already hold the amount (bonus/letterFindings bonusFindingId: `…|gapCents`). */
+const ID_HOLDS_AMOUNT = new Set<string>(["bonus.letters"]);
+const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Whether a finding is still the one the owner accepted: the same status and the same
+ * amounts. Ids carry no amount (a month's net worth not reconciling, a W-2 box that
+ * differs), so a $3 gap accepted by id would otherwise go on covering it once it's $30,000.
+ * The title's amounts are compared always; the detail's when the snapshot's detail states
+ * any (an exception carried over from an older store kept only a note there). Null when
+ * it's unchanged; else what changed, in plain words.
+ */
+export function exceptionDrift(ex: Pick<StandingException, "finding" | "check">, f: { status: string; title: string; detail: string }): string | null {
+  // A bonus letter's finding id already holds its gap (a changed gap is a new finding).
+  if (ID_HOLDS_AMOUNT.has(ex.check)) return null;
+  if (ex.finding.status !== f.status) return `it was ${ex.finding.status === "FAIL" ? "a failure" : "missing data"} when you accepted it`;
+  const wasDetail = amounts(ex.finding.detail);
+  if (same(amounts(ex.finding.title), amounts(f.title)) && (!wasDetail.length || same(wasDetail, amounts(f.detail)))) return null;
+  return `you accepted it when it read “${ex.finding.title}”`;
+}
+
 const overlaps = (aFrom: string, aTo: string, bFrom: string, bTo: string) => aFrom <= bTo && bFrom <= aTo;
 
 /**

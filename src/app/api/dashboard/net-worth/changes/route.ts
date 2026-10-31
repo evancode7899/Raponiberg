@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import { buildNetWorthChanges } from "@/lib/book/reports/netWorthChanges";
 import type { Granularity } from "@/lib/dates/isoDate";
 import { prisma } from "@/lib/db";
@@ -19,5 +19,5 @@ export async function GET(request: NextRequest) {
   }
   const g = request.nextUrl.searchParams.get("granularity");
   const granularity: Granularity = g === "quarter" || g === "year" ? g : "month";
-  return jsonBody(await cachedReport(prisma, `net-worth-changes|${granularity}`, (book) => buildNetWorthChanges(book, { granularity })));
+  return jsonBody(await cachedBuilt(prisma, `net-worth-changes|${granularity}`, (book) => buildNetWorthChanges(book, { granularity })));
 }

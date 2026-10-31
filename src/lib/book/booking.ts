@@ -31,3 +31,23 @@ export function bookedShare(r: Booked, from: string, to: string): number {
   const hi = minIso(to, r.statement.end);
   return lo > hi ? 0 : inclusiveDays(lo, hi) / inclusiveDays(r.statement.start, r.statement.end);
 }
+
+/**
+ * The whole cents of a row the ledger books inside [from, to]: its amount for an exact row
+ * booked there (else 0); for a period total, the cents its days hold when the total is
+ * spread day by day and rounded cumulatively (day i holds round(A·(i+1)/n) − round(A·i/n)).
+ * Each day's cents are fixed by the row alone, so any set of periods splits it into whole
+ * cents that add back to it exactly: categories add to their period's total, and a year to
+ * its months, to the cent. Each period is within a cent of bookedShare's exact share.
+ */
+export function bookedCents(r: Booked & { amountCents: number }, from: string, to: string): number {
+  if (r.precision === "EXACT") return bookedShare(r, from, to) === 1 ? r.amountCents : 0;
+  const lo = maxIso(from, r.statement.start);
+  const hi = minIso(to, r.statement.end);
+  if (lo > hi) return 0;
+  const n = inclusiveDays(r.statement.start, r.statement.end);
+  const before = inclusiveDays(r.statement.start, lo) - 1;
+  const through = inclusiveDays(r.statement.start, hi);
+  const at = (k: number) => Math.round((r.amountCents * k) / n);
+  return at(through) - at(before);
+}

@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { cachedReport, jsonBody } from "@/lib/book/cache";
+import { cachedBuilt, jsonBody } from "@/lib/book/cache";
 import type { Book } from "@/lib/book/load";
 import { buildHomeSummary, type HomeSummary } from "@/lib/dashboard/homeSummary";
 import { prisma } from "@/lib/db";
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return jsonBody(await cachedReport(prisma, "home-summary", summary));
+  return jsonBody(await cachedBuilt(prisma, "home-summary", summary));
 }
 
 async function summary(book: Book): Promise<HomeSummary> {

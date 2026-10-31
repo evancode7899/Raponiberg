@@ -251,4 +251,22 @@ export function checkStatements(book: Book, c: Collector) {
       });
     } else c.pass("statement.history", whole(first && first.opening !== 0 ? `first statement (${t.firstDay}) is where the records start` : `opens at $0 on ${t.firstDay}`));
   }
+
+  // An account with no committed statement at all (made by hand, or every statement held)
+  // isn't in the ledger, so its money is in no figure: said, never just left out.
+  const inLedger = new Set(book.ledger.accounts.map((a) => a.id));
+  for (const a of book.accounts) {
+    if (inLedger.has(a.id) || a.archived) continue;
+    const { ref, accounts } = accountRef(book, a.id);
+    c.add({
+      id: `statement.overdue:${ref}:none`,
+      accounts,
+      check: "statement.overdue",
+      status: "MISSING",
+      title: `${a.name}: no statements on file`,
+      detail: "No committed statement covers this account, so whatever it holds or owes is in no figure.",
+      fix: `Download its ${a.institution ?? "institution's"} statements into the statements folder and scan them, or archive the account (Settings → Accounts) if it holds nothing.`,
+      scope: { accountId: a.id, from: book.today, to: book.today, affects: ["NET_WORTH", "CASH_FLOW"] },
+    });
+  }
 }

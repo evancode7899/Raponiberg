@@ -460,3 +460,17 @@ describe("planning proofs (FIRE, Goals, Home budget, Taxes)", () => {
     expect(parseDescriptor({ report: "planning", page: "moon" })).toHaveProperty("error");
   });
 });
+
+describe("a goal funded from bank cash (SSOT F · J)", () => {
+  it("is withheld by a finding on the cards whose balance comes off that cash, on the page and in its proof", () => {
+    const book = makeBook();
+    // The card owes $500 at the edge.
+    const card = book.ledger.accounts.find((a) => a.id === "card")!;
+    card.timeline = buildTimeline("card", [{ accountId: "card", importId: "card-owes", periodStart: "2026-03-01", periodEnd: EDGE, openingCents: 0, closingCents: -50_000, growthCents: -50_000, feesCents: 0, flows: [] }], []);
+    const finding = { id: "statement.gap:card", check: "statement.gap" as const, status: "MISSING" as const, title: "Card statement missing", detail: "", fix: "", scope: { accountId: "card", from: EDGE, to: EDGE, affects: ["NET_WORTH" as const] } };
+    const withFinding = { ...book, integrity: { ...book.integrity, findings: [finding] } } as Book;
+    const ef = buildGoals(withFinding, { version: 1, goals: GOALS }, null, settings()).goals.find((g) => g.goal.id === "ef")!;
+    expect(ef.blockerAccountIds).toContain("card");
+    expect(ef.blockers.map((b) => b.id)).toEqual(["statement.gap:card"]);
+  });
+});
