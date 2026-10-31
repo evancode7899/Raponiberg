@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { windowKey } from "@/lib/book/derived/cashFlow";
 import { Card, inputCls, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
@@ -10,7 +11,6 @@ import { useMemo, useState } from "react";
 import type { Ctx } from "./CashFlowClient";
 import { mergeMerchants, sliceStart, SPEND_CATEGORIES, sum, totals, type MerchantTotal } from "./model";
 import { categoryColor, Dot, Sparkline } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
 
 type SortKey = "cents" | "count" | "avg" | "months" | "name";
 
@@ -52,10 +52,10 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={unswept("Merchants")} label="Merchants" value={all.length.toLocaleString("en-US")} sub={`${visits.toLocaleString("en-US")} charges in ${slice.label}`} />
-        <StatCell proof={unswept("Top 10 merchants")} label="Top 10 merchants" value={t.spending > 0 ? formatPercentRatio(top10 / t.spending, 0) : "—"} sub={`of spending · ${usd0(top10)}`} />
-        <StatCell proof={unswept("Average charge")} label="Average charge" value={usd0(visits ? sum(all, (m) => m.cents) / visits : 0)} sub={`half of merchants got under ${usd0(all[Math.floor(all.length / 2)]?.cents ?? 0)} in total`} />
-        <StatCell proof={unswept("Charges / month")} label="Charges / month" value={Math.round(visits / Math.max(1, t.n)).toLocaleString("en-US")} sub={`${(visits / Math.max(1, t.n) / 30).toFixed(1)} a day`} />
+        <StatCell proof={ctx.dp("merchants", windowKey(slice.months))} label="Merchants" value={all.length.toLocaleString("en-US")} sub={`${visits.toLocaleString("en-US")} charges in ${slice.label}`} />
+        <StatCell proof={ctx.dp("top10-share", windowKey(slice.months))} label="Top 10 merchants" value={t.spending > 0 ? formatPercentRatio(top10 / t.spending, 0) : "—"} sub={`of spending · ${usd0(top10)}`} />
+        <StatCell proof={ctx.dp("avg-charge", windowKey(slice.months))} label="Average charge" value={usd0(visits ? sum(all, (m) => m.cents) / visits : 0)} sub={`half of merchants got under ${usd0(all[Math.floor(all.length / 2)]?.cents ?? 0)} in total`} />
+        <StatCell proof={ctx.dp("charges-per-month", windowKey(slice.months))} label="Charges / month" value={Math.round(visits / Math.max(1, t.n)).toLocaleString("en-US")} sub={`${(visits / Math.max(1, t.n) / 30).toFixed(1)} a day`} />
       </StatGrid>
 
       <MerchantMap ctx={ctx} merchants={all} total={t.spending} />

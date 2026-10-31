@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { last12At, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -11,7 +12,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, L
 import type { Ctx } from "./CashFlowClient";
 import { categoryCents, categoryGroup, KINDS, sliceStart, SPEND_CATEGORIES, sum, trailing } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot, openMonthOnClick } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure } from "@/lib/book/proof/clearance";
 
 type Metric = "all" | "everyday";
 const GROUPS = ["Essentials", "Lifestyle", "Financial"] as const;
@@ -53,7 +54,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
   const rateBefore = rate(prevAt(inc12), prevAt(spend12));
   const endLabel = slice.months.at(-1)!.label;
   // The twelve months the trailing totals at the end of the range sum (none until twelve exist).
-  const last12 = hi >= 11 ? all.slice(hi - 11, hi + 1) : [];
+  const last12 = last12At(all, hi);
 
   const kinds = slice.months.map((m) => {
     const total = Math.max(1, m.spendingCents);
@@ -87,18 +88,18 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         <StatCell
           label="Spending, last 12 months"
           value={spend12[hi] == null ? "—" : usd0(spend12[hi])}
-          proof={spend12[hi] == null ? unswept("no proven months in the window") : ctx.proof("spending", last12, { shownCents: spend12[hi]! })}
+          proof={spend12[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("spending", last12, { shownCents: spend12[hi]! })}
           sub={<><Delta now={spend12[hi] ?? 0} before={prevAt(spend12)} goodWhenDown /> vs the 12 before{prevAt(spend12) != null ? ` (${usd0(prevAt(spend12))})` : ""}</>}
         />
         <StatCell
           label="Income, last 12 months"
           value={inc12[hi] == null ? "—" : usd0(inc12[hi])}
-          proof={inc12[hi] == null ? unswept("no proven months in the window") : ctx.proof("income", last12, { shownCents: inc12[hi]! })}
+          proof={inc12[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("income", last12, { shownCents: inc12[hi]! })}
           sub={<><Delta now={inc12[hi] ?? 0} before={prevAt(inc12)} /> vs the 12 before{prevAt(inc12) != null ? ` (${usd0(prevAt(inc12))})` : ""}</>}
         />
         <StatCell
           label="Savings rate, last 12 months"
-          proof={rateNow == null ? unswept("no proven months in the window") : ctx.proof("net", last12, { shownCents: inc12[hi]! - spend12[hi]! })}
+          proof={rateNow == null ? noFigure("not twelve proven months yet") : ctx.proof("net", last12, { shownCents: inc12[hi]! - spend12[hi]! })}
           value={rateNow == null ? "—" : formatPercentRatio(rateNow, 0)}
           tone={rateNow == null ? "neutral" : rateNow >= 0.2 ? "pos" : rateNow < 0 ? "neg" : "neutral"}
           sub={rateBefore == null ? `through ${endLabel}` : `${formatPercentRatio(rateBefore, 0)} the 12 months before`}
@@ -106,7 +107,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         <StatCell
           label="Everyday spending, last 3 months"
           value={every3[hi] == null ? "—" : `${usd0(every3[hi]! / 3)}/mo`}
-          proof={every3[hi] == null ? unswept("no proven months in the window") : ctx.proof("spending", all.slice(hi - 2, hi + 1), { spendingKind: "everyday", perMonth: true, shownCents: every3[hi]! })}
+          proof={every3[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("spending", all.slice(hi - 2, hi + 1), { spendingKind: "everyday", perMonth: true, shownCents: every3[hi]! })}
           sub={
             every12[hi] == null ? (
               "bills and big one-offs left out"
@@ -289,8 +290,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
 /** Which categories are heating up: the last three months against the twelve before them. */
 function Momentum({ ctx, hi }: { ctx: Ctx; hi: number }) {
   const { report, chart } = ctx;
-  const recent = report.months.slice(Math.max(0, hi - 2), hi + 1);
-  const before = report.months.slice(Math.max(0, hi - 14), Math.max(0, hi - 2));
+  const { recent, before } = momentumWindows(report.months, hi);
   const rows = SPEND_CATEGORIES.map((c) => {
     const nowCents = sum(recent, (m) => categoryCents(m, c));
     const thenCents = sum(before, (m) => categoryCents(m, c));

@@ -1,6 +1,8 @@
 "use client";
 
 import { BlockedNote } from "@/components/ledger/Blocked";
+import { accountLimitsDerived } from "@/lib/book/derived/planning";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { Badge, btn, Callout, Card, ErrorNote, Field, Loading, PageBody, PercentInput, Segmented, selectCls, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
@@ -125,8 +127,8 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
         <StatCell
           label="Household MAGI"
           value={usd0(r.magi.cents)}
-          proof={r.magi.source === "TAX_REPORT" ? { descriptor: { report: "tax-estimate", year: r.year, basis: "projected", key: "fed.agi" }, shownCents: r.magi.cents } : unswept("wages from stubs only: the tax estimate isn't provable yet")} sub={r.magi.source === "TAX_REPORT" ? "from the tax estimate" : "wages from pay stubs only (the tax estimate isn't provable yet)"} />
-        <StatCell proof={unswept("Still open")} label="Still open" value={String(open.length)} sub={`of ${r.steps.length} yearly limits`} />
+          proof={r.magi.source === "TAX_REPORT" ? { descriptor: { report: "tax-estimate", year: r.year, basis: "projected", key: "fed.agi" }, shownCents: r.magi.cents } : derivedTarget("account-limits", accountLimitsDerived(r), "magi-stubs", String(r.year))} sub={r.magi.source === "TAX_REPORT" ? "from the tax estimate" : "wages from pay stubs only (the tax estimate isn't provable yet)"} />
+        <StatCell proof={derivedTarget("account-limits", accountLimitsDerived(r), "still-open", String(r.year))} label="Still open" value={String(open.length)} sub={`of ${r.steps.length} yearly limits`} />
       </StatGrid>
       {r.people.map((p) => (
         <PersonCard key={p.id} p={p} r={r} />

@@ -10,6 +10,7 @@ import { buildAnnualProfile } from "../../profile/buildAnnualProfile.ts";
 import { buildAccountRollforwards } from "../../profile/rollforwards.ts";
 import { loadProfileSettings } from "../../profile/settings.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
+import { readPageInputs } from "../../pageInputs.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
 import { TAX_YEARS } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxAccounts/settings.ts";
@@ -29,8 +30,12 @@ import {
   bonusesFigures,
   calendarFigures,
   carFigures,
+  derivedFigures,
   cashFlowFigures,
+  cashFlowWindowFigures,
+  fireFigures,
   forecastFigures,
+  homeBudgetFigures,
   goalsFigures,
   homeFigures,
   hsaFigures,
@@ -41,6 +46,7 @@ import {
   taxEstimateFigures,
   type PageFigure,
 } from "./figures.ts";
+import { derivedList, sweptDerivedPages } from "../derived/load.ts";
 import { buildProof, parseDescriptor, type ProofDescriptor } from "./index.ts";
 import { descriptorKey } from "./key.ts";
 import type { Proof, ProofContext, ProofLink, ProofValue } from "./types.ts";
@@ -140,14 +146,21 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
   await page("Home", () => homeFigures(buildHomeSummary(book)));
   await page("Net worth", () => netWorthFigures(buildNetWorth(book, { granularity: "month" })));
   for (const granularity of ["month", "quarter", "year"] as const) await page("Net worth › What changed", () => netWorthChangeFigures(buildNetWorthChanges(book, { granularity })));
-  await page("Cash flow", () => cashFlowFigures(buildSpendingReport(book, profileSettings).months));
+  await page("Cash flow", () => {
+    const r = buildSpendingReport(book, profileSettings);
+    return [...cashFlowFigures(r.months), ...cashFlowWindowFigures(r)];
+  });
   await page("Investments", async () => investmentsFigures(buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings))));
   await page("Annual", () => annualFigures(buildAnnualProfile(book, profileSettings, book.taxProfile.dependents), buildAccountRollforwards(book)));
-  await page("Bonuses", () => bonusesFigures(bonusesOf(book)));
+  await page("Bonuses", () => bonusesFigures(bonusesOf(book), forecast));
   await page("HSA", async () => hsaFigures(await loadHsaReport(db)));
   await page("Car", async () => carFigures(garagePage(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage))));
   await page("Goals", async () => goalsFigures(buildGoals(book, await loadJsonSetting(db, GOALS_KEY, normalizeGoals), forecast ? goalForecastOf(forecast) : null, data.profile.settings)));
-  if (forecast) await page("Forecast", () => forecastFigures(forecast, data.profile));
+  if (forecast) {
+    await page("Forecast", () => forecastFigures(forecast, data.profile));
+    await page("FIRE", () => fireFigures(forecast, data.profile));
+    await page("Home budget", () => homeBudgetFigures({ inputs: readPageInputs("pf-home-budget-inputs"), funds: readPageInputs("pf-home-budget-funds") }));
+  }
   else skipped.push(noForecastSkip());
   const retirement = await loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);
   // The calendar reads the same two reports for its years: kept from here rather than built again.
@@ -164,7 +177,7 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
         skipped.push(blockedTaxYearSkip(y, r.blockers));
         return [];
       }
-      return taxEstimateFigures(r);
+      return taxEstimateFigures(r, y === year);
     });
     await page(`Account limits ${y}`, () => {
       const r = buildTaxAccounts(book, y, retirement, link);
@@ -175,6 +188,8 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
   }
   skipped.push(...droppedCalendarYears(calendar));
   await page("Calendar", () => buildMoneyCalendarFigures(book.today, calendar));
+  // What each page works out from its own report (derived/*.ts), as listed for the page.
+  for (const d of sweptDerivedPages()) await page(`Derived · ${d}`, async () => derivedFigures(d, (await derivedList(ctx, d)).figures));
   // The sources under every figure: each statement, row and pay stub as it prints.
   await page("Sources", () => sourceFigures(book));
   return { figures, errors, skipped };

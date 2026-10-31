@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { cachedReport } from "../book/cache.ts";
+import type { Book } from "../book/load.ts";
 import { loadJsonSetting } from "../settingsStore.ts";
 import { INSURANCE_NOTES_KEY, normalizeInsuranceNotes, type InsuranceNotes } from "./notes.ts";
 import { buildInsuranceReport, type InsuranceReport, type PremiumRow } from "./report.ts";
@@ -23,16 +24,20 @@ export type InsurancePage = InsuranceReport & {
  * (read fresh: they aren't in the Book) joined to the statement rows that could be
  * premiums, taken from the cached Book.
  */
-export async function loadInsurancePage(db: Db): Promise<InsurancePage> {
+/** The statement rows that could be premiums, and account names. */
+const ledgerOf = (book: Book) => ({
+  today: book.today,
+  // Every charge: which of them are premiums is the report's call (lib/insurance/report.ts).
+  rows: book.rows.filter((r) => r.amountCents < 0 && !r.pending).map((r): PremiumRow => ({ id: r.id, date: r.date, amountCents: r.amountCents, payee: r.payee, accountId: r.accountId })),
+  accounts: Object.fromEntries(book.accounts.map((a) => [a.id, a.name])),
+});
+
+export async function loadInsurancePage(db: Db, book?: Book): Promise<InsurancePage> {
   const [docs, notes, ledger] = await Promise.all([
     refreshInsuranceDocs(db),
     loadJsonSetting(db, INSURANCE_NOTES_KEY, normalizeInsuranceNotes),
-    cachedReport(db, "insurance-rows", (book) => ({
-      today: book.today,
-      // Every charge: which of them are premiums is the report's call (lib/insurance/report.ts).
-      rows: book.rows.filter((r) => r.amountCents < 0 && !r.pending).map((r): PremiumRow => ({ id: r.id, date: r.date, amountCents: r.amountCents, payee: r.payee, accountId: r.accountId })),
-      accounts: Object.fromEntries(book.accounts.map((a) => [a.id, a.name])),
-    })).then((t) => JSON.parse(t) as { today: string; rows: PremiumRow[]; accounts: Record<string, string> }),
+    // The sweep passes its own Book; the route reads the cached one (through JSON either way).
+    (book ? Promise.resolve(JSON.stringify(ledgerOf(book))) : cachedReport(db, "insurance-rows", ledgerOf)).then((t) => JSON.parse(t) as { today: string; rows: PremiumRow[]; accounts: Record<string, string> }),
   ]);
   const entries = Object.entries(docs?.files ?? {}).sort(([a], [b]) => a.localeCompare(b));
   const policies: { file: string; policy: TermPolicy }[] = [];

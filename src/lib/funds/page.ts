@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { cachedReport } from "../book/cache.ts";
+import type { Book } from "../book/load.ts";
 import { storedDocumentFiles } from "../ingest/importFiles.ts";
 import { LP_CAPITAL_PARSER_ID } from "../ingest/parsers/lpCapitalStatement.ts";
 import { extractPdfText } from "../statements/extractPdfText.ts";
@@ -29,21 +30,23 @@ type BookPart = {
 };
 
 /** The Book's side: which documents are a fund's, its accounts, and the bank's wires to and from each manager. */
-const bookPart = (db: Db) =>
-  cachedReport(db, "lp-funds", (book): BookPart => {
-    const managers = new Set<string>([UNNAMED_FUND, ...book.household.funds.map((f) => f.institution)]);
-    for (const d of book.documents) if (d.parserId === LP_CAPITAL_PARSER_ID) managers.add(d.institution);
-    const fundAccounts = new Set(book.accounts.filter((a) => a.institution && managers.has(a.institution)).map((a) => a.id));
-    const name = new Map(book.accounts.map((a) => [a.id, a.name]));
-    return {
-      docs: book.documents.filter((d) => managers.has(d.institution)).map((d) => ({ documentId: d.id, title: d.title })),
-      accounts: book.accounts.filter((a) => fundAccounts.has(a.id)).map((a) => ({ id: a.id, name: a.name, institution: a.institution, identifiers: a.identifiers })),
-      wires: book.rows
-        .filter((r) => r.lane === "TRANSFER" && !r.pending && r.counterpartyInstitution && managers.has(r.counterpartyInstitution) && !fundAccounts.has(r.accountId))
-        .map((r) => ({ id: r.id, date: r.bookedOn, amountCents: r.amountCents, accountName: name.get(r.accountId) ?? "", institution: r.counterpartyInstitution! })),
-      funds: book.household.funds.map((f) => ({ statementName: f.statementName, institution: f.institution })),
-    };
-  }).then((t) => JSON.parse(t) as BookPart);
+function bookPartOf(book: Book): BookPart {
+  const managers = new Set<string>([UNNAMED_FUND, ...book.household.funds.map((f) => f.institution)]);
+  for (const d of book.documents) if (d.parserId === LP_CAPITAL_PARSER_ID) managers.add(d.institution);
+  const fundAccounts = new Set(book.accounts.filter((a) => a.institution && managers.has(a.institution)).map((a) => a.id));
+  const name = new Map(book.accounts.map((a) => [a.id, a.name]));
+  return {
+    docs: book.documents.filter((d) => managers.has(d.institution)).map((d) => ({ documentId: d.id, title: d.title })),
+    accounts: book.accounts.filter((a) => fundAccounts.has(a.id)).map((a) => ({ id: a.id, name: a.name, institution: a.institution, identifiers: a.identifiers })),
+    wires: book.rows
+      .filter((r) => r.lane === "TRANSFER" && !r.pending && r.counterpartyInstitution && managers.has(r.counterpartyInstitution) && !fundAccounts.has(r.accountId))
+      .map((r) => ({ id: r.id, date: r.bookedOn, amountCents: r.amountCents, accountName: name.get(r.accountId) ?? "", institution: r.counterpartyInstitution! })),
+    funds: book.household.funds.map((f) => ({ statementName: f.statementName, institution: f.institution })),
+  };
+}
+const bookPart = (db: Db, book?: Book): Promise<BookPart> =>
+  // The sweep passes its own Book; the route reads the cached one (through JSON either way).
+  book ? Promise.resolve(JSON.parse(JSON.stringify(bookPartOf(book))) as BookPart) : cachedReport(db, "lp-funds", bookPartOf).then((t) => JSON.parse(t) as BookPart);
 
 /**
  * Reads each fund document's stored file once into data/fund-documents.json; a document
@@ -78,8 +81,8 @@ async function readDocs(db: Db, ids: string[], knownFunds: string[]): Promise<Fu
 const g = globalThis as unknown as { __pfFundDocs?: Promise<FundDocsFile> | null };
 
 /** The LP view as GET /api/investments/funds serves it. */
-export async function loadFundsPage(db: Db): Promise<FundsPage> {
-  const part = await bookPart(db);
+export async function loadFundsPage(db: Db, book?: Book): Promise<FundsPage> {
+  const part = await bookPart(db, book);
   g.__pfFundDocs ??= readDocs(
     db,
     part.docs.map((d) => d.documentId),

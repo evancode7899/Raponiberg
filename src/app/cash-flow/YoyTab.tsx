@@ -1,19 +1,21 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
-import type { SpendingMonth } from "@/lib/book/reports/spending";
+import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
-import { KINDS, mergeCategories, mergeMerchants, MONTH_NAMES, monthKey, shiftMonth, SPEND_CATEGORIES, sum, totals } from "./model";
+import { yoyWindows } from "@/lib/book/reports/cashFlowWindows";
+import { KINDS, mergeCategories, mergeMerchants, MONTH_NAMES, monthKey, SPEND_CATEGORIES, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 type Mode = "month" | "ytd" | "12m";
 
@@ -28,15 +30,8 @@ export function YoyTab({ ctx }: { ctx: Ctx }) {
   const { report } = ctx;
   const [mode, setMode] = useState<Mode>("month");
   const byKey = useMemo(() => new Map(report.months.map((m) => [monthKey(m.start), m])), [report.months]);
-  const latest = report.months.at(-1)!;
-  const latestKey = monthKey(latest.start);
-
-  const keys = (k: string, n: number) => Array.from({ length: n }, (_, i) => shiftMonth(k, -(n - 1 - i)));
-  const nowKeys = mode === "month" ? [latestKey] : mode === "ytd" ? keys(latestKey, Number(latestKey.slice(5))) : keys(latestKey, 12);
-  const thenKeys = nowKeys.map((k) => shiftMonth(k, -12));
-  const missing = [...nowKeys, ...thenKeys].filter((k) => !byKey.has(k));
-  const now = nowKeys.map((k) => byKey.get(k)).filter((m): m is SpendingMonth => m != null);
-  const then = thenKeys.map((k) => byKey.get(k)).filter((m): m is SpendingMonth => m != null);
+  // The same months either side the proof sweep enumerates (cashFlowWindows).
+  const { nowKeys, thenKeys, missing, now, then } = useMemo(() => yoyWindows(report.months, mode), [report.months, mode]);
   const label = (ks: string[]) => (ks.length === 1 ? byKey.get(ks[0]!)?.label ?? ks[0]! : `${byKey.get(ks[0]!)?.label ?? ks[0]} – ${byKey.get(ks.at(-1)!)?.label ?? ks.at(-1)}`);
 
 
@@ -115,7 +110,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
           tone={a.net < 0 ? "neg" : "neutral"}
           sub={<Change now={a.net} then={b.net} proof={ctx.proof("net", then, { shownCents: b.net })} />}
         />
-        <StatCell proof={unswept("Savings rate (take-home)")}
+        <StatCell proof={ctx.dp("savings-rate", windowKey(now))}
           label="Savings rate (take-home)"
           value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
           sub={b.savingsRate == null ? "—" : `${formatPercentRatio(b.savingsRate, 0)} a year earlier`}
@@ -192,8 +187,8 @@ function MoverCard({ title, rows, ctx, now, then }: { title: string; rows: { key
                 {m.name}
               </button>
               <span className="num shrink-0 text-xs text-muted">
-                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : unswept("nothing spent here in that span")}>{usd0(m.then)}</ProofValue> →{" "}
-                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : unswept("nothing spent here in that span")} className="text-fg">
+                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : noFigure("nothing spent here in that span")}>{usd0(m.then)}</ProofValue> →{" "}
+                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : noFigure("nothing spent here in that span")} className="text-fg">
                   {usd0(m.now)}
                 </ProofValue>
                 {!m.then && <span className="ml-1.5 text-info">new</span>}
@@ -357,7 +352,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
 }
 
 /** `proof`: the figure the row sums, when it's one the Book proves (the kinds of spending are a split the page makes). */
-type YearRow = { label: string; f: (m: SpendingMonth) => number; proof?: { metric: CashFlowMetric; category?: string }; goodWhenDown?: boolean; strong?: boolean; color?: string; indent?: boolean };
+type YearRow = { label: string; f: (m: SpendingMonth) => number; proof?: { metric: CashFlowMetric; category?: string; spendingKind?: SpendingKind }; goodWhenDown?: boolean; strong?: boolean; color?: string; indent?: boolean };
 
 /**
  * Each calendar year side by side, as an average month so a partial year compares fairly
@@ -372,7 +367,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
   const cashRows: YearRow[] = [
     { label: "Income", f: (m) => m.incomeCents, proof: { metric: "income" }, strong: true },
     { label: "Spending", f: (m) => m.spendingCents, proof: { metric: "spending" }, goodWhenDown: true, strong: true },
-    ...KINDS.map((k) => ({ label: k.label, f: (m: SpendingMonth) => m.kinds[k.id], goodWhenDown: true, indent: true })),
+    ...KINDS.map((k) => ({ label: k.label, f: (m: SpendingMonth) => m.kinds[k.id], proof: { metric: "spending" as const, spendingKind: k.kind }, goodWhenDown: true, indent: true })),
     { label: "Saved from take-home", f: (m) => m.netCents, proof: { metric: "net" }, strong: true },
   ];
   const categoryRows: YearRow[] = SPEND_CATEGORIES.filter((c) => report.months.some((m) => m.spendingByCategory.some((x) => x.category === c && x.cents))).map((c) => ({
@@ -404,7 +399,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
       {years.map((y, i) => {
         const v = val(y.months, r.f);
         // A year's months are one unbroken run (the report's months are), so one range covers them.
-        const proof = r.proof ? ctx.proof(r.proof.metric, y.months, { category: r.proof.category, perMonth: as === "avg", shownCents: sum(y.months, r.f) }) : unswept("nothing spent here in that span");
+        const proof = r.proof ? ctx.proof(r.proof.metric, y.months, { category: r.proof.category, spendingKind: r.proof.spendingKind, perMonth: as === "avg", shownCents: sum(y.months, r.f) }) : unswept("nothing spent here in that span");
         return (
           <td key={y.y} className={`${table.tdR} ${r.strong ? "font-semibold" : ""}`}>
             <ProofValue proof={proof}>{usd0(v)}</ProofValue>

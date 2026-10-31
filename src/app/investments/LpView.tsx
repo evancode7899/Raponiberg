@@ -1,12 +1,13 @@
 "use client";
 
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
+import { fundsDerived } from "@/lib/book/derived/funds";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { Badge, Callout, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { LpEvent, LpFund } from "@/lib/funds/report";
 import type { FundsPage } from "@/lib/funds/page";
 import { formatPercentRatio, usd0, usdDelta } from "@/lib/formatMoney";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const multiple = (x: number | null) => (x == null ? "—" : `${x.toFixed(2)}x`);
 const cell = (cents: number) => (cents ? usd0(cents) : "—");
@@ -80,22 +81,22 @@ export function LpPanel({ fund: f }: { fund: LpFund }) {
         </Callout>
       )}
       <StatGrid cols={4}>
-        <StatCell proof={unswept("Commitment")} label="Commitment" value={usd0(f.commitmentCents)} sub="total capital committed" />
-        <StatCell proof={unswept("Contributions (gross)")} label="Contributions (gross)" value={usd0(f.calledCents)} sub="every call, before anything handed back" />
-        <StatCell proof={unswept("Distributions to date")}
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "commitment", f.key)} label="Commitment" value={usd0(f.commitmentCents)} sub="total capital committed" />
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "called", f.key)} label="Contributions (gross)" value={usd0(f.calledCents)} sub="every call, before anything handed back" />
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "distributed", f.key)}
           label="Distributions to date"
           value={usd0(f.distributedCents)}
           sub={`${usd0(f.returnedCents)} returned at later closes (recallable) + ${usd0(f.interestCents)} interest${f.otherDistributionsCents ? ` + ${usd0(f.otherDistributionsCents)} other` : ""}`}
         />
-        <StatCell proof={unswept("Contributions (net)")} label="Contributions (net)" value={usd0(f.netContributedCents)} sub="gross less returned: the manager's contributions to date" />
-        <StatCell proof={unswept("Interest received")} label="Interest received" value={usd0(f.interestCents)} tone={f.interestCents > 0 ? "pos" : "neutral"} sub="paid by later investors on returned contributions" />
-        <StatCell proof={unswept("Unfunded commitment")}
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "net-contributed", f.key)} label="Contributions (net)" value={usd0(f.netContributedCents)} sub="gross less returned: the manager's contributions to date" />
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "interest", f.key)} label="Interest received" value={usd0(f.interestCents)} tone={f.interestCents > 0 ? "pos" : "neutral"} sub="paid by later investors on returned contributions" />
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "unfunded", f.key)}
           label="Unfunded commitment"
           value={usd0(f.unfundedCents)}
           sub={f.commitmentCents ? `${formatPercentRatio((f.unfundedCents ?? 0) / f.commitmentCents, 0)} of the commitment still to be called` : "no commitment printed yet"}
         />
-        <StatCell proof={unswept("Net cash wired")} label="Net cash wired" value={usd0(f.netCashCents)} sub={`amounts due on the notices; ${wires} bank wire${wires === 1 ? "" : "s"} on file total ${usd0(f.wiredCents)}`} />
-        <StatCell proof={unswept("Value (NAV)")} label="Value (NAV)" value={s ? usd0(s.navCents) : "—"} sub={s ? `capital account at the ${s.asOf} statement` : "no capital statement yet"} />
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "net-cash", f.key)} label="Net cash wired" value={usd0(f.netCashCents)} sub={`amounts due on the notices; ${wires} bank wire${wires === 1 ? "" : "s"} on file total ${usd0(f.wiredCents)}`} />
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "nav", f.key)} label="Value (NAV)" value={s ? usd0(s.navCents) : "—"} sub={s ? `capital account at the ${s.asOf} statement` : "no capital statement yet"} />
       </StatGrid>
       {s && (
         <Card

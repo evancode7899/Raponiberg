@@ -89,7 +89,7 @@ function Pace({ ctx }: { ctx: Ctx }) {
   const firstHalf = typEnd ? (typical[mid] ?? 0) / typEnd : null;
   // A running total is a month's spending only when it counts all of it: every charge, and
   // no quarter-total line spread across months (those count whole on the day here).
-  const whole = (m: SpendingMonth, cents: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : unswept("only all spending, to the whole month, has a recipe"));
+  const whole = (m: SpendingMonth, cents: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : unswept("a running total of everyday spending is summed in the browser from the daily series, with no recipe yet: F4"));
 
   return (
     <Card
@@ -119,11 +119,11 @@ function Pace({ ctx }: { ctx: Ctx }) {
             <Stat
               label={partial ? `${prev.label} by day ${throughDay}` : prev.label}
               value={usd0(partial ? prevCum[Math.min(throughDay, prevCum.length) - 1] ?? 0 : prevCum.at(-1) ?? 0)}
-              proof={partial ? unswept("part of a month: no recipe for a day count yet") : whole(prev, prevCum.at(-1) ?? 0)}
+              proof={partial ? unswept("part of a month is summed in the browser from the daily series, with no recipe yet: F4") : whole(prev, prevCum.at(-1) ?? 0)}
               sub={partial ? `${usd0(prevCum.at(-1) ?? 0)} for the whole month` : "the month before"}
             />
           )}
-          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={unswept("a typical month (median) has no recipe yet")} sub={firstHalf != null ? `${formatPercentRatio(firstHalf, 0)} of it gone by the 15th` : undefined} />}
+          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={unswept("a typical month is the median of running totals worked out in the browser, with no recipe yet: F4")} sub={firstHalf != null ? `${formatPercentRatio(firstHalf, 0)} of it gone by the 15th` : undefined} />}
         </div>
         <div className="h-[280px] w-full min-w-0">
           <RechartsResponsive>

@@ -39,14 +39,14 @@ function AccessCard({ f }: { f: FireAnalysis }) {
       ) : (
         <div className="flex flex-col gap-3">
           <StatGrid cols={4}>
-            <StatCell proof={unswept("Liquid, Jan 1 …")} label={`Liquid, Jan 1 ${walkAway}`} value={short(b.liquidAtWalkAway)} sub="cash + taxable investments" />
-            <StatCell proof={unswept("Retirement & other")} label="Retirement & other" value={short(b.illiquidAtWalkAway)} sub="401(k), IRA, HSA…" />
-            <StatCell proof={unswept("Liquid lasts until")}
+            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")} label={`Liquid, Jan 1 ${walkAway}`} value={short(b.liquidAtWalkAway)} sub="cash + taxable investments" />
+            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")} label="Retirement & other" value={short(b.illiquidAtWalkAway)} sub="401(k), IRA, HSA…" />
+            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")}
               label="Liquid lasts until"
               value={b.liquidOutYear ? String(b.liquidOutYear) : "never runs out"}
               sub={b.liquidOutYear ? `age ${b.liquidOutYear - plan.birthYear!}` : "in the 60 years shown"}
             />
-            <StatCell proof={unswept("Penalty-free access")} label="Penalty-free access" value={String(b.accessYear)} sub={`age ${ACCESS_AGE} (59½ during ${b.accessYear - 1})`} />
+            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")} label="Penalty-free access" value={String(b.accessYear)} sub={`age ${ACCESS_AGE} (59½ during ${b.accessYear - 1})`} />
           </StatGrid>
           {b.gapYears > 0 ? (
             <Callout tone="warn" title={`${b.gapYears} year${b.gapYears === 1 ? "" : "s"} paid from retirement accounts before 59½`}>
