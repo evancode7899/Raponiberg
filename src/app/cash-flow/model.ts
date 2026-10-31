@@ -4,7 +4,7 @@ import { savingsRate } from "@/lib/book/definitions";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure } from "@/lib/book/proof/clearance";
 import { cashFlowDescriptor, median, mergeCategories, sum, type CashFlowRecipe, type Slice } from "@/lib/book/reports/cashFlowWindows";
 
 export {
@@ -263,7 +263,7 @@ export function proofTarget(
   accountIds: string[] | undefined,
   o: ProofOptions,
 ): ProofRef {
-  if (!months.length) return unswept("no months in the range");
+  if (!months.length) return noFigure("no months in the range");
   return {
     descriptor: cashFlowDescriptor(metric, months, accountIds, o),
     shownCents: o.shownCents,

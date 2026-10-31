@@ -155,8 +155,11 @@ const links = (p: Proof): ProofLink[] =>
 const chainLines = (p: Proof) => p.blocks.flatMap((b) => (b.kind === "chain" ? b.lines : []));
 
 /** Every figure the Bonuses page wires to this kind, with the value the page shows. */
-/** Every figure the Bonuses page shows (figures.ts, the list the live sweep walks too). */
-const pageFigures = (r: BonusesReport): [BonusesDescriptor, number][] => bonusesFigures(r).map((f) => [f.descriptor as BonusesDescriptor, f.shown && "cents" in f.shown ? f.shown.cents : NaN]);
+/** Every bonuses-kind figure the Bonuses page shows (figures.ts, the list the live sweep walks too; the pay figures beside them are the pay kind's). */
+const pageFigures = (r: BonusesReport): [BonusesDescriptor, number][] =>
+  bonusesFigures(r)
+    .filter((f) => f.descriptor.report === "bonuses")
+    .map((f) => [f.descriptor as BonusesDescriptor, f.shown && "cents" in f.shown ? f.shown.cents : NaN]);
 
 describe("the bonuses proof kind", () => {
   it("the fixture exercises every status the proofs explain", () => {

@@ -21,7 +21,7 @@ import { unswept } from "@/lib/book/proof/clearance";
 type ProvenYear = YearProfile & { cash: NonNullable<YearProfile["cash"]>; netWorth: NonNullable<YearProfile["netWorth"]> };
 /** Complete years whose figures are all proven. */
 /** Every cell of the long-term table is worked out in the browser from the plan: no proof until that math moves server-side (SSOT F4). */
-const BROWSER_MATH = unswept("the long-term plan is worked out in the browser, with no proof yet");
+const BROWSER_MATH = unswept("the long-term plan is worked out in the browser (LongTermView), with no proof yet: F4 moves it server-side");
 
 const provenActuals = (r: AnnualProfileReport) => r.years.filter((y): y is ProvenYear => !y.isCurrent && !!y.cash && !!y.netWorth);
 
