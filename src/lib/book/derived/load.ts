@@ -3,6 +3,8 @@ import { CAR_KEY, normalizeGarage } from "../../car/settings.ts";
 import { CASH_FLOW_CHECKS } from "../proof/cashFlowProof.ts";
 import { carDerived } from "./car.ts";
 import { cashFlowDerived } from "./cashFlow.ts";
+import { insuranceDerived } from "./insurance.ts";
+import { loadInsurancePage } from "../../insurance/page.ts";
 import { fundsDerived } from "./funds.ts";
 import { loadFundsPage } from "../../funds/page.ts";
 import { accountLimitsDerived, calendarDerived, hsaDerived } from "./planning.ts";
@@ -84,7 +86,7 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     return { figures: calendarDerived(buildMoneyCalendar(ctx.book.today, ys.filter((y) => on.includes(y.year)))), scope: null, through: ctx.book.horizon.cashFlow };
   },
   "lp-funds": async ({ book, db }) => ({ figures: fundsDerived((await loadFundsPage(db, book)).funds), scope: null, through: book.horizon.netWorth }),
-  insurance: null,
+  insurance: async ({ book, db }) => ({ figures: insuranceDerived((await loadInsurancePage(db, book)).policies), scope: null, through: book.horizon.cashFlow }),
 };
 
 /** Each tax year to date, its tax report and account limits as the Taxes, Account limits and Calendar routes build them. */

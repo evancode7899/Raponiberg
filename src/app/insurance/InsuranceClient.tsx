@@ -1,6 +1,8 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { insuranceDerived } from "@/lib/book/derived/insurance";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
@@ -13,7 +15,6 @@ import { addDays } from "@/lib/dates/isoDate";
 import { addYears, type PolicyView } from "@/lib/insurance/report";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const URL = "/api/insurance";
 const TABS = ["overview", "premiums", "payments", "terms"] as const;
@@ -139,14 +140,14 @@ function Overview({ v, today, notes, save }: { v: PolicyView; today: string; not
       </Card>
 
       <StatGrid cols={4}>
-        <StatCell proof={unswept("Death benefit")} label="Death benefit" value={usd0(v.faceNowCents ?? p.faceCents)} sub={level && level.faceCents < p.faceCents ? `Drops to ${usd0(level.faceCents)} after year ${p.levelYears}` : "Level for the term"} />
-        <StatCell proof={unswept("Annual premium")} label="Annual premium" value={usd0(p.annualPremiumCents)} sub={`${formatUsdFromCents(Math.round(v.per1000Cents))} per $1,000 of cover${p.policyFeeCents ? ` · incl. ${usd0(p.policyFeeCents)} policy fee` : ""}`} />
-        <StatCell proof={unswept("Level term ends")}
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "death-benefit", v.policy.policyNumber)} label="Death benefit" value={usd0(v.faceNowCents ?? p.faceCents)} sub={level && level.faceCents < p.faceCents ? `Drops to ${usd0(level.faceCents)} after year ${p.levelYears}` : "Level for the term"} />
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "premium", v.policy.policyNumber)} label="Annual premium" value={usd0(p.annualPremiumCents)} sub={`${formatUsdFromCents(Math.round(v.per1000Cents))} per $1,000 of cover${p.policyFeeCents ? ` · incl. ${usd0(p.policyFeeCents)} policy fee` : ""}`} />
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "level-end", v.policy.policyNumber)}
           label="Level term ends"
           value={p.levelEndDate ? shortDate(p.levelEndDate) : "—"}
           sub={p.levelEndDate ? `${until(today, p.levelEndDate) ?? "ended"}${ageAtLevelEnd != null ? ` · insured age ${ageAtLevelEnd}` : ""}` : undefined}
         />
-        <StatCell proof={unswept("Total premiums")}
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "level-total", v.policy.policyNumber)}
           label="Total premiums"
           value={v.levelTotalCents != null ? usd0(v.levelTotalCents) : "—"}
           sub={v.levelTotalCents != null ? `${p.levelYears} × ${usd0(p.annualPremiumCents)}, fixed by contract` : undefined}
@@ -363,10 +364,10 @@ function Premiums({ v, today }: { v: PolicyView; today: string }) {
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={unswept("Fixed premium")} label="Fixed premium" value={usd0(p.annualPremiumCents)} sub={p.levelYears ? `Years 1–${p.levelYears}, guaranteed` : undefined} />
-        <StatCell proof={unswept("Coverage, level term")} label="Coverage, level term" value={usd0(p.faceCents)} sub={p.levelEndDate ? `Through ${shortDate(addDays(p.levelEndDate, -1))}` : undefined} />
-        <StatCell proof={unswept("Coverage after")} label="Coverage after" value={firstRenewal ? usd0(firstRenewal.faceCents) : "—"} sub={firstRenewal ? `From year ${firstRenewal.year}, renewing yearly` : undefined} />
-        <StatCell proof={unswept("Maximum premium, last year")}
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "premium", v.policy.policyNumber)} label="Fixed premium" value={usd0(p.annualPremiumCents)} sub={p.levelYears ? `Years 1–${p.levelYears}, guaranteed` : undefined} />
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "face", v.policy.policyNumber)} label="Coverage, level term" value={usd0(p.faceCents)} sub={p.levelEndDate ? `Through ${shortDate(addDays(p.levelEndDate, -1))}` : undefined} />
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "face-after", v.policy.policyNumber)} label="Coverage after" value={firstRenewal ? usd0(firstRenewal.faceCents) : "—"} sub={firstRenewal ? `From year ${firstRenewal.year}, renewing yearly` : undefined} />
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "max-premium-last", v.policy.policyNumber)}
           label="Maximum premium, last year"
           value={lastRenewal ? usd0(lastRenewal.maxPremiumCents) : "—"}
           sub={lastRenewal ? `Year ${lastRenewal.year}${lastRenewal.age != null ? `, age ${lastRenewal.age}` : ""}` : undefined}
@@ -486,10 +487,10 @@ function Payments({ v, accounts }: { v: PolicyView; accounts: Record<string, str
   return (
     <>
       <StatGrid cols={v.paidTo ? 4 : 3}>
-        <StatCell proof={unswept("Paid so far")} label="Paid so far" value={usd0(v.paidCents)} sub={`${v.payments.length} premium${v.payments.length === 1 ? "" : "s"} found in the statements`} />
-        <StatCell proof={unswept("Years paid")} label="Years paid" value={`${dueSoFar.filter((y) => paidYears.has(y.year)).length} of ${dueSoFar.length}`} sub="Policy years started so far" />
-        <StatCell proof={unswept("Next premium")} label="Next premium" value={v.nextDue ? usd0(v.nextDue.cents) : "—"} sub={v.nextDue ? `Due ${longDate(v.nextDue.date)} (year ${v.nextDue.year})` : undefined} />
-        {v.paidTo && <StatCell proof={unswept("Paid to")} label="Paid to" value={shortDate(v.paidTo.date)} sub={`Per the insurer's policy summary of ${shortDate(v.paidTo.asOf)}`} />}
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "paid", v.policy.policyNumber)} label="Paid so far" value={usd0(v.paidCents)} sub={`${v.payments.length} premium${v.payments.length === 1 ? "" : "s"} found in the statements`} />
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "years-paid", v.policy.policyNumber)} label="Years paid" value={`${dueSoFar.filter((y) => paidYears.has(y.year)).length} of ${dueSoFar.length}`} sub="Policy years started so far" />
+        <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "next-due", v.policy.policyNumber)} label="Next premium" value={v.nextDue ? usd0(v.nextDue.cents) : "—"} sub={v.nextDue ? `Due ${longDate(v.nextDue.date)} (year ${v.nextDue.year})` : undefined} />
+        {v.paidTo && <StatCell proof={derivedTarget("insurance", insuranceDerived([v]), "paid-to", v.policy.policyNumber)} label="Paid to" value={shortDate(v.paidTo.date)} sub={`Per the insurer's policy summary of ${shortDate(v.paidTo.asOf)}`} />}
       </StatGrid>
 
       <Card title="Premiums in the statements" subtitle={`Charges to ${p.insurer} on your bank and card statements, each counted toward the policy year it paid for. Click an amount for the statement row.`}>
