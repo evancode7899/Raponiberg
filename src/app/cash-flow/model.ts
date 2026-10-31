@@ -3,8 +3,9 @@ import type { MerchantMonth, SpendingKind, SpendingMonth, SpendingReport } from 
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { savingsRate } from "@/lib/book/definitions";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
+import { unswept } from "@/lib/book/proof/clearance";
 
 export type Report = SpendingReport & { accounts: { id: string; name: string }[] };
 export type RangeId = "3m" | "6m" | "12m" | "ytd" | "all" | "custom";
@@ -138,10 +139,10 @@ export function mergeMerchants(months: SpendingMonth[], pick: (m: SpendingMonth)
 }
 
 /** `proof`: the figure the title names, so a number in a sentence is as provable as one in a tile. */
-export type Insight = { tone: "good" | "bad" | "info" | "warn"; title: string; body: string; action?: { label: string; tab?: string; category?: string }; proof?: ProofTarget };
+export type Insight = { tone: "good" | "bad" | "info" | "warn"; title: string; body: string; action?: { label: string; tab?: string; category?: string }; proof?: ProofRef };
 
 /** Builds a figure's proof target over months (CashFlowClient's ctx.proof). */
-export type ProofOf = (metric: CashFlowMetric, months: SpendingMonth[], o: ProofOptions) => ProofTarget | undefined;
+export type ProofOf = (metric: CashFlowMetric, months: SpendingMonth[], o: ProofOptions) => ProofRef;
 
 /** Which insights lead when there are more than fit: changes and warnings before context. */
 const RANK = ["Spending", "You kept", "ran high", "went up", "recurring bills", "of spending", "Bonuses", "Largest", "Top habit"];
@@ -349,8 +350,8 @@ export function proofTarget(
   months: SpendingMonth[],
   accountIds: string[] | undefined,
   o: ProofOptions,
-): ProofTarget | undefined {
-  if (!months.length) return undefined;
+): ProofRef {
+  if (!months.length) return unswept("no months in the range");
   return {
     descriptor: {
       report: "cash-flow",

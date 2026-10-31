@@ -1,4 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
+import { dataStamp, stampTag } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // The stamp of the data read, taken before reading it: a change during the read makes it stale, never newer.
+  const stamp = dataStamp();
   const attention = request.nextUrl.searchParams.get("status") === "attention";
   const documents = await prisma.sourceDocument.findMany({
     where: attention ? { statementImports: { some: { status: { not: "COMMITTED" } } } } : {},
@@ -49,5 +52,5 @@ export async function GET(request: NextRequest) {
       },
     },
   });
-  return NextResponse.json({ documents });
+  return NextResponse.json({ documents }, { headers: { "x-data-stamp": stampTag(stamp) } });
 }

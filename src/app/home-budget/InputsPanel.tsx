@@ -3,7 +3,7 @@
 import { BlockedNote } from "@/components/ledger/Blocked";
 import { btn, Loading, Segmented, usePersistentState } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef } from "@/components/ui/proof/context";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import Link from "next/link";
@@ -378,7 +378,7 @@ function FundsSection({ ins, patch, funds }: { ins: HomeBudgetInputs; patch: Pat
 }
 
 /** A rate the tax engine works out, shown read-only with a way to type your own. */
-function EngineRate({ label, value, note, onManual, proof }: { label: string; value: number; note: string; onManual: () => void; proof?: ProofTarget }) {
+function EngineRate({ label, value, note, onManual, proof }: { label: string; value: number; note: string; onManual: () => void; proof: ProofRef }) {
   return (
     <div className="py-1.5">
       <div className="flex items-baseline justify-between gap-2">

@@ -9,6 +9,7 @@ import type { Outlook } from "@/lib/profile/outlook";
 import { useMemo } from "react";
 import { LongTermView } from "./LongTermView";
 import { short } from "./ui";
+import { unswept } from "@/lib/book/proof/clearance";
 
 /** The forecast with the walk-away year applied, and the check that taxable money lasts until 59½. */
 export function PlanTab({ f, r, s, full, base, forecast }: { f: FireAnalysis; r: AnnualProfileReport; s: OutlookSeeds; full: Outlook; base: Outlook; forecast: Forecast }) {
@@ -38,14 +39,14 @@ function AccessCard({ f }: { f: FireAnalysis }) {
       ) : (
         <div className="flex flex-col gap-3">
           <StatGrid cols={4}>
-            <StatCell label={`Liquid, Jan 1 ${walkAway}`} value={short(b.liquidAtWalkAway)} sub="cash + taxable investments" />
-            <StatCell label="Retirement & other" value={short(b.illiquidAtWalkAway)} sub="401(k), IRA, HSA…" />
-            <StatCell
+            <StatCell proof={unswept("Liquid, Jan 1 …")} label={`Liquid, Jan 1 ${walkAway}`} value={short(b.liquidAtWalkAway)} sub="cash + taxable investments" />
+            <StatCell proof={unswept("Retirement & other")} label="Retirement & other" value={short(b.illiquidAtWalkAway)} sub="401(k), IRA, HSA…" />
+            <StatCell proof={unswept("Liquid lasts until")}
               label="Liquid lasts until"
               value={b.liquidOutYear ? String(b.liquidOutYear) : "never runs out"}
               sub={b.liquidOutYear ? `age ${b.liquidOutYear - plan.birthYear!}` : "in the 60 years shown"}
             />
-            <StatCell label="Penalty-free access" value={String(b.accessYear)} sub={`age ${ACCESS_AGE} (59½ during ${b.accessYear - 1})`} />
+            <StatCell proof={unswept("Penalty-free access")} label="Penalty-free access" value={String(b.accessYear)} sub={`age ${ACCESS_AGE} (59½ during ${b.accessYear - 1})`} />
           </StatGrid>
           {b.gapYears > 0 ? (
             <Callout tone="warn" title={`${b.gapYears} year${b.gapYears === 1 ? "" : "s"} paid from retirement accounts before 59½`}>

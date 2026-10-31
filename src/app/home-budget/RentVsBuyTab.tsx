@@ -12,6 +12,7 @@ import { GainsTaxControl } from "./InputsPanel";
 import { Group, StackBar } from "./parts";
 import { RangeSlider } from "./RangeSlider";
 import { spec } from "./specs";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const DEF = defaultHomeBudgetInputs();
 const SIM_YEARS = 30;
@@ -60,10 +61,10 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
       </Callout>
 
       <StatGrid cols={4}>
-        <StatCell label="Ahead by buying" value={formatUsd(ahead)} tone={ahead >= 0 ? "pos" : "neg"} sub={`net worth if you sell in year ${horizon}`} />
-        <StatCell label="Break-even" value={sim.breakEvenYear ? `Year ${sim.breakEvenYear}` : "Never"} tone={sim.breakEvenYear && sim.breakEvenYear <= horizon ? "pos" : "warn"} sub={`within ${SIM_YEARS} years`} />
-        <StatCell label="Owning, year one" value={`${formatUsd(snap.monthlyCostOfHomeOwnership)}/mo`} sub={`unrecoverable · ${formatPercentRatio(snap.totalCostOfHomeOwnershipAnnualPct, 2)} of value a year`} />
-        <StatCell label="Renting" value={`${formatUsd(ins.marketRentMonthly)}/mo`} sub={priceToRent ? `price-to-rent ratio ${priceToRent.toFixed(1)}` : undefined} />
+        <StatCell proof={unswept("Ahead by buying")} label="Ahead by buying" value={formatUsd(ahead)} tone={ahead >= 0 ? "pos" : "neg"} sub={`net worth if you sell in year ${horizon}`} />
+        <StatCell proof={unswept("Break-even")} label="Break-even" value={sim.breakEvenYear ? `Year ${sim.breakEvenYear}` : "Never"} tone={sim.breakEvenYear && sim.breakEvenYear <= horizon ? "pos" : "warn"} sub={`within ${SIM_YEARS} years`} />
+        <StatCell proof={unswept("Owning, year one")} label="Owning, year one" value={`${formatUsd(snap.monthlyCostOfHomeOwnership)}/mo`} sub={`unrecoverable · ${formatPercentRatio(snap.totalCostOfHomeOwnershipAnnualPct, 2)} of value a year`} />
+        <StatCell proof={unswept("Renting")} label="Renting" value={`${formatUsd(ins.marketRentMonthly)}/mo`} sub={priceToRent ? `price-to-rent ratio ${priceToRent.toFixed(1)}` : undefined} />
       </StatGrid>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">

@@ -8,6 +8,7 @@ import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { Lane } from "@/lib/classifier/taxonomy";
 import { formatUsdFromCents } from "@/lib/formatMoney";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { unswept } from "@/lib/book/proof/clearance";
 
 type Section = {
   id: string;
@@ -208,7 +209,7 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
         <span className="font-medium text-fg">{s.account.name}</span>
         <span className="num text-muted">
           {d10(s.periodStart)} → {d10(s.periodEnd)} · {formatUsdFromCents(s.openingBalanceCents)} →{" "}
-          <ProofValue proof={inBook ? { descriptor: { report: "statement", statementId: s.id }, shownCents: s.closingBalanceCents } : undefined}>{formatUsdFromCents(s.closingBalanceCents)}</ProofValue>
+          <ProofValue proof={inBook ? { descriptor: { report: "statement", statementId: s.id }, shownCents: s.closingBalanceCents } : unswept("not in the Book yet: an import still to commit")}>{formatUsdFromCents(s.closingBalanceCents)}</ProofValue>
           {(s.growthCents !== 0 || s.feesCents !== 0) && ` · market ${formatUsdFromCents(s.growthCents)} · fees ${formatUsdFromCents(s.feesCents)}`}
         </span>
         <button type="button" className={btn.link} onClick={() => void toggle()}>
@@ -257,7 +258,7 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
                   </td>
                   <td className={`${table.td} text-fg-2`}>{r.category?.name ?? "—"}</td>
                   <td className={table.tdR}>
-                    <ProofValue proof={inBook && !s.isSummary ? { descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents } : undefined}>{formatUsdFromCents(r.amountCents)}</ProofValue>
+                    <ProofValue proof={inBook && !s.isSummary ? { descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents } : unswept("not in the Book yet: an import still to commit")}>{formatUsdFromCents(r.amountCents)}</ProofValue>
                   </td>
                 </tr>
               ))}

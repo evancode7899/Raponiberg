@@ -10,11 +10,16 @@ const STORAGE_KEY = "pf-api-secret";
  * (a non-GET call, notifyLedgerChanged) clears it, so an edit is never followed by old
  * figures.
  */
-const responses = new Map<string, { text: string; data: unknown }>();
+const responses = new Map<string, { text: string; data: unknown; stamp: string | null }>();
 
 /** The last answer to a GET of `path` in this tab, or null. Seeds a page's first draw. */
 export function cachedResponse<T>(path: string): T | null {
   return (responses.get(path)?.data as T | undefined) ?? null;
+}
+
+/** The data tag (x-data-stamp) of the last answer to a GET of `path`: which data that answer was built from. */
+export function stampOf(path: string): string | null {
+  return responses.get(path)?.stamp ?? null;
 }
 
 /** The data tag (x-data-stamp) of the latest answer this tab got: what the figures on screen were built from. */
@@ -79,8 +84,8 @@ export function useApi(requiresApiSecret: boolean) {
       if (!isRead) responses.clear();
       const res = await fetch(path, { ...init, headers, body });
       const text = await res.text().catch(() => "");
+      const stamp = res.headers.get("x-data-stamp");
       if (isRead && res.ok) {
-        const stamp = res.headers.get("x-data-stamp");
         if (stamp && stamp !== dataStampSeen) {
           dataStampSeen = stamp;
           for (const f of stampListeners) f(stamp);
@@ -88,7 +93,10 @@ export function useApi(requiresApiSecret: boolean) {
       }
       const prior = isRead ? responses.get(path) : undefined;
       // An unchanged answer hands back the same object, so the page doesn't redraw.
-      if (res.ok && prior && prior.text === text) return prior.data as T;
+      if (res.ok && prior && prior.text === text) {
+        prior.stamp = stamp;
+        return prior.data as T;
+      }
       let data: (T & { error?: string }) | null = null;
       try {
         data = JSON.parse(text) as T & { error?: string };
@@ -97,7 +105,7 @@ export function useApi(requiresApiSecret: boolean) {
       }
       if (res.status === 401) throw new Error("Unauthorized — check your access secret.");
       if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
-      if (isRead) responses.set(path, { text, data });
+      if (isRead) responses.set(path, { text, data, stamp });
       else responses.clear();
       return data as T;
     },

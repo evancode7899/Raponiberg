@@ -1,10 +1,10 @@
 "use client";
 
-import { BlockedValue } from "@/components/ledger/Blocked";
 import { StatementTable } from "@/components/ui/kit";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef } from "@/components/ui/proof/context";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
+import { unswept } from "@/lib/book/proof/clearance";
 
 export type { TableRow } from "@/components/ui/kit";
 export { axisUsd } from "@/lib/formatMoney";
@@ -13,10 +13,13 @@ export { axisUsd } from "@/lib/formatMoney";
 export const usd = usd0;
 export const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
 
-export type Cell = { text: React.ReactNode; title?: string; dim?: boolean; proof?: ProofTarget } | null;
+export type Cell = { text: React.ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[] } | null;
 
 /** Year-per-column statement table (shared with Taxes). */
 export const YearTable = StatementTable;
 
-/** A table cell for a figure that can't be proven. */
-export const blockedCell = (blockers: BlockerRef[]): Cell => ({ text: <BlockedValue blockers={blockers} /> });
+/** A table cell for a figure that can't be proven: withheld, its findings in the drawer. */
+export const blockedCell = (blockers: BlockerRef[]): Cell => ({ text: "", proof: unswept("blocked"), blockers });
+
+/** A cell with nothing to show (no value for that year). */
+export const emptyCell = (why: string): Cell => ({ text: "—", proof: unswept(why) });

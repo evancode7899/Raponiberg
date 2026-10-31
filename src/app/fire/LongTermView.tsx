@@ -14,11 +14,15 @@ import { useMemo } from "react";
 import { Area, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { axisUsd, YearTable, type Cell, type TableRow } from "@/app/annual/profileUi";
 import { monthName, pct, usd } from "@/app/forecast/forecastUi";
+import { unswept } from "@/lib/book/proof/clearance";
 
 // ---------------------------------------------------------------- year by year
 
 type ProvenYear = YearProfile & { cash: NonNullable<YearProfile["cash"]>; netWorth: NonNullable<YearProfile["netWorth"]> };
 /** Complete years whose figures are all proven. */
+/** Every cell of the long-term table is worked out in the browser from the plan: no proof until that math moves server-side (SSOT F4). */
+const BROWSER_MATH = unswept("the long-term plan is worked out in the browser, with no proof yet");
+
 const provenActuals = (r: AnnualProfileReport) => r.years.filter((y): y is ProvenYear => !y.isCurrent && !!y.cash && !!y.netWorth);
 
 /** An actual column: a proven year, or the year in progress up to where the forecast starts. Null = not proven. */
@@ -121,29 +125,29 @@ export function LongTermView({
   const row = (label: string, a: ((c: Actual) => number | null) | null, p: (y: OutlookYear, i: number) => number | null, { sum, ...opts }: RowOpts = {}): TableRow => {
     const total = (): Cell => {
       const rest = p(full.years[0]!, 0);
-      if (sum === "balance" || sum === "rest") return { text: usd(rest) };
+      if (sum === "balance" || sum === "rest") return { proof: BROWSER_MATH, text: usd(rest) };
       // Blank when the row has no actual figure; a forecast with nothing in it (no bonus) counts as zero.
-      if (!a) return { text: "", dim: true };
+      if (!a) return { proof: BROWSER_MATH, text: "", dim: true };
       const so = a(ytd!);
-      return so == null ? { text: usd(null) } : { text: usd(so + (rest ?? 0)) };
+      return so == null ? { proof: BROWSER_MATH, text: usd(null) } : { proof: BROWSER_MATH, text: usd(so + (rest ?? 0)) };
     };
     return {
       label,
       ...opts,
-      cells: [...actual.map((c) => (a ? { text: usd(a(c)) } : { text: "", dim: true })), ...planCells((y, i) => ({ text: usd(p(y, i)) }), total)],
+      cells: [...actual.map((c) => (a ? { proof: BROWSER_MATH, text: usd(a(c)) } : { proof: BROWSER_MATH, text: "", dim: true })), ...planCells((y, i) => ({ proof: BROWSER_MATH, text: usd(p(y, i)) }), total)],
     };
   };
   const text = (label: string, p: (y: OutlookYear, i: number) => string, opts: Partial<Extract<TableRow, { cells: Cell[] }>> = {}): TableRow => ({
     label,
     muted: true,
     ...opts,
-    cells: [...actual.map(() => null), ...planCells((y, i) => ({ text: p(y, i) }), () => null)],
+    cells: [...actual.map(() => null), ...planCells((y, i) => ({ proof: BROWSER_MATH, text: p(y, i) }), () => null)],
   });
   const bonusOf = (y: OutlookYear, kinds: ScheduledBonus["source"][]) => bonusesInYear(schedule, y.year, kinds);
   const retired = full.years.some((y) => !y.working);
   const rows: TableRow[] = [];
   if (full.years.some((y) => y.age != null)) {
-    rows.push({ label: "Age", muted: true, cells: [...actual.map((c) => ({ text: plan.birthYear ? c.year - plan.birthYear : "" })), ...planCells((y) => ({ text: y.age ?? "" }), () => ({ text: full.years[0]!.age ?? "" }))] });
+    rows.push({ label: "Age", muted: true, cells: [...actual.map((c) => ({ proof: BROWSER_MATH, text: plan.birthYear ? c.year - plan.birthYear : "" })), ...planCells((y) => ({ proof: BROWSER_MATH, text: y.age ?? "" }), () => ({ proof: BROWSER_MATH, text: full.years[0]!.age ?? "" }))] });
   }
   rows.push(
     { kind: "heading", label: "Pay" },
@@ -174,7 +178,7 @@ export function LongTermView({
       row("Pre-tax draw", null, (y) => (y.working ? null : -y.draw), { indent: true }),
       row("Taxes on draw", null, (y) => (y.working ? null : -(y.federalTax + y.stateTax)), { indent: true }),
       row("After-tax income", null, (y) => (y.working ? null : y.afterTaxIncome), { strong: true }),
-      { label: "Covers living cost", muted: true, cells: [...actual.map(() => null), ...planCells((y) => (y.working ? null : { text: pct(y.coverage, 0) }), () => null)] },
+      { label: "Covers living cost", muted: true, cells: [...actual.map(() => null), ...planCells((y) => (y.working ? null : { proof: BROWSER_MATH, text: pct(y.coverage, 0) }), () => null)] },
     );
   }
   rows.push(
@@ -194,13 +198,13 @@ export function LongTermView({
     label: "Change in net worth",
     muted: true,
     cells: [
-      ...actual.map((c) => ({ text: pct(c.change?.pct, 0) })),
+      ...actual.map((c) => ({ proof: BROWSER_MATH, text: pct(c.change?.pct, 0) })),
       ...planCells(
-        (y) => ({ text: pct(y.changePct, 0) }),
+        (y) => ({ proof: BROWSER_MATH, text: pct(y.changePct, 0) }),
         () => {
           // Dec 31 against last Dec 31, as for a full year.
           const open = ytd?.change ? ytd.nw.netWorth - ytd.change.cents : null;
-          return { text: pct(open && open > 0 ? (full.years[0]!.netWorth - open) / open : null, 0) };
+          return { proof: BROWSER_MATH, text: pct(open && open > 0 ? (full.years[0]!.netWorth - open) / open : null, 0) };
         },
       ),
     ],

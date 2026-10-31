@@ -15,6 +15,7 @@ import { CATEGORIES } from "@/lib/classifier/taxonomy";
 const INCOME_CATEGORIES = CATEGORIES.filter((c) => c.group === "Income").map((c) => c.name);
 const incomeSlot = (c: string) => Math.max(0, INCOME_CATEGORIES.indexOf(c));
 import { Sparkline } from "./parts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 export function IncomeTab({ ctx }: { ctx: Ctx }) {
   const { slice, chart } = ctx;
@@ -37,10 +38,10 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
     <>
       <StatGrid cols={5}>
         <StatCell label="Income" value={usd0(t.income)} proof={ctx.proof("income", slice.months, { shownCents: t.income })} sub={`${usd0(t.avgIncome)}/mo average`} />
-        <StatCell label="Typical month" value={usd0(t.typicalIncome)} sub="median — what to budget against" />
-        <StatCell label="Above typical" value={usd0(Math.max(0, bonus))} sub="bonuses and one-time deposits" />
+        <StatCell proof={unswept("Typical month")} label="Typical month" value={usd0(t.typicalIncome)} sub="median — what to budget against" />
+        <StatCell proof={unswept("Above typical")} label="Above typical" value={usd0(Math.max(0, bonus))} sub="bonuses and one-time deposits" />
         <StatCell label="Saved from take-home" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={t.savingsRate == null ? undefined : `${formatPercentRatio(t.savingsRate, 1)} of income`} />
-        <StatCell label="Retirement via payroll" value={usd0(t.employee + t.employer)} sub={`you ${usd0(t.employee)} · employers ${usd0(t.employer)}`} />
+        <StatCell proof={unswept("Retirement via payroll")} label="Retirement via payroll" value={usd0(t.employee + t.employer)} sub={`you ${usd0(t.employee)} · employers ${usd0(t.employer)}`} />
       </StatGrid>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">

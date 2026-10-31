@@ -16,6 +16,7 @@ import { hsaProof } from "./proof";
 import { ReceiptsTab } from "./ReceiptsTab";
 import { ReimburseDrawer, ReimburseTab } from "./ReimburseTab";
 import { SettingsTab } from "./SettingsTab";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const TABS = ["receipts", "found", "reimburse", "growth", "settings"] as const;
 
@@ -137,7 +138,7 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
               <StatCell
                 label="HSA balance"
                 value={r.hsa.blockers.balance.length ? <BlockedValue blockers={r.hsa.blockers.balance} /> : usd0(r.hsa.balanceCents)}
-                proof={r.hsa.balanceCents == null ? undefined : hsaProof("balance", r.hsa.balanceCents)}
+                proof={r.hsa.balanceCents == null ? unswept("no HSA balance on file") : hsaProof("balance", r.hsa.balanceCents)} blockers={r.hsa.blockers.balance}
                 sub={
                   r.hsa.blockers.balance.length
                     ? undefined

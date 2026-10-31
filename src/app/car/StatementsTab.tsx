@@ -7,6 +7,7 @@ import { CAR_KINDS, carName, KIND_INFO, newId, SHARED, type CarEntry, type CarKi
 import { useMemo, useState } from "react";
 import type { CarCtx } from "./CarClient";
 import { fmtDate, usd2 } from "./parts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const STATUS: Record<StatementCharge["status"], { tone: Tone; label: string; help: string }> = {
   SUGGESTED: { tone: "warn", label: "confirm", help: "Might be a car cost; counts nothing until you say so" },
@@ -88,14 +89,14 @@ function Proof({ ctx }: { ctx: CarCtx }) {
       subtitle={`The car's costs come only from your card and bank statements (complete through ${fmtDate(g.statementsThrough)}). Each log entry is matched to the charge it describes and lends it the details a statement can't give: what it was, gallons, the odometer.`}
     >
       <StatGrid>
-        <StatCell
+        <StatCell proof={unswept("Car costs from statements")}
           label="Car costs from statements"
           value={usd2(a.rowsCents - a.paymentCents)}
           sub={`${a.rows} rows (${a.rowsFromLog} matched to your log, ${a.rowsOnOwn} on their own)${a.paymentCents ? ` · plus ${usd2(a.paymentCents)} of car payments, which are the purchase` : ""}`}
         />
-        <StatCell label="Log entries matched" value={`${a.matched + a.installments} of ${a.entries - a.noCost}`} sub={`you logged ${usd2(a.matchedLoggedCents)} · statements say ${usd2(a.matchedStatementCents)}`} />
-        <StatCell label="Not on statements" value={String(a.notFound)} tone={a.notFound ? "warn" : "neutral"} sub={`${usd2(a.notFoundCents)} logged · counts nothing`} />
-        <StatCell label="Awaiting statements" value={String(a.awaiting)} sub={`${usd2(a.awaitingCents)} logged after ${fmtDate(g.statementsThrough)}`} />
+        <StatCell proof={unswept("Log entries matched")} label="Log entries matched" value={`${a.matched + a.installments} of ${a.entries - a.noCost}`} sub={`you logged ${usd2(a.matchedLoggedCents)} · statements say ${usd2(a.matchedStatementCents)}`} />
+        <StatCell proof={unswept("Not on statements")} label="Not on statements" value={String(a.notFound)} tone={a.notFound ? "warn" : "neutral"} sub={`${usd2(a.notFoundCents)} logged · counts nothing`} />
+        <StatCell proof={unswept("Awaiting statements")} label="Awaiting statements" value={String(a.awaiting)} sub={`${usd2(a.awaitingCents)} logged after ${fmtDate(g.statementsThrough)}`} />
       </StatGrid>
       <ul className="mt-3 flex flex-col gap-1 text-xs">
         {checks.map((c) => (

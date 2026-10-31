@@ -12,6 +12,7 @@ import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 import { EMPTY_PERSON, type HsaCoverage, type RetirementSettings } from "@/lib/taxAccounts/settings";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const TABS = ["people", "inputs"] as const;
 
@@ -124,8 +125,8 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
         <StatCell
           label="Household MAGI"
           value={usd0(r.magi.cents)}
-          proof={r.magi.source === "TAX_REPORT" ? { descriptor: { report: "tax-estimate", year: r.year, basis: "projected", key: "fed.agi" }, shownCents: r.magi.cents } : undefined} sub={r.magi.source === "TAX_REPORT" ? "from the tax estimate" : "wages from pay stubs only (the tax estimate isn't provable yet)"} />
-        <StatCell label="Still open" value={String(open.length)} sub={`of ${r.steps.length} yearly limits`} />
+          proof={r.magi.source === "TAX_REPORT" ? { descriptor: { report: "tax-estimate", year: r.year, basis: "projected", key: "fed.agi" }, shownCents: r.magi.cents } : unswept("wages from stubs only: the tax estimate isn't provable yet")} sub={r.magi.source === "TAX_REPORT" ? "from the tax estimate" : "wages from pay stubs only (the tax estimate isn't provable yet)"} />
+        <StatCell proof={unswept("Still open")} label="Still open" value={String(open.length)} sub={`of ${r.steps.length} yearly limits`} />
       </StatGrid>
       {r.people.map((p) => (
         <PersonCard key={p.id} p={p} r={r} />
@@ -163,13 +164,13 @@ function Meter({ label, used, limit, projected, sub, overSettled, proofs }: { la
         <span className="font-medium text-fg">{label}</span>
         <span className="num text-muted">
           <span className={over ? "font-semibold text-neg" : "text-fg"}>
-            <ProofValue proof={proofs?.used}>{usd0(used)}</ProofValue>
+            <ProofValue proof={proofs?.used ?? unswept("no recipe for this limit")}>{usd0(used)}</ProofValue>
           </span>{" "}
-          of <ProofValue proof={proofs?.limit}>{usd0(limit)}</ProofValue>
+          of <ProofValue proof={proofs?.limit ?? unswept("no recipe for this limit")}>{usd0(limit)}</ProofValue>
           {projected != null && projected !== used && (
             <>
               {" "}
-              · <ProofValue proof={proofs?.projected}>{usd0(projected)}</ProofValue> by Dec 31
+              · <ProofValue proof={proofs?.projected ?? unswept("no recipe for this limit")}>{usd0(projected)}</ProofValue> by Dec 31
             </>
           )}
         </span>
@@ -186,10 +187,10 @@ function Meter({ label, used, limit, projected, sub, overSettled, proofs }: { la
 /** Year to date, and projected to Dec 31 when that differs, each opening its proof. */
 const amt = (a: Amount, proof?: (figure: "used" | "projected", cents: number) => ProofTarget) =>
   a.ytd === a.projected ? (
-    <ProofValue proof={proof?.("used", a.ytd)}>{usd0(a.ytd)}</ProofValue>
+    <ProofValue proof={proof?.("used", a.ytd) ?? unswept("no recipe for this amount")}>{usd0(a.ytd)}</ProofValue>
   ) : (
     <>
-      <ProofValue proof={proof?.("used", a.ytd)}>{usd0(a.ytd)}</ProofValue> → <ProofValue proof={proof?.("projected", a.projected)}>{usd0(a.projected)}</ProofValue>
+      <ProofValue proof={proof?.("used", a.ytd) ?? unswept("no recipe for this amount")}>{usd0(a.ytd)}</ProofValue> → <ProofValue proof={proof?.("projected", a.projected) ?? unswept("no recipe for this amount")}>{usd0(a.projected)}</ProofValue>
     </>
   );
 

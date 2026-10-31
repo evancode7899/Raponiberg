@@ -13,6 +13,7 @@
  * priority and sends the report, as JSON text, to the server that started it.
  */
 import { constants, setPriority } from "node:os";
+import { stampTag } from "../src/lib/book/cache.ts";
 import { loadBook } from "../src/lib/book/load.ts";
 import { sweepProofs } from "../src/lib/book/proof/sweep.ts";
 import { prisma } from "../src/lib/db.ts";
@@ -23,20 +24,25 @@ if (process.argv.includes("--child")) {
   } catch {
     /* not allowed here: it runs at normal priority */
   }
+  // The stamp is taken before the Book is read: data that changes meanwhile reads as other data.
+  const stamp = stampTag();
   const book = await loadBook(prisma);
-  const r = await sweepProofs({ book, db: prisma });
+  const r = await sweepProofs({ book, db: prisma }, { stamp });
   await prisma.$disconnect();
   process.send!(JSON.stringify(r), () => process.exit(0));
 } else {
   const only = process.argv[2];
+  const stamp = stampTag();
   const book = await loadBook(prisma);
-  const r = await sweepProofs({ book, db: prisma });
-  console.log(`Swept ${r.figures} figures and ${r.links} links in ${r.ms}ms (Book as of ${r.today})\n`);
+  const r = await sweepProofs({ book, db: prisma }, { stamp });
+  console.log(`Swept ${r.figures} figures and ${r.links} links in ${r.ms}ms (Book as of ${r.today}, data ${r.stamp}): ${Object.keys(r.cleared).length} cleared\n`);
   for (const p of r.pages) console.log(`${p.page.padEnd(40)} ${String(p.figures).padStart(6)} figures ${String(p.ms).padStart(7)}ms  ${p.problems ? `${p.problems} problem(s)` : "all tie"}`);
   console.log(`${"Links".padEnd(40)} ${String(r.links).padStart(6)} proofs  ${String(r.linkMs).padStart(7)}ms`);
-  const shown = r.problems.filter((p) => !only || p.page.startsWith(only));
+  for (const p of r.skipped.filter((p) => !only || p.page.startsWith(only))) console.log(`\n[NOT SWEPT] ${p.page}\n   ${p.detail}`);
+  const shown = r.listing.filter((p) => !only || p.page.startsWith(only));
   for (const p of shown) console.log(`\n[${p.kind}] ${p.page}\n   ${p.detail}${p.descriptor ? `\n   ${JSON.stringify(p.descriptor)}` : ""}`);
-  console.log(`\n${r.problems.length ? `${r.problems.length} problem(s).` : "Every figure ties to its proof."}`);
+  if (r.problemCount > r.listing.length) console.log(`\n…and ${r.problemCount - r.listing.length} more not listed (each still withholds its figure).`);
+  console.log(`\n${r.problemCount ? `${r.problemCount} problem(s).` : "Every figure ties to its proof."}${r.skipped.length ? ` ${r.skipped.length} part(s) not swept (listed above): their figures show nowhere.` : ""}`);
   await prisma.$disconnect();
-  process.exit(r.problems.length ? 1 : 0);
+  process.exit(r.problemCount ? 1 : 0);
 }
