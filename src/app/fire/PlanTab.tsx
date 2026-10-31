@@ -1,31 +1,34 @@
 "use client";
 
 import { Callout, Card, StatCell, StatGrid } from "@/components/ui/kit";
-import { accessBridge, ACCESS_AGE, type FireAnalysis } from "@/lib/fire/fire";
+import { ACCESS_AGE, type FireAnalysis } from "@/lib/fire/fire";
+import { accessFigures, accessWalkAway, type AccessFigure } from "@/lib/fire/longTerm";
 import type { Forecast } from "@/lib/forecast/forecast";
 import type { OutlookSeeds } from "@/lib/profile/basePay";
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import type { Outlook } from "@/lib/profile/outlook";
 import { useMemo } from "react";
 import { LongTermView } from "./LongTermView";
-import { short } from "./ui";
-import { unswept } from "@/lib/book/proof/clearance";
+import { short, type FirePlanProof } from "./ui";
 
 /** The forecast with the walk-away year applied, and the check that taxable money lasts until 59½. */
-export function PlanTab({ f, r, s, full, base, forecast }: { f: FireAnalysis; r: AnnualProfileReport; s: OutlookSeeds; full: Outlook; base: Outlook; forecast: Forecast }) {
+export function PlanTab({ f, r, s, full, base, forecast, proof }: { f: FireAnalysis; r: AnnualProfileReport; s: OutlookSeeds; full: Outlook; base: Outlook; forecast: Forecast; proof: FirePlanProof }) {
   return (
     <>
-      <LongTermView r={r} s={s} full={full} base={base} plan={f.plan} pay={forecast.pay} schedule={forecast.schedule} fiYear={f.fi?.year ?? null} />
-      <AccessCard f={f} />
+      <LongTermView r={r} s={s} full={full} base={base} plan={f.plan} pay={forecast.pay} schedule={forecast.schedule} fiYear={f.fi?.year ?? null} proof={proof} />
+      <AccessCard f={f} proof={proof} />
     </>
   );
 }
 
 /** Retiring early means living on taxable money until 401(k)s and IRAs open at 59½. */
-function AccessCard({ f }: { f: FireAnalysis }) {
+function AccessCard({ f, proof }: { f: FireAnalysis; proof: FirePlanProof }) {
   const { plan } = f;
-  const walkAway = plan.walkAwayYear ?? f.fi?.year ?? null;
-  const b = useMemo(() => (walkAway ? accessBridge(plan, walkAway) : null), [plan, walkAway]);
+  const walkAway = accessWalkAway(plan, f.fi?.year ?? null);
+  // The tiles are the shared model (lib/fire/longTerm.ts) the sweep proves on the saved settings.
+  const a = useMemo(() => accessFigures(plan, f.fi?.year ?? null), [plan, f.fi]);
+  const b = a?.bridge ?? null;
+  const tile = (metric: AccessFigure) => proof({ figure: "access", metric }, a!.figures[metric]);
   if (!walkAway) return null;
   return (
     <Card
@@ -39,14 +42,14 @@ function AccessCard({ f }: { f: FireAnalysis }) {
       ) : (
         <div className="flex flex-col gap-3">
           <StatGrid cols={4}>
-            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")} label={`Liquid, Jan 1 ${walkAway}`} value={short(b.liquidAtWalkAway)} sub="cash + taxable investments" />
-            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")} label="Retirement & other" value={short(b.illiquidAtWalkAway)} sub="401(k), IRA, HSA…" />
-            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")}
+            <StatCell proof={tile("liquid")} label={`Liquid, Jan 1 ${walkAway}`} value={short(b.liquidAtWalkAway)} sub="cash + taxable investments" />
+            <StatCell proof={tile("illiquid")} label="Retirement & other" value={short(b.illiquidAtWalkAway)} sub="401(k), IRA, HSA…" />
+            <StatCell proof={tile("liquid-out")}
               label="Liquid lasts until"
               value={b.liquidOutYear ? String(b.liquidOutYear) : "never runs out"}
               sub={b.liquidOutYear ? `age ${b.liquidOutYear - plan.birthYear!}` : "in the 60 years shown"}
             />
-            <StatCell proof={unswept("the plan is worked out in the browser (FireClient: buildForecast + firePlans + the walk-away table), with no proof yet: F4 moves it server-side")} label="Penalty-free access" value={String(b.accessYear)} sub={`age ${ACCESS_AGE} (59½ during ${b.accessYear - 1})`} />
+            <StatCell proof={tile("access-year")} label="Penalty-free access" value={String(b.accessYear)} sub={`age ${ACCESS_AGE} (59½ during ${b.accessYear - 1})`} />
           </StatGrid>
           {b.gapYears > 0 ? (
             <Callout tone="warn" title={`${b.gapYears} year${b.gapYears === 1 ? "" : "s"} paid from retirement accounts before 59½`}>

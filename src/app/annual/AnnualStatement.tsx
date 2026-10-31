@@ -11,7 +11,7 @@ import type { CashWaterfall } from "@/lib/profile/annualMath";
 import type { AnnualProfileReport, PersonYear, YearCash, YearNetWorth, YearProfile } from "@/lib/profile/buildAnnualProfile";
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
-import type { YearEstimate } from "./estimate";
+import { estimateFigures, type EstimateValue, type YearEstimate } from "./estimate";
 import { NetWorthWaterfall } from "./NetWorthWaterfall";
 import { blockedCell, pct, usd, YearTable, type Cell, type TableRow } from "./profileUi";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
@@ -21,6 +21,21 @@ import { annualPayDescriptor } from "@/lib/profile/annualPay";
 const proofOf = (descriptor: AnnualDescriptor, shown: number | null): ProofTarget => ({ descriptor, shownCents: shown });
 const cashP = (y: YearProfile, line: AnnualCashLine, shown: number | null) => proofOf({ report: "annual", figure: "cash", year: y.year, line }, shown);
 const nwP = (y: YearProfile, line: AnnualNetWorthLine, shown: number | null) => proofOf({ report: "annual", figure: "net-worth", year: y.year, line }, shown);
+
+/**
+ * A line of the estimate column, from the one list the proof sweep enumerates
+ * (lib/profile/yearEstimate.ts estimateFigures): the value and its proof, or blank where
+ * the estimate doesn't model the line.
+ */
+const estFigs = new WeakMap<YearEstimate, Record<string, EstimateValue>>();
+function estV(e: YearEstimate, line: string, extra: { title?: string } = {}): V {
+  let figs = estFigs.get(e);
+  if (!figs) estFigs.set(e, (figs = estimateFigures(e)));
+  const v = figs[line];
+  if (!v) return null;
+  const proof: ProofTarget = { descriptor: { report: "planning", page: "annual-estimate", line }, shownCents: "cents" in v ? v.cents : null, ...("cents" in v ? {} : { shown: v }) };
+  return { v: "cents" in v ? v.cents : "ratio" in v ? v.ratio : Number(v.text), proof, ...extra };
+}
 const bridgeP = (y: YearProfile, line: AnnualBridgeLine, shown: number) => proofOf({ report: "annual", figure: "bridge", year: y.year, line }, shown);
 // A partner's merge year: the checks paid from the merge on, not the stub's year to date.
 const payP = (y: YearProfile, p: PersonYear, line: PayLine, shown: number): ProofTarget => ({ descriptor: annualPayDescriptor(y, p, line), shownCents: shown });
@@ -100,7 +115,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
   const blockedYears = ys.filter((y) => Object.values(y.blockers).some((b) => b.length > 0));
   const highlight = cols.map((c, i) => (c.y?.isCurrent || c.est ? i : -1)).filter((i) => i >= 0);
   const projected = cols.map((c, i) => (c.est ? i : -1)).filter((i) => i >= 0);
-  const estChange = est?.bridge?.total ?? est?.flows.change ?? null;
+  const estChangeV = est ? estV(est, "change") : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -128,9 +143,10 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
           proof={cur?.change ? nwP(cur, "change", cur.change.cents) : noFigure("no proven change this year")}
           sub={cur?.change?.pct != null ? `${pct(cur.change.pct)} since Dec 31` : undefined}
         />
-        <StatCell proof={unswept("the full-year estimate is worked out in the browser (annual/estimate.ts): F4 moves it server-side")}
+        <StatCell
+          proof={estChangeV && "proof" in estChangeV && estChangeV.proof ? estChangeV.proof : noFigure("needs a proven starting point")}
           label={est ? `Change ${est.year} est.` : "Change, full year est."}
-          value={estChange != null ? usd(estChange) : "—"}
+          value={estChangeV && "v" in estChangeV ? usd(estChangeV.v) : "—"}
           sub={est?.flows.close ? `≈ ${usd(est.flows.close.netWorth)} on Dec 31` : "needs a proven starting point"}
         />
         <StatCell
@@ -247,15 +263,12 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     c.y ? (c.y.netWorth ? fn(c.y.netWorth, c.y) : blocked(c.y.blockers.netWorth)) : c.est && est ? est(c.est) : null;
   const bridgeBlockers = (y: YearProfile) => unique([...y.blockers.cash, ...y.blockers.change]);
   const bridge = (c: Col, k: Exclude<AnnualBridgeLine, "total"> | "total"): V =>
-    c.y ? (c.y.bridge ? { v: c.y.bridge[k], proof: bridgeP(c.y, k, c.y.bridge[k]) } : blocked(bridgeBlockers(c.y))) : c.est?.bridge ? { v: c.est.bridge[k] } : null;
+    c.y ? (c.y.bridge ? { v: c.y.bridge[k], proof: bridgeP(c.y, k, c.y.bridge[k]) } : blocked(bridgeBlockers(c.y))) : c.est ? estV(c.est, `bridge:${k}`) : null;
   const any = (fn: (c: Col) => V) => cols.some((c) => {
     const v = fn(c);
     return v != null && "v" in v && v.v !== 0;
   });
   const taxesAndDeductions = (w: CashWaterfall) => w.withholding + w.additionalTaxes - w.refunds + w.otherDeductions;
-  const estGross = (e: YearEstimate) => (e.flows.salary ?? 0) + (e.flows.bonus ?? 0) + (e.flows.otherIncome ?? 0);
-  // The estimate's net cash, worked back from what it saved so the column adds up.
-  const estNet = (e: YearEstimate) => (e.flows.saved ?? 0) + (e.flows.living ?? 0) + (e.flows.bonusSpent ?? 0) + (e.flows.oneOffs ?? 0);
 
   // ------------------------------------------------------------ people
   for (const p of persons.filter((p) => r.years.some((y) => person(y, p.id)?.age != null)))
@@ -265,8 +278,8 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
       fmt: "plain",
       good: null,
       get: (c) => {
-        const y = c.y ?? c.est?.ytd;
-        const q = y && person(y, p.id);
+        if (c.est) return estV(c.est, `age:${p.id}`);
+        const q = c.y && person(c.y, p.id);
         return q?.member && q.age != null ? { v: q.age } : null;
       },
     });
@@ -277,7 +290,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     lines.push({
       label,
       strong: false,
-      get: (c) => cash(c, (w, _, y) => ({ v: w[what], proof: cashP(y, what, w[what]), title: c.y?.people?.map((p) => `${p.name}: ${usd(p[what])}`).join("\n") }), (e) => (e.flows[what] != null ? { v: e.flows[what]! } : null)),
+      get: (c) => cash(c, (w, _, y) => ({ v: w[what], proof: cashP(y, what, w[what]), title: c.y?.people?.map((p) => `${p.name}: ${usd(p[what])}`).join("\n") }), (e) => estV(e, what)),
     });
     if (persons.length > 1)
       for (const p of persons)
@@ -313,10 +326,10 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
           proof: cashP(y, "other-income", w.otherIncome),
           title: `Bank interest ${usd(x.otherIncomeDetail.interest)} · dividends & distributions ${usd(x.otherIncomeDetail.dividends)} · other ${usd(x.otherIncomeDetail.other)}`,
         }),
-        (e) => ({ v: e.flows.otherIncome ?? 0, title: "Year to date only: the forecast counts interest and dividends in growth." }),
+        (e) => estV(e, "other-income", { title: "Year to date only: the forecast counts interest and dividends in growth." }),
       ),
   });
-  lines.push({ label: "Gross income", strong: true, get: (c) => cash(c, (w, _, y) => ({ v: w.grossCash, proof: cashP(y, "gross", w.grossCash) }), (e) => ({ v: estGross(e) })) });
+  lines.push({ label: "Gross income", strong: true, get: (c) => cash(c, (w, _, y) => ({ v: w.grossCash, proof: cashP(y, "gross", w.grossCash) }), (e) => estV(e, "gross")) });
 
   // ------------------------------------------------------------ taxes
   lines.push({ heading: "Taxes & deductions" });
@@ -334,7 +347,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     help: "Medical/dental/vision premiums, FSA and after-tax deductions on pay stubs. 401(k) and HSA deferrals aren't subtracted: they're savings.",
     get: (c) => cash(c, (w, _, y) => ({ v: -w.otherDeductions, proof: cashP(y, "deductions", w.otherDeductions) })),
   });
-  lines.push({ label: "Total taxes & deductions", strong: true, get: (c) => cash(c, (w, _, y) => ({ v: -taxesAndDeductions(w), proof: cashP(y, "taxes-deductions", taxesAndDeductions(w)) }), (e) => (e.flows.taxes != null ? { v: -e.flows.taxes } : null)) });
+  lines.push({ label: "Total taxes & deductions", strong: true, get: (c) => cash(c, (w, _, y) => ({ v: -taxesAndDeductions(w), proof: cashP(y, "taxes-deductions", taxesAndDeductions(w)) }), (e) => estV(e, "taxes-deductions")) });
   lines.push({
     label: "Cash tax rate",
     muted: true,
@@ -350,9 +363,9 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     label: "Plus: employer retirement & HSA",
     indent: true,
     help: "Employer 401(k) and HSA contributions on pay stubs.",
-    get: (c) => cash(c, (w, _, y) => ({ v: w.employer, proof: cashP(y, "employer", w.employer) }), (e) => (e.flows.employer != null ? { v: e.flows.employer } : null)),
+    get: (c) => cash(c, (w, _, y) => ({ v: w.employer, proof: cashP(y, "employer", w.employer) }), (e) => estV(e, "employer")),
   });
-  const kept = (c: Col): V => cash(c, (w, _, y) => ({ v: -w.partnerKept, proof: cashP(y, "partner-kept", w.partnerKept) }), (e) => ({ v: -e.partnerKept }));
+  const kept = (c: Col): V => cash(c, (w, _, y) => ({ v: -w.partnerKept, proof: cashP(y, "partner-kept", w.partnerKept) }), (e) => estV(e, "partner-kept"));
   if (any(kept)) {
     const partner = persons.slice(1).map((p) => p.name).join(" & ");
     lines.push({
@@ -362,7 +375,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
       get: kept,
     });
   }
-  lines.push({ label: "Net cash", strong: true, get: (c) => cash(c, (w, _, y) => ({ v: w.netCash, proof: cashP(y, "net-cash", w.netCash) }), (e) => ({ v: estNet(e) })) });
+  lines.push({ label: "Net cash", strong: true, get: (c) => cash(c, (w, _, y) => ({ v: w.netCash, proof: cashP(y, "net-cash", w.netCash) }), (e) => estV(e, "net-cash")) });
 
   // ------------------------------------------------------------ spending & saved
   lines.push({ heading: "Spending & saved" });
@@ -372,15 +385,15 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     help: mergedPartner(r) && r.view === "STRICT"
       ? `Every expense on bank and card statements except income-tax payments and one-offs, net of reimbursements and, before the ${r.mergeDate} merge, of what ${mergedPartner(r)} paid toward rent and cards. The FIRE plan starts from the latest full year of this line.`
       : "Every expense on bank and card statements except income-tax payments and one-offs, net of reimbursements. The FIRE plan starts from the latest full year of this line.",
-    get: (c) => cash(c, (w, _, y) => ({ v: -w.living, proof: cashP(y, "living", w.living) }), (e) => (e.flows.living != null ? { v: -(e.flows.living + (e.flows.bonusSpent ?? 0)) } : null)),
+    get: (c) => cash(c, (w, _, y) => ({ v: -w.living, proof: cashP(y, "living", w.living) }), (e) => estV(e, "living")),
   });
   lines.push({
     label: "One-off expenses",
     indent: true,
     help: "Expenses marked one-off on the One-off expenses tab. They still count against what was saved; they're only kept out of living expenses.",
-    get: (c) => cash(c, (w, _, y) => ({ v: -w.nonRecurring, proof: cashP(y, "one-offs", w.nonRecurring) }), (e) => ({ v: -(e.flows.oneOffs ?? 0) })),
+    get: (c) => cash(c, (w, _, y) => ({ v: -w.nonRecurring, proof: cashP(y, "one-offs", w.nonRecurring) }), (e) => estV(e, "one-offs")),
   });
-  lines.push({ label: "Saved incl. retirement", total: true, get: (c) => cash(c, (w, _, y) => ({ v: w.saved, proof: cashP(y, "saved", w.saved) }), (e) => ({ v: e.flows.saved! })) });
+  lines.push({ label: "Saved incl. retirement", total: true, get: (c) => cash(c, (w, _, y) => ({ v: w.saved, proof: cashP(y, "saved", w.saved) }), (e) => estV(e, "saved")) });
   lines.push({
     label: "of which to retirement accounts",
     muted: true,
@@ -389,7 +402,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
       cash(
         c,
         (_, x, y) => ({ v: x.toRetirement, proof: cashP(y, "to-retirement", x.toRetirement) }),
-        (e) => (e.flows.toRetirement != null ? { v: e.flows.toRetirement } : null),
+        (e) => estV(e, "to-retirement"),
       ),
   });
   lines.push({
@@ -400,7 +413,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
       cash(
         c,
         (w, _, y) => (w.savingsOfGross != null ? { v: w.savingsOfGross, proof: cashP(y, "savings-of-gross", null) } : null),
-        (e) => (estGross(e) > 0 ? { v: e.flows.saved! / estGross(e) } : null),
+        (e) => estV(e, "savings-of-gross"),
       ),
   });
 
@@ -419,11 +432,11 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
       nw(
         c,
         (n, y) => ({ v: n.netWorth, proof: nwP(y, "net-worth", n.netWorth), after: <QualityBadge quality={n.quality} /> }),
-        (e) => (e.flows.close ? { v: e.flows.close.netWorth } : null),
+        (e) => estV(e, "net-worth"),
       ),
   });
-  lines.push({ label: "Liquid", muted: true, help: "Cash + taxable investments − card debt.", get: (c) => nw(c, (n, y) => ({ v: n.liquid, proof: nwP(y, "liquid", n.liquid) }), (e) => (e.flows.close ? { v: e.flows.close.liquid } : null)) });
-  lines.push({ label: "Illiquid", muted: true, get: (c) => nw(c, (n, y) => ({ v: n.illiquid, proof: nwP(y, "illiquid", n.illiquid) }), (e) => (e.flows.close ? { v: e.flows.close.illiquid } : null)) });
+  lines.push({ label: "Liquid", muted: true, help: "Cash + taxable investments − card debt.", get: (c) => nw(c, (n, y) => ({ v: n.liquid, proof: nwP(y, "liquid", n.liquid) }), (e) => estV(e, "liquid")) });
+  lines.push({ label: "Illiquid", muted: true, get: (c) => nw(c, (n, y) => ({ v: n.illiquid, proof: nwP(y, "illiquid", n.illiquid) }), (e) => estV(e, "illiquid")) });
   const transit = (c: Col): V => nw(c, (n, y) => ({ v: n.inTransit, proof: nwP(y, "in-transit", n.inTransit) }));
   if (any(transit))
     lines.push({ label: "incl. transfers in transit", muted: true, help: "Money that had left one of your accounts by that day and reached another only after it (rent paid before the bill credits it, a rollover): already gone from the first account, so it counts where it was headed.", get: transit });
@@ -456,9 +469,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     fmt: "pct",
     get: (c) => {
       if (c.y) return c.y.change ? (c.y.change.pct != null ? { v: c.y.change.pct, proof: nwP(c.y, "change-pct", null) } : null) : blocked(c.y.blockers.change);
-      const e = c.est;
-      const open = e?.flows.open;
-      return e?.bridge && open ? { v: e.bridge.total / open } : null;
+      return c.est ? estV(c.est, "change-pct") : null;
     },
   });
 
@@ -483,7 +494,7 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
         ) : (
           fmtV(x.v, l.fmt)
         ),
-        proof: x.proof ?? unswept(c.est ? "the year-end estimate is worked out in the browser (annual/estimate.ts): F4 moves it server-side" : `${l.label}: no recipe for this line`),
+        proof: x.proof ?? unswept(`${l.label}: no recipe for this line`),
         title: x.title,
       };
     if (l.fmt === "plain") return { text: fmtV(x.v, l.fmt), dim: true, proof: noFigure("ages aren't compared") };

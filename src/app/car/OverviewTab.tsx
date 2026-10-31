@@ -14,7 +14,8 @@ import { isReading } from "./EntryEditor";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { BUCKETS, bucketColor, bucketOf, byBucket, carProof, fmtDate, miles, NumInput, perMile, relative, Swatch, throughText, usd2 } from "./parts";
 import { serviceDue } from "./ServiceTab";
-import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { noFigure } from "@/lib/book/proof/clearance";
+import { outlookKey } from "@/lib/book/derived/car";
 
 type Span = "toDate" | "last12" | "next12";
 
@@ -40,7 +41,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
     [r.months],
   );
 
-  // The next 12 months are an estimate on no statement: only figures to date and over the last 12 months open a proof.
+  // Figures to date and over the last 12 months open the car proof; the next 12 months (an estimate on no statement) are the outlook the derived list states.
   const proven = span === "next12" ? null : span;
   const segments = BUCKETS.map((b) => ({ id: b.id, label: b.label, cents: b.lines.reduce((s, l) => s + (view.lines[l] ?? 0), 0), color: bucketColor(chart, b.id) }));
   const lines = COST_LINES.filter((l) => (view.lines[l] ?? 0) !== 0).sort((a, b) => (view.lines[b] ?? 0) - (view.lines[a] ?? 0));
@@ -106,10 +107,10 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                         </span>
                       </td>
                       <td className={table.tdR}>
-                        <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : unswept("the next 12 months are an estimate on no statement: the outlook is worked out with no proof yet (F4)")}>{usd0(c)}</ProofValue>
+                        <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : ctx.dp("outlook", outlookKey(r.carId, l))}>{usd0(c)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : unswept("the next 12 months are an estimate on no statement: the outlook is worked out with no proof yet (F4)")}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
-                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : unswept("the next 12 months are an estimate on no statement: the outlook is worked out with no proof yet (F4)")}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, l))}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, l))}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
                       <td className={`${table.tdR} text-muted`}>{view.total ? formatPercentRatio(c / view.total, 0) : "—"}</td>
                     </tr>
                   );
@@ -117,10 +118,10 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                 <tr className="border-t-[3px] border-double border-line-strong font-semibold">
                   <td className={table.td}>Total</td>
                   <td className={table.tdR}>
-                    <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : unswept("the next 12 months are an estimate on no statement: the outlook is worked out with no proof yet (F4)")}>{usd0(view.total)}</ProofValue>
+                    <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : ctx.dp("outlook", outlookKey(r.carId, "total"))}>{usd0(view.total)}</ProofValue>
                   </td>
-                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : unswept("the next 12 months are an estimate on no statement: the outlook is worked out with no proof yet (F4)")}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
-                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : unswept("the next 12 months are an estimate on no statement: the outlook is worked out with no proof yet (F4)")}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, "total"))}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, "total"))}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
                   <td className={table.tdR} />
                 </tr>
               </tbody>

@@ -4,7 +4,8 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsd } from "@/lib/formatMoney";
-import { computeBudgetScenario, computeRentVsBuy, defaultHomeBudgetInputs, simulateRentVsBuy, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
+import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
+import { rentVsBuyFigures, SIM_YEARS, type RentVsBuyFigure } from "@/lib/home-budget/rentVsBuy";
 import { useMemo } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { FundsState, Patch } from "./HomeBudgetClient";
@@ -12,10 +13,8 @@ import { GainsTaxControl } from "./InputsPanel";
 import { Group, StackBar } from "./parts";
 import { RangeSlider } from "./RangeSlider";
 import { spec } from "./specs";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const DEF = defaultHomeBudgetInputs();
-const SIM_YEARS = 30;
 
 const LABELS: Partial<Record<keyof HomeBudgetInputs, string>> = {
   marketRentMonthly: "Rent / month",
@@ -31,12 +30,14 @@ const LABELS: Partial<Record<keyof HomeBudgetInputs, string>> = {
 export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudgetInputs; patch: Patch; goToBudget: () => void; funds: FundsState }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
-  const b = useMemo(() => computeBudgetScenario(ins), [ins]);
-  const snap = useMemo(() => computeRentVsBuy(ins, b), [ins, b]);
-  const sim = useMemo(() => simulateRentVsBuy(ins, b, SIM_YEARS), [ins, b]);
-  const horizon = Math.min(SIM_YEARS, Math.max(1, Math.round(ins.horizonYears)));
-  const atHorizon = sim.years[horizon - 1]!;
-  const ahead = atHorizon.buyAdvantage;
+  // One pure model (lib/home-budget/rentVsBuy.ts): the proof sweep re-runs it on the saved inputs.
+  const r = useMemo(() => rentVsBuyFigures(ins), [ins]);
+  const { b, snap, sim, horizon } = r;
+  const ahead = r.values["rvb-ahead"];
+  const tile = (figure: RentVsBuyFigure) => {
+    const v = r.values[figure];
+    return typeof v === "string" ? { ...funds.proof(figure, null), shown: { text: v } } : funds.proof(figure, v);
+  };
 
   const S = (k: keyof HomeBudgetInputs, extra?: Partial<Parameters<typeof RangeSlider>[0]>) => {
     const sp = spec(k);
@@ -61,10 +62,10 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
       </Callout>
 
       <StatGrid cols={4}>
-        <StatCell proof={unswept("rent vs buy is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")} label="Ahead by buying" value={formatUsd(ahead)} tone={ahead >= 0 ? "pos" : "neg"} sub={`net worth if you sell in year ${horizon}`} />
-        <StatCell proof={unswept("rent vs buy is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")} label="Break-even" value={sim.breakEvenYear ? `Year ${sim.breakEvenYear}` : "Never"} tone={sim.breakEvenYear && sim.breakEvenYear <= horizon ? "pos" : "warn"} sub={`within ${SIM_YEARS} years`} />
-        <StatCell proof={unswept("rent vs buy is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")} label="Owning, year one" value={`${formatUsd(snap.monthlyCostOfHomeOwnership)}/mo`} sub={`unrecoverable · ${formatPercentRatio(snap.totalCostOfHomeOwnershipAnnualPct, 2)} of value a year`} />
-        <StatCell proof={unswept("rent vs buy is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")} label="Renting" value={`${formatUsd(ins.marketRentMonthly)}/mo`} sub={priceToRent ? `price-to-rent ratio ${priceToRent.toFixed(1)}` : undefined} />
+        <StatCell proof={tile("rvb-ahead")} label="Ahead by buying" value={formatUsd(ahead)} tone={ahead >= 0 ? "pos" : "neg"} sub={`net worth if you sell in year ${horizon}`} />
+        <StatCell proof={tile("rvb-break-even")} label="Break-even" value={r.values["rvb-break-even"]} tone={sim.breakEvenYear && sim.breakEvenYear <= horizon ? "pos" : "warn"} sub={`within ${SIM_YEARS} years`} />
+        <StatCell proof={tile("rvb-owning")} label="Owning, year one" value={`${formatUsd(r.values["rvb-owning"])}/mo`} sub={`unrecoverable · ${formatPercentRatio(snap.totalCostOfHomeOwnershipAnnualPct, 2)} of value a year`} />
+        <StatCell proof={tile("rvb-rent")} label="Renting" value={`${formatUsd(r.values["rvb-rent"])}/mo`} sub={priceToRent ? `price-to-rent ratio ${priceToRent.toFixed(1)}` : undefined} />
       </StatGrid>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">

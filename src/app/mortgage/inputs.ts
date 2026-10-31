@@ -1,15 +1,12 @@
 import type { SliderSpec } from "@/app/home-budget/RangeSlider";
 import { fetchSavedInputs } from "@/components/ui/kit";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
-import { SALT_CAP_2026, SALT_CAP_FROM_2030, type LumpRow, type MortgageInputs } from "@/lib/mortgage/inputs";
-import { calendarToLoanPaymentMonth, type Lump, type MortgagePlan } from "@/lib/mortgage/prepayVsInvest";
+import type { LumpRow, MortgageInputs } from "@/lib/mortgage/inputs";
 
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export { defaultInputs, type LumpRow, type MortgageInputs } from "@/lib/mortgage/inputs";
+export { defaultInputs, expandLumps, RETIRED_KEYS, toPlan, type LumpRow, type MortgageInputs } from "@/lib/mortgage/inputs";
 
-/** Fields of earlier saves whose meaning changed (combined state + federal rates, one "other itemized"); dropped on load. */
-export const RETIRED_KEYS = ["investTaxRate", "marginalRate", "otherItemized", "otherItemizedFrom2030"] as const;
 
 export const STORAGE_KEY = "pf-mortgage-v2";
 
@@ -36,50 +33,6 @@ export function lumpLabel(r: LumpRow): string {
   const when = `${MONTHS[r.month - 1]} ${r.year}`;
   const name = r.label.trim() || (r.repeat ? "Yearly lump" : "Lump sum");
   return r.repeat ? `${name} · ${when}–${r.untilYear}` : `${name} · ${when}`;
-}
-
-/** Rows → dated lumps in loan months; rows before the first payment are dropped. */
-export function expandLumps(rows: LumpRow[], startYear: number, startMonth: number): Lump[] {
-  const out: Lump[] = [];
-  for (const r of rows) {
-    if (!(r.amount > 0)) continue;
-    // Nothing past a century of payments matters (the horizon tops out well before), and a
-    // typo in "until" mustn't loop through millions of years.
-    const last = Math.min(r.repeat ? Math.max(r.year, r.untilYear) : r.year, startYear + 100);
-    for (let y = r.year; y <= last; y++) {
-      const month = calendarToLoanPaymentMonth(y, r.month, startYear, startMonth);
-      if (month >= 1) out.push({ id: r.id, month, amount: r.amount });
-    }
-  }
-  return out;
-}
-
-export function toPlan(i: MortgageInputs): MortgagePlan {
-  return {
-    principal: i.principal,
-    annualRate: i.rate,
-    termMonths: Math.round(i.termYears * 12),
-    startYear: i.startYear,
-    startMonth: i.startMonth,
-    extraMonthly: i.extraMonthly,
-    lumps: expandLumps(i.lumps, i.startYear, i.startMonth),
-    horizonMonths: Math.round(i.horizonYears * 12),
-    investReturn: i.investReturn,
-    dividendYield: i.dividendYield,
-    investTaxRate: i.fedGainsRate + i.ctGainsRate,
-    taxFreeAccount: i.account === "taxFree",
-    sellAtHorizon: i.sellAtHorizon,
-    deductInterest: i.deductInterest,
-    marginalRate: i.fedMarginalRate,
-    standardDeduction: i.standardDeduction,
-    stateIncomeTax: i.stateIncomeTax,
-    propertyTax: i.propertyTax,
-    charity: i.charity,
-    saltCap: SALT_CAP_2026,
-    saltCapFrom2030: SALT_CAP_FROM_2030,
-    debtCap: i.debtCap,
-    inflation: i.inflation,
-  };
 }
 
 /** The loan and its property tax from the Home budget page's "Test a price" scenario (its saved inputs, else this browser's copy). */

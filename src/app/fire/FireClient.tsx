@@ -18,7 +18,7 @@ import { OverviewTab } from "./OverviewTab";
 import { PlanTab } from "./PlanTab";
 import { PlaybookTab } from "./PlaybookTab";
 import { StressTab } from "./StressTab";
-import { fireProof, type Dollars } from "./ui";
+import { fireProof, firePlanProof, type Dollars } from "./ui";
 import { WalkAwayTab } from "./WalkAwayTab";
 
 const TABS = ["overview", "plan", "walk-away", "levers", "stress", "playbook"] as const;
@@ -139,7 +139,9 @@ function Fire({
     }
   };
 
-  const pf = fireProof({ walkAwayYear: a.walkAwayYear, withdrawalRate: a.withdrawalRate, stateTaxRate: a.stateTaxRate, retirementAge: a.retirementAge });
+  const fireSettings = { walkAwayYear: a.walkAwayYear, withdrawalRate: a.withdrawalRate, stateTaxRate: a.stateTaxRate, retirementAge: a.retirementAge };
+  const pf = fireProof(fireSettings);
+  const pp = firePlanProof(fireSettings);
   if (tab === "playbook") return <PlaybookTab f={f} />;
   const props = { f, dollars, setDollars };
   const header = (
@@ -176,13 +178,13 @@ function Fire({
         {tab === "overview" ? (
           <OverviewTab {...props} pf={pf} r={r} s={s} livingLabel={pay.living.typed ? "typed in" : (pay.living.seed?.label ?? "")} livingTyped={pay.living.typed} onGo={setTab} />
         ) : tab === "plan" ? (
-          <PlanTab f={f} r={r} s={s} full={outFull} base={outBase} forecast={forecast} />
+          <PlanTab f={f} r={r} s={s} full={outFull} base={outBase} forecast={forecast} proof={pp} />
         ) : tab === "walk-away" ? (
           <WalkAwayTab {...props} walkBase={walkBase} />
         ) : tab === "levers" ? (
           <LeversTab {...props} />
         ) : (
-          <StressTab {...props} volatility={a.volatility} />
+          <StressTab {...props} volatility={a.volatility} proof={pp} />
         )}
       </div>
     </div>

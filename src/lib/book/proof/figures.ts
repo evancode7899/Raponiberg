@@ -1,6 +1,8 @@
 import type { GarageReport } from "../../car/report.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
-import { analyzeFire, firePlans } from "../../fire/fire.ts";
+import { analyzeFire, firePlans, stressTest } from "../../fire/fire.ts";
+import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type StressFigure } from "../../fire/longTerm.ts";
+import { projectOutlook } from "../../profile/outlook.ts";
 import { monthPeriods, yearPeriods } from "../../forecast/periods.ts";
 import { COST_LINES } from "../../car/report.ts";
 import { CAR_KINDS } from "../../car/settings.ts";
@@ -29,6 +31,12 @@ import type { AccountLimitsDescriptor } from "./accountLimitsProof.ts";
 import type { AnnualCashLine, AnnualDescriptor } from "./annualProof.ts";
 import type { BonusesDescriptor } from "./bonusesProof.ts";
 import type { FireFigure, FireSettings, HomeFigure } from "./planningProof.ts";
+import { MORTGAGE_FIGURES, mortgageFigures } from "../../mortgage/figures.ts";
+import { RENT_VS_BUY_FIGURES } from "../../home-budget/rentVsBuy.ts";
+import { estimateFigures, yearEstimate } from "../../profile/yearEstimate.ts";
+import type { ForecastData } from "../../forecast/load.ts";
+import { withLinks, type MortgageInputs } from "../../mortgage/inputs.ts";
+import type { MortgageLinks } from "../../mortgage/links.ts";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "../../home-budget/homeBudgetModel.ts";
 import { defaultFunds, type FundsConfig } from "../../home-budget/homeLinked.ts";
 import type { CarFigureDescriptor } from "./carProof.ts";
@@ -535,12 +543,22 @@ export function fireFigures(f: Forecast, r: AnnualProfileReport): PageFigure[] {
   const fire: FireSettings = { walkAwayYear: a.walkAwayYear, withdrawalRate: a.withdrawalRate, stateTaxRate: a.stateTaxRate, retirementAge: a.retirementAge };
   const plans = firePlans(f);
   const fa = analyzeFire(plans.full, plans.base, { asOf: r.seeds.start.asOf, retirementAge: a.retirementAge });
-  return fireFigureList(fa).map((x) => ({ page: "FIRE", descriptor: { report: "planning", page: "fire", figure: x.figure, fire, ...(x.milestone ? { milestone: x.milestone } : {}) }, shown: cents(x.cents) }));
+  const out: PageFigure[] = fireFigureList(fa).map((x) => ({ page: "FIRE", descriptor: { report: "planning", page: "fire", figure: x.figure, fire, ...(x.milestone ? { milestone: x.milestone } : {}) }, shown: cents(x.cents) }));
+  // FIRE › Plan: the long-term table, cell by cell, and the bridge to 59½; FIRE › Stress test on the saved yearly swings (all as the page builds them).
+  const full = projectOutlook(plans.full);
+  const base = plans.base === plans.full ? full : projectOutlook(plans.base);
+  const table = longTermTable({ r, s: r.seeds, full, base, plan: fa.plan, pay: f.pay, schedule: f.schedule });
+  for (const x of longTermCells(table)) out.push({ page: "FIRE › Plan", descriptor: { report: "planning", page: "fire", figure: "plan-cell", fire, row: x.row, col: x.col }, shown: planValue(x.value) });
+  const access = accessFigures(fa.plan, fa.fi?.year ?? null);
+  if (access) for (const [metric, v] of Object.entries(access.figures)) if (planValue(v)) out.push({ page: "FIRE › Plan", descriptor: { report: "planning", page: "fire", figure: "access", fire, metric: metric as AccessFigure }, shown: planValue(v) });
+  const st = stressFigures(stressTest(fa.plan, { volatility: a.volatility, paths: STRESS_PATHS }), fa.fi?.year ?? null);
+  for (const [metric, v] of Object.entries(st)) if (planValue(v)) out.push({ page: "FIRE › Stress test", descriptor: { report: "planning", page: "fire", figure: "stress", fire, metric: metric as StressFigure, volatility: a.volatility }, shown: planValue(v) });
+  return out;
 }
 
 // ------------------------------------------------------------------ Home budget
 
-const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "lender-max", "lender-income"];
+const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "lender-max", "lender-income", ...RENT_VS_BUY_FIGURES];
 
 /**
  * Each linked Home budget figure on the calculator's saved inputs and funds choices, as the
@@ -552,6 +570,27 @@ export function homeBudgetFigures(saved: { inputs: Record<string, unknown> | nul
   const inputs: HomeBudgetInputs = { ...defaultHomeBudgetInputs(), ...(saved.inputs ?? {}) };
   const funds: FundsConfig = { ...defaultFunds(), ...(saved.funds ?? {}) };
   return HOME_FIGURES.map((figure) => ({ page: "Home budget", descriptor: { report: "planning", page: "home", figure, inputs, funds }, shown: null }));
+}
+
+// ------------------------------------------------------------------ Annual estimate
+
+/** The annual statement's estimate column for the year in progress (and its "Change, full year est." tile), line by line (lib/profile/yearEstimate.ts). */
+export function annualEstimateFigures(data: ForecastData): PageFigure[] {
+  const e = yearEstimate(data);
+  if (!e) return [];
+  return Object.entries(estimateFigures(e)).map(([line, v]) => ({ page: "Annual", descriptor: { report: "planning", page: "annual-estimate", line }, shown: v }));
+}
+
+// ------------------------------------------------------------------ Mortgage
+
+/** The Mortgage page's four tiles on its saved inputs, the links put in as the page puts them (lib/mortgage/figures.ts). */
+export function mortgagePageFigures(inputs: MortgageInputs, links: MortgageLinks): PageFigure[] {
+  const m = mortgageFigures(withLinks(inputs, links));
+  return MORTGAGE_FIGURES.flatMap((figure) => {
+    const v = m.values[figure];
+    const shown: ProofValue | null = "cents" in v ? (v.cents == null ? null : { cents: v.cents }) : v.ratio == null ? null : { ratio: v.ratio };
+    return shown ? [{ page: "Mortgage", descriptor: { report: "planning", page: "mortgage", figure, inputs }, shown }] : [];
+  });
 }
 
 // ------------------------------------------------------------------ Derived

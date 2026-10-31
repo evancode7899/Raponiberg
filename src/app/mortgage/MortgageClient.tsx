@@ -3,14 +3,17 @@
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, PageBody, StatCell, StatGrid, table, useSavedState } from "@/components/ui/kit";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
-import { comparePrepayVsInvest, loanMonthToCalendar, monteCarlo, type PathSeries } from "@/lib/mortgage/prepayVsInvest";
-import { apiSecretHeaders } from "@/components/ledger/useApi";
+import { comparePrepayVsInvest, loanMonthToCalendar, type PathSeries } from "@/lib/mortgage/prepayVsInvest";
+import { mortgageFigures, type MortgageFigure } from "@/lib/mortgage/figures";
+import { normalizeMortgageInputs } from "@/lib/mortgage/inputs";
+import type { ProofRef } from "@/components/ui/proof/context";
+import { useApi } from "@/components/ledger/useApi";
 import { withLinks, type LinkedKey } from "@/lib/mortgage/inputs";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { BalancesChart, GapChart, INVEST, NetWorthChart, OpportunityChart, PREPAY, SensitivityChart, type YearPoint } from "./MortgageCharts";
 import { MortgageInputsPanel } from "./MortgageInputsPanel";
 import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, RETIRED_KEYS, STORAGE_KEY, toPlan, type MortgageInputs } from "./inputs";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 /** The linked figures (api/mortgage/links): each with where it comes from. */
 export type MortgageLinks = Partial<Record<LinkedKey, { value: number; from: string } | null>>;
@@ -25,7 +28,8 @@ const span = (months: number) => {
   return y && m ? `${y}y ${m}m` : y ? `${y} yr` : `${m} mo`;
 };
 
-export function MortgageClient() {
+export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
+  const api = useApi(requiresApiSecret);
   const chart = useChartPalette();
   const [ins, setIns] = useSavedState<MortgageInputs>(STORAGE_KEY, defaultInputs);
   useEffect(() => {
@@ -39,12 +43,17 @@ export function MortgageClient() {
   const set = (p: Partial<MortgageInputs>) => setIns((x) => ({ ...x, ...p }));
   // The forecast's and the tax engine's figures, used wherever nothing is typed over them.
   const [links, setLinks] = useState<MortgageLinks>({});
+  // Until the links answer, the tiles would be worked out on the typed values alone: not the figures the sweep proves.
+  const [linksIn, setLinksIn] = useState(false);
+  // Through useApi, so the page knows which data its figures were built from (x-data-stamp) and the sweep of that data can clear them.
   useEffect(() => {
-    fetch("/api/mortgage/links", { headers: apiSecretHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j: { links?: MortgageLinks } | null) => j?.links && setLinks(j.links))
-      .catch(() => {});
-  }, []);
+    if (!api.ready) return;
+    api
+      .call<{ links?: MortgageLinks }>("/api/mortgage/links")
+      .then((j) => j?.links && setLinks(j.links))
+      .catch(() => {})
+      .finally(() => setLinksIn(true));
+  }, [api]);
   const saved = ins;
   // What the model and every figure run on: the saved inputs with the links put in.
   const eff = useMemo(() => withLinks(saved, links), [saved, links]);
@@ -52,10 +61,21 @@ export function MortgageClient() {
   const plan = useMemo(() => toPlan(eff), [eff]);
   const labels = useMemo(() => Object.fromEntries(ins.lumps.map((r) => [r.id, lumpLabel(r)])), [ins.lumps]);
   const cmp = useMemo(() => comparePrepayVsInvest(plan, labels), [plan, labels]);
-  // The simulation is the heavy part: let it trail slider drags.
-  const mcPlan = useDeferredValue(plan);
-  const mcVol = useDeferredValue(ins.volatility);
-  const mc = useMemo(() => monteCarlo(mcPlan, mcVol), [mcPlan, mcVol]);
+  // The headline figures and the simulation (the heavy part) trail slider drags. They're the
+  // shared model (lib/mortgage/figures.ts) the proof sweep re-runs on the saved inputs.
+  const figIns = useDeferredValue(saved);
+  const figLinks = useDeferredValue(links);
+  const fig = useMemo(() => mortgageFigures(withLinks(figIns, figLinks), labels), [figIns, figLinks, labels]);
+  const mc = fig.mc;
+  const figInputs = useMemo(() => normalizeMortgageInputs(figIns), [figIns]);
+  const tile = (figure: MortgageFigure): ProofRef => {
+    if (!linksIn || figLinks !== links) return unswept("waiting for the linked figures (Forecast, Taxes)");
+    const v = fig.values[figure];
+    const value = "cents" in v ? v.cents : v.ratio;
+    if (value == null) return noFigure("nothing to compare yet");
+    return { descriptor: { report: "planning", page: "mortgage", figure, inputs: figInputs }, shownCents: "cents" in v ? value : null, ...("ratio" in v ? { shown: { ratio: value } } : {}) };
+  };
+  const tileValue = fig.values;
 
   const H = cmp.horizonMonths;
   const { invest, prepay } = cmp;
@@ -106,7 +126,6 @@ export function MortgageClient() {
   const hMc = mc.bands[mc.bands.length - 1];
   const mcFresh = hMc?.month === H;
   const sooner = prepay.payoffMonth !== null ? (invest.payoffMonth ?? Math.round(plan.termMonths)) - prepay.payoffMonth : null;
-  const interestSaved = flow(invest.interest) - flow(prepay.interest);
   const deductionLost = flow(invest.deduction) - flow(prepay.deduction);
   const hasLumps = plan.lumps.some((l) => l.month <= H);
   const winner = advantage >= 0 ? INVEST : PREPAY;
@@ -142,26 +161,26 @@ export function MortgageClient() {
           )}
 
           <StatGrid cols={4}>
-            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
+            <StatCell proof={tile("advantage")}
               label="Invest − pay down"
-              value={hasChoice ? signed(advantage) : "—"}
+              value={"cents" in tileValue.advantage && tileValue.advantage.cents != null ? signed(tileValue.advantage.cents / 100) : "—"}
               tone={advantage > 0 ? "pos" : advantage < 0 ? "warn" : "neutral"}
               sub={`net worth after ${ins.horizonYears} yr, ${unit}`}
             />
-            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
+            <StatCell proof={tile("break-even")}
               label="Break-even return"
-              value={cmp.breakEvenReturn !== null && hasChoice ? formatPercentRatio(cmp.breakEvenReturn, 2) : "—"}
+              value={"ratio" in tileValue["break-even"] && tileValue["break-even"].ratio != null ? formatPercentRatio(tileValue["break-even"].ratio, 2) : "—"}
               sub="investing wins above this"
             />
-            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
+            <StatCell proof={tile("chance")}
               label="Chance investing wins"
-              value={hasChoice && mcFresh ? `${Math.round(mc.chanceInvestWins * 100)}%` : "—"}
+              value={"ratio" in tileValue.chance && tileValue.chance.ratio != null ? `${Math.round(tileValue.chance.ratio * 100)}%` : "—"}
               tone={tossUp ? "neutral" : mc.chanceInvestWins > 0.5 ? "pos" : "warn"}
               sub={`${formatPercentRatio(ins.volatility, 0)} volatility · ${mc.paths} markets`}
             />
-            <StatCell proof={unswept("prepay vs invest is simulated in the browser on the inputs you type, with no proof yet: F4 moves it server-side")}
+            <StatCell proof={tile("interest-saved")}
               label="Paying down saves"
-              value={formatUsd(interestSaved)}
+              value={"cents" in tileValue["interest-saved"] && tileValue["interest-saved"].cents != null ? formatUsd(tileValue["interest-saved"].cents / 100) : "—"}
               sub={sooner !== null && sooner > 0 ? `interest · loan gone ${span(sooner)} sooner` : "interest by the horizon"}
             />
           </StatGrid>
