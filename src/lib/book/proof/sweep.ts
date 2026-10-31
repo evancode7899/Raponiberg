@@ -11,6 +11,9 @@ import { buildAccountRollforwards } from "../../profile/rollforwards.ts";
 import { loadProfileSettings } from "../../profile/settings.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import { readPageInputs } from "../../pageInputs.ts";
+import { perBook } from "./common.ts";
+import { normalizeMortgageInputs } from "../../mortgage/inputs.ts";
+import { buildMortgageLinks } from "../../mortgage/links.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
 import { TAX_YEARS } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxAccounts/settings.ts";
@@ -31,6 +34,8 @@ import {
   calendarFigures,
   carFigures,
   derivedFigures,
+  mortgagePageFigures,
+  annualEstimateFigures,
   cashFlowFigures,
   cashFlowWindowFigures,
   fireFigures,
@@ -159,9 +164,11 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
   if (forecast) {
     await page("Forecast", () => forecastFigures(forecast, data.profile));
     await page("FIRE", () => fireFigures(forecast, data.profile));
+    await page("Annual › estimate", () => annualEstimateFigures(data));
     await page("Home budget", () => homeBudgetFigures({ inputs: readPageInputs("pf-home-budget-inputs"), funds: readPageInputs("pf-home-budget-funds") }));
   }
   else skipped.push(noForecastSkip());
+  await page("Mortgage", async () => mortgagePageFigures(normalizeMortgageInputs(readPageInputs("pf-mortgage-v2")), (await perBook(ctx, "mortgage-links", () => buildMortgageLinks(db, book))).links));
   const retirement = await loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);
   // The calendar reads the same two reports for its years: kept from here rather than built again.
   const supported = Object.keys(TAX_YEARS).map(Number);

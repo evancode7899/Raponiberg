@@ -7,5 +7,6 @@ export const metadata: Metadata = {
 };
 
 export default function MortgagePage() {
-  return <MortgageClient />;
+  const requiresApiSecret = Boolean(process.env.API_SECRET);
+  return <MortgageClient requiresApiSecret={requiresApiSecret} />;
 }

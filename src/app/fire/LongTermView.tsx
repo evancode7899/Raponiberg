@@ -4,61 +4,21 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card } from "@/components/ui/kit";
 import type { ScheduledBonus } from "@/lib/forecast/bonusSchedule";
-import { bonusesInYear } from "@/lib/forecast/forecast";
+import { longTermTable, provenActuals, type PlanCellValue } from "@/lib/fire/longTerm";
 import { formatUsd } from "@/lib/formatMoney";
 import type { OutlookSeeds, ResolvedBasePay } from "@/lib/profile/basePay";
-import type { CashWaterfall } from "@/lib/profile/annualMath";
-import type { AnnualProfileReport, YearProfile } from "@/lib/profile/buildAnnualProfile";
-import type { Outlook, OutlookPlan, OutlookYear } from "@/lib/profile/outlook";
+import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
+import type { Outlook, OutlookPlan } from "@/lib/profile/outlook";
 import { useMemo } from "react";
 import { Area, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { axisUsd, YearTable, type Cell, type TableRow } from "@/app/annual/profileUi";
+import { axisUsd, YearTable, type TableRow } from "@/app/annual/profileUi";
 import { monthName, pct, usd } from "@/app/forecast/forecastUi";
-import { unswept } from "@/lib/book/proof/clearance";
+import type { FirePlanProof } from "./ui";
 
 // ---------------------------------------------------------------- year by year
 
-type ProvenYear = YearProfile & { cash: NonNullable<YearProfile["cash"]>; netWorth: NonNullable<YearProfile["netWorth"]> };
-/** Complete years whose figures are all proven. */
-/** Every cell of the long-term table is worked out in the browser from the plan: no proof until that math moves server-side (SSOT F4). */
-const BROWSER_MATH = unswept("the long-term plan is worked out in the browser (LongTermView), with no proof yet: F4 moves it server-side");
-
-const provenActuals = (r: AnnualProfileReport) => r.years.filter((y): y is ProvenYear => !y.isCurrent && !!y.cash && !!y.netWorth);
-
-/** An actual column: a proven year, or the year in progress up to where the forecast starts. Null = not proven. */
-type Actual = {
-  label: string;
-  year: number;
-  w: CashWaterfall | null;
-  nw: { netWorth: number; liquid: number; illiquid: number };
-  change: { cents: number; pct: number | null } | null;
-};
-const provenColumn = (y: ProvenYear): Actual => ({ label: String(y.year), year: y.year, w: y.cash.waterfall, nw: y.netWorth, change: y.change });
-
-/**
- * The year in progress from Jan 1 to the forecast's start, so actual + the forecast's rest of
- * the year = the whole year (as on /forecast). It closes on the forecast's starting balances;
- * its cash flows are blank when they aren't proven as far as net worth.
- */
-function ytdColumn(r: AnnualProfileReport, s: OutlookSeeds): Actual | null {
-  const y = r.ytd;
-  if (!y || s.start.year !== r.currentYear || s.start.month === 12) return null;
-  const prev = r.years.find((v) => v.year === y.year - 1 && !v.isCurrent)?.netWorth?.netWorth ?? null;
-  const nw = { netWorth: s.start.liquid + s.start.illiquid, liquid: s.start.liquid, illiquid: s.start.illiquid };
-  const cents = prev == null ? null : nw.netWorth - prev;
-  return {
-    label: `Jan–${monthName(s.start.month)} ${y.year}`,
-    year: y.year,
-    w: y.cash && y.asOf >= y.netWorthAsOf ? y.cash.waterfall : null,
-    nw,
-    change: cents == null ? null : { cents, pct: prev! > 0 ? cents / prev! : null },
-  };
-}
-
-const yearCol = (y: OutlookYear) => (y.months < 12 ? `${monthName(13 - y.months)}–Dec ${y.year}E` : `${y.year}E`);
-
-/** Taxes on a year's pay: base pay's tax share of salary, plus what bonuses add on top. */
-export const payTaxes = (y: OutlookYear, pay: ResolvedBasePay) => Math.round(pay.salary > 0 ? (y.salary * pay.tax.total) / pay.salary : 0) + (y.bonusGross - y.bonusKept);
+/** A long-term table cell as text: dollars, a rate (whole percent for coverage and change), or words. */
+const cellText = (row: string, v: PlanCellValue) => ("cents" in v ? usd(v.cents) : "ratio" in v ? pct(v.ratio, row === "coverage" || row === "change" ? 0 : 1) : v.text);
 
 /**
  * Proven years, then the plan year by year: the assumptions each year runs on (salary,
@@ -74,6 +34,7 @@ export function LongTermView({
   pay,
   schedule,
   fiYear,
+  proof,
 }: {
   r: AnnualProfileReport;
   s: OutlookSeeds;
@@ -85,6 +46,7 @@ export function LongTermView({
   pay: ResolvedBasePay;
   schedule: ScheduledBonus[];
   fiYear: number | null;
+  proof: FirePlanProof;
 }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
@@ -104,111 +66,21 @@ export function LongTermView({
     return rows;
   }, [r, s, full, base]);
 
-  // The last two proven years for context; the full history is on the annual statement.
-  // A mid-year start adds this year so far (actual) before its forecast rest, then the whole year,
-  // so the year in progress compares with full years on either side.
-  const ytd = full.years[0]?.year === r.currentYear && full.years[0].months < 12 ? ytdColumn(r, s) : null;
-  const actual = [...provenActuals(r).slice(-2).map(provenColumn), ...(ytd ? [ytd] : [])];
-  const totalAt = ytd ? 1 : -1;
-  const cols = [...actual.map((c) => c.label), ...full.years.map(yearCol)];
-  if (ytd) cols.splice(actual.length + 1, 0, `${ytd.year} total`);
-  const at = (i: number) => actual.length + i + (ytd && i >= totalAt ? 1 : 0);
-  const projected = full.years.map((_, i) => at(i));
-  const highlight = ytd ? [actual.length + totalAt] : [];
-  /** Plan cells in order, with the whole-year total after the first (partial) year. */
-  const planCells = (cell: (y: OutlookYear, i: number) => Cell, total: () => Cell): Cell[] =>
-    full.years.flatMap((y, i) => (ytd && i === 0 ? [cell(y, i), total()] : [cell(y, i)]));
-  type RowOpts = Partial<Extract<TableRow, { cells: Cell[] }>> & {
-    /** The whole-year total: the Dec 31 figure (a balance), the forecast rest only, or actual + rest (default). */
-    sum?: "balance" | "rest";
-  };
-  const row = (label: string, a: ((c: Actual) => number | null) | null, p: (y: OutlookYear, i: number) => number | null, { sum, ...opts }: RowOpts = {}): TableRow => {
-    const total = (): Cell => {
-      const rest = p(full.years[0]!, 0);
-      if (sum === "balance" || sum === "rest") return { proof: BROWSER_MATH, text: usd(rest) };
-      // Blank when the row has no actual figure; a forecast with nothing in it (no bonus) counts as zero.
-      if (!a) return { proof: BROWSER_MATH, text: "", dim: true };
-      const so = a(ytd!);
-      return so == null ? { proof: BROWSER_MATH, text: usd(null) } : { proof: BROWSER_MATH, text: usd(so + (rest ?? 0)) };
-    };
-    return {
-      label,
-      ...opts,
-      cells: [...actual.map((c) => (a ? { proof: BROWSER_MATH, text: usd(a(c)) } : { proof: BROWSER_MATH, text: "", dim: true })), ...planCells((y, i) => ({ proof: BROWSER_MATH, text: usd(p(y, i)) }), total)],
-    };
-  };
-  const text = (label: string, p: (y: OutlookYear, i: number) => string, opts: Partial<Extract<TableRow, { cells: Cell[] }>> = {}): TableRow => ({
-    label,
-    muted: true,
-    ...opts,
-    cells: [...actual.map(() => null), ...planCells((y, i) => ({ proof: BROWSER_MATH, text: p(y, i) }), () => null)],
-  });
-  const bonusOf = (y: OutlookYear, kinds: ScheduledBonus["source"][]) => bonusesInYear(schedule, y.year, kinds);
-  const retired = full.years.some((y) => !y.working);
-  const rows: TableRow[] = [];
-  if (full.years.some((y) => y.age != null)) {
-    rows.push({ label: "Age", muted: true, cells: [...actual.map((c) => ({ proof: BROWSER_MATH, text: plan.birthYear ? c.year - plan.birthYear : "" })), ...planCells((y) => ({ proof: BROWSER_MATH, text: y.age ?? "" }), () => ({ proof: BROWSER_MATH, text: full.years[0]!.age ?? "" }))] });
-  }
-  rows.push(
-    { kind: "heading", label: "Pay" },
-    row("Base salary", (c) => c.w?.salary ?? null, (y) => (y.working ? y.salary : null), { indent: true }),
-    text("Raise", (y, i) => (y.working && i > 0 ? pct(plan.salaryGrowth) : ""), { indent: true }),
-    row("Bonuses (gross)", (c) => c.w?.bonus ?? null, (y) => (y.working ? y.bonusGross : null), { indent: true }),
-  );
-  if (hasBonus) {
-    rows.push(
-      row("paid or on a letter", (c) => c.w?.bonus ?? null, (y) => (y.working ? bonusOf(y, ["PAID", "LETTER"]) || null : null), { indent: true, muted: true }),
-      row("estimated", null, (y) => (y.working ? bonusOf(y, ["ESTIMATE"]) || null : null), { indent: true, muted: true, sum: "rest" }),
-    );
-  }
-  rows.push(
-    row("Taxes on pay (est.)", null, (y) => (y.working ? -payTaxes(y, pay) : null), {
-      indent: true,
-      help: `Income tax, FICA and CT paid leave: base pay at its ${s.taxYear} rate (${pct(pay.salary > 0 ? pay.tax.total / pay.salary : null)} of salary) plus ${pct(1 - pay.bonus.keepRate)} of each bonus.`,
-    }),
-    row("Employer 401(k) & HSA", (c) => c.w?.employer ?? null, (y) => (y.working ? y.employerMatch : null), { indent: true }),
-    { kind: "heading", label: "Spending" },
-    row("Living cost", (c) => (c.w ? -c.w.living : null), (y) => -y.livingCost, { indent: true }),
-    text("Living cost growth", (_y, i) => (i > 0 ? pct(plan.livingGrowth) : ""), { indent: true }),
-    row("One-off expenses", (c) => (c.w ? -c.w.nonRecurring : null), (y) => -y.planned, { indent: true }),
-  );
-  if (retired) {
-    rows.push(
-      { kind: "heading", label: "Retired" },
-      row("Pre-tax draw", null, (y) => (y.working ? null : -y.draw), { indent: true }),
-      row("Taxes on draw", null, (y) => (y.working ? null : -(y.federalTax + y.stateTax)), { indent: true }),
-      row("After-tax income", null, (y) => (y.working ? null : y.afterTaxIncome), { strong: true }),
-      { label: "Covers living cost", muted: true, cells: [...actual.map(() => null), ...planCells((y) => (y.working ? null : { proof: BROWSER_MATH, text: pct(y.coverage, 0) }), () => null)] },
-    );
-  }
-  rows.push(
-    { kind: "heading", label: "Net worth" },
-    row("Total saved", (c) => c.w?.saved ?? null, (y) => y.saved, { strong: true, help: "Actual years: the whole paycheck-to-savings waterfall. Plan: base pay saved + the saved share of bonuses kept." }),
-    row("Investment growth & other changes", (c) => (c.change && c.w ? c.change.cents - c.w.saved : null), (y) => y.growth, {
-      indent: true,
-      help: "Actual years: everything besides what was saved incl. retirement (markets, outside money, gaps — see the annual statement). Plan: returns only.",
-    }),
-    text("Return", () => pct(plan.returnRate), { indent: true }),
-    row("Net worth, Dec 31", (c) => c.nw.netWorth, (y) => y.netWorth, { total: true, sum: "balance" }),
-    row("Liquid", (c) => c.nw.liquid, (y) => y.liquid, { muted: true, indent: true, sum: "balance" }),
-    row("Illiquid", (c) => c.nw.illiquid, (y) => y.illiquid, { muted: true, indent: true, sum: "balance" }),
-  );
-  if (hasBonus) rows.push(row("Net worth with no bonuses", null, (_y, i) => base.years[i]!.netWorth, { muted: true, sum: "balance", help: "The same plan with every bonus left out." }));
-  rows.push({
-    label: "Change in net worth",
-    muted: true,
-    cells: [
-      ...actual.map((c) => ({ proof: BROWSER_MATH, text: pct(c.change?.pct, 0) })),
-      ...planCells(
-        (y) => ({ proof: BROWSER_MATH, text: pct(y.changePct, 0) }),
-        () => {
-          // Dec 31 against last Dec 31, as for a full year.
-          const open = ytd?.change ? ytd.nw.netWorth - ytd.change.cents : null;
-          return { proof: BROWSER_MATH, text: pct(open && open > 0 ? (full.years[0]!.netWorth - open) / open : null, 0) };
+  // The table is one pure model (lib/fire/longTerm.ts): the sweep proves every cell of it on the saved settings.
+  const t = useMemo(() => longTermTable({ r, s, full, base, plan, pay, schedule }), [r, s, full, base, plan, pay, schedule]);
+  const rows: TableRow[] = t.rows.map((x) =>
+    x.kind === "heading"
+      ? x
+      : {
+          label: x.label,
+          help: x.help,
+          strong: x.strong,
+          total: x.total,
+          indent: x.indent,
+          muted: x.muted,
+          cells: x.cells.map((c, j) => (c ? { text: cellText(x.id, c), proof: proof({ figure: "plan-cell", row: x.id, col: t.columns[j]!.id }, c) } : null)),
         },
-      ),
-    ],
-  });
+  );
 
   const ntStart = data.findIndex((d) => d.baseOnly != null);
   const showNear = schedule.some((b) => !b.counted && b.why?.startsWith("near term"));
@@ -252,7 +124,7 @@ export function LongTermView({
         </div>
       </Card>
       <Card title="Year by year" subtitle="The last two proven years, this year so far (actual) with the rest of it forecast and the two added up, then the forecast (E). Each column shows the assumptions that year runs on, what flows in and out, and where balances end on Dec 31.">
-        <YearTable columns={cols} rows={rows} projected={projected} highlight={highlight} />
+        <YearTable columns={t.columns.map((c) => c.label)} rows={rows} projected={t.projected} highlight={t.highlight} />
       </Card>
     </div>
   );

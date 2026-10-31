@@ -3,7 +3,9 @@
 import { Segmented } from "@/components/ui/kit";
 import type { FireAnalysis } from "@/lib/fire/fire";
 import type { FireFigure, FireSettings } from "@/lib/book/proof/planningProof";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef, ProofTarget } from "@/components/ui/proof/context";
+import { noFigure } from "@/lib/book/proof/clearance";
+import { planValue, type AccessFigure, type PlanCellValue, type StressFigure } from "@/lib/fire/longTerm";
 import { formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import type { OutlookPlan } from "@/lib/profile/outlook";
 
@@ -59,3 +61,15 @@ export type FireProof = (figure: FireFigure, shownCents: number | null, mileston
 export const fireProof =
   (fire: FireSettings): FireProof =>
   (figure, shownCents, milestone) => ({ descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, shownCents });
+
+/** Which FIRE › Plan or Stress test figure: a long-term table cell, a bridge tile, a stress tile. */
+export type FirePlanFigure = { figure: "plan-cell"; row: string; col: string } | { figure: "access"; metric: AccessFigure } | { figure: "stress"; metric: StressFigure; volatility: number };
+/** A FIRE › Plan or Stress test figure's proof, on the settings as the page has them; a dash (no value) is no figure. */
+export type FirePlanProof = (which: FirePlanFigure, v: PlanCellValue) => ProofRef;
+export const firePlanProof =
+  (fire: FireSettings): FirePlanProof =>
+  (which, v) => {
+    const value = planValue(v);
+    if (!value) return noFigure("nothing that year");
+    return { descriptor: { report: "planning", page: "fire", fire, ...which }, shownCents: "cents" in value ? value.cents : null, ...("cents" in value ? {} : { shown: value }) };
+  };

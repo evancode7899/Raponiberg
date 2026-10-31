@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { proofTarget, type Report } from "@/app/cash-flow/model";
-import { cashFlowDerived, categoryKey, merchantKeyOf, windowKey } from "../derived/cashFlow";
+import { cashFlowDerived, categoryKey, merchantKeyOf, paceKey, windowKey } from "../derived/cashFlow";
 import { derivedTarget, type DerivedFigure } from "../derived/types";
 import { isUnswept } from "./clearance";
 import { last12At, momentumWindows, PRESET_RANGES, sliceRange, sliceStart, yoyWindows, byYear, type CashFlowRecipe } from "../reports/cashFlowWindows";
@@ -129,6 +129,54 @@ describe("swept = rendered: Cash flow", () => {
     expect(missing).toEqual([]);
     // And the tabs ask for something on every window: a list key that matched nothing would hide here.
     expect(derivedTarget("cash-flow", derived, "savings-rate", windowKey(sliceRange(report, "12m", { from: "", to: "" }).months))).toHaveProperty("descriptor");
+  });
+
+  it("states every Patterns › pace figure the tab shows, at the tab's value (SSOT F4)", () => {
+    // Daily series for each month and a month under way: made-up amounts, a quarter-total line on day 3 of some months.
+    const withDays = (m: SpendingMonth, i: number, through: number | null): SpendingMonth => {
+      const n = Number(m.end.slice(8, 10));
+      const all = Array.from({ length: n }, (_, d) => (through != null && d >= through ? 0 : 1_000 + ((d * 37 + i * 11) % 900) + (d === 2 && i % 3 === 0 ? 45_000 : 0)));
+      const everyday = all.map((x, d) => (d === 2 ? x - (i % 3 === 0 ? 45_000 : 0) : x));
+      return { ...m, daily: { allCents: all, billCents: all.map((x, d) => x - everyday[d]!), everydayCents: everyday } };
+    };
+    const ms = months.map((m, i) => withDays(m, i, null));
+    const current = { ...withDays(month(26), 26, 17), through: "2031-03-17" };
+    const list = cashFlowDerived({ ...report, months: ms, current });
+    const value = (figure: string, key: string) => {
+      const t = derivedTarget("cash-flow", list, figure, key);
+      if (isUnswept(t) || "noFigure" in t) throw new Error(`${figure} ${key} not listed`);
+      return t.shownCents;
+    };
+    // As PatternsTab works them out: running totals, the month before by the same day, the median typical month.
+    const cumulative = (xs: number[]) => {
+      let run = 0;
+      return xs.map((v) => (run += v));
+    };
+    const median = (xs: number[]) => {
+      const s = [...xs].sort((a, b) => a - b);
+      const h = Math.floor(s.length / 2);
+      return s.length % 2 ? s[h]! : (s[h - 1]! + s[h]!) / 2;
+    };
+    let checked = 0;
+    for (const [i, m, partial] of [...ms.map((m, i) => [i, m, false] as const), [ms.length, current, true] as const])
+      for (const basis of ["all", "everyday"] as const) {
+        const days = (x: SpendingMonth) => (basis === "all" ? x.daily.allCents : x.daily.everydayCents);
+        const cur = cumulative(days(m));
+        const throughDay = partial ? 17 : cur.length;
+        expect(value("pace-spent", paceKey(m, basis, throughDay))).toBe(cur[throughDay - 1]);
+        const prev = ms[i - 1];
+        if (prev) {
+          const pc = cumulative(days(prev));
+          expect(value("pace-spent", paceKey(prev, basis, partial ? throughDay : pc.length))).toBe(partial ? pc[Math.min(throughDay, pc.length) - 1] : pc.at(-1));
+        }
+        const hist = ms.slice(Math.max(0, i - 12), i).map((x) => cumulative(days(x)));
+        if (hist.length) expect(value("pace-typical", paceKey(m, basis))).toBe(median(hist.map((c) => c[Math.min(30, c.length - 1)]!)));
+        checked++;
+      }
+    expect(checked).toBe(2 * (ms.length + 1));
+    // And the sweep enumerates them all.
+    const swept = new Set(derivedFigures("cash-flow", list).map((f) => descriptorKey(f.descriptor)));
+    for (const f of list.filter((x) => x.figure.startsWith("pace-"))) expect(swept.has(descriptorKey({ report: "derived", page: "cash-flow", figure: f.figure, key: f.key }))).toBe(true);
   });
 
   it("withholds a figure the list doesn't have, rather than showing it", () => {

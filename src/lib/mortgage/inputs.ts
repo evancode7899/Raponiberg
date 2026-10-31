@@ -1,4 +1,5 @@
 import { TAX_YEARS } from "../tax/params.ts";
+import { calendarToLoanPaymentMonth, type Lump, type MortgagePlan } from "./prepayVsInvest.ts";
 
 /**
  * The Mortgage page's inputs and their defaults. Kept apart from the page so scripts can
@@ -110,3 +111,79 @@ export const defaultInputs = (): MortgageInputs => ({
   inflation: 0.025,
   realDollars: false,
 });
+
+/** Rows → dated lumps in loan months; rows before the first payment are dropped. */
+export function expandLumps(rows: LumpRow[], startYear: number, startMonth: number): Lump[] {
+  const out: Lump[] = [];
+  for (const r of rows) {
+    if (!(r.amount > 0)) continue;
+    // Nothing past a century of payments matters (the horizon tops out well before), and a
+    // typo in "until" mustn't loop through millions of years.
+    const last = Math.min(r.repeat ? Math.max(r.year, r.untilYear) : r.year, startYear + 100);
+    for (let y = r.year; y <= last; y++) {
+      const month = calendarToLoanPaymentMonth(y, r.month, startYear, startMonth);
+      if (month >= 1) out.push({ id: r.id, month, amount: r.amount });
+    }
+  }
+  return out;
+}
+
+export function toPlan(i: MortgageInputs): MortgagePlan {
+  return {
+    principal: i.principal,
+    annualRate: i.rate,
+    termMonths: Math.round(i.termYears * 12),
+    startYear: i.startYear,
+    startMonth: i.startMonth,
+    extraMonthly: i.extraMonthly,
+    lumps: expandLumps(i.lumps, i.startYear, i.startMonth),
+    horizonMonths: Math.round(i.horizonYears * 12),
+    investReturn: i.investReturn,
+    dividendYield: i.dividendYield,
+    investTaxRate: i.fedGainsRate + i.ctGainsRate,
+    taxFreeAccount: i.account === "taxFree",
+    sellAtHorizon: i.sellAtHorizon,
+    deductInterest: i.deductInterest,
+    marginalRate: i.fedMarginalRate,
+    standardDeduction: i.standardDeduction,
+    stateIncomeTax: i.stateIncomeTax,
+    propertyTax: i.propertyTax,
+    charity: i.charity,
+    saltCap: SALT_CAP_2026,
+    saltCapFrom2030: SALT_CAP_FROM_2030,
+    debtCap: i.debtCap,
+    inflation: i.inflation,
+  };
+}
+
+/** Fields of earlier saves whose meaning changed (combined state + federal rates, one "other itemized"); dropped on load. */
+export const RETIRED_KEYS = ["investTaxRate", "marginalRate", "otherItemized", "otherItemizedFrom2030"] as const;
+
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/**
+ * Inputs as the page and its proofs carry them: the defaults with every saved field of the
+ * right kind over them, nothing else (no retired or unknown field). The page's figures name
+ * these in their recipe, and the proof sweep reads the saved ones the same way.
+ */
+export function normalizeMortgageInputs(raw: Record<string, unknown> | null | undefined): MortgageInputs {
+  const out = defaultInputs() as MortgageInputs & Record<string, unknown>;
+  const x = raw ?? {};
+  for (const [k, d] of Object.entries(out)) {
+    const v = x[k];
+    if (v === undefined) continue;
+    if (typeof d === "number" && isNum(v)) out[k] = v;
+    else if (typeof d === "boolean" && typeof v === "boolean") out[k] = v;
+  }
+  if (x.account === "taxable" || x.account === "taxFree") out.account = x.account;
+  if (Array.isArray(x.lumps))
+    out.lumps = x.lumps
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+      .slice(0, 100)
+      .map((r) => ({ id: String(r.id ?? "").slice(0, 80), label: String(r.label ?? "").slice(0, 120), month: isNum(r.month) ? r.month : 1, year: isNum(r.year) ? r.year : out.startYear, amount: isNum(r.amount) ? r.amount : 0, repeat: r.repeat === true, untilYear: isNum(r.untilYear) ? r.untilYear : out.startYear }));
+  if (x.typed && typeof x.typed === "object") {
+    const typed = Object.fromEntries(LINKED_KEYS.filter((k) => (x.typed as Record<string, unknown>)[k] === true).map((k) => [k, true as const]));
+    if (Object.keys(typed).length) out.typed = typed;
+  }
+  return out;
+}

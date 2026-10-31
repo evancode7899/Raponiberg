@@ -12,7 +12,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, 
 import type { Ctx } from "./CashFlowClient";
 import { median, sliceStart, sum } from "./model";
 import { Delta } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { paceKey } from "@/lib/book/derived/cashFlow";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const pctAxis = (v: number) => `${Math.round(v * 100)}%`;
@@ -89,7 +89,8 @@ function Pace({ ctx }: { ctx: Ctx }) {
   const firstHalf = typEnd ? (typical[mid] ?? 0) / typEnd : null;
   // A running total is a month's spending only when it counts all of it: every charge, and
   // no quarter-total line spread across months (those count whole on the day here).
-  const whole = (m: SpendingMonth, cents: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : unswept("a running total of everyday spending is summed in the browser from the daily series, with no recipe yet: F4"));
+  // Otherwise it's the running total the Patterns list states (derived/cashFlow.ts paceDerived), proven day by day.
+  const whole = (m: SpendingMonth, cents: number, day: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : ctx.dp("pace-spent", paceKey(m, basis, day)));
 
   return (
     <Card
@@ -111,19 +112,19 @@ function Pace({ ctx }: { ctx: Ctx }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-1 xl:content-start">
           {partial ? (
-            <Stat label={`Spent through day ${throughDay}`} value={usd0(nowAt)} proof={whole(month, nowAt)} sub={typAt != null ? <><Delta now={nowAt} before={typAt} goodWhenDown /> vs typical {usd0(typAt)} by day {throughDay}</> : undefined} />
+            <Stat label={`Spent through day ${throughDay}`} value={usd0(nowAt)} proof={whole(month, nowAt, throughDay)} sub={typAt != null ? <><Delta now={nowAt} before={typAt} goodWhenDown /> vs typical {usd0(typAt)} by day {throughDay}</> : undefined} />
           ) : (
-            <Stat label="Spent in the month" value={usd0(nowAt)} proof={whole(month, nowAt)} sub={typEnd != null ? <><Delta now={nowAt} before={typEnd} goodWhenDown /> vs a typical month</> : undefined} />
+            <Stat label="Spent in the month" value={usd0(nowAt)} proof={whole(month, nowAt, throughDay)} sub={typEnd != null ? <><Delta now={nowAt} before={typEnd} goodWhenDown /> vs a typical month</> : undefined} />
           )}
           {prev && (
             <Stat
               label={partial ? `${prev.label} by day ${throughDay}` : prev.label}
               value={usd0(partial ? prevCum[Math.min(throughDay, prevCum.length) - 1] ?? 0 : prevCum.at(-1) ?? 0)}
-              proof={partial ? unswept("part of a month is summed in the browser from the daily series, with no recipe yet: F4") : whole(prev, prevCum.at(-1) ?? 0)}
+              proof={partial ? ctx.dp("pace-spent", paceKey(prev, basis, throughDay)) : whole(prev, prevCum.at(-1) ?? 0, prevCum.length)}
               sub={partial ? `${usd0(prevCum.at(-1) ?? 0)} for the whole month` : "the month before"}
             />
           )}
-          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={unswept("a typical month is the median of running totals worked out in the browser, with no recipe yet: F4")} sub={firstHalf != null ? `${formatPercentRatio(firstHalf, 0)} of it gone by the 15th` : undefined} />}
+          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={ctx.dp("pace-typical", paceKey(month, basis))} sub={firstHalf != null ? `${formatPercentRatio(firstHalf, 0)} of it gone by the 15th` : undefined} />}
         </div>
         <div className="h-[280px] w-full min-w-0">
           <RechartsResponsive>

@@ -1,4 +1,4 @@
-import type { CarReport, GarageReport } from "../../car/report.ts";
+import { LINE_INFO, type CarReport, type CostLine, type GarageReport } from "../../car/report.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
 
 /** Miles driven in each calendar year of a car's months (Costs › Miles), oldest first. */
@@ -7,6 +7,9 @@ export const milesByYear = (car: Pick<CarReport, "months">): [string, number][] 
   for (const m of car.months) by.set(m.month.slice(0, 4), (by.get(m.month.slice(0, 4)) ?? 0) + m.miles);
   return [...by];
 };
+
+/** A cost line (or "total") of a car's next-12-months outlook. */
+export const outlookKey = (carId: string, line: string) => `${carId}|${line}`;
 
 /** A car's year (Costs › Miles). */
 export const yearKey = (carId: string, year: string) => `${carId}:${year}`;
@@ -63,6 +66,17 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
     add("planned-to-date", "value lost to date (planned)", c(d.plannedToDate), [ln("Planned wear per mile", num(d.plannedPerMile) ?? t("—"), undefined, { source: "assumption" }), ln("× miles driven", r(o.driven), "×"), ln("Lost to date (planned)", c(d.plannedToDate), "=")]);
     add("planned-value-now", "planned value now", money(d.plannedValueNow), [ln("All-in purchase less planned wear to date", money(d.plannedValueNow) ?? t("—"))]);
     if (!car.sold) {
+      // Costs › Next 12 months: the outlook the report works out (an estimate on no statement), line by line, its total, and each per mile and per month.
+      const ol = car.outlook12;
+      const est = { source: "estimate" as const };
+      const outlook = (line: string, label: string, cents: number) => {
+        const k = outlookKey(key, line);
+        out.push({ figure: "outlook", key: k, describes: `${car.name}: ${label}, next 12 months`, value: c(cents), lines: [ln(`${label}, next 12 months`, c(cents), undefined, est)], note: ol.notes.join(" · ") || undefined });
+        if (ol.miles > 0) out.push({ figure: "outlook-per-mile", key: k, describes: `${car.name}: ${label} per mile, next 12 months`, value: r(cents / ol.miles), lines: [ln(label, c(cents), undefined, est), ln("÷ miles expected", r(ol.miles), "÷", est), ln("Per mile", r(cents / ol.miles), "=")] });
+        out.push({ figure: "outlook-per-month", key: k, describes: `${car.name}: ${label} per month, next 12 months`, value: c(cents / 12), lines: [ln(label, c(cents), undefined, est), ln("÷ 12 months", r(12), "÷"), ln("Per month", c(cents / 12), "=")] });
+      };
+      for (const [line, cents] of Object.entries(ol.lines)) if (cents) outlook(line, LINE_INFO[line as CostLine].label, cents);
+      outlook("total", "All costs", ol.total);
       add("warranty-miles-left", "warranty miles left", num(w.milesLeft), [ln("Warranty miles", r(w.milesLimit), undefined, { source: "assumption" }), ln("Odometer", num(o.current) ?? t("—"), "−"), ln("Miles left", num(w.milesLeft) ?? t("—"), "=")]);
       add("warranty-days-left", "warranty days left", num(w.daysLeft), [ln("Expires", t(w.expiresOn ?? "—"), undefined, { source: "assumption" }), ln("Days left", num(w.daysLeft) ?? t("—"))]);
       add("warranty-break-even", "miles a day that use the warranty up just in time", num(w.breakEvenPerDay), [ln("Miles left ÷ days left", num(w.breakEvenPerDay) ?? t("—"))]);

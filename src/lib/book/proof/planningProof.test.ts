@@ -1,7 +1,14 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Lane } from "../../classifier/taxonomy";
-import { analyzeFire, firePlans } from "../../fire/fire";
+import { analyzeFire, firePlans, stressTest } from "../../fire/fire";
+import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type StressFigure } from "../../fire/longTerm";
+import { projectOutlook } from "../../profile/outlook";
+import { MORTGAGE_FIGURES, mortgageFigures } from "../../mortgage/figures";
+import { normalizeMortgageInputs, withLinks } from "../../mortgage/inputs";
+import { buildMortgageLinks } from "../../mortgage/links";
+import { RENT_VS_BUY_FIGURES, rentVsBuyFigures } from "../../home-budget/rentVsBuy";
+import { estimateFigures, yearEstimate } from "../../profile/yearEstimate";
 import { buildForecast, homeForecast, taxLink } from "../../forecast/forecast";
 import { forecastInputs, loadForecastData, type ForecastData } from "../../forecast/load";
 import { GOALS_KEY, type Goal } from "../../goals/settings";
@@ -344,6 +351,7 @@ describe("planning proofs (FIRE, Goals, Home budget, Taxes)", () => {
         if (d.figure === "lender-max") return { cents: Math.round(computeLenderMax(L.ins, L.lender.income).impliedMaxHomeValue * 100) };
         return { cents: Math.round(L.lender.income * 100) };
       }
+      if (d.page !== "taxes") return undefined;
       if (d.figure === "bonus-expected") return { cents: pat.fromForecast!.bonus };
       return { cents: pat.payroll.find((e) => e.active)!.projected.gross };
     };
@@ -450,6 +458,80 @@ describe("planning proofs (FIRE, Goals, Home budget, Taxes)", () => {
     expect("cents" in a.figure && "cents" in b.figure && b.figure.cents > a.figure.cents).toBe(true);
   });
 
+  it("proves FIRE › Plan's long-term table, its bridge tiles and the stress test as the page builds them (SSOT F4)", async () => {
+    // One context, as the sweep has: the forecast and FIRE's plans are worked out once for every cell.
+    const c = ctx();
+    const a = { ...data.profile.settings.outlook, ...FIRE };
+    const f = buildForecast(forecastInputs(data)!, a);
+    const plans = firePlans(f);
+    const fa = analyzeFire(plans.full, plans.base, { asOf: data.profile.seeds!.start.asOf, retirementAge: a.retirementAge });
+    // As PlanTab → LongTermView builds it in the browser.
+    const full = projectOutlook(plans.full);
+    const base = plans.base === plans.full ? full : projectOutlook(plans.base);
+    const table = longTermTable({ r: data.profile, s: data.profile.seeds!, full, base, plan: fa.plan, pay: f.pay, schedule: f.schedule });
+    const cells = longTermCells(table);
+    expect(cells.length).toBeGreaterThan(100);
+    expect(new Set(cells.map((x) => `${x.row}@${x.col}`)).size).toBe(cells.length);
+    for (const x of cells) {
+      const p = await buildProof(c, P({ page: "fire", figure: "plan-cell", fire: FIRE, row: x.row, col: x.col }));
+      expect(p.figure, `${x.row} @ ${x.col}`).toEqual(planValue(x.value));
+    }
+    const access = accessFigures(fa.plan, fa.fi?.year ?? null);
+    expect(access).not.toBeNull();
+    for (const [metric, v] of Object.entries(access!.figures)) {
+      const p = await buildProof(c, P({ page: "fire", figure: "access", fire: FIRE, metric: metric as AccessFigure }));
+      expect(p.figure, metric).toEqual(planValue(v));
+    }
+    const st = stressFigures(stressTest(fa.plan, { volatility: 0.15, paths: STRESS_PATHS }), fa.fi?.year ?? null);
+    for (const [metric, v] of Object.entries(st)) {
+      if (!planValue(v)) continue;
+      const p = await buildProof(c, P({ page: "fire", figure: "stress", fire: FIRE, metric: metric as StressFigure, volatility: 0.15 }));
+      expect(p.figure, metric).toEqual(planValue(v));
+    }
+    // A cell the table doesn't have is no figure.
+    const none = await buildProof(c, P({ page: "fire", figure: "plan-cell", fire: FIRE, row: "salary", col: "1999" }));
+    expect(none.withheld).toBe(true);
+  });
+
+  it("proves Mortgage and Rent vs buy as the pages work them out (SSOT F4)", async () => {
+    const c = ctx();
+    // Mortgage: the page's inputs (a typed return over the link), the links as api/mortgage/links has them.
+    const inputs = normalizeMortgageInputs({ principal: 350_000, extraMonthly: 400, investReturn: 0.065, typed: { investReturn: true }, lumps: [{ id: "l1", label: "Example bonus", month: 3, year: 2028, amount: 10_000, repeat: true, untilYear: 2031 }], retiredField: 1 });
+    expect(inputs).not.toHaveProperty("retiredField");
+    const { links } = await buildMortgageLinks(c.db, book);
+    const m = mortgageFigures(withLinks(inputs, links));
+    for (const figure of MORTGAGE_FIGURES) {
+      const v = m.values[figure];
+      const want = "cents" in v ? { cents: v.cents! } : { ratio: v.ratio! };
+      const p = await buildProof(c, P({ page: "mortgage", figure, inputs }));
+      expect(p.figure, figure).toEqual(want);
+      const linked = chains(p).flatMap((b) => b.lines).find((l) => l.label === "Investment return");
+      expect(linked, figure).toMatchObject({ source: "assumption", value: { ratio: 0.065 } });
+    }
+    // Rent vs buy: Home budget's linked inputs, as the tab gets them.
+    const shared = buildForecast(forecastInputs(data)!, data.profile.settings.outlook);
+    const L = linkHome({ ...buildHomeFunds(book), forecast: homeForecast(shared, data.profile.seeds!), spending: buildHomeSpending(book, data.profile.settings) }, HOME_INPUTS, HOME_FUNDS, 2026);
+    const r = rentVsBuyFigures(L.ins);
+    for (const figure of RENT_VS_BUY_FIGURES) {
+      const v = r.values[figure];
+      const p = await buildProof(c, P({ page: "home", figure, inputs: HOME_INPUTS, funds: HOME_FUNDS }));
+      expect(p.figure, figure).toEqual(typeof v === "string" ? { text: v } : { cents: Math.round(v * 100) });
+    }
+  });
+
+  it("proves every line of the annual statement's whole-year estimate as the page works it out (SSOT F4)", async () => {
+    const c = ctx();
+    const e = yearEstimate(data);
+    expect(e).not.toBeNull();
+    const figs = estimateFigures(e!);
+    expect(Object.keys(figs)).toEqual(expect.arrayContaining(["salary", "gross", "saved", "net-worth", "change"]));
+    for (const [line, v] of Object.entries(figs)) {
+      const p = await buildProof(c, P({ page: "annual-estimate", line }));
+      expect(p.figure, line).toEqual(v);
+    }
+    expect((await buildProof(c, P({ page: "annual-estimate", line: "moon" }))).withheld).toBe(true);
+  });
+
   it("parses descriptors and rejects bad ones", () => {
     expect(parseDescriptor({ report: "planning", page: "fire", figure: "fire-number" })).toEqual({ report: "planning", page: "fire", figure: "fire-number" });
     expect(parseDescriptor({ report: "planning", page: "fire", figure: "nope" })).toHaveProperty("error");
@@ -458,6 +540,14 @@ describe("planning proofs (FIRE, Goals, Home budget, Taxes)", () => {
     expect(parseDescriptor({ report: "planning", page: "home", figure: "cash", inputs: { cashForHome: "lots", hoaMonthly: 100, evil: 1 } })).toEqual({ report: "planning", page: "home", figure: "cash", inputs: { hoaMonthly: 100 }, funds: {} });
     expect(parseDescriptor({ report: "planning", page: "taxes", figure: "bonus-expected", year: "2026", personId: "pat" })).toHaveProperty("error");
     expect(parseDescriptor({ report: "planning", page: "moon" })).toHaveProperty("error");
+    expect(parseDescriptor({ report: "planning", page: "fire", figure: "plan-cell", row: "salary" })).toHaveProperty("error");
+    expect(parseDescriptor({ report: "planning", page: "mortgage", figure: "advantage" })).toHaveProperty("error");
+    expect(parseDescriptor({ report: "planning", page: "annual-estimate", line: "bridge:total" })).toEqual({ report: "planning", page: "annual-estimate", line: "bridge:total" });
+    expect(parseDescriptor({ report: "planning", page: "annual-estimate", line: "<script>" })).toHaveProperty("error");
+    expect(parseDescriptor({ report: "planning", page: "mortgage", figure: "nope", inputs: {} })).toHaveProperty("error");
+    expect(parseDescriptor({ report: "planning", page: "fire", figure: "access", metric: "moon" })).toHaveProperty("error");
+    expect(parseDescriptor({ report: "planning", page: "fire", figure: "stress", metric: "p50" })).toHaveProperty("error");
+    expect(parseDescriptor({ report: "planning", page: "fire", figure: "stress", metric: "p50", volatility: 0.15 })).toEqual({ report: "planning", page: "fire", figure: "stress", metric: "p50", volatility: 0.15 });
   });
 });
 

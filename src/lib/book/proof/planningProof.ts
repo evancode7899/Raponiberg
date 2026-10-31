@@ -1,5 +1,6 @@
 import { addDays, daysBetween } from "../../dates/isoDate.ts";
-import { analyzeFire, drawFor, extended, FAT_SHARE, fireNumber, firePlans, LEAN_SHARE, livingIn, type FireAnalysis } from "../../fire/fire.ts";
+import { analyzeFire, drawFor, extended, FAT_SHARE, fireNumber, firePlans, LEAN_SHARE, livingIn, stressTest, type FireAnalysis, type StressTest } from "../../fire/fire.ts";
+import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type LongTermTable, type StressFigure } from "../../fire/longTerm.ts";
 import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
 import { balancesAt, buildForecast, homeForecast, milestones as netWorthMilestones, taxLink, type Forecast } from "../../forecast/forecast.ts";
 import { forecastInputs, loadForecastData, type ForecastData } from "../../forecast/load.ts";
@@ -8,8 +9,13 @@ import { GOALS_KEY, normalizeGoals } from "../../goals/settings.ts";
 import { computeLenderMax, computeMaxApproval, defaultHomeBudgetInputs, monthlyPaymentOnLoan, type HomeBudgetInputs, type MaxApprovalResult } from "../../home-budget/homeBudgetModel.ts";
 import { defaultFunds, linkHome, type FundsBook, type FundsConfig, type HomeLinked } from "../../home-budget/homeLinked.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
+import { RENT_VS_BUY_FIGURES, rentVsBuyFigures, SIM_YEARS, type RentVsBuyFigure } from "../../home-budget/rentVsBuy.ts";
+import { MORTGAGE_FIGURES, mortgageFigures, type MortgageFigure } from "../../mortgage/figures.ts";
+import { LINKED_KEYS, normalizeMortgageInputs, withLinks, type MortgageInputs } from "../../mortgage/inputs.ts";
+import { buildMortgageLinks } from "../../mortgage/links.ts";
+import { estimateFigures, yearEstimate } from "../../profile/yearEstimate.ts";
 import { taxOnPay, type OutlookSeeds, type PayForTax } from "../../profile/basePay.ts";
-import { projectOutlook, retirementTax, walkAwayTable, type OutlookPlan, type WalkAwayRow } from "../../profile/outlook.ts";
+import { projectOutlook, retirementTax, walkAwayTable, type Outlook, type OutlookPlan, type WalkAwayRow } from "../../profile/outlook.ts";
 import { type LivingBasis, type OutlookAssumptions } from "../../profile/settings.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import { buildTaxReport, type PersonReport } from "../../tax/buildTaxReport.ts";
@@ -67,25 +73,37 @@ export type FireFigure =
   | "years-saved"
   | "runway"
   | "progress"
-  | "milestone";
+  | "milestone"
+  /** FIRE › Plan's long-term table: one cell (`row`, `col`). */
+  | "plan-cell"
+  /** FIRE › Plan's "Bridging to 59½" tiles (`metric`). */
+  | "access"
+  /** FIRE › Stress test's tiles (`metric`), at the yearly swings typed (`volatility`). */
+  | "stress";
 /** FIRE's own settings as the page has them (edited there, maybe unsaved). */
 export type FireSettings = Pick<OutlookAssumptions, "walkAwayYear" | "withdrawalRate" | "stateTaxRate" | "retirementAge">;
 export type GoalFigure = "current" | "target" | "to-go" | "lands" | "needed" | "spending";
-export type HomeFigure = "cash" | "salary" | "income-tax" | "gains-tax" | "max-price" | "lender-max" | "lender-income";
+export type HomeFigure = "cash" | "salary" | "income-tax" | "gains-tax" | "max-price" | "lender-max" | "lender-income" | RentVsBuyFigure;
 export type TaxFigure = "bonus-expected" | "projected-gross";
 
 export type PlanningDescriptor =
   /** `milestone`: a FIRE milestone's id ("nw-100000000", "fi-0.5"). */
-  | { report: "planning"; page: "fire"; figure: FireFigure; fire?: FireSettings; milestone?: string }
+  | { report: "planning"; page: "fire"; figure: FireFigure; fire?: FireSettings; milestone?: string; row?: string; col?: string; metric?: AccessFigure | StressFigure; volatility?: number }
   /** `goalId`: every figure but "spending" (the emergency fund's typical month). */
   | { report: "planning"; page: "goals"; figure: GoalFigure; goalId?: string }
   /** The page's typed inputs and funds choices. */
   | { report: "planning"; page: "home"; figure: HomeFigure; inputs?: Partial<HomeBudgetInputs>; funds?: Partial<FundsConfig> }
-  | { report: "planning"; page: "taxes"; figure: TaxFigure; year: number; personId: string };
+  | { report: "planning"; page: "taxes"; figure: TaxFigure; year: number; personId: string }
+  /** The Mortgage page's saved inputs, as the page carries them (normalizeMortgageInputs); the links are put in on the server. */
+  | { report: "planning"; page: "mortgage"; figure: MortgageFigure; inputs: MortgageInputs }
+  /** The annual statement's whole-year estimate for the year in progress: one line (estimateFigures' id). */
+  | { report: "planning"; page: "annual-estimate"; line: string };
 
-const FIRE_FIGURES: FireFigure[] = ["fire-number", "lean-number", "fat-number", "coast-number", "fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "years-saved", "runway", "progress", "milestone"];
+const FIRE_FIGURES: FireFigure[] = ["fire-number", "lean-number", "fat-number", "coast-number", "fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "years-saved", "runway", "progress", "milestone", "plan-cell", "access", "stress"];
+const ACCESS_FIGURES: AccessFigure[] = ["liquid", "illiquid", "liquid-out", "access-year"];
+const STRESS_FIGURES: StressFigure[] = ["p50", "p10", "p90", "by-fi"];
 const GOAL_FIGURES: GoalFigure[] = ["current", "target", "to-go", "lands", "needed", "spending"];
-const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "lender-max", "lender-income"];
+const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "lender-max", "lender-income", ...RENT_VS_BUY_FIGURES];
 const TAX_FIGURES: TaxFigure[] = ["bonus-expected", "projected-gross"];
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -103,7 +121,20 @@ export function parsePlanningDescriptor(d: Record<string, unknown>): PlanningDes
         fire = { walkAwayYear: f.walkAwayYear as number | null, withdrawalRate: f.withdrawalRate, stateTaxRate: f.stateTaxRate as number | null, retirementAge: f.retirementAge };
       }
       if (d.figure === "milestone" && (typeof d.milestone !== "string" || !/^(nw-\d+|fi-0\.\d+)$/.test(d.milestone))) return { error: "milestone must be a milestone id (nw-<cents> or fi-<share>)." };
-      return { report: "planning", page: "fire", figure: d.figure as FireFigure, ...(fire ? { fire } : {}), ...(d.figure === "milestone" ? { milestone: d.milestone as string } : {}) };
+      const id = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 80;
+      if (d.figure === "plan-cell" && (!id(d.row) || !id(d.col))) return { error: "row and col must name a cell of the long-term table." };
+      if (d.figure === "access" && !ACCESS_FIGURES.includes(d.metric as AccessFigure)) return { error: `metric must be one of: ${ACCESS_FIGURES.join(", ")}.` };
+      if (d.figure === "stress" && (!STRESS_FIGURES.includes(d.metric as StressFigure) || !isNum(d.volatility) || d.volatility < 0 || d.volatility > 1)) return { error: `metric must be one of: ${STRESS_FIGURES.join(", ")}, and volatility a rate.` };
+      return {
+        report: "planning",
+        page: "fire",
+        figure: d.figure as FireFigure,
+        ...(fire ? { fire } : {}),
+        ...(d.figure === "milestone" ? { milestone: d.milestone as string } : {}),
+        ...(d.figure === "plan-cell" ? { row: d.row as string, col: d.col as string } : {}),
+        ...(d.figure === "access" ? { metric: d.metric as AccessFigure } : {}),
+        ...(d.figure === "stress" ? { metric: d.metric as StressFigure, volatility: d.volatility as number } : {}),
+      };
     }
     case "goals":
       if (!GOAL_FIGURES.includes(d.figure as GoalFigure)) return { error: `figure must be one of: ${GOAL_FIGURES.join(", ")}.` };
@@ -123,6 +154,7 @@ export function parsePlanningDescriptor(d: Record<string, unknown>): PlanningDes
       if (f.incomeTax === "engine" || f.incomeTax === "manual") funds.incomeTax = f.incomeTax;
       if (f.gainsTax === "engine" || f.gainsTax === "manual") funds.gainsTax = f.gainsTax;
       if (typeof f.lenderBonus === "boolean") funds.lenderBonus = f.lenderBonus;
+      if (f.returns === "forecast" || f.returns === "manual") funds.returns = f.returns;
       return { report: "planning", page: "home", figure: d.figure as HomeFigure, inputs, funds };
     }
     case "taxes":
@@ -130,8 +162,15 @@ export function parsePlanningDescriptor(d: Record<string, unknown>): PlanningDes
       if (!isNum(d.year) || !Number.isInteger(d.year)) return { error: "year must be a year." };
       if (typeof d.personId !== "string" || !d.personId) return { error: "personId must be an id." };
       return { report: "planning", page: "taxes", figure: d.figure as TaxFigure, year: d.year, personId: d.personId };
+    case "annual-estimate":
+      if (typeof d.line !== "string" || !/^[a-z-]+(:[A-Za-z0-9_-]{1,80})?$/.test(d.line)) return { error: "line must name a line of the estimate column." };
+      return { report: "planning", page: "annual-estimate", line: d.line };
+    case "mortgage":
+      if (!MORTGAGE_FIGURES.includes(d.figure as MortgageFigure)) return { error: `figure must be one of: ${MORTGAGE_FIGURES.join(", ")}.` };
+      if (!isObj(d.inputs)) return { error: "inputs must be the Mortgage page's inputs." };
+      return { report: "planning", page: "mortgage", figure: d.figure as MortgageFigure, inputs: normalizeMortgageInputs(d.inputs) };
   }
-  return { error: "page must be fire, goals, home or taxes." };
+  return { error: "page must be fire, goals, home, taxes, mortgage or annual-estimate." };
 }
 
 // --------------------------------------------------------------------------- shared
@@ -278,7 +317,18 @@ const projectionEstimate = (b: Base): ProofEstimate => ({
 
 type FireCtx = Base & { plans: ReturnType<typeof firePlans>; fa: FireAnalysis; fire: FireSettings };
 
+/** FIRE contexts already worked out, per forecast data (itself once per Book) and settings: the long-term table alone is ~400 figures, each its own proof. */
+const fireCtxs = new WeakMap<ForecastData, Map<string, FireCtx | null>>();
+
 function fireCtx(book: Book, data: ForecastData, fire?: FireSettings): FireCtx | null {
+  let byKey = fireCtxs.get(data);
+  if (!byKey) fireCtxs.set(data, (byKey = new Map()));
+  const key = JSON.stringify(fire ?? null);
+  if (!byKey.has(key)) byKey.set(key, makeFireCtx(book, data, fire));
+  return byKey.get(key)!;
+}
+
+function makeFireCtx(book: Book, data: ForecastData, fire?: FireSettings): FireCtx | null {
   const saved = data.profile.settings.outlook;
   const s: FireSettings = fire ?? { walkAwayYear: saved.walkAwayYear, withdrawalRate: saved.withdrawalRate, stateTaxRate: saved.stateTaxRate, retirementAge: saved.retirementAge };
   const b = baseFrom(book, data, s);
@@ -617,6 +667,138 @@ function milestoneProof(c: FireCtx, id: string): Built {
   };
 }
 
+// FIRE › Plan and Stress test: the long-term table, the bridge to 59½, the market paths.
+
+const tables = new WeakMap<FireCtx, { table: LongTermTable; full: Outlook }>();
+/** The long-term table as FIRE › Plan builds it (PlanTab → LongTermView): the plan as run, the no-bonus plan, the proven years. */
+function fireTableOf(c: FireCtx): { table: LongTermTable; full: Outlook } {
+  let t = tables.get(c);
+  if (!t) {
+    const full = projectOutlook(c.plans.full);
+    const base = c.plans.base === c.plans.full ? full : projectOutlook(c.plans.base);
+    tables.set(c, (t = { table: longTermTable({ r: c.data.profile, s: c.seeds, full, base, plan: c.fa.plan, pay: c.f.pay, schedule: c.f.schedule }), full }));
+  }
+  return t;
+}
+
+const stresses = new WeakMap<FireCtx, Map<number, StressTest>>();
+/** The stress test as FIRE › Stress test runs it: the same seeded paths, so the same figures. */
+function fireStress(c: FireCtx, volatility: number): StressTest {
+  let byVol = stresses.get(c);
+  if (!byVol) stresses.set(c, (byVol = new Map()));
+  if (!byVol.has(volatility)) byVol.set(volatility, stressTest(c.fa.plan, { volatility, paths: STRESS_PATHS }));
+  return byVol.get(volatility)!;
+}
+
+function planCellProof(c: FireCtx, row: string, col: string): Built {
+  const { table: t, full } = fireTableOf(c);
+  const cell = longTermCells(t).find((x) => x.row === row && x.col === col);
+  const value = cell ? planValue(cell.value) : null;
+  if (!cell || !value) return notFound(`The long-term table shows no "${row}" in ${col}.`);
+  const j = t.columns.findIndex((x) => x.id === col);
+  const forecast = t.projected.includes(j) || t.highlight.includes(j);
+  const year = Number(/(\d{4})/.exec(col)?.[1]);
+  const y = forecast ? full.years.find((x) => x.year === year) : undefined;
+  const lines: ChainLine[] = [{ label: cell.label, value, source: forecast ? "estimate" : "proven", note: forecast ? "The plan, year by year, on the saved forecast and the FIRE settings." : "A proven year (or this year so far), as the annual statement shows it." }];
+  if (y) {
+    const plain = (label: string, cents: number) => lines.push({ label, value: { cents }, source: "estimate" });
+    plain(`Net worth, Jan 1 ${y.year}`, y.startNetWorth);
+    if (y.working) {
+      plain("Base salary", y.salary);
+      plain("Bonuses (gross)", y.bonusGross);
+      plain("Employer 401(k) & HSA", y.employerMatch);
+    } else {
+      plain("Pre-tax draw", y.draw);
+      plain("After-tax income", y.afterTaxIncome);
+    }
+    plain("Living cost", y.livingCost);
+    plain("Saved", y.saved);
+    plain("Investment growth", y.growth);
+    plain(`Net worth, Dec 31 ${y.year}`, y.netWorth);
+  }
+  const { checks, withheld } = forecastChecks(c);
+  return {
+    describes: `FIRE › Plan, long-term table: ${cell.label}`,
+    figure: value,
+    selfCheck: null,
+    blocks: [{ kind: "chain", title: forecast ? `The plan in ${year}` : "Proven", lines }, driversBlock(c), fireSettingsBlock(c)],
+    checks,
+    withheld,
+    estimates: forecast ? [projectionEstimate(c)] : [],
+    through: c.seeds.start.asOf,
+  };
+}
+
+const ACCESS_WORDS: Record<AccessFigure, string> = { liquid: "Liquid (cash + taxable investments) on the walk-away Jan 1", illiquid: "Retirement & other accounts on the walk-away Jan 1", "liquid-out": "The year liquid money runs out", "access-year": "The first full year of penalty-free access (age 60)" };
+
+function accessProof(c: FireCtx, metric: AccessFigure): Built {
+  const a = accessFigures(c.fa.plan, c.fa.fi?.year ?? null);
+  const value = a ? planValue(a.figures[metric]) : null;
+  if (!a || !value) return notFound("No walk-away year and no FI year, or no birth year: the bridge to 59½ isn't shown.");
+  const b = a.bridge;
+  const { checks, withheld } = forecastChecks(c);
+  return {
+    describes: `FIRE › Plan, bridging to 59½: ${ACCESS_WORDS[metric]}`,
+    figure: value,
+    selfCheck: null,
+    blocks: [
+      {
+        kind: "chain",
+        title: `Walking away on Jan 1, ${a.walkAway}`,
+        lines: [
+          { label: "Walk-away year", value: { text: String(a.walkAway) }, source: "assumption", note: c.fa.plan.walkAwayYear ? "As set on the FIRE page." : "None set: FI's year." },
+          { label: `Liquid, Jan 1 ${a.walkAway}`, value: { cents: b.liquidAtWalkAway }, source: "estimate", note: "The plan's cash + taxable investments at the end of the year before." },
+          { label: "Retirement & other", value: { cents: b.illiquidAtWalkAway }, source: "estimate" },
+          { label: "Liquid lasts until", value: { text: b.liquidOutYear ? String(b.liquidOutYear) : "never runs out" }, source: "estimate", note: "The first retired year that starts with no liquid money left." },
+          { label: "Penalty-free access", value: { text: String(b.accessYear) }, source: "law", note: `Birth year ${c.fa.plan.birthYear} + 60.` },
+        ],
+      },
+      driversBlock(c),
+      fireSettingsBlock(c),
+    ],
+    checks,
+    withheld,
+    estimates: [projectionEstimate(c)],
+    through: c.seeds.start.asOf,
+  };
+}
+
+const STRESS_WORDS: Record<StressFigure, string> = { p50: "FI year in a typical market (median path)", p10: "FI year in good markets (best 10% of paths)", p90: "FI year in bad markets (worst 10% of paths)", "by-fi": "Chance of FI by the steady-return plan's FI year" };
+
+function stressProof(c: FireCtx, metric: StressFigure, volatility: number): Built {
+  const st = fireStress(c, volatility);
+  const value = planValue(stressFigures(st, c.fa.fi?.year ?? null)[metric]);
+  if (!value) return notFound(`The stress test shows no ${STRESS_WORDS[metric].toLowerCase()}.`);
+  const { checks, withheld } = forecastChecks(c);
+  const yr = (y: number | null) => ({ text: y ? String(y) : "not in 60 yrs" });
+  return {
+    describes: `FIRE › Stress test: ${STRESS_WORDS[metric]}`,
+    figure: value,
+    selfCheck: null,
+    blocks: [
+      {
+        kind: "chain",
+        title: `${st.paths.toLocaleString("en-US")} market paths`,
+        lines: [
+          { label: "Average return", value: { ratio: c.fa.plan.returnRate }, source: "assumption" },
+          { label: "Yearly swings (standard deviation)", value: { ratio: volatility }, source: "assumption", note: "As set on the FIRE page." },
+          { label: "Paths", value: { text: st.paths.toLocaleString("en-US") }, source: "derived", note: "Lognormal yearly returns from one fixed seed: the same paths every time." },
+          { label: "FI year, best 10%", value: yr(st.fiYears.p10), source: "estimate" },
+          { label: "FI year, median", value: yr(st.fiYears.p50), source: "estimate" },
+          { label: "FI year, worst 10%", value: yr(st.fiYears.p90), source: "estimate" },
+          ...(c.fa.fi ? [{ label: `FI by ${c.fa.fi.year} (the steady plan's FI year)`, value: { ratio: st.fiByYear.find((x) => x.year === c.fa.fi!.year)?.share ?? 0 }, source: "estimate" as const, link: fireLink(c, "Steady-return FI year", "fi-year") }] : []),
+        ],
+      },
+      driversBlock(c),
+      fireSettingsBlock(c),
+    ],
+    checks,
+    withheld,
+    estimates: [projectionEstimate(c)],
+    through: c.seeds.start.asOf,
+  };
+}
+
 function buildFire(c: FireCtx, d: Extract<PlanningDescriptor, { page: "fire" }>): Built {
   switch (d.figure) {
     case "fire-number":
@@ -645,6 +827,12 @@ function buildFire(c: FireCtx, d: Extract<PlanningDescriptor, { page: "fire" }>)
       return ratioOfNowProof(c, d.figure);
     case "milestone":
       return milestoneProof(c, d.milestone!);
+    case "plan-cell":
+      return planCellProof(c, d.row!, d.col!);
+    case "access":
+      return accessProof(c, d.metric as AccessFigure);
+    case "stress":
+      return stressProof(c, d.metric as StressFigure, d.volatility!);
   }
 }
 
@@ -1155,8 +1343,74 @@ function lenderIncomeProof(c: HomeCtx): Built {
   };
 }
 
+const RVB_WORDS: Record<RentVsBuyFigure, string> = {
+  "rvb-ahead": "Rent vs buy: how far ahead buying is if you sell in the year you'd sell",
+  "rvb-break-even": `Rent vs buy: the first year from which buying stays ahead (within ${SIM_YEARS} years)`,
+  "rvb-owning": "Rent vs buy: what owning costs a month in year one, unrecoverable",
+  "rvb-rent": "Rent vs buy: rent a month",
+};
+
+/** Rent vs buy, re-run on the server as the tab runs it: the linked inputs, the same budget scenario, ownership cost and simulation. */
+function rentVsBuyProof(c: HomeCtx, figure: RentVsBuyFigure): Built {
+  const ins = c.L.ins;
+  const r = rentVsBuyFigures(ins);
+  const v = r.values[figure];
+  const figureV: ProofValue = typeof v === "string" ? { text: v } : { cents: cents(v) };
+  const at = r.sim.years[r.horizon - 1]!;
+  const lines: ChainLine[] =
+    figure === "rvb-ahead"
+      ? [
+          { label: `Buyer's net worth after selling, year ${r.horizon}`, value: { cents: cents(at.buyerWealth) }, source: "estimate", note: "Home sold (selling costs, tax on the gain past the exclusion), investments sold (tax on gains)." },
+          { label: `Renter's net worth, year ${r.horizon}`, value: { cents: cents(at.renterWealth) }, source: "estimate", note: "The same cash on day one and the same monthly budget, the difference invested." },
+          { label: "Ahead by buying", value: figureV, source: "derived" },
+        ]
+      : figure === "rvb-break-even"
+        ? [
+            { label: "Break-even", value: figureV, source: "derived", note: "The first year-end from which buying stays ahead through the whole run." },
+            ...r.sim.years.filter((y) => y.year <= 5 || y.year % 5 === 0).map((y): ChainLine => ({ label: `Buying minus renting, year ${y.year}`, value: { cents: cents(y.buyAdvantage) }, source: "estimate" })),
+          ]
+        : figure === "rvb-owning"
+          ? [
+              ...r.snap.components.map((x): ChainLine => ({ label: x.label, value: { cents: cents(x.monthly) }, source: "derived" })),
+              { label: "Owning a month", value: figureV, source: "derived", note: `${pct(r.snap.totalCostOfHomeOwnershipAnnualPct)} of the home's value a year.` },
+            ]
+          : [typed("Rent a month", figureV)];
+  const { checks, withheld } = homeChecks(c);
+  return {
+    describes: RVB_WORDS[figure],
+    figure: figureV,
+    selfCheck: null,
+    blocks: [
+      { kind: "chain", title: "Rent vs buy", lines },
+      {
+        kind: "chain",
+        title: "What it runs on",
+        lines: [
+          { label: "Home price", value: { cents: cents(r.b.homePrice) }, source: "assumption", note: "From the Test a price tab." },
+          { label: "Cash in on day one (down payment, closing, renovation)", value: { cents: cents(r.sim.upfrontCash) }, source: "derived" },
+          typed("Rent a month", { cents: cents(ins.marketRentMonthly) }),
+          typed("Rent increase a year", { ratio: ins.rentGrowthRate }),
+          typed("Home appreciation a year", { ratio: ins.homeAppreciationRate }),
+          { label: "Investment return a year", value: { ratio: ins.investmentReturnRate }, source: c.L.returns.linked ? "derived" : "assumption", ...(c.L.returns.linked ? { note: "The Forecast's return." } : {}) },
+          typed("Selling costs", { ratio: ins.sellingCostsPct }),
+          typed("Years until you'd sell", { text: String(r.horizon) }),
+        ],
+      },
+    ],
+    checks,
+    withheld,
+    estimates: [{ id: "planning.rent-vs-buy", title: "A model of owning and renting", detail: "Both households are run month by month on the inputs; nothing here is read off a statement." }],
+    through: c.fb.asOf,
+  };
+}
+
 function buildHome(c: HomeCtx): Built {
   switch (c.d.figure) {
+    case "rvb-ahead":
+    case "rvb-break-even":
+    case "rvb-owning":
+    case "rvb-rent":
+      return rentVsBuyProof(c, c.d.figure);
     case "cash":
       return homeCashProof(c);
     case "salary":
@@ -1171,6 +1425,135 @@ function buildHome(c: HomeCtx): Built {
     case "lender-income":
       return lenderIncomeProof(c);
   }
+}
+
+// --------------------------------------------------------------------------- Annual estimate
+
+const ESTIMATE_WORDS: Record<string, string> = {
+  salary: "Salary",
+  bonus: "Bonus",
+  "other-income": "Investment & other income (year to date only)",
+  gross: "Gross income",
+  "taxes-deductions": "Total taxes & deductions",
+  employer: "Employer retirement & HSA",
+  "partner-kept": "A partner's pay kept in their own accounts",
+  "net-cash": "Net cash",
+  living: "Living expenses",
+  "one-offs": "One-off expenses",
+  saved: "Saved incl. retirement",
+  "to-retirement": "Of which to retirement accounts",
+  "savings-of-gross": "Savings % of gross",
+  "net-worth": "Net worth on Dec 31",
+  liquid: "Liquid on Dec 31",
+  illiquid: "Illiquid on Dec 31",
+  "change-pct": "Change in net worth (%)",
+  change: "Change in net worth",
+};
+
+/** One line of the annual statement's estimate column, worked out as the page works it out: the year to date plus the forecast's rest of the year, on the saved drivers. */
+async function buildAnnualEstimate(ctx: ProofContext, d: Extract<PlanningDescriptor, { page: "annual-estimate" }>): Promise<{ built: Built; b: Base | null }> {
+  const data = await perBook(ctx, "forecast-data", () => loadForecastData(ctx.db, ctx.book));
+  const b = baseFrom(ctx.book, data);
+  const e = yearEstimate(data);
+  if (!e || !b) return { built: data.profile.seeds ? notFound("No whole-year estimate: no year to date, or the forecast has no rest of the year.") : withheldProof(ctx.book, data), b };
+  const value = estimateFigures(e)[d.line];
+  if (!value) return { built: notFound(`The estimate column shows no "${d.line}".`), b };
+  const word = d.line.startsWith("bridge:") ? `What moved net worth: ${d.line.slice(7)}` : d.line.startsWith("age:") ? "Age" : (ESTIMATE_WORDS[d.line] ?? d.line);
+  const { checks, withheld } = forecastChecks(b);
+  return {
+    b,
+    built: {
+      describes: `${e.year} est. (annual statement): ${word}`,
+      figure: value,
+      selfCheck: null,
+      blocks: [
+        {
+          kind: "chain",
+          title: `${e.year}, whole year`,
+          lines: [
+            { label: word, value, source: "estimate", note: `Actual through ${e.ytd.asOf} (the year to date on the annual statement), then the forecast for ${e.restFrom}–Dec.` },
+            ...(e.flows.close ? [{ label: "Net worth on Dec 31 (est.)", value: { cents: e.flows.close.netWorth }, source: "estimate" as const }] : []),
+          ],
+        },
+        driversBlock(b),
+      ],
+      checks,
+      withheld,
+      estimates: [projectionEstimate(b)],
+      through: b.seeds.start.asOf,
+    },
+  };
+}
+
+// --------------------------------------------------------------------------- Mortgage
+
+const MORTGAGE_WORDS: Record<MortgageFigure, string> = {
+  advantage: "Investing the extra minus paying the loan down: net worth at the horizon",
+  "break-even": "The investment return above which investing wins",
+  chance: "Share of simulated markets in which investing ends ahead",
+  "interest-saved": "Interest paying down saves by the horizon",
+};
+
+const LINK_WORDS: Record<(typeof LINKED_KEYS)[number], string> = { investReturn: "Investment return", inflation: "Inflation", fedMarginalRate: "Federal marginal rate", standardDeduction: "Standard deduction", stateIncomeTax: "State income tax" };
+
+/** The Mortgage page's figures, re-run on the server: the inputs as the page carries them, the links put in as api/mortgage/links has them, the same comparison and seeded simulation. */
+async function buildMortgage(ctx: ProofContext, d: Extract<PlanningDescriptor, { page: "mortgage" }>): Promise<Built> {
+  const { links } = await perBook(ctx, "mortgage-links", () => buildMortgageLinks(ctx.db, ctx.book));
+  const eff = withLinks(d.inputs, links);
+  const m = mortgageFigures(eff);
+  const v = m.values[d.figure];
+  const value: ProofValue | null = "cents" in v ? (v.cents == null ? null : { cents: v.cents }) : v.ratio == null ? null : { ratio: v.ratio };
+  if (!value) return notFound(m.hasChoice ? "The simulation doesn't reach the horizon." : "Nothing to compare: no extra monthly amount and no lump sum within the horizon.");
+  const usd = (dollars: number): ProofValue => ({ cents: Math.round(dollars * 100) });
+  const H = m.horizon;
+  const unit = eff.realDollars ? "in today's dollars" : "in future dollars";
+  const inputs: ChainLine[] = [
+    { label: "Loan", value: usd(eff.principal), source: "assumption" },
+    { label: "Rate", value: { ratio: eff.rate }, source: "assumption" },
+    { label: "Term (years)", value: { text: String(eff.termYears) }, source: "assumption" },
+    { label: "Extra each month", value: usd(eff.extraMonthly), source: "assumption" },
+    { label: "Lump sums", value: { text: String(eff.lumps.length) }, source: "assumption" },
+    { label: "Horizon (years)", value: { text: String(eff.horizonYears) }, source: "assumption" },
+    { label: "Yearly swings (simulation)", value: { ratio: eff.volatility }, source: "assumption" },
+    { label: "Dividend yield", value: { ratio: eff.dividendYield }, source: "assumption" },
+    { label: "Tax on gains (federal + state)", value: { ratio: eff.fedGainsRate + eff.ctGainsRate }, source: "assumption" },
+    ...LINKED_KEYS.map((k): ChainLine => {
+      const l = links[k];
+      const linked = !!l && !d.inputs.typed?.[k];
+      const val = k === "standardDeduction" || k === "stateIncomeTax" ? usd(eff[k]) : { ratio: eff[k] };
+      return { label: LINK_WORDS[k], value: val, source: linked ? "derived" : "assumption", note: linked ? `From ${l!.from}.` : "Typed on the page." };
+    }),
+  ];
+  const result: ChainLine[] =
+    d.figure === "advantage"
+      ? [
+          { label: `Net worth investing the extra, month ${H}`, value: usd(m.cmp.invest.netWorth[H]! / m.defl(H)), source: "estimate" },
+          { label: `Net worth paying the loan down, month ${H}`, value: usd(m.cmp.prepay.netWorth[H]! / m.defl(H)), source: "estimate" },
+          { label: `Difference, ${unit}`, value, source: "derived" },
+        ]
+      : d.figure === "interest-saved"
+        ? [
+            { label: "Interest investing the extra", value: usd(m.interest.invest), source: "estimate" },
+            { label: "Interest paying the loan down", value: usd(m.interest.prepay), source: "estimate" },
+            { label: `Saved, ${unit}`, value, source: "derived" },
+          ]
+        : d.figure === "break-even"
+          ? [{ label: "Return at which both paths end level at the horizon", value, source: "derived", note: "Found by bisection between −5% and 25%." }]
+          : [
+              { label: "Simulated markets", value: { text: String(m.mc.paths) }, source: "derived", note: "Monthly returns around the expected return at the yearly swings typed; one fixed seed, so the same markets every time." },
+              { label: "Investing ends ahead in", value, source: "estimate" },
+            ];
+  return {
+    describes: `Mortgage: ${MORTGAGE_WORDS[d.figure]}`,
+    figure: value,
+    selfCheck: null,
+    blocks: [
+      { kind: "chain", title: "The comparison", lines: result },
+      { kind: "chain", title: "What it runs on", lines: inputs, note: "The Mortgage page's inputs as saved; a linked figure is used unless one is typed over it." },
+    ],
+    estimates: [{ id: "planning.mortgage", title: "A model of the loan and the market", detail: "Both paths are projected month by month on the inputs; nothing here is read off a statement." }],
+    through: ctx.book.horizon.netWorth,
+  };
 }
 
 // --------------------------------------------------------------------------- Taxes
@@ -1287,7 +1670,9 @@ export async function buildPlanningProof(ctx: ProofContext, d: PlanningDescripto
     const c = await homeCtx(ctx, d);
     b = c.b;
     built = buildHome(c);
-  } else built = await buildTaxes(ctx, d);
+  } else if (d.page === "mortgage") built = await buildMortgage(ctx, d);
+  else if (d.page === "annual-estimate") ({ built, b } = await buildAnnualEstimate(ctx, d));
+  else built = await buildTaxes(ctx, d);
   built = { ...built, blocks: linkCells(b, built.blocks) };
   return { ...base, checks: [], withheld: false, ...built, through: built.through || book.horizon.netWorth };
 }

@@ -26,8 +26,8 @@ const merchantsOf = (lane: "EXPENSE" | "INCOME") => (m: SpendingMonth): Merchant
  * charges, average and pattern; and once, Recurring's bills and habits and the budget's
  * figures on the saved targets.
  */
-export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring">, targets: Record<string, number> = {}): DerivedFigure[] {
-  const out: DerivedFigure[] = [];
+export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"> & Partial<Pick<SpendingReport, "current">>, targets: Record<string, number> = {}): DerivedFigure[] {
+  const out: DerivedFigure[] = [...paceDerived(rep)];
   for (const months of cashFlowWindows(rep)) {
     const key = windowKey(months);
     const span = months.length === 1 ? months[0]!.label : `${months[0]!.label} – ${months.at(-1)!.label}`;
@@ -98,4 +98,76 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
     lines: [...Object.entries(targets).map(([cat, v], i) => ln(cat, c(v), i ? "+" : undefined, { source: "assumption" })), ln("Monthly budget", c(budgeted), "=")],
   });
   return out;
+}
+
+// ------------------------------------------------------------------ Patterns › pace
+
+export type PaceBasis = "all" | "everyday";
+const cumulative = (xs: number[]) => {
+  let run = 0;
+  return xs.map((v) => (run += v));
+};
+const paceDays = (m: SpendingMonth, basis: PaceBasis) => (basis === "all" ? m.daily.allCents : m.daily.everydayCents);
+const basisWords = (basis: PaceBasis) => (basis === "all" ? "all spending" : "everyday spending (no bills, nothing over $1,500)");
+/** A pace figure's key: the month, which spending, and (a running total) through which day. */
+export const paceKey = (m: Pick<SpendingMonth, "start">, basis: PaceBasis, day?: number) => `${m.start}|${basis}${day != null ? `|${day}` : ""}`;
+
+/** One month's running total through `day` (the last day on file when the month is shorter), summed from its daily series. */
+export function runningTotal(m: SpendingMonth, basis: PaceBasis, day: number): number {
+  const cum = cumulative(paceDays(m, basis));
+  return cum[Math.min(day, cum.length) - 1] ?? 0;
+}
+
+/** A typical month before month index `i`: the median, across the twelve months before, of each one's whole-month running total. */
+export function typicalMonth(months: SpendingMonth[], i: number, basis: PaceBasis): { cents: number | null; from: SpendingMonth[] } {
+  const from = months.slice(Math.max(0, i - 12), i);
+  const ends = from.map((m) => {
+    const c = cumulative(paceDays(m, basis));
+    return c[Math.min(30, c.length - 1)]!;
+  });
+  return { cents: ends.length ? median(ends) : null, from };
+}
+
+/**
+ * Patterns › pace: for each month the range can end on (and the month under way), each
+ * running total the tab states (through the day on file, and the month before by the same
+ * day) and the typical month, for all spending and for everyday spending.
+ */
+function paceDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "current">>): DerivedFigure[] {
+  const out = new Map<string, DerivedFigure>();
+  const ends: { m: SpendingMonth; i: number; partial: boolean }[] = rep.months.map((m, i) => ({ m, i, partial: false }));
+  if (rep.current) ends.push({ m: rep.current, i: rep.months.length, partial: true });
+  const spent = (m: SpendingMonth, basis: PaceBasis, day: number) => {
+    const key = paceKey(m, basis, day);
+    if (out.has(`pace-spent ${key}`)) return;
+    const days = paceDays(m, basis);
+    const through = Math.min(day, days.length);
+    const total = runningTotal(m, basis, day);
+    out.set(`pace-spent ${key}`, {
+      figure: "pace-spent",
+      key,
+      describes: `${m.label}: ${basisWords(basis)} through day ${through}`,
+      value: c(total),
+      lines: [...days.slice(0, through).flatMap((x, d) => (x ? [{ d, x }] : [])).map(({ d, x }, k) => ln(`Day ${d + 1}`, c(x), k ? "+" : undefined, { source: "proven" })), ln(`Through day ${through}`, c(total), "=")],
+    });
+  };
+  for (const { m, i, partial } of ends)
+    for (const basis of ["all", "everyday"] as const) {
+      const len = paceDays(m, basis).length;
+      const day = partial && m.through ? Number(m.through.slice(8, 10)) : len;
+      spent(m, basis, day);
+      const prev = rep.months[i - 1];
+      if (prev) spent(prev, basis, partial ? day : paceDays(prev, basis).length);
+      const typ = typicalMonth(rep.months, i, basis);
+      if (typ.cents == null) continue;
+      out.set(`pace-typical ${paceKey(m, basis)}`, {
+        figure: "pace-typical",
+        key: paceKey(m, basis),
+        describes: `A typical month before ${m.label}: ${basisWords(basis)}`,
+        value: c(typ.cents),
+        lines: [ln(`Median of the ${typ.from.length} months before`, c(typ.cents), undefined, { note: "Each month's running total through its last day." })],
+        parts: typ.from.map((x) => ({ label: x.label, value: c(runningTotal(x, basis, 31)) })),
+      });
+    }
+  return [...out.values()];
 }

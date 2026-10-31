@@ -7,27 +7,30 @@ import { stressTest } from "@/lib/fire/fire";
 import { axisUsd } from "@/lib/formatMoney";
 import { useDeferredValue, useMemo } from "react";
 import { Area, AreaChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { deflator, DollarsToggle, pct, tipUsd, yearAge, type FireProps } from "./ui";
-import { unswept } from "@/lib/book/proof/clearance";
+import { deflator, DollarsToggle, pct, tipUsd, yearAge, type FirePlanProof, type FireProps } from "./ui";
+import { STRESS_PATHS, stressFigures, type StressFigure } from "@/lib/fire/longTerm";
 
-const PATHS = 1000;
+const PATHS = STRESS_PATHS;
 
 /**
  * The plan assumes the same return every year; markets don't. This reruns it 1,000 times
  * with random yearly returns that average the plan's return, to show how far the dates
  * can move — and why the first years of retirement matter most (sequence risk).
  */
-export function StressTab({ f, dollars, setDollars, volatility }: FireProps & { volatility: number }) {
+export function StressTab({ f, dollars, setDollars, volatility, proof }: FireProps & { volatility: number; proof: FirePlanProof }) {
   const plan = useDeferredValue(f.plan);
   const s = useMemo(() => stressTest(plan, { volatility, paths: PATHS }), [plan, volatility]);
-  const byPlanFi = f.fi ? s.fiByYear.find((x) => x.year === f.fi!.year)?.share ?? null : null;
+  // The tiles are the shared model (lib/fire/longTerm.ts) the sweep proves on the saved settings.
+  const tiles = stressFigures(s, f.fi?.year ?? null);
+  const tile = (metric: StressFigure) => proof({ figure: "stress", metric, volatility }, tiles[metric]);
+  const byPlanFi = "ratio" in tiles["by-fi"] ? tiles["by-fi"].ratio : null;
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={unswept("the stress test runs its market paths in the browser (Monte Carlo), with no proof yet: F4 moves it server-side")} label="Typical market" value={s.fiYears.p50 ? String(s.fiYears.p50) : "Not in 60 yrs"} sub={`median of ${PATHS.toLocaleString()} market paths`} />
-        <StatCell proof={unswept("the stress test runs its market paths in the browser (Monte Carlo), with no proof yet: F4 moves it server-side")} label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : "—"} tone="pos" sub="best 10%: 1 path in 10 is FI by then" />
-        <StatCell proof={unswept("the stress test runs its market paths in the browser (Monte Carlo), with no proof yet: F4 moves it server-side")} label="Bad markets" value={s.fiYears.p90 ? String(s.fiYears.p90) : "Not in 60 yrs"} tone="warn" sub={s.fiYears.p90 ? "worst 10%: 9 paths in 10 are FI by then" : "worst 10% of paths aren't FI within 60 years"} />
-        <StatCell proof={unswept("the stress test runs its market paths in the browser (Monte Carlo), with no proof yet: F4 moves it server-side")} label={f.fi ? `FI by ` : "Chance of FI"} value={byPlanFi != null ? pct(byPlanFi, 0) : "—"} sub="chance by the steady-return plan's FI year" />
+        <StatCell proof={tile("p50")} label="Typical market" value={s.fiYears.p50 ? String(s.fiYears.p50) : "Not in 60 yrs"} sub={`median of ${PATHS.toLocaleString()} market paths`} />
+        <StatCell proof={tile("p10")} label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : "—"} tone="pos" sub="best 10%: 1 path in 10 is FI by then" />
+        <StatCell proof={tile("p90")} label="Bad markets" value={s.fiYears.p90 ? String(s.fiYears.p90) : "Not in 60 yrs"} tone="warn" sub={s.fiYears.p90 ? "worst 10%: 9 paths in 10 are FI by then" : "worst 10% of paths aren't FI within 60 years"} />
+        <StatCell proof={tile("by-fi")} label={f.fi ? `FI by ` : "Chance of FI"} value={byPlanFi != null ? pct(byPlanFi, 0) : "—"} sub="chance by the steady-return plan's FI year" />
       </StatGrid>
       {s.coveredThroughout != null && (
         <Callout tone={s.coveredThroughout >= 0.8 ? "good" : "warn"} title={`Walking away in ${plan.walkAwayYear}: income covers living cost every retired year in ${pct(s.coveredThroughout, 0)} of paths`}>
