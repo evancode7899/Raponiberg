@@ -3,6 +3,7 @@ import type { BookRow } from "../load.ts";
 import { NO_HOUSEHOLD } from "../../household/patterns.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { Book } from "../load.ts";
+import { asCashFlowRow, TAX_REFUND_CATEGORY } from "./cashFlow.ts";
 import { CHARGE_BUCKETS, detectRecurring, merchantName, oneOffRules, reversals, spendingKindRule, spendingShape } from "./spending.ts";
 
 let n = 0;
@@ -145,9 +146,8 @@ describe("spendingKindRule: credits count in the band of what they pay back", ()
     expect([sofa, sofaReturn, relocation, payback].map(kindOf)).toEqual(["big", "big", "big", "big"]);
   });
 
-  it("never counts a tax payment or refund as everyday, whatever its size", () => {
+  it("never counts a tax payment as everyday, whatever its size", () => {
     expect(kindOf(taxPaid)).toBe("big");
-    expect(kindOf(taxRefund)).toBe("big");
   });
 
   it("keeps small refunds with their everyday charges and a bill's credit with bills", () => {
@@ -156,10 +156,35 @@ describe("spendingKindRule: credits count in the band of what they pay back", ()
   });
 
   it("so a month with a big refund keeps everyday at its day-to-day level", () => {
-    const april = [sofaReturn, relocation, payback, taxRefund, coffee];
-    const spendingCents = -april.reduce((t, r) => t + r.amountCents, 0);
+    const april = [sofaReturn, relocation, payback, taxRefund, coffee].map(asCashFlowRow);
+    const spendingCents = -april.filter((r) => r.lane === "EXPENSE").reduce((t, r) => t + r.amountCents, 0);
     const { kinds } = spendingShape(april, { start: "2026-04-01", end: "2026-04-30", spendingCents }, kindOf);
     expect(kinds.everydayCents).toBe(650);
     expect(kinds.bigCents).toBe(spendingCents - 650);
+  });
+});
+
+describe("asCashFlowRow: a tax refund is income, never less spending", () => {
+  const taxPaid = row("2026-01-15", -90000, "IRS USATAXPYMT", { category: "Taxes & fees", accountId: "checking" });
+  const taxRefund = row("2026-04-20", 1177500, "IRS TREAS 310 TAX REF", { category: "Taxes & fees", accountId: "checking" });
+  const sofaReturn = row("2026-04-02", 250000, "FURNITURE BARN");
+
+  it("moves a tax authority's credit to income, keeping the row's id and amount", () => {
+    const r = asCashFlowRow(taxRefund);
+    expect(r).toMatchObject({ id: taxRefund.id, lane: "INCOME", category: TAX_REFUND_CATEGORY, amountCents: 1177500 });
+  });
+
+  it("leaves tax payments and merchant refunds as spending", () => {
+    expect(asCashFlowRow(taxPaid)).toBe(taxPaid);
+    expect(asCashFlowRow(sofaReturn)).toBe(sofaReturn);
+  });
+
+  it("so a refund month's spending is gross of it and net saved doesn't move", () => {
+    const rows = [taxPaid, taxRefund, sofaReturn, row("2026-04-05", -40000, "GROCER")];
+    const sum = (rs: BookRow[], lane: string) => rs.filter((r) => r.lane === lane).reduce((t, r) => t + r.amountCents, 0);
+    const before = { income: sum(rows, "INCOME"), spending: -sum(rows, "EXPENSE") };
+    const after = { income: sum(rows.map(asCashFlowRow), "INCOME"), spending: -sum(rows.map(asCashFlowRow), "EXPENSE") };
+    expect(after.spending).toBe(before.spending + 1177500);
+    expect(after.income - after.spending).toBe(before.income - before.spending);
   });
 });

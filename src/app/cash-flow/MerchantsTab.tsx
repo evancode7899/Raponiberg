@@ -62,7 +62,7 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
 
       <Card
         title="Merchants"
-        subtitle="Spending net of refunds, grouped by merchant. Click a merchant for its charges and month-by-month trend."
+        subtitle="Spending net of merchant refunds, grouped by merchant (tax refunds count as income). Click a merchant for its charges and month-by-month trend."
         actions={
           <>
             <input className={`${inputCls} !py-1 !text-xs w-48`} placeholder="Search merchants…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search merchants" />

@@ -318,7 +318,7 @@ export function trailing(all: SpendingMonth[], n: number, f: (m: SpendingMonth) 
 export const KINDS = [
   { id: "billCents", kind: "bill", label: "Bills & subscriptions", hint: "rent and steady charges from recurring merchants" },
   { id: "everydayCents", kind: "everyday", label: "Everyday", hint: "day-to-day charges under $1,500, net of their refunds" },
-  { id: "bigCents", kind: "big", label: "Big & one-off", hint: "single charges of $1,500+, anything marked one-off, taxes, and big refunds" },
+  { id: "bigCents", kind: "big", label: "Big & one-off", hint: "single charges of $1,500+, anything marked one-off, taxes, and big merchant refunds" },
 ] as const satisfies readonly { id: string; kind: SpendingKind; label: string; hint: string }[];
 
 /** Where a slice's months sit in the report (the slice is a contiguous run of them). */

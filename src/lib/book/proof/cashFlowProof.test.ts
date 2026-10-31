@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_HOUSEHOLD } from "../../household/patterns";
 import type { Book, BookRow, BookStatement } from "../load";
-import { buildCashFlowReport } from "../reports/cashFlow";
+import { buildCashFlowReport, TAX_REFUND_CATEGORY } from "../reports/cashFlow";
 import { buildSpendingReport, type SpendingMonth } from "../reports/spending";
 import type { AcceptedFinding, CheckPass, Finding } from "../types";
 import { buildCashFlowProof, type CashFlowDescriptor } from "./cashFlowProof";
@@ -400,7 +400,7 @@ describe("one merchant's part", () => {
     expect(buildCashFlowProof(book, md("STREAMFLIX")).figureCents).toBe(4 * 1_599 - 200);
   });
 
-  it("proves each band of spending (bills, big, everyday) month by month, a big refund and a tax refund kept out of everyday", () => {
+  it("proves each band of spending (bills, big, everyday) month by month, a big refund kept out of everyday and a tax refund out of spending", () => {
     const tv = { payee: "GADGET SHOP", merchantKey: "GADGET SHOP", category: "Shopping & gifts" };
     const book = makeBook([
       ...shops(),
@@ -420,7 +420,10 @@ describe("one merchant's part", () => {
     }
     const mar = report.months.find((m) => m.start === "2025-03-01")!;
     expect(mar.kinds.everydayCents).toBeGreaterThanOrEqual(0);
-    expect(mar.kinds.bigCents).toBeLessThan(0);
+    // The tax refund is income: big spending stays gross of it, net saved is unchanged.
+    expect(mar.kinds.bigCents).toBe(0);
+    expect(mar.incomeByCategory.find((c) => c.category === TAX_REFUND_CATEGORY)?.cents).toBe(412_300);
+    expect(buildCashFlowProof(book, d({ metric: "income", start: mar.start, end: mar.end })).selfCheck.ok).toBe(true);
     const feb = buildCashFlowProof(book, d({ spendingKind: "big", start: "2025-02-01", end: "2025-02-28" }), undefined, settings);
     expect(feb.sections[0]!.groups.flatMap((g) => g.rows).map((r) => r.amountCents)).toEqual([240_000]);
     expect(feb.describes).toBe("Big & one-off spending, Feb 2025");

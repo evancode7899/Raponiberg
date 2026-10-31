@@ -456,7 +456,7 @@ export function buildChangeProof(book: Book, d: ChangeDescriptor): Proof {
   const cfNote = (ours: number, theirs: number, what: string) =>
     ours === theirs
       ? undefined
-      : `Cash flow counts ${formatUsdFromCents(theirs)} of ${what} on these days (its proof lists the rows): it counts some rows in another month than the statement books them, rent in the month it pays for.`;
+      : `Cash flow counts ${formatUsdFromCents(theirs)} of ${what} on these days (its proof lists the rows): it counts some rows in another month than the statement books them, rent in the month it pays for, and tax refunds as income rather than a credit to spending.`;
 
   const lines: ChainLine[] = [];
   const add = (l: ChainLine & { value: { cents: number } }) => {

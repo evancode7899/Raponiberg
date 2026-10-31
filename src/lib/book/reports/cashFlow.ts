@@ -7,6 +7,7 @@ import type { Book, BookRow } from "../load.ts";
 import { withReimbursements } from "../reimbursements.ts";
 import { countsOn } from "../rent.ts";
 import { savedFromTakeHome, savingsRate } from "../definitions.ts";
+import { taxAuthority } from "../../tax/facts/payments.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 
 export type CategoryAmount = { category: string; group: string | null; cents: number };
@@ -18,7 +19,7 @@ export type CashFlowPeriod = {
   /** Set when the period is cut short at the proven-through date (figures run through it). */
   through: string | null;
   incomeCents: number;
-  /** Positive number: spending net of refunds/credits. */
+  /** Positive number: spending net of merchant refunds and paybacks (tax refunds are income: asCashFlowRow). */
   spendingCents: number;
   netCents: number;
   savingsRate: number | null;
@@ -48,6 +49,30 @@ export type CashFlowReport = {
 /** One row's part in one period's cash flow: `cents` is its signed amount times `share`, unrounded. */
 export type CashFlowContribution = { row: BookRow; periodIndex: number; share: number; cents: number; countedOn: string };
 
+/** Cash flow's income category for money a tax authority paid back. */
+export const TAX_REFUND_CATEGORY = "Tax refunds";
+
+/**
+ * A row as cash flow counts it. A tax refund is filed as a credit to Taxes (the expense
+ * lane), so taxes paid net to what the return came to; but money back from a tax authority
+ * isn't less spending. Cash flow counts it as income, so spending stays gross of it and net
+ * saved doesn't change.
+ */
+export function asCashFlowRow(r: BookRow): BookRow {
+  if (r.lane !== "EXPENSE" || r.amountCents <= 0 || r.reimbursement || !taxAuthority(r.payee)) return r;
+  return { ...r, lane: "INCOME", category: TAX_REFUND_CATEGORY, categoryGroup: "Income" };
+}
+
+/**
+ * The rows cash flow and the spending views read: as the household view counts them
+ * (householdView.ts: none on a partner's account before it joined, their pre-merge share as
+ * spending credits), with each reimbursement link's pair (book/reimbursements.ts: the
+ * payback moves from income into the charge's category), and tax refunds as income.
+ */
+export function cashFlowRows(book: Book): BookRow[] {
+  return withReimbursements({ rows: household(book).rows, reimbursements: book.reimbursements }).map(asCashFlowRow);
+}
+
 /** The day each row counts on (rent.ts countsOn), worked out once per Book: rent detection reads every row. */
 const days = new WeakMap<Book, (r: BookRow) => string>();
 export function dayOfFor(book: Book): (r: BookRow) => string {
@@ -68,9 +93,7 @@ export function cashFlowContributions(book: Book, periods: { start: string; end:
   const idx = (iso: string) => periods.findIndex((p) => p.start <= iso && iso <= p.end);
   const dayOf = dayOfFor(book);
   const out: CashFlowContribution[] = [];
-  // A reimbursement link's pair (book/reimbursements.ts) counts like any row: the payback moves from income into the charge's category.
-  // Rows as the household view counts them (householdView.ts): none on a partner's account before it joined, their pre-merge share as spending credits.
-  for (const r of withReimbursements({ rows: household(book).rows, reimbursements: book.reimbursements })) {
+  for (const r of cashFlowRows(book)) {
     if (r.lane !== "INCOME" && r.lane !== "EXPENSE" && r.lane !== "EXTERNAL_TRANSFER") continue;
     if (accountFilter && !accountFilter.has(r.accountId)) continue;
     if (r.precision === "EXACT") {

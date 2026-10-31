@@ -145,8 +145,8 @@ function partsOf({ nw, cf }: Joined, g: Granularity): Part[] {
   const h = nw.household;
   const span = { start: nw.start, end: nw.end };
   return [
-    ["income", "Income", cf.incomeCents, { report: "cash-flow", metric: "income", granularity: g, ...span }, "Cash flow's income: pay, interest, dividends and refunds of income."],
-    ["spending", "Spending", -cf.spendingCents, { report: "cash-flow", metric: "spending", granularity: g, ...span }, "Cash flow's spending, net of refunds and paid-back charges."],
+    ["income", "Income", cf.incomeCents, { report: "cash-flow", metric: "income", granularity: g, ...span }, "Cash flow's income: pay, interest, dividends, tax refunds and refunds of income."],
+    ["spending", "Spending", -cf.spendingCents, { report: "cash-flow", metric: "spending", granularity: g, ...span }, "Cash flow's spending, net of merchant refunds and paid-back charges (tax refunds count as income)."],
     ["retirement", "Retirement from pay", h.retirementEmployeeCents + h.retirementEmployerCents, null, `Payroll deferrals ${usd0(h.retirementEmployeeCents)} and employer money ${usd0(h.retirementEmployerCents)} that went straight to retirement accounts.`],
     ["other", "Other money in/out", h.externalCents + h.newlyTrackedCents, null, "Partner and untracked-account money, and balances already in accounts when they first appear."],
     ["timing", "Counted in another period", h.incomeCents - cf.incomeCents + (h.spendingCents + cf.spendingCents), null, "Cash flow books rent in the month it pays for and nets paid-back pairs; net worth counts money the day it moves. This is the difference."],
