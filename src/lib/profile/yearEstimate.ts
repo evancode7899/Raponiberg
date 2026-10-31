@@ -21,6 +21,8 @@ export type YearEstimate = {
   partnerKept: number;
   /** Year to date's bridge plus the forecast's rest (saved → saved, returns → growth); null when the year to date's isn't proven. */
   bridge: Bridge | null;
+  /** The two parts `flows` adds up: the actual year to date and the forecast rest (their own sum is the proof's second route). */
+  parts: { ytd: Flows; rest: Flows };
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -32,7 +34,8 @@ export function yearEstimate(d: ForecastData): YearEstimate | null {
   const ps = yearPeriods(f, r, { actualYears: 1, throughYear: r.currentYear });
   const total = ps.find((p) => p.kind === "TOTAL" && p.year === r.currentYear);
   const rest = ps.find((p) => p.id === `${r.currentYear}-rest`);
-  if (!total || !rest || total.flows.saved == null) return null;
+  const ytd = ps.find((p) => p.id === `${r.currentYear}-ytd`);
+  if (!total || !rest || !ytd || total.flows.saved == null) return null;
   const b = r.ytd.bridge;
   const rf = rest.flows;
   const bridge: Bridge | null = b
@@ -50,6 +53,7 @@ export function yearEstimate(d: ForecastData): YearEstimate | null {
     flows: total.flows,
     partnerKept: r.ytd.cash?.waterfall.partnerKept ?? 0,
     bridge,
+    parts: { ytd: ytd.flows, rest: rf },
   };
 }
 

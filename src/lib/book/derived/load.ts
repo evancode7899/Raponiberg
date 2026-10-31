@@ -31,10 +31,15 @@ import { loadJsonSetting } from "../../settingsStore.ts";
 import { perBook } from "../proof/common.ts";
 import type { DerivedScope } from "../proof/derivedProof.ts";
 import { INVESTMENTS_CHECKS } from "../proof/investmentsProof.ts";
-import type { ProofContext } from "../proof/types.ts";
+import type { ProofContext, Rederivation } from "../proof/types.ts";
 import { buildInvestments } from "../reports/investments.ts";
 import { investmentsDerived } from "./investments.ts";
 import type { DerivedFigure, DerivedPage } from "./types.ts";
+import { rederiveCashFlow } from "../rederive/cashFlow.ts";
+import { rederiveNetWorth } from "../rederive/netWorth.ts";
+import { rederiveInvestments } from "../rederive/investments.ts";
+import { rederiveCar } from "../rederive/car.ts";
+import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance } from "../rederive/pages.ts";
 
 /**
  * Each page's derived figures, from its report built as the page's route builds it, once
@@ -42,23 +47,31 @@ import type { DerivedFigure, DerivedPage } from "./types.ts";
  * them here, so the sweep holds exactly the list the proofs prove.
  */
 
-export type DerivedList = { figures: DerivedFigure[]; scope: DerivedScope | null; through: string };
+/**
+ * `rederived`: figures worked out again on the server by a route that shares nothing with
+ * the page's report (F5's independent proofs, proof/independence.ts), by derivedKey; a
+ * figure without one re-reads the page's report only.
+ */
+export type DerivedList = { figures: DerivedFigure[]; scope: DerivedScope | null; through: string; rederived?: Readonly<Record<string, Rederivation>> };
 
 const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>) | null> = {
   investments: async ({ book, db }) => {
     const r = buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings));
-    return { figures: investmentsDerived(r), scope: { query: { affects: "NET_WORTH", from: r.asOf, to: r.asOf }, checks: INVESTMENTS_CHECKS }, through: r.asOf };
+    const figures = investmentsDerived(r);
+    return { figures, rederived: rederiveInvestments(book, r, figures), scope: { query: { affects: "NET_WORTH", from: r.asOf, to: r.asOf }, checks: INVESTMENTS_CHECKS }, through: r.asOf };
   },
   car: async ({ book, db }) => {
     const g = garagePage(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage));
     const from = g.cars.flatMap((c) => c.months.map((m) => `${m.month}-01`)).sort()[0] ?? g.statementsThrough;
-    return { figures: carDerived(g), scope: { query: { affects: "CASH_FLOW", from, to: g.statementsThrough }, checks: CASH_FLOW_CHECKS }, through: g.statementsThrough };
+    const figures = carDerived(g);
+    return { figures, rederived: rederiveCar(g, figures), scope: { query: { affects: "CASH_FLOW", from, to: g.statementsThrough }, checks: CASH_FLOW_CHECKS }, through: g.statementsThrough };
   },
   "cash-flow": async ({ book, db }) => {
     const [settings, budget] = await Promise.all([loadProfileSettings(db), loadBudget(db)]);
     const r = buildSpendingReport(book, settings);
     const from = r.months[0]?.start ?? book.horizon.cashFlow;
-    return { figures: cashFlowDerived(r, budget.targets), scope: { query: { affects: "CASH_FLOW", from, to: r.months.at(-1)?.end ?? from }, checks: CASH_FLOW_CHECKS }, through: r.months.at(-1)?.end ?? from };
+    const figures = cashFlowDerived(r, budget.targets);
+    return { figures, rederived: rederiveCashFlow(book, settings, r, figures), scope: { query: { affects: "CASH_FLOW", from, to: r.months.at(-1)?.end ?? from }, checks: CASH_FLOW_CHECKS }, through: r.months.at(-1)?.end ?? from };
   },
   "card-perks": async ({ book, db }) => {
     const first = await loadCardPerksPage(db, undefined, book);
@@ -66,27 +79,45 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     // Each year's figures read that year's card statements: a finding over them withholds the year (as the page's blockers do).
     const cards = book.accounts.filter((a) => a.type === "CREDIT_CARD").map((a) => a.id);
     const scoped = (y: number) => ({ query: { affects: "CASH_FLOW" as const, from: `${y}-01-01`, to: `${y}-12-31` < book.horizon.cashFlow ? `${y}-12-31` : book.horizon.cashFlow, accountIds: cards }, checks: CASH_FLOW_CHECKS });
-    return { figures: years.flatMap((p) => cardPerksDerived(p.report).map((f) => ({ ...f, scope: scoped(p.report.year) }))), scope: null, through: book.horizon.cashFlow };
+    const figures = years.flatMap((p) => cardPerksDerived(p.report).map((f) => ({ ...f, scope: scoped(p.report.year) })));
+    return { figures, rederived: rederiveCardPerks(years.map((p) => p.report), figures), scope: null, through: book.horizon.cashFlow };
   },
   "net-worth": async ({ book }) => {
     const r = buildNetWorth(book, { granularity: "month" });
     const from = r.proven.returns.portfolio?.from ?? r.current.asOf;
-    const steps = (["month", "quarter", "year"] as const).flatMap((granularity) => changeStepsDerived(buildNetWorthChanges(book, { granularity })));
-    return { figures: [...netWorthDerived(r), ...steps], scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
+    const changes = (["month", "quarter", "year"] as const).map((granularity) => buildNetWorthChanges(book, { granularity }));
+    const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived)];
+    return { figures, rederived: rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },
-  integrity: async ({ book }) => ({ figures: integrityDerived({ ...book.integrity, horizon: book.horizon }), scope: null, through: book.horizon.netWorth }),
-  hsa: async ({ db, book }) => ({ figures: hsaDerived(await loadHsaReport(db)), scope: null, through: book.horizon.netWorth }),
+  integrity: async ({ book }) => {
+    const figures = integrityDerived({ ...book.integrity, horizon: book.horizon });
+    return { figures, rederived: declared(INTEGRITY_WHY)(figures), scope: null, through: book.horizon.netWorth };
+  },
+  hsa: async ({ db, book }) => {
+    const r = await loadHsaReport(db);
+    const figures = hsaDerived(r);
+    return { figures, rederived: rederiveHsa(r, figures), scope: null, through: book.horizon.netWorth };
+  },
   "account-limits": async (ctx) => {
     const ys = await taxYears(ctx);
-    return { figures: ys.flatMap((y) => accountLimitsDerived(y.accounts)), scope: null, through: ctx.book.horizon.cashFlow };
+    const figures = ys.flatMap((y) => accountLimitsDerived(y.accounts));
+    return { figures, rederived: declared(LIMITS_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
   calendar: async (ctx) => {
     const ys = await taxYears(ctx);
     const on = calendarYears(ctx.book.today, Object.keys(TAX_YEARS).map(Number));
-    return { figures: calendarDerived(buildMoneyCalendar(ctx.book.today, ys.filter((y) => on.includes(y.year)))), scope: null, through: ctx.book.horizon.cashFlow };
+    const figures = calendarDerived(buildMoneyCalendar(ctx.book.today, ys.filter((y) => on.includes(y.year))));
+    return { figures, rederived: declared(CALENDAR_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
-  "lp-funds": async ({ book, db }) => ({ figures: fundsDerived((await loadFundsPage(db, book)).funds), scope: null, through: book.horizon.netWorth }),
-  insurance: async ({ book, db }) => ({ figures: insuranceDerived((await loadInsurancePage(db, book)).policies), scope: null, through: book.horizon.cashFlow }),
+  "lp-funds": async ({ book, db }) => {
+    const figures = fundsDerived((await loadFundsPage(db, book)).funds);
+    return { figures, rederived: declared(FUNDS_WHY)(figures), scope: null, through: book.horizon.netWorth };
+  },
+  insurance: async ({ book, db }) => {
+    const { policies } = await loadInsurancePage(db, book);
+    const figures = insuranceDerived(policies);
+    return { figures, rederived: rederiveInsurance(book, policies, figures), scope: null, through: book.horizon.cashFlow };
+  },
 };
 
 /** Each tax year to date, its tax report and account limits as the Taxes, Account limits and Calendar routes build them. */

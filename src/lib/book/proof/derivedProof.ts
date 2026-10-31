@@ -1,5 +1,5 @@
 import { DERIVED_PAGES, derivedList } from "../derived/load.ts";
-import type { DerivedDescriptor, DerivedPage, DerivedScope } from "../derived/types.ts";
+import { derivedKey, type DerivedDescriptor, type DerivedFigure, type DerivedPage, type DerivedScope } from "../derived/types.ts";
 export type { DerivedScope };
 import { checksFor } from "./common.ts";
 import type { Proof, ProofBlock, ProofContext, ProofKind } from "./types.ts";
@@ -8,7 +8,8 @@ import type { Proof, ProofBlock, ProofContext, ProofKind } from "./types.ts";
  * The proof behind a derived figure (derived/types.ts): the page's report rebuilt on the
  * server as its route builds it, the figure found in the page's own list, and how it is
  * worked out, line by line, with the parts it is made of and the checks over the data it
- * reads. A chain's "=" lines are held to re-add, as every chain is (sweep.ts CHAIN).
+ * reads. A chain's "=" lines are held to re-add, as every chain is (sweep.ts CHAIN); a
+ * figure the page's loader re-derives by a second route carries it (independence.ts).
  */
 
 export type { DerivedDescriptor };
@@ -20,9 +21,17 @@ export function parseDerivedDescriptor(d: Record<string, unknown>): DerivedDescr
   return { report: "derived", page: d.page as DerivedPage, figure: d.figure, ...(d.key != null ? { key: d.key as string } : {}) };
 }
 
+/** A page's figures by derivedKey, once per list: a cash-flow list runs to tens of thousands, each its own proof. */
+const indexes = new WeakMap<readonly DerivedFigure[], Map<string, DerivedFigure>>();
+function indexOf(figures: readonly DerivedFigure[]): Map<string, DerivedFigure> {
+  let m = indexes.get(figures);
+  if (!m) indexes.set(figures, (m = new Map(figures.map((f) => [derivedKey(f), f]))));
+  return m;
+}
+
 export async function buildDerivedProof(ctx: ProofContext, d: DerivedDescriptor): Promise<Proof> {
-  const { figures, scope, through } = await derivedList(ctx, d.page);
-  const f = figures.find((x) => x.figure === d.figure && (x.key ?? null) === (d.key ?? null));
+  const { figures, scope, through, rederived } = await derivedList(ctx, d.page);
+  const f = indexOf(figures).get(derivedKey(d));
   if (!f?.value) throw new Error(`The ${d.page} page shows no "${d.figure}"${d.key ? ` for ${d.key}` : ""}.`);
   const s = f.scope ?? scope;
   const { checks, withheld } = s ? checksFor(ctx.book, s.query, s.checks) : { checks: [], withheld: false };
@@ -35,6 +44,7 @@ export async function buildDerivedProof(ctx: ProofContext, d: DerivedDescriptor)
     describes: f.describes,
     figure: f.value,
     selfCheck: null,
+    ...(rederived?.[derivedKey(f)] ? { rederived: rederived[derivedKey(f)] } : {}),
     withheld,
     blocks,
     checks,

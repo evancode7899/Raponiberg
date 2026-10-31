@@ -4,7 +4,7 @@ import { lastDataStamp } from "@/components/ledger/useApi";
 import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
 import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
-import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue } from "@/lib/book/proof/types";
+import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue, Rederivation } from "@/lib/book/proof/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, formatUsdFromCents, usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
@@ -152,6 +152,7 @@ function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?
             )}
           </div>
         )}
+        {p.rederived && <Rederived r={p.rederived} figure={p.figure} onFollow={onFollow} />}
         {p.withheld && (
           <div className="mt-2">
             <Callout tone="warn" title="Part of this is withheld">
@@ -234,6 +235,37 @@ function SectionTitle({ children, sub }: { children: ReactNode; sub?: string }) 
 }
 
 /** A link to another figure's proof, opened on top of this one. */
+/** The figure worked out again by routes that share nothing with the page's report, or why it can't be (proof/independence.ts). */
+function Rederived({ r, figure, onFollow }: { r: Rederivation; figure: ProofValue; onFollow: (d: ProofDescriptor) => void }) {
+  if ("none" in r)
+    return (
+      <div className="mt-2">
+        <Callout tone="info" title="Not re-derived independently">
+          {r.none}
+        </Callout>
+      </div>
+    );
+  const bad = r.routes.filter((x) => !x.ok);
+  return (
+    <div className="mt-2">
+      <Callout tone={bad.length ? "bad" : "good"} title={bad.length ? "A second route disagrees" : `Re-derived ${r.routes.length === 1 ? "a second way" : `${r.routes.length} other ways`}`}>
+        <ul className="flex flex-col gap-1">
+          {r.routes.map((x, i) => (
+            <li key={i}>
+              <FollowLink link={x.link} onFollow={onFollow} className="font-medium">
+                {x.route}
+              </FollowLink>
+              : {valueText(x.value)}
+              {x.ok ? "" : `, not ${valueText(figure)}`} <span className="text-muted">({x.explain})</span>
+            </li>
+          ))}
+        </ul>
+        {bad.length > 0 && <p className="mt-1">That&apos;s a bug in the app, not in your documents: the figure is withheld.</p>}
+      </Callout>
+    </div>
+  );
+}
+
 function FollowLink({ link, onFollow, children, className = "" }: { link?: ProofLink; onFollow: (d: ProofDescriptor) => void; children: ReactNode; className?: string }) {
   if (!link) return <>{children}</>;
   return (

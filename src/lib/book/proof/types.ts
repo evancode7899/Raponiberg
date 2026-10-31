@@ -107,6 +107,12 @@ export type ProofCheck = {
 
 export type ProofEstimate = { id: string; title: string; detail: string };
 
+/** One second route to a figure: what it worked out and whether that is the figure. */
+export type RederivedRoute = { route: string; value: ProofValue; ok: boolean; explain: string; link?: ProofLink };
+
+/** A figure re-derived independently (routes), or the reason it can't be (a model's draw, a typed input). */
+export type Rederivation = { routes: RederivedRoute[] } | { none: string };
+
 export type Proof = {
   report: ProofDescriptor["report"];
   descriptor: ProofDescriptor;
@@ -120,6 +126,12 @@ export type Proof = {
    * is exactly the figure). Null when the figure isn't a sum (a date, a rate).
    */
   selfCheck: { ok: boolean; deltaCents: number; explain: string } | null;
+  /**
+   * The figure worked out again by a second route that shares nothing with the report the
+   * page reads (independence.ts), or why it can't be. Absent where the proof kind already
+   * re-derives the figure from the Book on its own.
+   */
+  rederived?: Rederivation;
   /** An open finding covers the figure: pages withhold it. */
   withheld: boolean;
   blocks: ProofBlock[];

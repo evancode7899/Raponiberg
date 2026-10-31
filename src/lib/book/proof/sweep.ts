@@ -27,6 +27,7 @@ import { buildSpendingReport } from "../reports/spending.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { BLOCKING_KINDS, differs, showValue, type ClearedBasis, type SweepProblem } from "./clearance.ts";
 import { chainReAdds } from "./common.ts";
+import { failedRoutes, independenceOf, type Independence } from "./independence.ts";
 import {
   accountLimitsFigures,
   annualFigures,
@@ -66,6 +67,7 @@ import type { Proof, ProofContext, ProofLink, ProofValue } from "./types.ts";
  *  - DIFFERS: the proof works the figure out to a different value than the page shows;
  *  - SELF_CHECK: the proof's own parts don't re-add to its figure;
  *  - CHAIN: a step of a worked chain doesn't re-add to its "=" line;
+ *  - REDERIVE: a second route that shares nothing with the page's report works it out otherwise (independence.ts);
  *  - WITHHELD: the page shows a figure an open finding withholds;
  *  - LINK: a link the proof offers doesn't parse or build, or its proof fails its own self-check;
  *  - ERROR: the page's report or the proof couldn't be built at all.
@@ -85,9 +87,11 @@ export type SweepReport = {
   stamp: string;
   /** The Book the sweep ran on (book.today). */
   today: string;
-  /** Figures held to their proofs, by page. */
-  pages: { page: string; figures: number; problems: number; ms: number }[];
+  /** Figures held to their proofs, by page; `independence`: how many stand apart from the page's report, and how. */
+  pages: { page: string; figures: number; problems: number; ms: number; independence: Record<Independence, number> }[];
   figures: number;
+  /** Every figure, by how it stands apart from the page's report (independence.ts): "unchecked" ones re-run the page's own route only. */
+  independence: Record<Independence, number>;
   /** Distinct links followed out of those proofs, and the time they took. */
   links: number;
   linkMs: number;
@@ -107,6 +111,8 @@ export type SweepReport = {
 };
 
 export { descriptorKey };
+
+const noIndependence = (): Record<Independence, number> => ({ rederived: 0, declared: 0, "own-route": 0, unchecked: 0 });
 
 /** How many problems the human-readable listing shows; the verdicts themselves are never cut. */
 export const LISTED = 500;
@@ -221,16 +227,19 @@ export async function judgeFigures(
   const problems: Record<string, SweepProblem[]> = {};
   const file = (p: SweepProblem) => (problems[problemKey(p)] ??= []).push(p);
   for (const p of all) file(p);
-  const byPage = new Map<string, { figures: number; problems: number; ms: number }>();
+  type PageRow = { figures: number; problems: number; ms: number; independence: Record<Independence, number> };
+  const byPage = new Map<string, PageRow>();
+  const rowOf = (page: string): PageRow => {
+    let row = byPage.get(page);
+    if (!row) byPage.set(page, (row = { figures: 0, problems: 0, ms: 0, independence: noIndependence() }));
+    return row;
+  };
+  const independence = noIndependence();
   for (const p of all) {
-    const row = byPage.get(p.page) ?? { figures: 0, problems: 0, ms: 0 };
-    row.problems++;
-    byPage.set(p.page, row);
+    rowOf(p.page).problems++;
   }
   const note = (p: SweepProblem) => {
-    const row = byPage.get(p.page) ?? { figures: 0, problems: 0, ms: 0 };
-    row.problems++;
-    byPage.set(p.page, row);
+    rowOf(p.page).problems++;
     all.push(p);
     file(p);
   };
@@ -239,9 +248,8 @@ export async function judgeFigures(
   const links = new Map<string, { from: string; page: string; link: ProofLink }>();
   let linkMs = 0;
   for (const f of figures) {
-    const row = byPage.get(f.page) ?? { figures: 0, problems: 0, ms: 0 };
+    const row = rowOf(f.page);
     row.figures++;
-    byPage.set(f.page, row);
     const t0 = performance.now();
     const p = await build(f.descriptor);
     row.ms += performance.now() - t0;
@@ -251,6 +259,10 @@ export async function judgeFigures(
     }
     if (f.shown && differs(f.shown, p.figure)) note({ kind: "DIFFERS", page: f.page, descriptor: f.descriptor, detail: `${p.describes}: the page shows ${showValue(f.shown)}, the proof works out ${showValue(p.figure)}.` });
     if (p.selfCheck && !p.selfCheck.ok) note({ kind: "SELF_CHECK", page: f.page, descriptor: f.descriptor, detail: `${p.describes}: ${p.selfCheck.explain}, ${(p.selfCheck.deltaCents / 100).toFixed(2)} off the figure.` });
+    for (const detail of failedRoutes(p)) note({ kind: "REDERIVE", page: f.page, descriptor: f.descriptor, detail });
+    const stands = independenceOf(f.descriptor, p);
+    row.independence[stands]++;
+    independence[stands]++;
     for (const b of p.blocks)
       if (b.kind === "chain") for (const bad of chainReAdds(b.lines)) note({ kind: "CHAIN", page: f.page, descriptor: f.descriptor, detail: `${p.describes} · ${b.title}: ${bad}` });
     if (p.withheld && f.shown && !f.asPrinted) note({ kind: "WITHHELD", page: f.page, descriptor: f.descriptor, detail: `${p.describes}: the page shows it, but an open finding withholds it.` });
@@ -283,6 +295,7 @@ export async function judgeFigures(
   return {
     pages: [...byPage].map(([page, x]) => ({ page, ...x, ms: Math.round(x.ms) })),
     figures: figures.length,
+    independence,
     links: links.size,
     linkMs: Math.round(linkMs),
     cleared,
