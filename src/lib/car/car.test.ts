@@ -349,6 +349,14 @@ describe("more than one car", () => {
     expect(buildGarage(g, rows, "2025-09-15", { statementsThrough: "2025-09-30" }).log.filter((i) => i.counted).map((i) => i.date)).toEqual(["2025-07-01", "2025-09-01"]);
   });
 
+  it("adds up the audit's statement costs only through the proven statements", () => {
+    const rows = [row("2025-07-01", "SHELL OIL", 40), row("2025-09-01", "SHELL OIL", 45)];
+    const early = buildGarage(garage(), rows, "2025-09-15", { statementsThrough: "2025-07-31" }).statements.audit;
+    expect([early.rows, Math.abs(early.rowsCents)]).toEqual([1, 4000]);
+    const late = buildGarage(garage(), rows, "2025-09-15", { statementsThrough: "2025-09-30" }).statements.audit;
+    expect([late.rows, Math.abs(late.rowsCents)]).toEqual([2, 8500]);
+  });
+
   it("splits a shared cost between the cars owned that day", () => {
     const g = two({
       entries: [
