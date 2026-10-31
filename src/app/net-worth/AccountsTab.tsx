@@ -1,18 +1,17 @@
 "use client";
 
-import { BlockedValue } from "@/components/ledger/Blocked";
 import { QualityBadge } from "@/components/ledger/LedgerBits";
 import { Card, StatementTable, type TableRow } from "@/components/ui/kit";
-import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 as usd } from "@/lib/formatMoney";
 import type { AccountRollforward, RollforwardReport, RollYear } from "@/lib/profile/rollforwards";
+import { unswept } from "@/lib/book/proof/clearance";
 
 type Cell = Extract<TableRow, { cells: unknown }>["cells"][number];
 const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
-const blockedCell = (blockers: BlockerRef[]): Cell => ({ text: <BlockedValue blockers={blockers} /> });
+const blockedCell = (blockers: BlockerRef[]): Cell => ({ text: "", proof: unswept("blocked"), blockers });
 const uniq = (bs: BlockerRef[]) => [...new Map(bs.map((b) => [b.id, b])).values()];
 const yearLabel = (y: number, currentYear: number) => (y === currentYear ? `${y} YTD` : String(y));
 /** One roll-forward line of one account-year, opening its proof. */
@@ -100,7 +99,7 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
     label,
     indent: !opts.strong && !opts.total,
     ...opts,
-    cells: ys.map((x) => cell(x, f(x) == null ? { text: "—" } : { text: usd(f(x)), proof: rollP(a, x, line) })),
+    cells: ys.map((x) => cell(x, f(x) == null ? { text: "—", proof: unswept("no value that year") } : { text: usd(f(x)), proof: rollP(a, x, line) })),
   });
   const rows: TableRow[] = [
     {
@@ -130,10 +129,11 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
       cell(x, {
         text: (
           <>
-            <ProofValue proof={rollP(a, x, "closing")}>{usd(x.closing)}</ProofValue>
+            {usd(x.closing)}
             <QualityBadge quality={x.quality} />
           </>
         ),
+        proof: rollP(a, x, "closing"),
       }),
     ),
   });

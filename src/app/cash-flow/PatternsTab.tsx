@@ -4,7 +4,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, Segmented } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef } from "@/components/ui/proof/context";
 import { CHARGE_BUCKETS, type SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import { useState, type ReactNode } from "react";
@@ -12,6 +12,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, 
 import type { Ctx } from "./CashFlowClient";
 import { median, sliceStart, sum } from "./model";
 import { Delta } from "./parts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const pctAxis = (v: number) => `${Math.round(v * 100)}%`;
@@ -88,7 +89,7 @@ function Pace({ ctx }: { ctx: Ctx }) {
   const firstHalf = typEnd ? (typical[mid] ?? 0) / typEnd : null;
   // A running total is a month's spending only when it counts all of it: every charge, and
   // no quarter-total line spread across months (those count whole on the day here).
-  const whole = (m: SpendingMonth, cents: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : undefined);
+  const whole = (m: SpendingMonth, cents: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : unswept("only all spending, to the whole month, has a recipe"));
 
   return (
     <Card
@@ -118,11 +119,11 @@ function Pace({ ctx }: { ctx: Ctx }) {
             <Stat
               label={partial ? `${prev.label} by day ${throughDay}` : prev.label}
               value={usd0(partial ? prevCum[Math.min(throughDay, prevCum.length) - 1] ?? 0 : prevCum.at(-1) ?? 0)}
-              proof={partial ? undefined : whole(prev, prevCum.at(-1) ?? 0)}
+              proof={partial ? unswept("part of a month: no recipe for a day count yet") : whole(prev, prevCum.at(-1) ?? 0)}
               sub={partial ? `${usd0(prevCum.at(-1) ?? 0)} for the whole month` : "the month before"}
             />
           )}
-          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} sub={firstHalf != null ? `${formatPercentRatio(firstHalf, 0)} of it gone by the 15th` : undefined} />}
+          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={unswept("a typical month (median) has no recipe yet")} sub={firstHalf != null ? `${formatPercentRatio(firstHalf, 0)} of it gone by the 15th` : undefined} />}
         </div>
         <div className="h-[280px] w-full min-w-0">
           <RechartsResponsive>
@@ -143,7 +144,7 @@ function Pace({ ctx }: { ctx: Ctx }) {
   );
 }
 
-function Stat({ label, value, sub, proof }: { label: string; value: string; sub?: ReactNode; proof?: ProofTarget }) {
+function Stat({ label, value, sub, proof }: { label: string; value: string; sub?: ReactNode; proof: ProofRef }) {
   return (
     <div className="min-w-0">
       <div className="truncate text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>

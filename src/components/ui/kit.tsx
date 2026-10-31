@@ -7,8 +7,9 @@
  */
 
 import { apiSecretHeaders } from "@/components/ledger/useApi";
-import type { ProofTarget } from "@/components/ui/proof/context";
-import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofRef } from "@/components/ui/proof/context";
+import type { BlockerRef } from "@/lib/book/reports/blockerRef";
+import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
@@ -286,27 +287,30 @@ const TONE_SOFT: Record<Tone, string> = {
   accent: "bg-accent-soft text-accent",
 };
 
+/**
+ * A headline figure. Its proof is required (a recipe, unswept(why), or a whole Figure):
+ * the value shows only once the proof sweep clears it (ProofValue), and blocked or
+ * estimated figures say so themselves.
+ */
 export function Stat({
   label,
   value,
   sub,
   tone = "neutral",
   size = "md",
-  proof,
+  ...figure
 }: {
   label: ReactNode;
   value: ReactNode;
   sub?: ReactNode;
   tone?: Tone;
   size?: "md" | "lg";
-  /** Clicking the value shows the rows and checks behind it. */
-  proof?: ProofTarget;
-}) {
+} & FigureProps) {
   return (
     <div className="min-w-0">
       <div className="truncate text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
       <div className={`num mt-1 font-semibold tracking-tight ${size === "lg" ? "text-3xl" : "text-xl"} ${TONE_TEXT[tone]}`}>
-        <ProofValue proof={proof}>{value}</ProofValue>
+        <ProofValue {...figure}>{value}</ProofValue>
       </div>
       {sub && <div className="mt-0.5 text-xs leading-snug text-muted">{sub}</div>}
     </div>
@@ -666,7 +670,8 @@ export type TableRow =
       kind?: "row";
       label: ReactNode;
       help?: string;
-      cells: ({ text: ReactNode; title?: string; dim?: boolean; proof?: ProofTarget } | null)[];
+      /** Each figure's proof is required, as for any figure (ProofValue). */
+      cells: ({ text: ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[] } | null)[];
       strong?: boolean;
       /** A total that closes a section: double rule. */
       total?: boolean;
@@ -735,7 +740,13 @@ export function StatementTable({
                     title={c?.title}
                     className={`num whitespace-nowrap px-2 py-1 text-right ${colCls(j)} ${c?.dim ? "text-faint" : ""} ${r.muted ? "text-[12px]" : ""}`}
                   >
-                    {c ? <ProofValue proof={c.proof}>{c.text}</ProofValue> : ""}
+                    {c ? (
+                      <ProofValue proof={c.proof} blockers={c.blockers}>
+                        {c.text}
+                      </ProofValue>
+                    ) : (
+                      ""
+                    )}
                   </td>
                 ))}
               </tr>

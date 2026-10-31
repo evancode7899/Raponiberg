@@ -9,6 +9,7 @@ import { monthPeriods, yearPeriods, type Flows, type Period } from "@/lib/foreca
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import { useMemo, useState } from "react";
 import { monthLabel, pct, usd } from "./forecastUi";
+import { unswept } from "@/lib/book/proof/clearance";
 
 type Row = {
   /** The cell's proof line (forecastProof.ts LedgerLine). */
@@ -197,7 +198,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                       {shown == null ? (
                         <span className="text-faint">—</span>
                       ) : (
-                        <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : undefined}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
+                        <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : unswept("a forecast line with no proof")}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
                       )}
                     </td>
                   );

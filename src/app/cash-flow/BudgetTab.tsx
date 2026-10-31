@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import type { Ctx } from "./CashFlowClient";
 import { categoryCents, median, SPEND_CATEGORIES, totals } from "./model";
 import { Bar, categoryColor, Dot } from "./parts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const round10 = (cents: number) => Math.round(cents / 1000) * 1000;
 
@@ -69,15 +70,15 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell label="Monthly budget" value={hasTargets ? usd0(budgeted) : "—"} sub={hasTargets ? `${Object.keys(draft).length} categories with a target` : "no targets yet"} />
-        <StatCell
+        <StatCell proof={unswept("Monthly budget")} label="Monthly budget" value={hasTargets ? usd0(budgeted) : "—"} sub={hasTargets ? `${Object.keys(draft).length} categories with a target` : "no targets yet"} />
+        <StatCell proof={unswept("… vs budget")}
           label={`${last.label} vs budget`}
           value={hasTargets ? usd0(latestTotal) : "—"}
           tone={hasTargets ? (latestTotal > budgeted ? "neg" : "pos") : "neutral"}
           sub={hasTargets ? `${latestTotal > budgeted ? "over" : "under"} by ${usd0(Math.abs(budgeted - latestTotal))}` : undefined}
         />
-        <StatCell label="Typical income" value={usd0(t.typicalIncome)} sub="median month in range" />
-        <StatCell
+        <StatCell proof={unswept("Typical income")} label="Typical income" value={usd0(t.typicalIncome)} sub="median month in range" />
+        <StatCell proof={unswept("Planned savings rate")}
           label="Planned savings rate"
           value={hasTargets && t.typicalIncome > 0 ? formatPercentRatio((t.typicalIncome - budgeted) / t.typicalIncome, 0) : "—"}
           sub={hasTargets ? `${usd0(t.typicalIncome - budgeted)}/mo left of a typical month` : "set targets to see it"}

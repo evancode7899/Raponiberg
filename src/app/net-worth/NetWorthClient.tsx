@@ -5,7 +5,7 @@ import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, groupRank, useChartPalette } from "@/components/shell/chartPalette";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofTarget, ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
@@ -19,6 +19,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { AccountsTab } from "./AccountsTab";
 import { ChangesTab } from "./ChangesTab";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const TABS = ["overview", "changes", "built", "returns", "accounts"] as const;
 type Granularity = "month" | "quarter" | "year";
@@ -135,17 +136,16 @@ const changeProof = (granularity: Granularity, start: string, end: string, shown
   shownCents,
 });
 /** Withheld figures open no proof: the page shows why instead. */
-const unless = (bs: BlockerRef[], t: ProofTarget) => (bs.length ? undefined : t);
 
 /** The last twelve months' change and its sources, as the report adds them up (and Home shows them). */
 function trailing(r: NetWorthReport) {
   const t = r.summary.trailing12;
   const blockers = t?.blockers ?? [];
   const ok = t && !blockers.length;
-  const driver = (figure: "saving" | "markets", shownCents: number): ProofTarget | undefined => (ok ? { descriptor: { report: "dashboard", figure, start: t.start, end: t.end }, shownCents } : undefined);
+  const driver = (figure: "saving" | "markets", shownCents: number): ProofRef => (ok ? { descriptor: { report: "dashboard", figure, start: t.start, end: t.end }, shownCents } : unswept("the last twelve months aren't proven"));
   return {
     change: t?.changeCents ?? 0,
-    changeProof: ok ? changeProof("month", t.start, t.end, t.changeCents) : undefined,
+    changeProof: ok ? changeProof("month", t.start, t.end, t.changeCents) : unswept("the last twelve months aren't proven"),
     principal: t?.principalCents ?? 0,
     principalProof: driver("saving", t?.principalCents ?? 0),
     growth: t?.growthCents ?? 0,
@@ -211,7 +211,7 @@ function Overview({ r }: { r: NetWorthReport }) {
         <StatCell
           label="Net worth"
           value={shown(usd0(r.current.totalCents), cur)}
-          proof={unless(cur, balanceProof(r.current.asOf, r.current.totalCents))}
+          proof={balanceProof(r.current.asOf, r.current.totalCents)} blockers={cur}
           sub={
             <>
               as of {r.current.asOf}
@@ -219,8 +219,8 @@ function Overview({ r }: { r: NetWorthReport }) {
             </>
           }
         />
-        <StatCell label="Assets" value={shown(usd0(assets), cur)} proof={unless(cur, balanceProof(r.current.asOf, assets, { side: "assets" }))} />
-        <StatCell label="Debts" value={shown(usd0(debts), cur)} proof={unless(cur, balanceProof(r.current.asOf, debts, { side: "debts" }))} tone={!cur.length && debts < 0 ? "neg" : "neutral"} />
+        <StatCell label="Assets" value={shown(usd0(assets), cur)} proof={balanceProof(r.current.asOf, assets, { side: "assets" })} blockers={cur} />
+        <StatCell label="Debts" value={shown(usd0(debts), cur)} proof={balanceProof(r.current.asOf, debts, { side: "debts" })} blockers={cur} tone={!cur.length && debts < 0 ? "neg" : "neutral"} />
         <StatCell
           label="Last 12 months"
           value={shown(usdDelta(t12.change), t12.blockers)}
@@ -567,9 +567,9 @@ function Returns({ r }: { r: NetWorthReport }) {
     <>
       <BlockedNote what={p ? `returns before ${fromLabel}, so they're chained from there` : "chained returns"} blockers={older} limit={3} />
       <StatGrid cols={3}>
-        <StatCell label={p ? `Since ${fromLabel}` : "Cumulative"} value={p ? formatPercentRatio(p.total, 1) : "—"} sub="cumulative, time-weighted" tone={p && p.total < 0 ? "neg" : "neutral"} />
-        <StatCell label="Annualized" value={p?.annualized == null ? "—" : formatPercentRatio(p.annualized, 2)} sub="per year (shown after a full year)" />
-        <StatCell label="Accounts measured" value={String(r.proven.returns.byAccount.length)} sub="brokerage, IRAs, 401(k)s, 529, HSA" />
+        <StatCell proof={unswept("Annualized")} label={p ? `Since ${fromLabel}` : "Cumulative"} value={p ? formatPercentRatio(p.total, 1) : "—"} sub="cumulative, time-weighted" tone={p && p.total < 0 ? "neg" : "neutral"} />
+        <StatCell proof={unswept("Annualized")} label="Annualized" value={p?.annualized == null ? "—" : formatPercentRatio(p.annualized, 2)} sub="per year (shown after a full year)" />
+        <StatCell proof={unswept("Accounts measured")} label="Accounts measured" value={String(r.proven.returns.byAccount.length)} sub="brokerage, IRAs, 401(k)s, 529, HSA" />
       </StatGrid>
       <Card
         title="Monthly portfolio return"

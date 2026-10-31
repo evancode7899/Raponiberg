@@ -10,6 +10,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { BalancesChart, GapChart, INVEST, NetWorthChart, OpportunityChart, PREPAY, SensitivityChart, type YearPoint } from "./MortgageCharts";
 import { MortgageInputsPanel } from "./MortgageInputsPanel";
 import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, RETIRED_KEYS, STORAGE_KEY, toPlan, type MortgageInputs } from "./inputs";
+import { unswept } from "@/lib/book/proof/clearance";
 
 /** The linked figures (api/mortgage/links): each with where it comes from. */
 export type MortgageLinks = Partial<Record<LinkedKey, { value: number; from: string } | null>>;
@@ -141,24 +142,24 @@ export function MortgageClient() {
           )}
 
           <StatGrid cols={4}>
-            <StatCell
+            <StatCell proof={unswept("Invest − pay down")}
               label="Invest − pay down"
               value={hasChoice ? signed(advantage) : "—"}
               tone={advantage > 0 ? "pos" : advantage < 0 ? "warn" : "neutral"}
               sub={`net worth after ${ins.horizonYears} yr, ${unit}`}
             />
-            <StatCell
+            <StatCell proof={unswept("Break-even return")}
               label="Break-even return"
               value={cmp.breakEvenReturn !== null && hasChoice ? formatPercentRatio(cmp.breakEvenReturn, 2) : "—"}
               sub="investing wins above this"
             />
-            <StatCell
+            <StatCell proof={unswept("Chance investing wins")}
               label="Chance investing wins"
               value={hasChoice && mcFresh ? `${Math.round(mc.chanceInvestWins * 100)}%` : "—"}
               tone={tossUp ? "neutral" : mc.chanceInvestWins > 0.5 ? "pos" : "warn"}
               sub={`${formatPercentRatio(ins.volatility, 0)} volatility · ${mc.paths} markets`}
             />
-            <StatCell
+            <StatCell proof={unswept("Paying down saves")}
               label="Paying down saves"
               value={formatUsd(interestSaved)}
               sub={sooner !== null && sooner > 0 ? `interest · loan gone ${span(sooner)} sooner` : "interest by the horizon"}

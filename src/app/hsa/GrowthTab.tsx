@@ -8,6 +8,7 @@ import { KIND_LABEL, type ExpenseKind } from "@/lib/hsa/qualify";
 import type { Breakdown, HsaReport } from "@/lib/hsa/report";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { hsaProof } from "./proof";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const RATE_SOURCE = { SETTING: "your setting", MEASURED: "your HSA's measured return", FORECAST: "the forecast's return (Forecast page)", DEFAULT: "a long-run stock-market assumption" };
 
@@ -36,7 +37,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
           proof={hsaProof("future-growth", g.futureValueCents - r.totals.unreimbursedCents)}
           sub={a.growthCovered ? "on top of the receipts; tax-free as long as later medical bills cover it" : `on top of the receipts, taxed at ${formatPercentRatio(a.exitRate, 0)} with no receipt behind it`}
         />
-        <StatCell label="Edge over reimbursing now" value={usd0(edge)} tone={edge > 0 ? "pos" : "neutral"} sub={`vs. ${usd0(g.taxableValueCents)} if reimbursed today and invested in a taxable account (${taxableTerms})`} />
+        <StatCell proof={unswept("Edge over reimbursing now")} label="Edge over reimbursing now" value={usd0(edge)} tone={edge > 0 ? "pos" : "neutral"} sub={`vs. ${usd0(g.taxableValueCents)} if reimbursed today and invested in a taxable account (${taxableTerms})`} />
       </StatGrid>
 
       <Card

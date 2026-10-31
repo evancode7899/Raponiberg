@@ -13,6 +13,7 @@ import { pct, usd } from "./profileUi";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import type { AnnualCashLine } from "@/lib/book/proof/annualProof";
+import { unswept } from "@/lib/book/proof/clearance";
 
 /**
  * One-off expenses: the big charges that aren't part of a normal year (a wedding, a move,
@@ -88,21 +89,21 @@ export function OneOffsTab({
         <StatCell
           label={`Marked one-off in ${full?.year ?? "—"}`}
           value={full?.cash ? usd(full.cash.waterfall.nonRecurring) : "—"}
-          proof={full?.cash ? cashP(full.year, "one-offs", full.cash.waterfall.nonRecurring) : undefined}
+          proof={full?.cash ? cashP(full.year, "one-offs", full.cash.waterfall.nonRecurring) : unswept("no year with proven cash")}
           sub={full?.cash ? `${full.oneOffTagged.count} expenses` : undefined}
         />
         <StatCell
           label={`Living expenses ${full?.year ?? ""}`}
           value={full?.cash ? usd(full.cash.waterfall.living) : "—"}
-          proof={full?.cash ? cashP(full.year, "living", full.cash.waterfall.living) : undefined}
+          proof={full?.cash ? cashP(full.year, "living", full.cash.waterfall.living) : unswept("no year with proven cash")}
           sub={full?.cash ? "one-offs left out" : undefined}
         />
-        <StatCell
+        <StatCell proof={unswept("Your FIRE number")}
           label="Your FIRE number"
           value={fire ? usd(fire.number) : "—"}
           sub={fire ? (fire.typed ? "uses the living cost typed on FIRE, so tags here don't move it" : `at a ${pct(fire.wr)} withdrawal rate, after tax`) : "needs a proven full year"}
         />
-        <StatCell label="Status" value={recalculating ? "Recalculating…" : status?.tone === "neg" ? "Not saved" : "Up to date"} sub={status ? <span className={status.tone === "neg" ? "text-neg" : status.tone === "pos" ? "text-pos" : ""}>{status.text}</span> : "ticks save instantly"} />
+        <StatCell proof={unswept("Status")} label="Status" value={recalculating ? "Recalculating…" : status?.tone === "neg" ? "Not saved" : "Up to date"} sub={status ? <span className={status.tone === "neg" ? "text-neg" : status.tone === "pos" ? "text-pos" : ""}>{status.text}</span> : "ticks save instantly"} />
       </StatGrid>
 
       <Card

@@ -2,7 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, Loading, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { ProofDescriptor } from "@/lib/book/proof";
@@ -10,10 +10,11 @@ import type { ChangeMover, NetWorthChange, NetWorthChangesReport } from "@/lib/b
 import { axisUsd, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 type Granularity = NetWorthChangesReport["granularity"];
 
-const proofOf = (descriptor: ProofDescriptor | null, shownCents: number): ProofTarget | undefined => (descriptor ? { descriptor, shownCents } : undefined);
+const proofOf = (descriptor: ProofDescriptor | null, shownCents: number): ProofRef => (descriptor ? { descriptor, shownCents } : unswept("no recipe for this span"));
 
 const UNIT: Record<Granularity, string> = { month: "month", quarter: "quarter", year: "year" };
 

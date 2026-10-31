@@ -8,6 +8,7 @@ import { axisUsd } from "@/lib/formatMoney";
 import { useDeferredValue, useMemo } from "react";
 import { Area, AreaChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { deflator, DollarsToggle, pct, tipUsd, yearAge, type FireProps } from "./ui";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const PATHS = 1000;
 
@@ -23,10 +24,10 @@ export function StressTab({ f, dollars, setDollars, volatility }: FireProps & { 
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell label="Typical market" value={s.fiYears.p50 ? String(s.fiYears.p50) : "Not in 60 yrs"} sub={`median of ${PATHS.toLocaleString()} market paths`} />
-        <StatCell label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : "—"} tone="pos" sub="best 10%: 1 path in 10 is FI by then" />
-        <StatCell label="Bad markets" value={s.fiYears.p90 ? String(s.fiYears.p90) : "Not in 60 yrs"} tone="warn" sub={s.fiYears.p90 ? "worst 10%: 9 paths in 10 are FI by then" : "worst 10% of paths aren't FI within 60 years"} />
-        <StatCell label={f.fi ? `FI by ` : "Chance of FI"} value={byPlanFi != null ? pct(byPlanFi, 0) : "—"} sub="chance by the steady-return plan's FI year" />
+        <StatCell proof={unswept("Typical market")} label="Typical market" value={s.fiYears.p50 ? String(s.fiYears.p50) : "Not in 60 yrs"} sub={`median of ${PATHS.toLocaleString()} market paths`} />
+        <StatCell proof={unswept("Good markets")} label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : "—"} tone="pos" sub="best 10%: 1 path in 10 is FI by then" />
+        <StatCell proof={unswept("Bad markets")} label="Bad markets" value={s.fiYears.p90 ? String(s.fiYears.p90) : "Not in 60 yrs"} tone="warn" sub={s.fiYears.p90 ? "worst 10%: 9 paths in 10 are FI by then" : "worst 10% of paths aren't FI within 60 years"} />
+        <StatCell proof={unswept("this figure")} label={f.fi ? `FI by ` : "Chance of FI"} value={byPlanFi != null ? pct(byPlanFi, 0) : "—"} sub="chance by the steady-return plan's FI year" />
       </StatGrid>
       {s.coveredThroughout != null && (
         <Callout tone={s.coveredThroughout >= 0.8 ? "good" : "warn"} title={`Walking away in ${plan.walkAwayYear}: income covers living cost every retired year in ${pct(s.coveredThroughout, 0)} of paths`}>

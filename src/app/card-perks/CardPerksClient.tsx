@@ -14,6 +14,7 @@ import { OverviewTab } from "./OverviewTab";
 import { pct } from "./parts";
 import { RewardsTab } from "./RewardsTab";
 import { SetupTab } from "./SetupTab";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const TABS = ["overview", "credits", "rewards", "best-card", "setup"] as const;
 export type Save = (next: CardPerksSettings) => Promise<boolean>;
@@ -96,20 +97,20 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
               )}
             </div>
             <StatGrid cols={5}>
-              <StatCell
+              <StatCell proof={unswept("Net value")}
                 label="Net value"
                 value={usd0(t.netCents)}
                 tone={t.netCents >= 0 ? "pos" : "neg"}
                 sub={`rewards + credits + offers − ${usd0(t.feesCents)} in fees`}
               />
-              <StatCell label="Rewards earned" value={usd0(t.rewardsValueCents)} tone="accent" sub={`on ${usd0(t.spendCents)} of card spending`} />
-              <StatCell
+              <StatCell proof={unswept("Rewards earned")} label="Rewards earned" value={usd0(t.rewardsValueCents)} tone="accent" sub={`on ${usd0(t.spendCents)} of card spending`} />
+              <StatCell proof={unswept("Credits used")}
                 label="Credits used"
                 value={usd0(t.perksValueCents + t.offersCents)}
                 sub={`${usd0(t.perksValueCents)} perks · ${usd0(t.offersCents)} offers & bonuses`}
               />
-              <StatCell label="Perk capture" value={pct(t.captureRate)} tone={t.captureRate == null ? "neutral" : t.captureRate >= 0.75 ? "pos" : t.captureRate >= 0.4 ? "warn" : "neg"} sub={`${usd0(t.missedCents)} let lapse`} />
-              <StatCell
+              <StatCell proof={unswept("Perk capture")} label="Perk capture" value={pct(t.captureRate)} tone={t.captureRate == null ? "neutral" : t.captureRate >= 0.75 ? "pos" : t.captureRate >= 0.4 ? "warn" : "neg"} sub={`${usd0(t.missedCents)} let lapse`} />
+              <StatCell proof={unswept("Still to use")}
                 label="Still to use"
                 value={usd0(t.remainingCents)}
                 tone={t.remainingCents > 0 ? "warn" : "neutral"}

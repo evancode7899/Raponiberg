@@ -2,12 +2,13 @@
 
 import { Card } from "@/components/ledger/LedgerBits";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef } from "@/components/ui/proof/context";
 import type { ChildIncome, PersonReport } from "@/lib/tax/buildTaxReport";
 import type { W2Boxes } from "@/lib/tax/facts/payroll";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import type { EstimateKey } from "@/lib/tax/estimateLines";
 import { EstimateValue, formatDate, NumberTable, pct, usd, type Row } from "./taxUi";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const FREQ: Record<string, string> = { WEEKLY: "weekly", BIWEEKLY: "every two weeks", SEMIMONTHLY: "twice a month", MONTHLY: "monthly" };
 
@@ -120,7 +121,7 @@ function PersonIncome({ p, year, isCurrentYear }: { p: PersonReport; year: numbe
               </span>
             </div>
             <W2Table
-              grossProof={isCurrentYear && e.active ? { descriptor: { report: "planning", page: "taxes", figure: "projected-gross", year, personId: p.id }, shownCents: e.projected.gross } : undefined}
+              grossProof={isCurrentYear && e.active ? { descriptor: { report: "planning", page: "taxes", figure: "projected-gross", year, personId: p.id }, shownCents: e.projected.gross } : unswept("projected only for the year in progress")}
               ytd={e.w2Ytd} projected={e.w2Projected} gross={{ ytd: e.ytd.gross, projected: e.projected.gross }} nonTaxable={{ ytd: e.ytd.nonTaxable, projected: e.projected.nonTaxable }} pretax={{ ytd: e.ytd.section125 + e.ytd.hsa + e.ytd.dependentCareFsa, projected: e.projected.section125 + e.projected.hsa + e.projected.dependentCareFsa }} showProjected={e.active && e.remainingPayDates.length > 0} />
             <details className="mt-2">
               <summary className="cursor-pointer text-xs font-medium text-fg-2">Pay stub lines and how each is treated</summary>
@@ -178,7 +179,7 @@ function W2Table({
   pretax: { ytd: number; projected: number };
   showProjected: boolean;
   /** The projected gross pay's proof (the year in progress: the stubs plus the forecast's paychecks and bonuses). */
-  grossProof?: ProofTarget;
+  grossProof: ProofRef;
 }) {
   const both = (a: number, b: number) => (showProjected ? [usd(a), usd(b)] : [usd(a)]);
   const rows: Row[] = [

@@ -3,6 +3,7 @@
 import { lastDataStamp } from "@/components/ledger/useApi";
 import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
+import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
 import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue } from "@/lib/book/proof/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, formatUsdFromCents, usd0 } from "@/lib/formatMoney";
@@ -54,10 +55,59 @@ export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofE
           ← Back{prev.proof ? ` to ${prev.proof.describes}` : ""}
         </button>
       )}
+      {top?.clearance && <ClearanceNote c={top.clearance} />}
       {top?.error && <ErrorNote>{top.error}</ErrorNote>}
-      {top && !p && !top.error && <Loading label="Adding up the parts…" />}
-      {top && p && <ProofBody key={stack.length} p={p} shownCents={top.target.shownCents} perMonths={top.target.perMonths} onFollow={onFollow} />}
+      {top?.target && !p && !top.error && <Loading label="Adding up the parts…" />}
+      {top?.target && p && <ProofBody key={stack.length} p={p} shownCents={top.target.shownCents} perMonths={top.target.perMonths} onFollow={onFollow} />}
     </Drawer>
+  );
+}
+
+const WITHHELD_TITLE: Record<WithheldReason, string> = {
+  unswept: "Withheld: this figure has no proof yet",
+  blocked: "Withheld: a finding blocks this figure",
+  flagged: "Withheld: the proof sweep flagged this figure",
+  mismatch: "Withheld: the page shows a different number than its proof cleared",
+  stale: "Withheld: the proof sweep ran on other data",
+  failed: "Withheld: the proof sweep didn't answer",
+  "not-cleared": "Withheld: the proof sweep never held this figure to its proof",
+};
+
+/** Whether the page may show the figure, and why not (clearance.ts): what its dash means. */
+function ClearanceNote({ c }: { c: Clearance }) {
+  return (
+    <div className="mb-4" data-proof-clearance={c.state === "withheld" ? `withheld:${c.reason}` : c.state}>
+      {c.state === "cleared" ? (
+        <Callout tone="good">
+          Cleared: the proof sweep of this data held it to its proof{c.basis === "estimate" ? ", and it rests on an estimate (listed below)" : c.basis === "accepted" ? ", resting on an exception you accepted (listed below)" : ""}.
+        </Callout>
+      ) : c.state === "verifying" ? (
+        <Callout tone="info">Verifying: the proof sweep of this data is still running. The page shows the figure once the sweep clears it.</Callout>
+      ) : (
+        <Callout tone={c.reason === "mismatch" || c.reason === "flagged" ? "bad" : "warn"} title={WITHHELD_TITLE[c.reason]}>
+          {c.reason === "mismatch" && c.shown && c.cleared ? (
+            <span data-proof-mismatch="">
+              The page shows <span className="num font-semibold">{valueText(c.shown)}</span>; the proof sweep cleared <span className="num font-semibold">{valueText(c.cleared)}</span>. That&apos;s a bug in the
+              app, not in your documents.
+            </span>
+          ) : c.reason === "blocked" && c.blockers?.length ? (
+            <>
+              <ul className="mt-1 flex flex-col gap-1 text-xs">
+                {c.blockers.slice(0, 8).map((b) => (
+                  <li key={b.id}>
+                    <span className={`font-medium ${b.status === "FAIL" ? "text-neg" : "text-warn"}`}>{b.title}</span>
+                    <span className="text-muted"> — {b.fix}</span>
+                  </li>
+                ))}
+              </ul>
+              {c.blockers.length > 8 && <p className="mt-1 text-xs text-muted">…and {c.blockers.length - 8} more on Statements → Issues.</p>}
+            </>
+          ) : (
+            c.detail
+          )}
+        </Callout>
+      )}
+    </div>
   );
 }
 

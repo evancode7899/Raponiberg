@@ -18,9 +18,14 @@ import { dataStamp } from "../cache.ts";
 /** A sweep under way: its answer (JSON text), and how to stop it. */
 export type SweepJob = { result: Promise<string>; stop: () => void };
 
+/** Where the sweep of the data as it is now stands, without waiting for it. */
+export type SweepPeek = { state: "ready"; body: string } | { state: "pending" } | { state: "failed"; error: string };
+
 export type SweepRunner = {
   /** The sweep of the data as it is now, as JSON text: the kept answer, the one under way, or a new one. */
   report: () => Promise<string>;
+  /** The kept answer for the data as it is now, or that it's under way (started if it wasn't), or why it failed. */
+  peek: () => SweepPeek;
   /** Starts the sweep of the data as it is now, if it isn't already done or under way. */
   warm: () => void;
 };
@@ -35,6 +40,8 @@ export function createSweepRunner(opts: { stamp: () => string; run: (stamp: stri
   const { stamp, run, pollMs = 1000 } = opts;
   let done: { stamp: string; body: string } | null = null;
   let current: { stamp: string; result: Promise<string> } | null = null;
+  // The last sweep that failed outright (not overtaken), so a page hears why rather than waiting forever.
+  let failed: { stamp: string; error: string } | null = null;
 
   const start = (s: string) => {
     const job = run(s);
@@ -58,8 +65,11 @@ export function createSweepRunner(opts: { stamp: () => string; run: (stamp: stri
       (body) => {
         if (stamp() === s) done = { stamp: s, body };
       },
-      () => {},
+      (e) => {
+        if (!(e instanceof Superseded) && stamp() === s) failed = { stamp: s, error: e instanceof Error ? e.message : String(e) };
+      },
     );
+    if (failed?.stamp === s) failed = null;
     current = entry;
     return entry.result;
   };
@@ -80,6 +90,18 @@ export function createSweepRunner(opts: { stamp: () => string; run: (stamp: stri
           if (!(e instanceof Superseded) || i >= MAX_RESTARTS) throw e instanceof Superseded ? new Error("The data kept changing while the proof sweep ran; it runs again once the data settles.") : e;
         }
       }
+    },
+    peek() {
+      const s = stamp();
+      if (done?.stamp === s) return { state: "ready", body: done.body };
+      if (failed?.stamp === s && current?.stamp !== s) {
+        const error = failed.error;
+        // Asked again later, it tries again: a failure is never kept as the answer.
+        failed = null;
+        return { state: "failed", error };
+      }
+      void forNow().catch(() => {});
+      return { state: "pending" };
     },
     warm() {
       void forNow().catch(() => {});

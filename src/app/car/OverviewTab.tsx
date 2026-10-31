@@ -14,6 +14,7 @@ import { isReading } from "./EntryEditor";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { BUCKETS, bucketColor, bucketOf, byBucket, carProof, fmtDate, miles, NumInput, perMile, relative, Swatch, throughText, usd2 } from "./parts";
 import { serviceDue } from "./ServiceTab";
+import { unswept } from "@/lib/book/proof/clearance";
 
 type Span = "toDate" | "last12" | "next12";
 
@@ -50,15 +51,15 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
 
       <StatGrid cols={6}>
         <StatCell label="Cost of ownership" value={usd0(t.tco)} proof={carProof(r.carId, { span: "toDate" }, t.tco)} sub={`${miles(r.odometer.daysOwned / 30.44, 0)} months, all-in · ${usd0(t.statementCents)} on statements, ${usd0(t.typedCents)} typed by you (price, interest, off-statement)`} />
-        <StatCell label="All-in per mile" value={perMile(t.perMile)} proof={t.perMile != null ? carProof(r.carId, { span: "toDate", per: "mile" }, null) : undefined} tone="accent" sub={r.last12.perMile != null ? `${perMile(r.last12.perMile)} over the last 12 months` : undefined} />
-        <StatCell label="Per month" value={usd0(t.perMonth)} proof={t.perMonth != null ? carProof(r.carId, { span: "toDate", per: "month" }, null) : undefined} sub={t.perDay != null ? `${perMile(t.perDay)} a day` : undefined} />
-        <StatCell
+        <StatCell label="All-in per mile" value={perMile(t.perMile)} proof={t.perMile != null ? carProof(r.carId, { span: "toDate", per: "mile" }, null) : unswept("an estimate on no statement, or no rate to show")} tone="accent" sub={r.last12.perMile != null ? `${perMile(r.last12.perMile)} over the last 12 months` : undefined} />
+        <StatCell label="Per month" value={usd0(t.perMonth)} proof={t.perMonth != null ? carProof(r.carId, { span: "toDate", per: "month" }, null) : unswept("an estimate on no statement, or no rate to show")} sub={t.perDay != null ? `${perMile(t.perDay)} a day` : undefined} />
+        <StatCell proof={unswept("One more mile")}
           label="One more mile"
           value={perMile(t.marginalPerMile)}
           sub={t.operatingPerMile != null ? `${perMile(t.operatingPerMile)} fuel & upkeep + ${perMile(r.depreciation.plannedPerMile)} wear` : "needs odometer readings"}
         />
-        <StatCell label="Miles driven" value={miles(r.odometer.driven)} sub={r.odometer.perYear ? `~${miles(r.odometer.perYear)} a year · odometer ${miles(r.odometer.current)}` : undefined} />
-        <StatCell label="Fuel economy" value={r.fuel.mpg ? `${r.fuel.mpg.toFixed(1)} mpg` : "—"} sub={r.fuel.recentMpg ? `${r.fuel.recentMpg.toFixed(1)} over the last ${Math.min(5, r.fuel.fills.length)} fills` : "log gallons and odometer"} />
+        <StatCell proof={unswept("Miles driven")} label="Miles driven" value={miles(r.odometer.driven)} sub={r.odometer.perYear ? `~${miles(r.odometer.perYear)} a year · odometer ${miles(r.odometer.current)}` : undefined} />
+        <StatCell proof={unswept("Fuel economy")} label="Fuel economy" value={r.fuel.mpg ? `${r.fuel.mpg.toFixed(1)} mpg` : "—"} sub={r.fuel.recentMpg ? `${r.fuel.recentMpg.toFixed(1)} over the last ${Math.min(5, r.fuel.fills.length)} fills` : "log gallons and odometer"} />
       </StatGrid>
 
       <Alerts ctx={ctx} />
@@ -105,10 +106,10 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                         </span>
                       </td>
                       <td className={table.tdR}>
-                        <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : undefined}>{usd0(c)}</ProofValue>
+                        <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : unswept("an estimate on no statement, or no rate to show")}>{usd0(c)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : undefined}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
-                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : undefined}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : unswept("an estimate on no statement, or no rate to show")}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : unswept("an estimate on no statement, or no rate to show")}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
                       <td className={`${table.tdR} text-muted`}>{view.total ? formatPercentRatio(c / view.total, 0) : "—"}</td>
                     </tr>
                   );
@@ -116,10 +117,10 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                 <tr className="border-t-[3px] border-double border-line-strong font-semibold">
                   <td className={table.td}>Total</td>
                   <td className={table.tdR}>
-                    <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : undefined}>{usd0(view.total)}</ProofValue>
+                    <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : unswept("an estimate on no statement, or no rate to show")}>{usd0(view.total)}</ProofValue>
                   </td>
-                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : undefined}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
-                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : undefined}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : unswept("an estimate on no statement, or no rate to show")}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : unswept("an estimate on no statement, or no rate to show")}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
                   <td className={table.tdR} />
                 </tr>
               </tbody>
@@ -136,10 +137,10 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
           {!r.sold && <TripCost ctx={ctx} />}
           <Card title="Owning vs driving" subtitle="What the car costs standing still, and what each mile adds.">
             <StatGrid cols={2}>
-              <StatCell label="Owning it, per month" value={usd0(t.fixedPerMonth)} sub="insurance, parking, taxes, interest — accrued to date" />
-              <StatCell label="Driving it, per mile" value={perMile(t.operatingPerMile)} sub="fuel, maintenance, repairs, care" />
-              <StatCell label="Cash out the door" value={usd0(t.cashOutTheDoor)} sub="purchase, interest and every cost paid" />
-              <StatCell label="Prepaid, not yet used" value={usd0(r.prepaidCents)} sub="the rest of premiums and annual bills" />
+              <StatCell proof={unswept("Owning it, per month")} label="Owning it, per month" value={usd0(t.fixedPerMonth)} sub="insurance, parking, taxes, interest — accrued to date" />
+              <StatCell proof={unswept("Driving it, per mile")} label="Driving it, per mile" value={perMile(t.operatingPerMile)} sub="fuel, maintenance, repairs, care" />
+              <StatCell proof={unswept("Cash out the door")} label="Cash out the door" value={usd0(t.cashOutTheDoor)} sub="purchase, interest and every cost paid" />
+              <StatCell proof={unswept("Prepaid, not yet used")} label="Prepaid, not yet used" value={usd0(r.prepaidCents)} sub="the rest of premiums and annual bills" />
             </StatGrid>
           </Card>
         </div>

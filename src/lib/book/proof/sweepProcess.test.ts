@@ -87,4 +87,30 @@ describe("the proof sweep runner", () => {
     expect(await s.report()).toBe("{}");
     expect(started).toHaveLength(1);
   });
+
+  it("peeks without waiting: pending while the sweep of the data runs, then the answer", async () => {
+    let stamp = "a";
+    const { started, run } = fakeRuns();
+    const s = createSweepRunner({ stamp: () => stamp, run, pollMs: 5 });
+    expect(s.peek()).toEqual({ state: "pending" });
+    expect(s.peek()).toEqual({ state: "pending" });
+    expect(started).toHaveLength(1);
+    started[0]!.finish('{"n":1}');
+    await tick();
+    expect(s.peek()).toEqual({ state: "ready", body: '{"n":1}' });
+    stamp = "b";
+    expect(s.peek()).toEqual({ state: "pending" });
+    expect(started).toHaveLength(2);
+  });
+
+  it("peeks a failed sweep as failed once, then tries again", async () => {
+    const { started, run } = fakeRuns();
+    const s = createSweepRunner({ stamp: () => "a", run, pollMs: 5 });
+    s.peek();
+    started[0]!.fail(new Error("The proof sweep stopped (exit 1)"));
+    await tick();
+    expect(s.peek()).toEqual({ state: "failed", error: "The proof sweep stopped (exit 1)" });
+    expect(s.peek()).toEqual({ state: "pending" });
+    expect(started).toHaveLength(2);
+  });
 });

@@ -4,7 +4,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
@@ -13,6 +13,7 @@ import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "r
 import type { Ctx } from "./CashFlowClient";
 import { KINDS, mergeCategories, mergeMerchants, MONTH_NAMES, monthKey, shiftMonth, SPEND_CATEGORIES, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 type Mode = "month" | "ytd" | "12m";
 
@@ -114,7 +115,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
           tone={a.net < 0 ? "neg" : "neutral"}
           sub={<Change now={a.net} then={b.net} proof={ctx.proof("net", then, { shownCents: b.net })} />}
         />
-        <StatCell
+        <StatCell proof={unswept("Savings rate (take-home)")}
           label="Savings rate (take-home)"
           value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
           sub={b.savingsRate == null ? "—" : `${formatPercentRatio(b.savingsRate, 0)} a year earlier`}
@@ -167,7 +168,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
   );
 }
 
-function Change({ now, then, proof, goodWhenDown = false }: { now: number; then: number; proof?: ProofTarget; goodWhenDown?: boolean }) {
+function Change({ now, then, proof, goodWhenDown = false }: { now: number; then: number; proof: ProofRef; goodWhenDown?: boolean }) {
   return (
     <span className="flex items-center gap-1.5">
       <Delta now={now} before={then} goodWhenDown={goodWhenDown} />
@@ -191,8 +192,8 @@ function MoverCard({ title, rows, ctx, now, then }: { title: string; rows: { key
                 {m.name}
               </button>
               <span className="num shrink-0 text-xs text-muted">
-                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : undefined}>{usd0(m.then)}</ProofValue> →{" "}
-                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : undefined} className="text-fg">
+                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : unswept("nothing spent here in that span")}>{usd0(m.then)}</ProofValue> →{" "}
+                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : unswept("nothing spent here in that span")} className="text-fg">
                   {usd0(m.now)}
                 </ProofValue>
                 {!m.then && <span className="ml-1.5 text-info">new</span>}
@@ -403,7 +404,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
       {years.map((y, i) => {
         const v = val(y.months, r.f);
         // A year's months are one unbroken run (the report's months are), so one range covers them.
-        const proof = r.proof ? ctx.proof(r.proof.metric, y.months, { category: r.proof.category, perMonth: as === "avg", shownCents: sum(y.months, r.f) }) : undefined;
+        const proof = r.proof ? ctx.proof(r.proof.metric, y.months, { category: r.proof.category, perMonth: as === "avg", shownCents: sum(y.months, r.f) }) : unswept("nothing spent here in that span");
         return (
           <td key={y.y} className={`${table.tdR} ${r.strong ? "font-semibold" : ""}`}>
             <ProofValue proof={proof}>{usd0(v)}</ProofValue>

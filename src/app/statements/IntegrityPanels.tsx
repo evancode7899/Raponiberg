@@ -2,41 +2,46 @@
 
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
-import type { SweepReport } from "@/lib/book/proof/sweep";
+import type { SweepProblemKind, SweepReport } from "@/lib/book/proof/sweep";
 import type { AcceptedFinding, Finding, RetiredException, StaleException } from "@/lib/book/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { useEffect, useMemo, useState } from "react";
 import type { BookReport, OnAccept, OnRetire } from "./useBookReport";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const date = (iso: string) => formatDisplayDateFromYmd(iso);
 
-const KIND_WORDS: Record<SweepReport["problems"][number]["kind"], string> = {
+const KIND_WORDS: Record<SweepProblemKind, string> = {
   DIFFERS: "page and proof differ",
   SELF_CHECK: "parts don't re-add",
   CHAIN: "a step doesn't add up",
   WITHHELD: "shown though withheld",
   LINK: "a link fails",
   ERROR: "couldn't be built",
+  SKIPPED: "not swept",
 };
 
 /**
  * The proof sweep: every figure every page shows held to its proof (lib/book/proof/sweep.ts).
  * A problem here is a bug in the app, never in the documents, and the page withholds that figure.
  */
+/** Waits for the sweep's report rather than hearing it's still running. */
+const SWEEP_PATH = "/api/proof/sweep?wait=1";
+
 function SweepCard({ api }: { api: Api }) {
-  const [r, setR] = useState<SweepReport | null>(() => cachedResponse<SweepReport>("/api/proof/sweep"));
+  const [r, setR] = useState<SweepReport | null>(() => cachedResponse<SweepReport>(SWEEP_PATH));
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     api
-      .call<SweepReport>("/api/proof/sweep")
+      .call<SweepReport>(SWEEP_PATH)
       .then((x) => live && setR(x))
       .catch((e: Error) => live && setError(e.message));
     return () => {
       live = false;
     };
   }, [api]);
-  const bad = r?.problems.length ?? 0;
+  const bad = r?.problemCount ?? 0;
   return (
     <Card
       title="Figures vs their proofs"
@@ -73,14 +78,15 @@ function SweepCard({ api }: { api: Api }) {
               </tbody>
             </table>
           </div>
-          {bad > 0 && (
+          {(bad > 0 || r.skipped.length > 0) && (
             <ul className="mt-3 flex flex-col gap-2 text-xs">
-              {r.problems.map((p, i) => (
+              {[...r.skipped, ...r.listing].map((p, i) => (
                 <li key={i}>
-                  <Badge tone="neg">{KIND_WORDS[p.kind]}</Badge> <span className="font-medium text-fg">{p.page}</span>
+                  <Badge tone={p.kind === "SKIPPED" ? "warn" : "neg"}>{KIND_WORDS[p.kind]}</Badge> <span className="font-medium text-fg">{p.page}</span>
                   <span className="text-muted"> — {p.detail}</span>
                 </li>
               ))}
+              {bad > r.listing.length && <li className="text-muted">…and {(bad - r.listing.length).toLocaleString()} more, each withheld on its page.</li>}
             </ul>
           )}
         </>
@@ -108,20 +114,20 @@ export function IssuesPanel({ r, onAccept, onRetire, onGo }: { r: BookReport; on
   return (
     <>
       <StatGrid cols={6}>
-        <StatCell label="Failing" value={String(failing.length)} tone={failing.length ? "neg" : "pos"} sub="data that contradicts itself" />
-        <StatCell label="Missing" value={String(missing.length)} tone={missing.length ? "warn" : "pos"} sub="statements or stubs not on file" />
-        <StatCell
+        <StatCell proof={unswept("Failing")} label="Failing" value={String(failing.length)} tone={failing.length ? "neg" : "pos"} sub="data that contradicts itself" />
+        <StatCell proof={unswept("Missing")} label="Missing" value={String(missing.length)} tone={missing.length ? "warn" : "pos"} sub="statements or stubs not on file" />
+        <StatCell proof={unswept("Proven through")}
           label="Proven through"
           value={date(r.horizon.netWorth)}
           sub={`the data edge: every figure stops here${edge.length ? ` · ${edge.length} awaiting newer statements` : ""}`}
         />
-        <StatCell label="Checks fully passing" value={`${passingChecks} / ${r.checks.length}`} tone={passingChecks === r.checks.length ? "pos" : "neutral"} sub="details on Checks" />
-        <StatCell
+        <StatCell proof={unswept("Checks fully passing")} label="Checks fully passing" value={`${passingChecks} / ${r.checks.length}`} tone={passingChecks === r.checks.length ? "pos" : "neutral"} sub="details on Checks" />
+        <StatCell proof={unswept("Inferred")}
           label="Inferred"
           value={String(r.inferences.length)}
           sub={r.inferences.some((i) => i.partial) ? `${r.inferences.filter((i) => !i.partial).length} proven from two other sources · ${r.inferences.filter((i) => i.partial).length} from one source (partial)` : "proven from two other sources"}
         />
-        <StatCell
+        <StatCell proof={unswept("Accepted exceptions")}
           label="Accepted exceptions"
           value={String(r.accepted.length)}
           tone={r.stale.length ? "warn" : "neutral"}

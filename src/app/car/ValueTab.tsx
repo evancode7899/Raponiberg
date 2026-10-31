@@ -9,6 +9,7 @@ import { useState } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
 import { CentsInput, fmtDate, perMile } from "./parts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 export function ValueTab({ ctx }: { ctx: CarCtx }) {
   const { report: r, car: s, chart, saveCar, saving } = ctx;
@@ -38,11 +39,11 @@ export function ValueTab({ ctx }: { ctx: CarCtx }) {
   return (
     <>
       <StatGrid cols={5}>
-        <StatCell label="All-in purchase" value={usd0(r.acquisition.cents)} sub={`vehicle ${usd0(s.purchase.priceCents)}`} />
-        <StatCell label={r.sold ? "Sold for" : "Worth now (market)"} value={usd0(valueNow)} sub={r.sold ? fmtDate(r.through) : r.values.latest ? `last checked ${fmtDate(r.values.latest.date)}` : "add a value check below"} />
-        <StatCell label="Lost to date (market)" value={usd0(d.marketToDate)} tone="neg" sub={d.marketPerYear != null ? `trend ${usdDelta(d.marketPerYear)} a year` : undefined} />
-        <StatCell label="Lost to date (planned)" value={usd0(d.plannedToDate)} sub={`${perMile(d.plannedPerMile)} a mile to ${s.plan.sellAtMiles.toLocaleString("en-US")} mi`} />
-        <StatCell label="Planned value now" value={usd0(d.plannedValueNow)} sub={valueNow != null && d.plannedValueNow != null ? `market is ${usdDelta(valueNow - d.plannedValueNow)} vs plan` : undefined} />
+        <StatCell proof={unswept("All-in purchase")} label="All-in purchase" value={usd0(r.acquisition.cents)} sub={`vehicle ${usd0(s.purchase.priceCents)}`} />
+        <StatCell proof={unswept("Lost to date (market)")} label={r.sold ? "Sold for" : "Worth now (market)"} value={usd0(valueNow)} sub={r.sold ? fmtDate(r.through) : r.values.latest ? `last checked ${fmtDate(r.values.latest.date)}` : "add a value check below"} />
+        <StatCell proof={unswept("Lost to date (market)")} label="Lost to date (market)" value={usd0(d.marketToDate)} tone="neg" sub={d.marketPerYear != null ? `trend ${usdDelta(d.marketPerYear)} a year` : undefined} />
+        <StatCell proof={unswept("Lost to date (planned)")} label="Lost to date (planned)" value={usd0(d.plannedToDate)} sub={`${perMile(d.plannedPerMile)} a mile to ${s.plan.sellAtMiles.toLocaleString("en-US")} mi`} />
+        <StatCell proof={unswept("Planned value now")} label="Planned value now" value={usd0(d.plannedValueNow)} sub={valueNow != null && d.plannedValueNow != null ? `market is ${usdDelta(valueNow - d.plannedValueNow)} vs plan` : undefined} />
       </StatGrid>
 
       <Card

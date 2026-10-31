@@ -200,11 +200,10 @@ function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }
   const t = r.totals;
   if (!r.awards.length) return <NoLetters r={r} fdata={fdata} />;
   const fullYears = r.awards.filter((a) => !a.partial).map((a) => a.year);
-  // A total a pay finding withholds shows as withheld (figureReads), not as a number.
+  // A total a pay finding withholds shows as withheld (figureReads): the tile withholds it itself.
   const total = (measure: string, cents: number) => {
     const proof = bon({ figure: "totals", measure } as Fig, cents);
-    const held = heldBy(r, proof);
-    return held.length ? { value: <BlockedValue blockers={held} />, proof: undefined } : { value: usd0(cents), proof };
+    return { value: usd0(cents), proof, blockers: heldBy(r, proof) };
   };
   return (
     <>

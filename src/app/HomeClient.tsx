@@ -7,7 +7,7 @@ import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Card, ErrorNote, Loading, PageBody, StatCell, StatGrid } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofTarget, ProofRef } from "@/components/ui/proof/context";
 import type { ProofDescriptor } from "@/lib/book/proof";
 import type { HomeSummary } from "@/lib/dashboard/homeSummary";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
@@ -15,14 +15,15 @@ import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } fr
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis } from "recharts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 /** Every figure is null when it can't be proven; its blockers say why. Each figure shown carries its proof's descriptor. */
 type Summary = HomeSummary;
 type Change = Summary["netWorth"]["change"]["month"];
 
 /** A figure's proof, as the page shows it (cents before any per-month split). */
-const proofOf = (descriptor: ProofDescriptor | null | undefined, shownCents: number | null | undefined): ProofTarget | undefined =>
-  descriptor && shownCents != null ? { descriptor, shownCents } : undefined;
+const proofOf = (descriptor: ProofDescriptor | null | undefined, shownCents: number | null | undefined): ProofRef =>
+  descriptor && shownCents != null ? { descriptor, shownCents } : unswept("Home has no recipe for this figure");
 
 const date = (iso: string | null | undefined) => (iso ? formatDisplayDateFromYmd(iso) : "—");
 const deltaTone = (c: number | null) => (c == null || c === 0 ? "text-muted" : c > 0 ? "text-pos" : "text-neg");
@@ -371,7 +372,7 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
                 </span>
               </Link>
               <span className="num text-right font-medium">
-                <ProofValue proof={c.lastMonthCents ? proofOf(c.proof, c.lastMonthCents) : undefined}>{usd0(c.lastMonthCents)}</ProofValue>
+                <ProofValue proof={proofOf(c.proof, c.lastMonthCents)}>{usd0(c.lastMonthCents)}</ProofValue>
               </span>
               <span className={`num text-right text-xs ${Math.abs(over) < 2500 ? "text-muted" : over > 0 ? "text-neg" : "text-pos"}`}>
                 {Math.abs(over) < 100 ? "—" : usdDelta(over)}

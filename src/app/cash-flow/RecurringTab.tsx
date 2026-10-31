@@ -8,6 +8,7 @@ import { useState } from "react";
 import type { Ctx } from "./CashFlowClient";
 import { sum } from "./model";
 import { categoryColor, Dot } from "./parts";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const CADENCE: Record<string, string> = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", quarterly: "Quarterly", annual: "Yearly" };
 
@@ -25,10 +26,10 @@ export function RecurringTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell label="Bills & subscriptions" value={`${usd0(sum(active, (c) => c.annualCents) / 12)}/mo`} sub={`${active.length} active · ${usd0(sum(active, (c) => c.annualCents))} a year`} />
-        <StatCell label="Price changes" value={raised.length} tone={raised.length ? "warn" : "neutral"} sub={raised.length ? `+${usd0(sum(raised, (c) => c.changeCents!))} per charge` : "latest charges match"} />
-        <StatCell label="Habits" value={`${usd0(sum(activeHabits, (c) => c.last12Cents) / 12)}/mo`} sub={`${activeHabits.length} places you go often`} />
-        <StatCell label="Stopped" value={stopped.length} sub={stopped.length ? `${usd0(sum(stopped, (c) => c.annualCents) / 12)}/mo no longer charged` : "none"} />
+        <StatCell proof={unswept("Bills & subscriptions")} label="Bills & subscriptions" value={`${usd0(sum(active, (c) => c.annualCents) / 12)}/mo`} sub={`${active.length} active · ${usd0(sum(active, (c) => c.annualCents))} a year`} />
+        <StatCell proof={unswept("Price changes")} label="Price changes" value={raised.length} tone={raised.length ? "warn" : "neutral"} sub={raised.length ? `+${usd0(sum(raised, (c) => c.changeCents!))} per charge` : "latest charges match"} />
+        <StatCell proof={unswept("Habits")} label="Habits" value={`${usd0(sum(activeHabits, (c) => c.last12Cents) / 12)}/mo`} sub={`${activeHabits.length} places you go often`} />
+        <StatCell proof={unswept("Stopped")} label="Stopped" value={stopped.length} sub={stopped.length ? `${usd0(sum(stopped, (c) => c.annualCents) / 12)}/mo no longer charged` : "none"} />
       </StatGrid>
 
       <Card
