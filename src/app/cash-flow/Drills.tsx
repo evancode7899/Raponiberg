@@ -214,7 +214,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Income" value={usd0(m.incomeCents)} proof={ctx.proof("income", one, { shownCents: m.incomeCents })} />
-        <Stat label="Spending" value={usd0(m.spendingCents)} proof={ctx.proof("spending", one, { shownCents: m.spendingCents })} sub="net of refunds and credits" />
+        <Stat label="Spending" value={usd0(m.spendingCents)} proof={ctx.proof("spending", one, { shownCents: m.spendingCents })} sub="net of merchant refunds; tax refunds are income" />
         <Stat label="Net saved" value={usd0(m.netCents)} proof={ctx.proof("net", one, { shownCents: m.netCents })} />
         <Stat label="Savings rate" value={m.savingsRate == null ? "—" : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
       </div>
@@ -272,7 +272,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <div>
           <Eyebrow>Credits and refunds</Eyebrow>
           <p className="mb-1 text-xs text-muted">
-            Merchants that paid back more than they charged this month (a refund, a reimbursement, a tax refund). Each takes spending down; check it&apos;s filed under the
+            Merchants that paid back more than they charged this month (a refund, a reimbursement). Each takes spending down (a tax refund never does: it counts as income); check it&apos;s filed under the
             category it pays back.
           </p>
           <ul className="flex flex-col">{credits.map(merchant)}</ul>

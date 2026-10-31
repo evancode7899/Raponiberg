@@ -121,7 +121,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       <Card
         title="Spending, smoothed"
         subtitle={`Bars are single months; the lines are trailing 3- and 12-month averages, which show the direction once lumpy months (tax payments, a big purchase) wash out. ${
-          metric === "everyday" ? "Everyday leaves out rent and recurring bills, charges of $1,500+, taxes, and big refunds." : ""
+          metric === "everyday" ? "Everyday leaves out rent and recurring bills, charges of $1,500+, taxes, and big merchant refunds." : ""
         } Click a month to audit it.`}
         actions={
           <Segmented
@@ -167,8 +167,8 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
                 {spent > 0 ? ` (${formatPercentRatio(k.cents / spent, 0)})` : ""}
               </span>
             ))}
-            . Bills are rent and the merchants on the Recurring tab. A refund counts in the band of what it pays back, so a big refund (or a tax refund) shows below zero in big &
-            one-off, never in everyday. Click a month to audit it.
+            . Bills are rent and the merchants on the Recurring tab. A refund counts in the band of what it pays back, so a big refund shows below zero in big & one-off,
+            never in everyday. Tax refunds are income, never taken off spending. Click a month to audit it.
           </>
         }
         actions={

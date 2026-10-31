@@ -433,7 +433,7 @@ function kindView(book: Book, d: CashFlowDescriptor, settings: Pick<FinancialPro
   const outside = periods.some((p) => !months.some((m) => m.start >= p.start && m.end <= p.end));
   const note = [
     d.spendingKind === "everyday" ? "Everyday is each month's spending less its bills and big charges, so it takes in anything the other two bands don't." : "",
-    "A refund or reimbursement counts in the band of what it pays back; tax payments and refunds are never everyday.",
+    "A refund or reimbursement counts in the band of what it pays back; tax payments are never everyday, and tax refunds are income, never a credit to spending.",
     outside ? "Some of these months are outside the proven months Cash flow shows, so the page has no band figure for them." : "",
   ]
     .filter(Boolean)

@@ -1,13 +1,13 @@
 import { daysBetween, endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import { expenseFingerprint } from "../../profile/annualMath.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
-import { household, PARTNER_SHARE_CARDS, PARTNER_SHARE_RENT } from "../householdView.ts";
+import { PARTNER_SHARE_CARDS, PARTNER_SHARE_RENT } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
-import { oneOffSubject, withReimbursements } from "../reimbursements.ts";
+import { oneOffSubject } from "../reimbursements.ts";
 import { taxAuthority } from "../../tax/facts/payments.ts";
 import { countsOn, rentPayments, type RentPayment } from "../rent.ts";
 import type { BlockerRef } from "./blockerRef.ts";
-import { buildCashFlowReport, type CashFlowPeriod } from "./cashFlow.ts";
+import { buildCashFlowReport, cashFlowRows, type CashFlowPeriod } from "./cashFlow.ts";
 
 /**
  * The spending app's data: every proven calendar month with category and merchant
@@ -258,8 +258,9 @@ export function provenMonths(book: Book, accountIds?: string[]) {
  * (a charge and its exact credit on the same account within a week net to nothing: left
  * out so neither side shows on its own). Rows count in the month the period totals count
  * them: where the ledger books them (booking.ts), or for rent, the month it pays for
- * (rent.ts). A reimbursement link's pair counts too, so a paid-back charge's merchant
- * nets down when the payback arrives. The merchant proof reads these same rows
+ * (rent.ts). Rows as cash flow counts them (cashFlowRows): a reimbursement link's pair
+ * counts too, so a paid-back charge's merchant nets down when the payback arrives, and a
+ * tax refund is income, never a credit against spending. The merchant proof reads these same rows
  * (proof/cashFlowProof.ts).
  */
 export function spendingRows(book: Book, accountIds?: string[]) {
@@ -269,7 +270,7 @@ export function spendingRows(book: Book, accountIds?: string[]) {
   const to = (proven.current ?? proven.window.at(-1))?.end;
   const windowEnd = proven.window.at(-1)?.end;
   const dayOf = countsOn(book.rows, book.accounts, book.household.merchantRules);
-  const inRange = withReimbursements({ rows: household(book).rows, reimbursements: book.reimbursements }).filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
+  const inRange = cashFlowRows(book).filter((r) => from && to && dayOf(r) >= from && dayOf(r) <= to && (!accountFilter || accountFilter.has(r.accountId)));
   const reversed = reversals(inRange);
   const inScope = inRange.filter((r) => !reversed.has(r.id));
   return {
@@ -354,9 +355,10 @@ export function oneOffRules(book: Book, settings: Pick<FinancialProfileSettings,
  * drags everyday below zero:
  *  - bill: rent, a merchant on the Recurring tab's bill list (its refunds too), a partner's
  *    pre-merge share of rent;
- *  - big: a one-off candidate (oneOffRules), any tax payment or refund (a tax authority is
- *    never everyday, whatever the size), and any other credit of ONE_OFF_MIN_CENTS or more
- *    (a big refund comes off big spending, where its charge sat);
+ *  - big: a one-off candidate (oneOffRules), any tax payment (a tax authority is never
+ *    everyday, whatever the size; its refunds are income: cashFlow.ts asCashFlowRow), and
+ *    any other credit of ONE_OFF_MIN_CENTS or more (a big refund comes off big spending,
+ *    where its charge sat);
  *  - everyday: the rest.
  * A reimbursement credit is judged by the charge it pays back.
  */
