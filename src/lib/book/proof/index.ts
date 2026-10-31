@@ -82,8 +82,11 @@ export async function buildProof(ctx: ProofContext, d: ProofDescriptor): Promise
  * balance line, a statement's market change) matches nothing and stays plain; a kind that
  * lists a Book row under an id of its own sets rowId itself.
  */
+const statementIds = new WeakMap<Book, Set<string>>();
+
 export function linkSources(book: Book, p: Proof): Proof {
-  const statements = new Set(book.statements.map((s) => s.id));
+  let statements = statementIds.get(book);
+  if (!statements) statementIds.set(book, (statements = new Set(book.statements.map((s) => s.id))));
   const blocks = p.blocks.map((b) =>
     b.kind !== "rows"
       ? b

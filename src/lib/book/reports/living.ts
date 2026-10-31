@@ -5,9 +5,8 @@ import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { household, payJoins } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
 import { oneOffSubject } from "../reimbursements.ts";
-import { countsOn } from "../rent.ts";
 import { taxRows } from "../taxPayments.ts";
-import { cashFlowContributions } from "./cashFlow.ts";
+import { cashFlowContributions, dayOfFor } from "./cashFlow.ts";
 import { oneOffRules, provenMonths } from "./spending.ts";
 
 /**
@@ -42,7 +41,7 @@ function perBook(book: Book) {
   if (!m) {
     m = {
       accountName: new Map(book.accounts.map((a) => [a.id, a.name])),
-      dayOf: countsOn(book.rows, book.accounts, book.household.merchantRules),
+      dayOf: dayOfFor(book),
     };
     memo.set(book, m);
   }

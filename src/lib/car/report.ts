@@ -539,9 +539,12 @@ export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: s
         splitWays: null,
       };
     });
+  // Counted costs stop where the statements are proven, as every car's totals do: a bill
+  // printed ahead (a landlord's next month) waits until the rest of its month is in.
+  const proven = (i: CostItem) => !opts.statementsThrough || i.date <= opts.statementsThrough;
   const log: LogRow[] = [
-    ...base.map((i) => ({ ...i, counted: true, match: i.entryIds.length ? (hintById.get(i.entryIds[0]!) ?? null) : null })),
-    ...rent.map((i) => ({ ...i, counted: true, match: null })),
+    ...base.filter(proven).map((i) => ({ ...i, counted: true, match: i.entryIds.length ? (hintById.get(i.entryIds[0]!) ?? null) : null })),
+    ...rent.filter(proven).map((i) => ({ ...i, counted: true, match: null })),
     ...quiet.map((i) => ({ ...i, counted: false, match: hintById.get(i.entryIds[0]!) ?? null })),
   ].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 

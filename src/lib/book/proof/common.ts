@@ -16,6 +16,18 @@ const SUBJECT_CAP = 200;
  * queries take whatever any of them covers.
  */
 export function checksFor(book: Book, q: BlockerQuery | BlockerQuery[], ids: CheckId[]): { checks: ProofCheck[]; withheld: boolean } {
+  // Once per Book and scope: thousands of proofs over the same window ask the same question (read only).
+  const key = JSON.stringify([q, ids]);
+  let byKey = checksMemo.get(book);
+  if (!byKey) checksMemo.set(book, (byKey = new Map()));
+  let out = byKey.get(key);
+  if (!out) byKey.set(key, (out = deepFreeze(workOutChecks(book, q, ids))));
+  return out;
+}
+
+const checksMemo = new WeakMap<Book, Map<string, { checks: ProofCheck[]; withheld: boolean }>>();
+
+function workOutChecks(book: Book, q: BlockerQuery | BlockerQuery[], ids: CheckId[]): { checks: ProofCheck[]; withheld: boolean } {
   // Several queries (a figure built from pay, taxes and bank accounts): each finding and pass once.
   const qs = Array.isArray(q) ? q : [q];
   const once = <T,>(xs: T[]) => [...new Set(xs)];

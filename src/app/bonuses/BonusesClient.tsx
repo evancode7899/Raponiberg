@@ -45,7 +45,7 @@ const KIND: Record<PaymentKind, { title: string; tag: string | null; part: strin
 const ratio = (part: number, whole: number | null) => (whole ? formatPercentRatio(part / whole, 1) : "—");
 
 /** A person's calendar year of pay as the stubs give it (year to date on each employer's last stub). */
-const yearPay = (personId: string, year: number, lines: PayLine[], cents: number) => ({ descriptor: yearPayDescriptor(personId, year, lines), shownCents: cents });
+const yearPay = (asOf: string, personId: string, year: number, lines: PayLine[], cents: number) => ({ descriptor: yearPayDescriptor(personId, year, lines, asOf), shownCents: cents });
 
 /** A Bonuses figure's proof (lib/book/proof/bonusesProof.ts), re-derived through the same report. */
 type Fig = BonusesDescriptor extends infer D ? (D extends { report: "bonuses" } ? Omit<D, "report"> : never) : never;
@@ -251,7 +251,7 @@ function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }
             </thead>
             <tbody>
               {r.awards.map((a) => (
-                <AwardTr key={`${a.letterId}|${a.year}`} a={a} />
+                <AwardTr key={`${a.letterId}|${a.year}`} a={a} asOf={r.today} />
               ))}
             </tbody>
           </table>
@@ -270,7 +270,7 @@ function baseTitle(a: AwardRow): string | undefined {
   return a.stubBaseCents != null ? `Regular pay on the ${a.year} stubs: ${formatUsdCents(a.stubBaseCents)}` : undefined;
 }
 
-function AwardTr({ a }: { a: AwardRow }) {
+function AwardTr({ a, asOf }: { a: AwardRow; asOf: string }) {
   const baseOk = a.baseCents != null && a.stubBaseCents != null && Math.abs(a.baseCents - a.stubBaseCents) <= 100;
   return (
     <tr className={table.tr}>
@@ -285,7 +285,7 @@ function AwardTr({ a }: { a: AwardRow }) {
       <td className={`${table.td} text-fg-2`}>{a.employer}</td>
       <td className={table.tdR} title={baseTitle(a)}>
         {a.base?.from === "STUBS" ? (
-          a.base.blockers?.length ? <BlockedValue blockers={a.base.blockers} /> : <ProofValue proof={yearPay(a.personId, a.year, ["base"], a.base.cents)}>{usd0(a.base.cents)}</ProofValue>
+          a.base.blockers?.length ? <BlockedValue blockers={a.base.blockers} /> : <ProofValue proof={yearPay(asOf, a.personId, a.year, ["base"], a.base.cents)}>{usd0(a.base.cents)}</ProofValue>
         ) : (
           usd0(a.base?.cents ?? null)
         )}
@@ -382,13 +382,13 @@ function StubOnly({ r }: { r: BonusesReport }) {
                       </td>
                       <td className={`${table.td} text-fg-2`}>{y.employers.join(", ")}</td>
                       <td className={table.tdR}>
-                        <ProofValue proof={yearPay(y.personId, y.year, ["base"], y.baseCents)}>{usd0(y.baseCents)}</ProofValue>
+                        <ProofValue proof={yearPay(r.today, y.personId, y.year, ["base"], y.baseCents)}>{usd0(y.baseCents)}</ProofValue>
                       </td>
                       <td className={`${table.tdR} font-semibold`}>
-                        <ProofValue proof={yearPay(y.personId, y.year, ["bonus"], y.bonusCents)}>{usd0(y.bonusCents)}</ProofValue>
+                        <ProofValue proof={yearPay(r.today, y.personId, y.year, ["bonus"], y.bonusCents)}>{usd0(y.bonusCents)}</ProofValue>
                       </td>
                       <td className={table.tdR}>
-                        <ProofValue proof={yearPay(y.personId, y.year, ["base", "bonus"], y.baseCents + y.bonusCents)}>{usd0(y.baseCents + y.bonusCents)}</ProofValue>
+                        <ProofValue proof={yearPay(r.today, y.personId, y.year, ["base", "bonus"], y.baseCents + y.bonusCents)}>{usd0(y.baseCents + y.bonusCents)}</ProofValue>
                       </td>
                       <td className={`${table.tdR} text-muted`}>{ratio(y.bonusCents, y.baseCents)}</td>
                     </tr>
@@ -641,7 +641,7 @@ function Payouts({ r }: { r: BonusesReport }) {
                     ) : (
                       <ProofValue
                         proof={{
-                          descriptor: paidYearDescriptor(y),
+                          descriptor: paidYearDescriptor(y, r.today),
                           shownCents: y.cents,
                         }}
                       >
