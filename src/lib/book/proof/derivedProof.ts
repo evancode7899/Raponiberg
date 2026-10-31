@@ -24,7 +24,7 @@ export function parseDerivedDescriptor(d: Record<string, unknown>): DerivedDescr
 export async function buildDerivedProof(ctx: ProofContext, d: DerivedDescriptor): Promise<Proof> {
   const { figures, scope, through } = await derivedList(ctx, d.page);
   const f = figures.find((x) => x.figure === d.figure && (x.key ?? null) === (d.key ?? null));
-  if (!f) throw new Error(`The ${d.page} page shows no "${d.figure}"${d.key ? ` for ${d.key}` : ""}.`);
+  if (!f?.value) throw new Error(`The ${d.page} page shows no "${d.figure}"${d.key ? ` for ${d.key}` : ""}.`);
   const { checks, withheld } = scope ? checksFor(ctx.book, scope.query, scope.checks) : { checks: [], withheld: false };
   const blocks: ProofBlock[] = [];
   if (f.lines.length) blocks.push({ kind: "chain", title: "How it's worked out", lines: f.lines, ...(f.note ? { note: f.note } : {}) });

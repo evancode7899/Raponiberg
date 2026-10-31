@@ -572,7 +572,7 @@ const DERIVED_PAGE_NAME: Record<DerivedPage, string> = {
 
 /** A page's derived figures (derived/types.ts), each at the value its list states. */
 export function derivedFigures(page: DerivedPage, list: DerivedFigure[]): PageFigure[] {
-  return list.map((f) => ({ page: DERIVED_PAGE_NAME[page], descriptor: derivedDescriptor(page, f), shown: f.value }));
+  return list.flatMap((f) => (f.value ? [{ page: DERIVED_PAGE_NAME[page], descriptor: derivedDescriptor(page, f), shown: f.value }] : []));
 }
 
 // ------------------------------------------------------------------ Sources

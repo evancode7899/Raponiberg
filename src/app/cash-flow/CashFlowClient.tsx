@@ -1,6 +1,9 @@
 "use client";
 
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
+import { cashFlowDerived } from "@/lib/book/derived/cashFlow";
+import { derivedTarget } from "@/lib/book/derived/types";
+import { unswept } from "@/lib/book/proof/clearance";
 import { cachedResponse, useApi, type Api } from "@/components/ledger/useApi";
 import { useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
 import { btn, Drawer, EmptyState, ErrorNote, Loading, PageBody, Segmented, selectCls, Tabs, usePersistentState, useTabParam } from "@/components/ui/kit";
@@ -45,6 +48,8 @@ export type Ctx = {
   setFocus: (c: string | null) => void;
   /** The proof target for a figure over some of the selected months (see model.proofTarget), with the page's account filter. */
   proof: (metric: CashFlowMetric, months: SpendingMonth[], o: ProofOptions) => ProofRef;
+  /** A derived figure's proof (derived/cashFlow.ts): swept on every account, so withheld under an account filter. */
+  dp: (figure: string, key?: string) => ProofRef;
 };
 
 type View = { range: RangeId; from: string; to: string };
@@ -94,9 +99,10 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
   const accountIds = excluded.size && allAccounts.length ? allAccounts.filter((a) => !excluded.has(a.id)).map((a) => a.id) : undefined;
   const monthOptions = data?.months.map((m) => ({ value: monthKey(m.start), label: m.label })) ?? [];
   const drillMonth = drill?.kind === "month" ? [...(data?.months ?? []), ...(data?.current ? [data.current] : [])].find((m) => m.start === drill.start) : undefined;
+  const derived = useMemo(() => (data ? cashFlowDerived(data) : []), [data]);
   const ctx: Ctx | null =
     data && slice && slice.months.length
-      ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o) }
+      ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o), dp: (figure, key) => (accountIds ? unswept("an account filter: derived figures are swept on every account") : derivedTarget("cash-flow", derived, figure, key)) }
       : null;
 
   return (

@@ -62,7 +62,7 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
   const c = useClearance(ref, props.blockers);
   const target = props.figure ? targetOf(props.figure) : isUnswept(props.proof) ? null : props.proof;
   const data = {
-    "data-proof-key": c.key ?? "unswept",
+    "data-proof-key": c.key ?? (c.state === "withheld" && c.reason === "no-figure" ? "none" : "unswept"),
     "data-shown": c.shown ? showValue(c.shown) : "",
     "data-clearance": c.state === "withheld" ? `withheld:${c.reason}` : c.state,
   };

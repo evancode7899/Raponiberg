@@ -8,6 +8,9 @@ import { btn, Callout, EmptyState, ErrorNote, Loading, PageBody, Tabs, useTabPar
 import type { CarReport, GarageReport, Milestone } from "@/lib/car/report";
 import { carName, newCar, ownedOn, type Car, type CarEntry, type GarageSettings } from "@/lib/car/settings";
 import { useCallback, useEffect, useState } from "react";
+import type { ProofRef } from "@/components/ui/proof/context";
+import { carDerived } from "@/lib/book/derived/car";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { CostsTab } from "./CostsTab";
 import { blankEntry, EntryEditor, type LogMode } from "./EntryEditor";
 import { FuelTab } from "./FuelTab";
@@ -43,6 +46,8 @@ export type CarCtx = {
   saveCar: (next: Car) => Promise<boolean>;
   saving: boolean;
   goTo: (t: CarTab) => void;
+  /** A derived figure's proof (derived/car.ts): the selected car's, or (garage) the whole log's. */
+  dp: (figure: string, scope?: "garage" | string) => ProofRef;
   selectCar: (id: string) => void;
   /** Opens the log editor on an entry (new or existing). */
   editEntry: (e: CarEntry) => void;
@@ -130,6 +135,7 @@ export function CarClient({ requiresApiSecret }: { requiresApiSecret: boolean })
     }
   };
 
+  const derived = data ? carDerived(data.report) : [];
   const ctx: CarCtx | null =
     data && s && car && report
       ? {
@@ -143,6 +149,7 @@ export function CarClient({ requiresApiSecret }: { requiresApiSecret: boolean })
           saveCar: (next) => save({ ...s, cars: s.cars.map((c) => (c.id === next.id ? next : c)) }),
           saving,
           goTo,
+          dp: (figure, scope) => derivedTarget("car", derived, figure, scope === "garage" ? undefined : (scope ?? car.id)),
           selectCar,
           editEntry: setEditing,
           logNew: (mode) => setEditing(blankEntry(mode, car.id, data.report.today)),

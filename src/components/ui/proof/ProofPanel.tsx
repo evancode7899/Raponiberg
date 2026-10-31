@@ -65,6 +65,7 @@ export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofE
 
 const WITHHELD_TITLE: Record<WithheldReason, string> = {
   unswept: "Withheld: this figure has no proof yet",
+  "no-figure": "Nothing to show here yet",
   blocked: "Withheld: a finding blocks this figure",
   flagged: "Withheld: the proof sweep flagged this figure",
   mismatch: "Withheld: the page shows a different number than its proof cleared",

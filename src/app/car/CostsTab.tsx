@@ -11,7 +11,8 @@ import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { carProof, fmtDate, miles, perMile, throughText, usd2 } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { yearKey } from "@/lib/book/derived/car";
+import { noFigure } from "@/lib/book/proof/clearance";
 
 export function CostsTab({ ctx }: { ctx: CarCtx }) {
   const { report: r, car: s, chart } = ctx;
@@ -41,13 +42,13 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
       ];
     }),
     { label: "Total", total: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0)), proof: carProof(s.id, { span: yr }, Object.values(y.lines).reduce((a, b) => a + b, 0)) })), { text: usd0(r.totals.tco), proof: carProof(s.id, { span: "toDate" }, r.totals.tco) }] },
-    { label: "Miles", muted: true, cells: [...years.map(([, y]) => ({ text: miles(y.miles), proof: unswept("miles driven") })), { text: miles(r.odometer.driven), proof: unswept("miles driven") }] },
+    { label: "Miles", muted: true, cells: [...years.map(([yr, y]) => ({ text: miles(y.miles), proof: ctx.dp("miles-year", yearKey(s.id, yr)) })), { text: miles(r.odometer.driven), proof: ctx.dp("miles-driven") }] },
     {
       label: "Per mile",
       strong: true,
-      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—", proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }, null) : unswept("no miles to divide by") })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }, null) : unswept("no miles to divide by") }],
+      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—", proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }, null) : noFigure("no miles to divide by") })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }, null) : noFigure("no miles to divide by") }],
     },
-    { label: "Per month", muted: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months), proof: carProof(s.id, { span: yr, per: "month" }, null) })), { text: usd0(r.totals.perMonth), proof: r.totals.perMonth != null ? carProof(s.id, { span: "toDate", per: "month" }, null) : unswept("no months to divide by") }] },
+    { label: "Per month", muted: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months), proof: carProof(s.id, { span: yr, per: "month" }, null) })), { text: usd0(r.totals.perMonth), proof: r.totals.perMonth != null ? carProof(s.id, { span: "toDate", per: "month" }, null) : noFigure("no months to divide by") }] },
   ];
 
   const kinds = (Object.keys(KIND_INFO) as CarKind[]).filter((k) => r.cash[k] !== 0);

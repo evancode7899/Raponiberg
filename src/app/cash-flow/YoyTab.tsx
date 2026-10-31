@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -14,7 +15,7 @@ import type { Ctx } from "./CashFlowClient";
 import { yoyWindows } from "@/lib/book/reports/cashFlowWindows";
 import { KINDS, mergeCategories, mergeMerchants, MONTH_NAMES, monthKey, SPEND_CATEGORIES, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 type Mode = "month" | "ytd" | "12m";
 
@@ -109,7 +110,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
           tone={a.net < 0 ? "neg" : "neutral"}
           sub={<Change now={a.net} then={b.net} proof={ctx.proof("net", then, { shownCents: b.net })} />}
         />
-        <StatCell proof={unswept("Savings rate (take-home)")}
+        <StatCell proof={ctx.dp("savings-rate", windowKey(now))}
           label="Savings rate (take-home)"
           value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
           sub={b.savingsRate == null ? "—" : `${formatPercentRatio(b.savingsRate, 0)} a year earlier`}
@@ -186,8 +187,8 @@ function MoverCard({ title, rows, ctx, now, then }: { title: string; rows: { key
                 {m.name}
               </button>
               <span className="num shrink-0 text-xs text-muted">
-                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : unswept("nothing spent here in that span")}>{usd0(m.then)}</ProofValue> →{" "}
-                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : unswept("nothing spent here in that span")} className="text-fg">
+                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : noFigure("nothing spent here in that span")}>{usd0(m.then)}</ProofValue> →{" "}
+                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : noFigure("nothing spent here in that span")} className="text-fg">
                   {usd0(m.now)}
                 </ProofValue>
                 {!m.then && <span className="ml-1.5 text-info">new</span>}

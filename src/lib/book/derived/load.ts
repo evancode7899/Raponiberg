@@ -1,3 +1,11 @@
+import { garagePage } from "../../car/page.ts";
+import { CAR_KEY, normalizeGarage } from "../../car/settings.ts";
+import { CASH_FLOW_CHECKS } from "../proof/cashFlowProof.ts";
+import { carDerived } from "./car.ts";
+import { cashFlowDerived } from "./cashFlow.ts";
+import { loadBudget } from "../../budget/settings.ts";
+import { loadProfileSettings } from "../../profile/settings.ts";
+import { buildSpendingReport } from "../reports/spending.ts";
 import { INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings } from "../../investments/settings.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import { perBook } from "../proof/common.ts";
@@ -21,8 +29,17 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const r = buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings));
     return { figures: investmentsDerived(r), scope: { query: { affects: "NET_WORTH", from: r.asOf, to: r.asOf }, checks: INVESTMENTS_CHECKS }, through: r.asOf };
   },
-  car: null,
-  "cash-flow": null,
+  car: async ({ book, db }) => {
+    const g = garagePage(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage));
+    const from = g.cars.flatMap((c) => c.months.map((m) => `${m.month}-01`)).sort()[0] ?? g.statementsThrough;
+    return { figures: carDerived(g), scope: { query: { affects: "CASH_FLOW", from, to: g.statementsThrough }, checks: CASH_FLOW_CHECKS }, through: g.statementsThrough };
+  },
+  "cash-flow": async ({ book, db }) => {
+    const [settings, budget] = await Promise.all([loadProfileSettings(db), loadBudget(db)]);
+    const r = buildSpendingReport(book, settings);
+    const from = r.months[0]?.start ?? book.horizon.cashFlow;
+    return { figures: cashFlowDerived(r, budget.targets), scope: { query: { affects: "CASH_FLOW", from, to: r.months.at(-1)?.end ?? from }, checks: CASH_FLOW_CHECKS }, through: r.months.at(-1)?.end ?? from };
+  },
   "card-perks": null,
   "net-worth": null,
   integrity: null,

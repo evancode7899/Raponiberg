@@ -7,7 +7,6 @@ import { formatPercentRatio } from "@/lib/formatMoney";
 import { useState } from "react";
 import type { CarCtx } from "./CarClient";
 import { CentsInput, fmtDate, miles, NumInput, relative } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const STATUS: Record<Milestone["status"], { tone: Tone; label: string }> = {
   DONE: { tone: "pos", label: "done" },
@@ -92,14 +91,14 @@ export function ServiceTab({ ctx }: { ctx: CarCtx }) {
       {!r.sold && (
         <Card title="Warranty" subtitle={w.expiresOn ? `${car.plan.warrantyYears} years from ${fmtDate(car.vehicle.inServiceDate)} or ${miles(w.milesLimit)} miles, whichever comes first.` : "Set the in-service date and warranty terms under Car details."}>
           <StatGrid cols={4}>
-            <StatCell proof={unswept("Miles left")} label="Miles left" value={miles(w.milesLeft)} sub={usedShare != null ? `${formatPercentRatio(usedShare, 0)} of the miles used` : undefined} />
-            <StatCell proof={unswept("Time left")} label="Time left" value={w.daysLeft != null ? `${(w.daysLeft / 30.44).toFixed(1)} mo` : "—"} sub={w.expiresOn ? `to ${fmtDate(w.expiresOn)}${timeShare != null ? ` · ${formatPercentRatio(timeShare, 0)} used` : ""}` : undefined} />
-            <StatCell proof={unswept("Break-even pace")}
+            <StatCell proof={ctx.dp("warranty-miles-left")} label="Miles left" value={miles(w.milesLeft)} sub={usedShare != null ? `${formatPercentRatio(usedShare, 0)} of the miles used` : undefined} />
+            <StatCell proof={ctx.dp("warranty-days-left")} label="Time left" value={w.daysLeft != null ? `${(w.daysLeft / 30.44).toFixed(1)} mo` : "—"} sub={w.expiresOn ? `to ${fmtDate(w.expiresOn)}${timeShare != null ? ` · ${formatPercentRatio(timeShare, 0)} used` : ""}` : undefined} />
+            <StatCell proof={ctx.dp("warranty-break-even")}
               label="Break-even pace"
               value={w.breakEvenPerDay != null ? `${w.breakEvenPerDay.toFixed(1)} mi/day` : "—"}
               sub={r.odometer.recentPerDay != null ? `you drive ${r.odometer.recentPerDay.toFixed(1)} mi/day` : "miles a day that use it all up just in time"}
             />
-            <StatCell proof={unswept("Runs out")}
+            <StatCell proof={ctx.dp("warranty-ends-by")}
               label="Runs out"
               value={w.endsBy ? (w.endsBy === "TIME" ? "by time" : "by miles") : "—"}
               tone={w.endsBy === "MILES" ? "warn" : "neutral"}

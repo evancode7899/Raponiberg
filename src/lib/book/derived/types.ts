@@ -1,4 +1,4 @@
-import type { Unswept } from "../proof/clearance.ts";
+import { noFigure, type Unswept } from "../proof/clearance.ts";
 import type { ChainLine, ProofLink, ProofValue } from "../proof/types.ts";
 
 /**
@@ -31,7 +31,8 @@ export type DerivedFigure = {
   key?: string;
   /** Plain words: what the figure is. */
   describes: string;
-  value: ProofValue;
+  /** Null where the page has nothing to show yet (no fill-ups, no warranty set): a dash, not a figure. */
+  value: ProofValue | null;
   /** How it is worked out from the report, line by line ("=" lines are held to re-add). */
   lines: ChainLine[];
   /** The parts it is made of, when there are many (positions, merchants, policies). */
@@ -48,6 +49,7 @@ export type DerivedTarget = { descriptor: DerivedDescriptor; shownCents: number 
 export function derivedTarget(page: DerivedPage, list: readonly DerivedFigure[], figure: string, key?: string): DerivedTarget | Unswept {
   const f = list.find((x) => x.figure === figure && (x.key ?? null) === (key ?? null));
   if (!f) return { unswept: `${page} lists no "${figure}"${key ? ` for ${key}` : ""}` };
+  if (!f.value) return noFigure(f.describes);
   return { descriptor: derivedDescriptor(page, f), shownCents: "cents" in f.value ? f.value.cents : null, ...("cents" in f.value ? {} : { shown: f.value }) };
 }
 

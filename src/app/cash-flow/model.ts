@@ -5,11 +5,12 @@ import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { unswept } from "@/lib/book/proof/clearance";
-import { cashFlowDescriptor, mergeCategories, sum, type CashFlowRecipe, type Slice } from "@/lib/book/reports/cashFlowWindows";
+import { cashFlowDescriptor, median, mergeCategories, sum, type CashFlowRecipe, type Slice } from "@/lib/book/reports/cashFlowWindows";
 
 export {
   byYear,
   mergeCategories,
+  median,
   mergeMerchants,
   monthKey,
   shiftMonth,
@@ -39,12 +40,6 @@ export const categorySlot = (c: string): number | null => CATEGORY_SLOT[c] ?? nu
 export const categoryGroup = (c: string) => CATEGORIES.find((x) => x.name === c)?.group ?? "Other";
 export const SPEND_GROUPS = ["Essentials", "Lifestyle", "Financial"] as const;
 
-export const median = (xs: number[]) => {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
-};
 
 export type Totals = {
   n: number;
