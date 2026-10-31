@@ -1,6 +1,8 @@
 "use client";
 
 import { BlockedNote } from "@/components/ledger/Blocked";
+import { cardPerksDerived } from "@/lib/book/derived/cardPerks";
+import { derivedTarget } from "@/lib/book/derived/types";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { EmptyState, ErrorNote, Loading, PageBody, Segmented, StatCell, StatGrid, Tabs, useTabParam } from "@/components/ui/kit";
@@ -14,7 +16,6 @@ import { OverviewTab } from "./OverviewTab";
 import { pct } from "./parts";
 import { RewardsTab } from "./RewardsTab";
 import { SetupTab } from "./SetupTab";
-import { unswept } from "@/lib/book/proof/clearance";
 
 const TABS = ["overview", "credits", "rewards", "best-card", "setup"] as const;
 export type Save = (next: CardPerksSettings) => Promise<boolean>;
@@ -63,6 +64,9 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
 
   const r = d?.report;
   const t = r?.totals;
+  // The headline, as the sweep lists it for this year (derived/cardPerks.ts); the year's card findings block every figure.
+  const derived = r ? cardPerksDerived(r) : [];
+  const dp = (figure: string) => derivedTarget("card-perks", derived, figure, r ? String(r.year) : undefined);
   return (
     <>
       <Tabs
@@ -97,20 +101,20 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
               )}
             </div>
             <StatGrid cols={5}>
-              <StatCell proof={unswept("Net value")}
+              <StatCell proof={dp("net-value")} blockers={r.blockers}
                 label="Net value"
                 value={usd0(t.netCents)}
                 tone={t.netCents >= 0 ? "pos" : "neg"}
                 sub={`rewards + credits + offers − ${usd0(t.feesCents)} in fees`}
               />
-              <StatCell proof={unswept("Rewards earned")} label="Rewards earned" value={usd0(t.rewardsValueCents)} tone="accent" sub={`on ${usd0(t.spendCents)} of card spending`} />
-              <StatCell proof={unswept("Credits used")}
+              <StatCell proof={dp("rewards")} blockers={r.blockers} label="Rewards earned" value={usd0(t.rewardsValueCents)} tone="accent" sub={`on ${usd0(t.spendCents)} of card spending`} />
+              <StatCell proof={dp("credits")} blockers={r.blockers}
                 label="Credits used"
                 value={usd0(t.perksValueCents + t.offersCents)}
                 sub={`${usd0(t.perksValueCents)} perks · ${usd0(t.offersCents)} offers & bonuses`}
               />
-              <StatCell proof={unswept("Perk capture")} label="Perk capture" value={pct(t.captureRate)} tone={t.captureRate == null ? "neutral" : t.captureRate >= 0.75 ? "pos" : t.captureRate >= 0.4 ? "warn" : "neg"} sub={`${usd0(t.missedCents)} let lapse`} />
-              <StatCell proof={unswept("Still to use")}
+              <StatCell proof={dp("capture")} blockers={r.blockers} label="Perk capture" value={pct(t.captureRate)} tone={t.captureRate == null ? "neutral" : t.captureRate >= 0.75 ? "pos" : t.captureRate >= 0.4 ? "warn" : "neg"} sub={`${usd0(t.missedCents)} let lapse`} />
+              <StatCell proof={dp("remaining")} blockers={r.blockers}
                 label="Still to use"
                 value={usd0(t.remainingCents)}
                 tone={t.remainingCents > 0 ? "warn" : "neutral"}

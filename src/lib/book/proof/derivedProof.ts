@@ -1,7 +1,6 @@
-import type { BlockerQuery } from "../blockers.ts";
-import type { CheckId } from "../types.ts";
 import { DERIVED_PAGES, derivedList } from "../derived/load.ts";
-import type { DerivedDescriptor, DerivedPage } from "../derived/types.ts";
+import type { DerivedDescriptor, DerivedPage, DerivedScope } from "../derived/types.ts";
+export type { DerivedScope };
 import { checksFor } from "./common.ts";
 import type { Proof, ProofBlock, ProofContext, ProofKind } from "./types.ts";
 
@@ -25,7 +24,8 @@ export async function buildDerivedProof(ctx: ProofContext, d: DerivedDescriptor)
   const { figures, scope, through } = await derivedList(ctx, d.page);
   const f = figures.find((x) => x.figure === d.figure && (x.key ?? null) === (d.key ?? null));
   if (!f?.value) throw new Error(`The ${d.page} page shows no "${d.figure}"${d.key ? ` for ${d.key}` : ""}.`);
-  const { checks, withheld } = scope ? checksFor(ctx.book, scope.query, scope.checks) : { checks: [], withheld: false };
+  const s = f.scope ?? scope;
+  const { checks, withheld } = s ? checksFor(ctx.book, s.query, s.checks) : { checks: [], withheld: false };
   const blocks: ProofBlock[] = [];
   if (f.lines.length) blocks.push({ kind: "chain", title: "How it's worked out", lines: f.lines, ...(f.note ? { note: f.note } : {}) });
   if (f.parts?.length) blocks.push({ kind: "breakdown", title: "What it's made of", items: f.parts });
@@ -44,7 +44,6 @@ export async function buildDerivedProof(ctx: ProofContext, d: DerivedDescriptor)
   };
 }
 
-export type DerivedScope = { query: BlockerQuery | BlockerQuery[]; checks: CheckId[] };
 
 export const derivedKind: ProofKind<DerivedDescriptor> = {
   report: "derived",

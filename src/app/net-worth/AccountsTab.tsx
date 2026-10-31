@@ -7,7 +7,7 @@ import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "@/
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 as usd } from "@/lib/formatMoney";
 import type { AccountRollforward, RollforwardReport, RollYear } from "@/lib/profile/rollforwards";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 type Cell = Extract<TableRow, { cells: unknown }>["cells"][number];
 const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
@@ -99,7 +99,7 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
     label,
     indent: !opts.strong && !opts.total,
     ...opts,
-    cells: ys.map((x) => cell(x, f(x) == null ? { text: "—", proof: unswept("no value that year") } : { text: usd(f(x)), proof: rollP(a, x, line) })),
+    cells: ys.map((x) => cell(x, f(x) == null ? { text: "—", proof: noFigure("no value that year") } : { text: usd(f(x)), proof: rollP(a, x, line) })),
   });
   const rows: TableRow[] = [
     {

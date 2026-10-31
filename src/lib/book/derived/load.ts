@@ -3,6 +3,13 @@ import { CAR_KEY, normalizeGarage } from "../../car/settings.ts";
 import { CASH_FLOW_CHECKS } from "../proof/cashFlowProof.ts";
 import { carDerived } from "./car.ts";
 import { cashFlowDerived } from "./cashFlow.ts";
+import { integrityDerived } from "./integrity.ts";
+import { changeStepsDerived, netWorthDerived } from "./netWorth.ts";
+import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
+import { buildNetWorth } from "../reports/netWorth.ts";
+import { NET_WORTH_CHECKS } from "../proof/netWorthProof.ts";
+import { cardPerksDerived } from "./cardPerks.ts";
+import { loadCardPerksPage } from "../../cardPerks/page.ts";
 import { loadBudget } from "../../budget/settings.ts";
 import { loadProfileSettings } from "../../profile/settings.ts";
 import { buildSpendingReport } from "../reports/spending.ts";
@@ -40,9 +47,21 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const from = r.months[0]?.start ?? book.horizon.cashFlow;
     return { figures: cashFlowDerived(r, budget.targets), scope: { query: { affects: "CASH_FLOW", from, to: r.months.at(-1)?.end ?? from }, checks: CASH_FLOW_CHECKS }, through: r.months.at(-1)?.end ?? from };
   },
-  "card-perks": null,
-  "net-worth": null,
-  integrity: null,
+  "card-perks": async ({ book, db }) => {
+    const first = await loadCardPerksPage(db, undefined, book);
+    const years = await Promise.all(first.report.years.map((y) => (y === first.report.year ? first : loadCardPerksPage(db, y, book))));
+    // Each year's figures read that year's card statements: a finding over them withholds the year (as the page's blockers do).
+    const cards = book.accounts.filter((a) => a.type === "CREDIT_CARD").map((a) => a.id);
+    const scoped = (y: number) => ({ query: { affects: "CASH_FLOW" as const, from: `${y}-01-01`, to: `${y}-12-31` < book.horizon.cashFlow ? `${y}-12-31` : book.horizon.cashFlow, accountIds: cards }, checks: CASH_FLOW_CHECKS });
+    return { figures: years.flatMap((p) => cardPerksDerived(p.report).map((f) => ({ ...f, scope: scoped(p.report.year) }))), scope: null, through: book.horizon.cashFlow };
+  },
+  "net-worth": async ({ book }) => {
+    const r = buildNetWorth(book, { granularity: "month" });
+    const from = r.proven.returns.portfolio?.from ?? r.current.asOf;
+    const steps = (["month", "quarter", "year"] as const).flatMap((granularity) => changeStepsDerived(buildNetWorthChanges(book, { granularity })));
+    return { figures: [...netWorthDerived(r), ...steps], scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
+  },
+  integrity: async ({ book }) => ({ figures: integrityDerived({ ...book.integrity, horizon: book.horizon }), scope: null, through: book.horizon.netWorth }),
   hsa: null,
   "account-limits": null,
   calendar: null,

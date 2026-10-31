@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { blockersFor } from "../book/blockers.ts";
 import { cachedReport } from "../book/cache.ts";
+import type { Book } from "../book/load.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import { SKIPS_IDLE_STATEMENTS } from "../book/idleCards.ts";
 import { readClosedAccounts } from "../ledger/closedAccounts.ts";
@@ -40,57 +41,61 @@ const IN_APP = new RegExp(
   "i",
 );
 
+/** What the page reads from the Book: the cards, their statements and rows, and open findings by year. */
+function cardPerksInputs(book: Book): Inputs {
+  const closed = readClosedAccounts().accounts;
+  const cards = book.accounts.filter((a) => a.type === "CREDIT_CARD");
+  const ids = new Set(cards.map((a) => a.id));
+  const byDocument: Inputs["byDocument"] = {};
+  const accounts: CardAccount[] = cards.map((a) => ({
+    id: a.id,
+    name: a.name,
+    institution: a.institution,
+    closed: a.archived || closed.some((c) => c.institution === a.institution && a.identifiers.includes(c.identifier)),
+    skipsIdle: SKIPS_IDLE_STATEMENTS.some((x) => (a.institution ?? "").toUpperCase().includes(x.institution)),
+    statements: book.statements
+      .filter((s) => s.accountId === a.id && !s.isSummary && s.status === "COMMITTED")
+      .sort((x, y) => x.periodStart.localeCompare(y.periodStart))
+      .map((s) => {
+        (byDocument[s.documentId] ??= []).push({ statementId: s.id, accountId: a.id, end: s.periodEnd });
+        return { id: s.id, start: s.periodStart, end: s.periodEnd };
+      }),
+  }));
+  const toRow = (r: (typeof book.rows)[number]): PerkRow => ({
+    id: r.id,
+    date: r.date,
+    amountCents: r.amountCents,
+    lane: r.lane,
+    accountId: r.accountId,
+    payee: r.payee,
+    detail: r.detail ?? null,
+    section: r.section ?? null,
+    category: r.category,
+    classifiedBy: r.classifiedBy,
+    statementId: r.statementImportId,
+  });
+  const rows = book.rows.filter((r) => ids.has(r.accountId) && !r.pending && !r.reimbursement);
+  const householdRows = book.rows.filter((r) => !ids.has(r.accountId) && !r.pending && r.amountCents < 0 && r.lane === "EXPENSE" && IN_APP.test(`${r.payee} ${r.detail ?? ""}`));
+  const blockers: Inputs["blockers"] = {};
+  const years = new Set(accounts.flatMap((a) => a.statements.map((s) => s.end.slice(0, 4))));
+  for (const y of years) {
+    const to = `${y}-12-31` < book.horizon.cashFlow ? `${y}-12-31` : book.horizon.cashFlow;
+    if (`${y}-01-01` <= to) blockers[y] = refs(blockersFor(book, { affects: "CASH_FLOW", from: `${y}-01-01`, to, accountIds: [...ids] }));
+  }
+  const docs = book.documents.flatMap((d) => (byDocument[d.id] && d.file ? [{ id: d.id, fileHash: d.file.sha, filePath: d.file.path }] : []));
+  return { today: book.today, accounts, rows: rows.map(toRow), householdRows: householdRows.map(toRow), docs, byDocument, blockers };
+}
+
 /**
  * The Card perks page as GET /api/card-perks serves it: the credit card accounts, their
  * statements and rows from the cached Book, joined per request to the rewards summaries
  * read from the statements (rewardsScan.ts) and the owner's choices.
  */
-export async function loadCardPerksPage(db: Db, year?: number): Promise<CardPerksResponse> {
+export async function loadCardPerksPage(db: Db, year?: number, book?: Book): Promise<CardPerksResponse> {
   const [settings, inputs] = await Promise.all([
     loadJsonSetting(db, CARD_PERKS_KEY, normalizeCardPerks),
-    cachedReport(db, "card-perks-inputs", (book): Inputs => {
-      const closed = readClosedAccounts().accounts;
-      const cards = book.accounts.filter((a) => a.type === "CREDIT_CARD");
-      const ids = new Set(cards.map((a) => a.id));
-      const byDocument: Inputs["byDocument"] = {};
-      const accounts: CardAccount[] = cards.map((a) => ({
-        id: a.id,
-        name: a.name,
-        institution: a.institution,
-        closed: a.archived || closed.some((c) => c.institution === a.institution && a.identifiers.includes(c.identifier)),
-        skipsIdle: SKIPS_IDLE_STATEMENTS.some((x) => (a.institution ?? "").toUpperCase().includes(x.institution)),
-        statements: book.statements
-          .filter((s) => s.accountId === a.id && !s.isSummary && s.status === "COMMITTED")
-          .sort((x, y) => x.periodStart.localeCompare(y.periodStart))
-          .map((s) => {
-            (byDocument[s.documentId] ??= []).push({ statementId: s.id, accountId: a.id, end: s.periodEnd });
-            return { id: s.id, start: s.periodStart, end: s.periodEnd };
-          }),
-      }));
-      const toRow = (r: (typeof book.rows)[number]): PerkRow => ({
-        id: r.id,
-        date: r.date,
-        amountCents: r.amountCents,
-        lane: r.lane,
-        accountId: r.accountId,
-        payee: r.payee,
-        detail: r.detail ?? null,
-        section: r.section ?? null,
-        category: r.category,
-        classifiedBy: r.classifiedBy,
-        statementId: r.statementImportId,
-      });
-      const rows = book.rows.filter((r) => ids.has(r.accountId) && !r.pending && !r.reimbursement);
-      const householdRows = book.rows.filter((r) => !ids.has(r.accountId) && !r.pending && r.amountCents < 0 && r.lane === "EXPENSE" && IN_APP.test(`${r.payee} ${r.detail ?? ""}`));
-      const blockers: Inputs["blockers"] = {};
-      const years = new Set(accounts.flatMap((a) => a.statements.map((s) => s.end.slice(0, 4))));
-      for (const y of years) {
-        const to = `${y}-12-31` < book.horizon.cashFlow ? `${y}-12-31` : book.horizon.cashFlow;
-        if (`${y}-01-01` <= to) blockers[y] = refs(blockersFor(book, { affects: "CASH_FLOW", from: `${y}-01-01`, to, accountIds: [...ids] }));
-      }
-      const docs = book.documents.flatMap((d) => (byDocument[d.id] && d.file ? [{ id: d.id, fileHash: d.file.sha, filePath: d.file.path }] : []));
-      return { today: book.today, accounts, rows: rows.map(toRow), householdRows: householdRows.map(toRow), docs, byDocument, blockers };
-    }).then((t) => JSON.parse(t) as Inputs),
+    // The sweep passes its own Book; the route reads the cached one. Either way the inputs go through JSON, as the cache serves them.
+    book ? Promise.resolve(JSON.parse(JSON.stringify(cardPerksInputs(book))) as Inputs) : cachedReport(db, "card-perks-inputs", cardPerksInputs).then((t) => JSON.parse(t) as Inputs),
   ]);
   const rewards = cardRewards(inputs.docs);
 

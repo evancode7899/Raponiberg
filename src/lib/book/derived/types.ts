@@ -1,4 +1,6 @@
 import { noFigure, type Unswept } from "../proof/clearance.ts";
+import type { BlockerQuery } from "../blockers.ts";
+import type { CheckId } from "../types.ts";
 import type { ChainLine, ProofLink, ProofValue } from "../proof/types.ts";
 
 /**
@@ -38,7 +40,12 @@ export type DerivedFigure = {
   /** The parts it is made of, when there are many (positions, merchants, policies). */
   parts?: { label: string; value: ProofValue; sub?: string; link?: ProofLink }[];
   note?: string;
+  /** The checks over the data it reads, when not the page's (derived/load.ts): an open finding withholds it. */
+  scope?: DerivedScope;
 };
+
+/** The findings that can withhold a derived figure: the data it reads, and which checks look at it. */
+export type DerivedScope = { query: BlockerQuery | BlockerQuery[]; checks: CheckId[] };
 
 export const derivedDescriptor = (page: DerivedPage, f: Pick<DerivedFigure, "figure" | "key">): DerivedDescriptor => ({ report: "derived", page, figure: f.figure, ...(f.key != null ? { key: f.key } : {}) });
 
