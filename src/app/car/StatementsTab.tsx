@@ -1,5 +1,8 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ReactNode } from "react";
 import { Badge, btn, Card, EmptyState, Field, inputCls, Segmented, selectCls, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { HintMatch, RowRef, StatementCharge } from "@/lib/car/detect";
@@ -70,15 +73,15 @@ function Proof({ ctx }: { ctx: CarCtx }) {
   const g = ctx.garage;
   const a = g.statements.audit;
   const fromLog = a.offStatementCents;
-  const checks: { ok: boolean; text: string }[] = [
+  const checks: { ok: boolean; text: ReactNode }[] = [
     { ok: a.doubleCounted.length === 0, text: a.doubleCounted.length === 0 ? "No statement row is counted twice." : `${a.doubleCounted.length} statement rows are counted twice — please report this.` },
     {
       ok: true,
-      text: fromLog ? `Your log adds money only where you said it was paid outside your statements: ${a.offStatement} entr${a.offStatement === 1 ? "y" : "ies"}, ${usd2(fromLog)}.` : "Your log adds no money of its own: every cost is a statement charge.",
+      text: fromLog ? <>Your log adds money only where you said it was paid outside your statements: {a.offStatement} entr{a.offStatement === 1 ? "y" : "ies"}, <NotFigure why="your log entries, paid outside your statements">{usd2(fromLog)}</NotFigure>.</> : "Your log adds no money of its own: every cost is a statement charge.",
     },
     {
       ok: a.notFound === 0,
-      text: a.notFound ? `${a.notFound} log entr${a.notFound === 1 ? "y has" : "ies have"} no statement charge (${usd2(a.notFoundCents)} logged) and count${a.notFound === 1 ? "s" : ""} nothing until you find it or mark it paid outside your statements.` : "Every log entry dated before the statements end is on them.",
+      text: a.notFound ? <>{a.notFound} log entr{a.notFound === 1 ? "y has" : "ies have"} no statement charge (<NotFigure why="your log entries">{usd2(a.notFoundCents)}</NotFigure> logged) and count{a.notFound === 1 ? "s" : ""} nothing until you find it or mark it paid outside your statements.</> : "Every log entry dated before the statements end is on them.",
     },
     { ok: a.toCheck === 0, text: a.toCheck ? `${a.toCheck} match${a.toCheck === 1 ? " is" : "es are"} worth a look (amount differs, several rows, a few days apart, or a merchant the rules don't know).` : "Every match is the same amount within days at a car merchant, or one you picked." },
   ];
@@ -91,15 +94,24 @@ function Proof({ ctx }: { ctx: CarCtx }) {
         <StatCell proof={ctx.dp("statement-costs", "garage")}
           label="Car costs from statements"
           value={usd2(a.rowsCents - a.paymentCents)}
-          sub={`${a.rows} rows (${a.rowsFromLog} matched to your log, ${a.rowsOnOwn} on their own)${a.paymentCents ? ` · plus ${usd2(a.paymentCents)} of car payments, which are the purchase` : ""}`}
+          sub={
+            <>
+              {a.rows} rows ({a.rowsFromLog} matched to your log, {a.rowsOnOwn} on their own)
+              {a.paymentCents ? (
+                <>
+                  {" "}· plus <ProofValue proof={ctx.dp("car-payments", "garage")}>{usd2(a.paymentCents)}</ProofValue> of car payments, which are the purchase
+                </>
+              ) : null}
+            </>
+          }
         />
-        <StatCell proof={ctx.dp("log-matched", "garage")} label="Log entries matched" value={`${a.matched + a.installments} of ${a.entries - a.noCost}`} sub={`you logged ${usd2(a.matchedLoggedCents)} · statements say ${usd2(a.matchedStatementCents)}`} />
-        <StatCell proof={ctx.dp("not-found", "garage")} label="Not on statements" value={String(a.notFound)} tone={a.notFound ? "warn" : "neutral"} sub={`${usd2(a.notFoundCents)} logged · counts nothing`} />
-        <StatCell proof={ctx.dp("awaiting", "garage")} label="Awaiting statements" value={String(a.awaiting)} sub={`${usd2(a.awaitingCents)} logged after ${fmtDate(g.statementsThrough)}`} />
+        <StatCell proof={ctx.dp("log-matched", "garage")} label="Log entries matched" value={`${a.matched + a.installments} of ${a.entries - a.noCost}`} sub={<><NotFigure why="your log entries">you logged {usd2(a.matchedLoggedCents)}</NotFigure> · statements say <ProofValue proof={ctx.dp("statement-matched", "garage")}>{usd2(a.matchedStatementCents)}</ProofValue></>} />
+        <StatCell proof={ctx.dp("not-found", "garage")} label="Not on statements" value={String(a.notFound)} tone={a.notFound ? "warn" : "neutral"} sub={<><NotFigure why="your log entries">{usd2(a.notFoundCents)}</NotFigure> logged · counts nothing</>} />
+        <StatCell proof={ctx.dp("awaiting", "garage")} label="Awaiting statements" value={String(a.awaiting)} sub={<><NotFigure why="your log entries">{usd2(a.awaitingCents)}</NotFigure> logged after {fmtDate(g.statementsThrough)}</>} />
       </StatGrid>
       <ul className="mt-3 flex flex-col gap-1 text-xs">
-        {checks.map((c) => (
-          <li key={c.text} className="flex gap-2">
+        {checks.map((c, i) => (
+          <li key={i} className="flex gap-2">
             <span className={c.ok ? "text-pos" : "text-warn"} aria-hidden>
               {c.ok ? "✓" : "!"}
             </span>
@@ -186,7 +198,9 @@ function LogVsStatements({ ctx }: { ctx: CarCtx }) {
                         {e && e.months > 1 ? ` · ${e.months} months` : ""}
                       </div>
                     </td>
-                    <td className={table.tdR}>{usd2(h.cents)}</td>
+                    <td className={table.tdR}>
+                      <NotFigure why="your log entry">{usd2(h.cents)}</NotFigure>
+                    </td>
                     <td className={table.td}>
                       {h.rows.length > 0 && (
                         <ul className="flex max-w-[30rem] flex-col gap-0.5">
@@ -195,7 +209,7 @@ function LogVsStatements({ ctx }: { ctx: CarCtx }) {
                               <span className="truncate font-mono" title={`${r.payee}${account(r.accountId) ? ` · ${account(r.accountId)}` : ""}`}>
                                 {fmtDate(r.date)} · {r.payee}
                               </span>
-                              <span className="num shrink-0">{usd2(r.cents)}</span>
+                              <span className="num shrink-0"><ProofValue proof={{ descriptor: { report: "row", rowId: r.rowId }, shownCents: null }}>{usd2(r.cents)}</ProofValue></span>
                             </li>
                           ))}
                         </ul>
@@ -214,7 +228,7 @@ function LogVsStatements({ ctx }: { ctx: CarCtx }) {
                                 {fmtDate(r.date)} · {r.payee}
                               </span>
                               <span className="flex shrink-0 items-center gap-2">
-                                <span className="num">{usd2(r.cents)}</span>
+                                <span className="num"><ProofValue proof={{ descriptor: { report: "row", rowId: r.rowId }, shownCents: null }}>{usd2(r.cents)}</ProofValue></span>
                                 <button type="button" className={btn.link} disabled={saving} onClick={() => pin(h, [r])}>
                                   This one
                                 </button>
@@ -387,10 +401,11 @@ function Charges({ ctx }: { ctx: CarCtx }) {
                         {c.payee}
                       </div>
                       <div className="max-w-[26rem] text-[11px] text-muted">
-                        {[accounts[c.accountId], h ? `Your log: “${h.item}”${h.cents !== c.cents && h.rows.length === 1 && !h.with.length ? ` (${usd2(h.cents)})` : ""}` : c.reason, `by ${HOW[c.how]}`].filter(Boolean).join(" · ")}
+                        {[accounts[c.accountId], h ? `Your log: “${h.item}”` : c.reason, `by ${HOW[c.how]}`].filter(Boolean).join(" · ")}
+                        {h && h.cents !== c.cents && h.rows.length === 1 && !h.with.length ? <NotFigure why="your log entry"> ({usd2(h.cents)})</NotFigure> : null}
                       </div>
                     </td>
-                    <td className={table.tdR}>{usd2(c.cents)}</td>
+                    <td className={table.tdR}><ProofValue proof={{ descriptor: { report: "row", rowId: c.rowId }, shownCents: null }}>{usd2(c.cents)}</ProofValue></td>
                     <td className={table.td}>
                       <select className={selectCls} value={c.kind} disabled={saving || locked} onChange={(e) => decide(c, { kind: e.target.value as CarKind })} aria-label="Counts as">
                         {CAR_KINDS.map((k) => (

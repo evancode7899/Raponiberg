@@ -91,6 +91,24 @@ export function rederiveCar(g: GarageReport, figures: readonly DerivedFigure[]):
       case "outlook-per-mile":
       case "outlook-per-month":
         return projection;
+      case "statement-cents":
+      case "fill":
+        return { none: "Car charges as the statements print them, each its own row proof: the sum is the car proof's own." };
+      case "per-day":
+      case "fill-price":
+      case "fill-per-mile":
+      case "premium-monthly":
+      case "premium-change":
+      case "insurance-monthly":
+        return { none: "A rate over the car's proven costs and what the log says (days owned, gallons, miles, a premium's months): the log is the only source for the divisor." };
+      case "planned-per-mile":
+      case "market-per-year":
+      case "warranty-miles-used":
+      case "warranty-time-used":
+        return typed("Worked out from the purchase, the plan, the value checks and the warranty");
+      case "premium":
+      case "insurance-expected":
+        return { none: "A premium as the statement charged it or the log gives it: the row is its own proof." };
       default:
         return null;
     }
@@ -114,6 +132,7 @@ function garageRoutes(figure: string, v: ProofValue, g: GarageReport): Rederived
     return [centsRoute("every car's statement items, re-added", v, cents, "each car's cost items read off statements, less the purchase payments")];
   }
   if (figure === "log-matched" || figure === "not-found" || figure === "awaiting") return { none: "A count of the matcher's verdicts on the log's entries: a classification, not a sum." };
+  if (figure === "statement-matched" || figure === "car-payments") return { none: "Statement rows as the matcher assigns them (matched to a log entry, or a payment on the purchase): the rows are proven one by one, the assignment is a classification." };
   return null;
 }
 

@@ -11,9 +11,13 @@ import type { ProofValue } from "./types.ts";
  * opening its own proof (compositeProof.ts). Pure; runs on the server and in the browser.
  */
 
-export type CompositeOp = "share" | "diff" | "sum" | "growth" | "scale";
-/** `per`: each part divided by this many (months) first, so a change compares monthly averages of runs of different lengths. */
-export type CompositeDescriptor = { report: "composite"; op: CompositeOp; of: readonly ProofDescriptor[]; per?: readonly number[] };
+export type CompositeOp = "share" | "diff" | "sum" | "growth" | "scale" | "times";
+/**
+ * `per`: each part divided by this many (months) first, so a change compares monthly averages
+ * of runs of different lengths. `n`: what "times" multiplies its one part by — a number you
+ * typed (a trip's miles), named in the recipe so the proof says so.
+ */
+export type CompositeDescriptor = { report: "composite"; op: CompositeOp; of: readonly ProofDescriptor[]; per?: readonly number[]; n?: number };
 
 /** What each operation is: how many parts, and in words. */
 export const COMPOSITE_OPS: Record<CompositeOp, { min: number; max: number; words: string }> = {
@@ -22,6 +26,7 @@ export const COMPOSITE_OPS: Record<CompositeOp, { min: number; max: number; word
   sum: { min: 2, max: 5000, words: "the parts added up" },
   growth: { min: 2, max: 2, words: "the first over the second, less one" },
   scale: { min: 3, max: 3, words: "the first, scaled by the second over the third" },
+  times: { min: 1, max: 1, words: "the figure times the number you typed" },
 };
 
 export const isComposite = (d: { report: string }): d is CompositeDescriptor => d.report === "composite";
@@ -29,7 +34,7 @@ export const isComposite = (d: { report: string }): d is CompositeDescriptor => 
 const num = (v: ProofValue): number | null => ("cents" in v ? v.cents : "ratio" in v ? v.ratio : null);
 
 /** The composite's value from its parts' values (each over its `per`), or null where it has none (a share of nothing). */
-export function compose(op: CompositeOp, parts: readonly ProofValue[], per?: readonly number[]): ProofValue | null {
+export function compose(op: CompositeOp, parts: readonly ProofValue[], per?: readonly number[], n?: number): ProofValue | null {
   const xs = parts.map((v, i) => {
     const x = num(v);
     return x == null ? null : x / (per?.[i] || 1);
@@ -38,6 +43,8 @@ export function compose(op: CompositeOp, parts: readonly ProofValue[], per?: rea
   const [a, b] = xs as number[];
   const money = "cents" in parts[0]!;
   switch (op) {
+    case "times":
+      return n == null ? null : money ? { cents: a! * n } : { ratio: a! * n };
     case "share":
       return b ? { ratio: a! / b } : null;
     case "growth":
@@ -62,7 +69,7 @@ export function composeCleared(d: CompositeDescriptor, cleared: Readonly<Record<
   const values = parts.map((k) => clearedValue(k, cleared));
   const missing = parts.filter((_, i) => !values[i]);
   if (missing.length) return { missing };
-  return { value: compose(d.op, values as ProofValue[], d.per), parts };
+  return { value: compose(d.op, values as ProofValue[], d.per, d.n), parts };
 }
 
 /** A figure's cleared value by its descriptor key: the sweep's own, or a composite's worked out from its parts. Null when it hasn't cleared. */

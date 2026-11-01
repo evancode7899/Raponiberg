@@ -21,11 +21,12 @@ export function parseCompositeDescriptor(d: Record<string, unknown>, depth = 0):
     if ("error" in p) return { error: `A part: ${p.error}` };
     of.push(p as CompositeDescriptor["of"][number]);
   }
+  if (op === "times" && (typeof d.n !== "number" || !Number.isFinite(d.n) || Math.abs(d.n) > 1e9)) return { error: "times needs the number it multiplies by (n)." };
   if (d.per != null && (!Array.isArray(d.per) || d.per.length !== of.length || d.per.some((n) => !Number.isInteger(n) || (n as number) < 1 || (n as number) > 1200))) return { error: "per must give each part a whole number of months." };
-  return { report: "composite", op, of, ...(d.per ? { per: d.per as number[] } : {}) };
+  return { report: "composite", op, of, ...(d.per ? { per: d.per as number[] } : {}), ...(op === "times" ? { n: d.n as number } : {}) };
 }
 
-const OPS: Record<CompositeOp, ChainLine["op"]> = { share: "÷", growth: "÷", diff: "−", sum: "+", scale: "×" };
+const OPS: Record<CompositeOp, ChainLine["op"]> = { share: "÷", growth: "÷", diff: "−", sum: "+", scale: "×", times: "×" };
 
 export async function buildCompositeProof(ctx: ProofContext, d: CompositeDescriptor): Promise<Proof> {
   const parts = await Promise.all(d.of.map((p) => buildProof(ctx, p)));
@@ -33,6 +34,7 @@ export async function buildCompositeProof(ctx: ProofContext, d: CompositeDescrip
     d.op,
     parts.map((p) => p.figure),
     d.per,
+    d.n,
   );
   if (!value) throw new Error("It has no value: a share or growth of nothing.");
   const each = (p: Proof, i: number): ChainLine[] => {
@@ -43,6 +45,7 @@ export async function buildCompositeProof(ctx: ProofContext, d: CompositeDescrip
     return [{ ...line, ...(i ? { note: "over its months, next line" } : {}) }, { ...(i ? { op: OPS[d.op] } : {}), label: `${p.describes}, a month (÷ ${n})`, value: { cents: p.figure.cents / n }, source: "derived" }];
   };
   const lines: ChainLine[] = parts.flatMap(each);
+  if (d.op === "times") lines.push({ op: "×", label: "The number you typed", value: { ratio: d.n! }, source: "assumption" });
   // a × b ÷ c: the third part divides.
   if (d.op === "scale" && lines.length === 3) lines[2] = { ...lines[2]!, op: "÷" };
   if (d.op === "growth" && "ratio" in value) lines.push({ op: "=", label: "Ratio", value: { ratio: value.ratio + 1 }, source: "derived" }, { op: "−", label: "Less one", value: { ratio: 1 }, source: "derived" });

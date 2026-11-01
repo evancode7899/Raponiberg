@@ -73,12 +73,12 @@ export function useProof() {
  * values, and its drawer shows the arithmetic. A part with no proof (or nothing to show)
  * leaves the composite without one too. `shown` is the value the page works out and draws.
  */
-export function compositeOf(op: CompositeOp, parts: readonly (ProofRef | Figure)[], shown: ProofValue, per?: readonly number[]): ProofRef {
+export function compositeOf(op: CompositeOp, parts: readonly (ProofRef | Figure)[], shown: ProofValue, per?: readonly number[], n?: number): ProofRef {
   const refs = parts.map((p) => ("class" in p ? targetOf(p) : p));
   const none = refs.find((p): p is Unswept => isUnswept(p));
   if (none) return none;
   const of = (refs as ProofTarget[]).map((p) => p.descriptor) as CompositeDescriptor["of"];
-  return { descriptor: { report: "composite", op, of, ...(per && per.some((n) => n !== 1) ? { per } : {}) }, shownCents: "cents" in shown ? shown.cents : null, ...("cents" in shown ? {} : { shown }) };
+  return { descriptor: { report: "composite", op, of, ...(per && per.some((k) => k !== 1) ? { per } : {}), ...(n != null ? { n } : {}) }, shownCents: "cents" in shown ? shown.cents : null, ...("cents" in shown ? {} : { shown }) };
 }
 
 /** The sum of a few figures that have proofs: the one figure itself, a composite sum of several, or nothing to show. */

@@ -1,5 +1,7 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
+import { compositeOf } from "@/components/ui/proof/context";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Badge, Card, StatementTable, table, type TableRow } from "@/components/ui/kit";
@@ -86,7 +88,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                         <ProofValue proof={carProof(s.id, { span: "toDate", basis: "cash", line: k }, r.cash[k])}>{usd0(r.cash[k])}</ProofValue>
                       </td>
                       <td className={table.tdR}>{usedC == null ? "—" : <ProofValue proof={carProof(s.id, { span: "toDate", line: k as CostLine }, usedC)}>{usd0(usedC)}</ProofValue>}</td>
-                      <td className={`${table.tdR} text-muted`}>{usedC == null ? "—" : usd0(r.cash[k] - usedC)}</td>
+                      <td className={`${table.tdR} text-muted`}>{usedC == null ? "—" : <ProofValue proof={compositeOf("diff", [carProof(s.id, { span: "toDate", basis: "cash", line: k }, r.cash[k]), carProof(s.id, { span: "toDate", line: k as CostLine }, usedC)], { cents: r.cash[k] - usedC })}>{usd0(r.cash[k] - usedC)}</ProofValue>}</td>
                     </tr>
                   );
                 })}
@@ -123,32 +125,44 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                 ).map(([l, c]) => (
                   <tr key={l} className={table.tr}>
                     <td className={table.td}>{l}</td>
-                    <td className={table.tdR}>{usd2(c)}</td>
+                    <td className={table.tdR}>
+                      <NotFigure why="your entry: the purchase">{usd2(c)}</NotFigure>
+                    </td>
                   </tr>
                 ))}
                 <tr className="border-t border-line-strong font-semibold">
                   <td className={table.td}>All-in purchase</td>
-                  <td className={table.tdR}>{usd2(a.cents)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={ctx.dp("acquisition")}>{usd2(a.cents)}</ProofValue>
+                  </td>
                 </tr>
                 <tr className={table.tr}>
                   <td className={table.td}>Recoverable (vehicle + warranty)</td>
-                  <td className={table.tdR}>{usd2(a.recoverableCents)}</td>
+                  <td className={table.tdR}>
+                    <NotFigure why="worked out from your purchase entry">{usd2(a.recoverableCents)}</NotFigure>
+                  </td>
                 </tr>
                 <tr className={table.tr}>
                   <td className={table.td}>Dead loss on day one (fees, tax, registration)</td>
                   <td className={table.tdR}>
-                    {usd2(a.sunkCents)} <span className="text-muted">({a.deadLossShare == null ? "—" : formatPercentRatio(a.deadLossShare, 1)})</span>
+                    <NotFigure why="worked out from your purchase entry">
+                      {usd2(a.sunkCents)} <span className="text-muted">({a.deadLossShare == null ? "—" : formatPercentRatio(a.deadLossShare, 1)})</span>
+                    </NotFigure>
                   </td>
                 </tr>
                 <tr className={table.tr}>
                   <td className={table.td}>Down payment · financed</td>
                   <td className={table.tdR}>
-                    {usd0(p.downPaymentCents)} · {usd0(a.financedCents)}
+                    <NotFigure why="your entry: the purchase">
+                      {usd0(p.downPaymentCents)} · {usd0(a.financedCents)}
+                    </NotFigure>
                   </td>
                 </tr>
                 <tr className={table.tr}>
                   <td className={table.td}>Interest paid{p.loanPaidOffDate ? ` (paid off ${fmtDate(p.loanPaidOffDate)})` : ""}</td>
-                  <td className={table.tdR}>{usd2(a.interestCents)}</td>
+                  <td className={table.tdR}>
+                    <NotFigure why="your entry: the loan">{usd2(a.interestCents)}</NotFigure>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -158,7 +172,18 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
 
       <Card
         title="Insurance premiums"
-        subtitle={`${r.insurance.renewsOn ? `Current term ends ${fmtDate(r.insurance.renewsOn)}; expect about ${usd0(r.insurance.expectedCents)} then.` : "Each premium and what it works out to a month."}${r.insurance.premiums.length > 12 ? " The latest 12 are listed." : ""}`}
+        subtitle={
+          <>
+            {r.insurance.renewsOn ? (
+              <>
+                Current term ends {fmtDate(r.insurance.renewsOn)}; expect about <ProofValue proof={ctx.dp("insurance-expected")}>{usd0(r.insurance.expectedCents)}</ProofValue> then.
+              </>
+            ) : (
+              "Each premium and what it works out to a month."
+            )}
+            {r.insurance.premiums.length > 12 ? " The latest 12 are listed." : ""}
+          </>
+        }
       >
         {r.insurance.premiums.length === 0 ? (
           <p className="text-xs text-muted">No insurance yet: log a premium, or it&apos;s picked up from your statements (auto insurers are recognized by name).</p>
@@ -176,16 +201,20 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...r.insurance.premiums].reverse().slice(0, 12).map((x, i) => (
+                  {[...r.insurance.premiums].map((x, i) => ({ x, k: `${s.id}|${i}` })).reverse().slice(0, 12).map(({ x, k }, i) => (
                     <tr key={i} className={table.tr}>
                       <td className={table.td}>
                         {fmtDate(x.date)} {x.source === "STATEMENT" && <Badge tone="info">statement</Badge>}
                       </td>
-                      <td className={table.tdR}>{usd2(x.cents)}</td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={ctx.dp("premium", k)}>{usd2(x.cents)}</ProofValue>
+                      </td>
                       <td className={table.tdR}>{x.months} mo</td>
-                      <td className={table.tdR}>{usd0(x.monthlyCents)}</td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={ctx.dp("premium-monthly", k)}>{usd0(x.monthlyCents)}</ProofValue>
+                      </td>
                       <td className={`${table.tdR} ${x.changeShare == null ? "" : x.changeShare > 0.005 ? "text-neg" : x.changeShare < -0.005 ? "text-pos" : "text-muted"}`}>
-                        {x.changeShare == null ? "—" : `${x.changeShare > 0 ? "+" : ""}${(x.changeShare * 100).toFixed(1)}%`}
+                        {x.changeShare == null ? "—" : <ProofValue proof={ctx.dp("premium-change", k)}>{`${x.changeShare > 0 ? "+" : ""}${(x.changeShare * 100).toFixed(1)}%`}</ProofValue>}
                       </td>
                     </tr>
                   ))}
