@@ -10,6 +10,7 @@ import { INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings } from "../../inve
 import { buildAnnualProfile } from "../../profile/buildAnnualProfile.ts";
 import { buildAccountRollforwards } from "../../profile/rollforwards.ts";
 import { loadProfileSettings } from "../../profile/settings.ts";
+import { yearEstimate } from "../../profile/yearEstimate.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import { readPageInputs } from "../../pageInputs.ts";
 import { perBook } from "./common.ts";
@@ -163,7 +164,7 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
     return [...cashFlowFigures(r.months), ...cashFlowWindowFigures(r)];
   });
   await page("Investments", async () => investmentsFigures(buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings))));
-  await page("Annual", () => annualFigures(buildAnnualProfile(book, profileSettings, book.taxProfile.dependents), buildAccountRollforwards(book)));
+  await page("Annual", () => annualFigures(buildAnnualProfile(book, profileSettings, book.taxProfile.dependents), buildAccountRollforwards(book), forecast ? yearEstimate(data) : null));
   await page("Bonuses", () => bonusesFigures(bonusesOf(book), forecast));
   await page("HSA", async () => hsaFigures(await loadHsaReport(db)));
   await page("Car", async () => carFigures(garagePage(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage))));
@@ -291,7 +292,12 @@ export async function judgeFigures(
     const q = await build(parsed);
     linkMs += performance.now() - t0;
     if (q instanceof Error) note({ kind: "LINK", page, descriptor: parsed, detail: `"${link.label}" from ${from} doesn't build: ${q.message}` });
-    else if (q.selfCheck && !q.selfCheck.ok) note({ kind: "LINK", page, descriptor: parsed, detail: `"${link.label}" from ${from}: ${q.selfCheck.explain}, ${(q.selfCheck.deltaCents / 100).toFixed(2)} off.` });
+    else {
+      if (q.selfCheck && !q.selfCheck.ok) note({ kind: "LINK", page, descriptor: parsed, detail: `"${link.label}" from ${from}: ${q.selfCheck.explain}, ${(q.selfCheck.deltaCents / 100).toFixed(2)} off.` });
+      // A source only a link opens (a pay stub) is held as a page's figure is: its chains re-add, its second ways agree.
+      for (const b of q.blocks) if (b.kind === "chain") for (const bad of chainReAdds(b.lines)) note({ kind: "LINK", page, descriptor: parsed, detail: `"${link.label}" from ${from} · ${b.title}: ${bad}` });
+      for (const detail of failedRoutes(q)) note({ kind: "LINK", page, descriptor: parsed, detail: `"${link.label}" from ${from}: ${detail}` });
+    }
   }
   return {
     pages: [...byPage].map(([page, x]) => ({ page, ...x, ms: Math.round(x.ms) })),

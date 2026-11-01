@@ -207,31 +207,142 @@ export function cashFlowWindows(r: Pick<SpendingReport, "months">): SpendingMont
   });
 }
 
+// ---------------------------------------------------------------- what the tabs pick out
+
+/** A month's drill: the merchants that paid back more than they charged, and its twelve biggest. */
+export function monthDrillMerchants(m: SpendingMonth): { credits: MerchantMonth[]; top: MerchantMonth[] } {
+  return { credits: m.merchants.filter((x) => x.cents < 0).sort((a, b) => a.cents - b.cents), top: m.merchants.filter((x) => x.cents > 0).slice(0, 12) };
+}
+
+/** Income › Who pays you: the fifteen biggest payers over the months. */
+export const topPayers = (months: SpendingMonth[]) => mergeMerchants(months, (m) => m.payers).slice(0, 15);
+
+/** Merchants › Went quiet: charged in at least three of the twelve months before the range (`recent`), none in it; the ten biggest. */
+export function quietMerchants(recent: SpendingMonth[], inRange: SpendingMonth[]): MerchantTotal[] {
+  const keys = new Set(mergeMerchants(inRange).map((m) => m.key));
+  return mergeMerchants(recent)
+    .filter((m) => m.months >= 3 && !keys.has(m.key))
+    .sort((a, b) => b.cents - a.cents)
+    .slice(0, 10);
+}
+
+/** Year over year's merchants: the ten that rose most and the ten that fell most, with what each spent either side. */
+export function merchantMovers(now: SpendingMonth[], then: SpendingMonth[]) {
+  const n = new Map(mergeMerchants(now).map((m) => [m.key, m]));
+  const t = new Map(mergeMerchants(then).map((m) => [m.key, m]));
+  const all = [...new Set([...n.keys(), ...t.keys()])].map((key) => ({ key, name: (n.get(key) ?? t.get(key))!.name, now: n.get(key)?.cents ?? 0, then: t.get(key)?.cents ?? 0 }));
+  return {
+    up: all.filter((m) => m.now - m.then > 0).sort((x, y) => y.now - y.then - (x.now - x.then)).slice(0, 10),
+    down: all.filter((m) => m.now - m.then < 0).sort((x, y) => x.now - x.then - (y.now - y.then)).slice(0, 10),
+  };
+}
+
+/**
+ * What the tabs draw over one run of months: which totals (income, spending, saved), spending
+ * less one-offs, which bands of spending, which spending categories (every one, or those
+ * named), its outside-money categories, which merchants and which payers.
+ */
+export type WindowDraws = { totals: ("income" | "spending" | "net")[]; oneOffs: boolean; kinds: SpendingKind[]; categories: "all" | string[]; external: boolean; merchants: "all" | string[]; payers: string[] };
+
+const NOTHING: WindowDraws = { totals: [], oneOffs: false, kinds: [], categories: [], external: false, merchants: [], payers: [] };
+const TOTALS: WindowDraws["totals"] = ["income", "spending", "net"];
+const union = <T,>(a: "all" | T[], b: "all" | T[] | undefined): "all" | T[] => (a === "all" || b === "all" ? "all" : [...new Set([...a, ...(b ?? [])])]);
+const ALL_KINDS: SpendingKind[] = ["bill", "big", "everyday"];
+
+function mergeDraws(a: WindowDraws, b: Partial<WindowDraws>): WindowDraws {
+  return {
+    totals: [...new Set([...a.totals, ...(b.totals ?? [])])],
+    oneOffs: a.oneOffs || !!b.oneOffs,
+    kinds: [...new Set([...a.kinds, ...(b.kinds ?? [])])],
+    categories: union(a.categories, b.categories),
+    external: a.external || !!b.external,
+    merchants: union(a.merchants, b.merchants),
+    payers: [...new Set([...a.payers, ...(b.payers ?? [])])],
+  };
+}
+
+/**
+ * Every run of months a tab sums a figure over (cashFlowWindows), with what the tabs draw
+ * over it, on the page's default view (no account filter, a preset range), from the same
+ * pickers the tabs use:
+ *  - each month: Overview's month rows and the month's drill (totals, one-offs, bands,
+ *    categories, its credits and biggest merchants), Spending's month cells, Budget's latest;
+ *  - each preset range: every tab (all of it: every merchant, as Merchants lists them; the
+ *    payers Income lists; outside money by category);
+ *  - the run before it: Overview's and Spending's comparisons (income and spending, and each
+ *    category the range has too);
+ *  - the twelve months before it: Merchants' merchants that went quiet;
+ *  - each calendar year: Year over year's year table (totals, bands, categories);
+ *  - each side of a year-over-year comparison: its totals, everyday spending, categories and the merchants that moved most;
+ *  - Trends: the trailing twelve months (totals, everyday spending), the last three (everyday
+ *    spending), and momentum's two runs (categories).
+ */
+export function cashFlowWindowDraws(r: Pick<SpendingReport, "months">): { months: SpendingMonth[]; draws: WindowDraws }[] {
+  const all = r.months;
+  if (!all.length) return [];
+  const byKey = new Map<string, { months: SpendingMonth[]; draws: WindowDraws }>();
+  const add = (months: SpendingMonth[], d: Partial<WindowDraws>) => {
+    if (!months.length) return;
+    const k = `${months[0]!.start}/${months.at(-1)!.end}`;
+    const cur = byKey.get(k);
+    byKey.set(k, { months, draws: mergeDraws(cur?.draws ?? NOTHING, d) });
+  };
+  for (const m of all) {
+    const { credits, top } = monthDrillMerchants(m);
+    add([m], { totals: TOTALS, oneOffs: true, kinds: ALL_KINDS, categories: "all", merchants: [...credits, ...top].map((x) => x.key) });
+  }
+  const hi = all.length - 1;
+  for (const range of PRESET_RANGES) {
+    const s = sliceRange(r, range, { from: "", to: "" });
+    const lo = sliceStart(r, s);
+    add(s.months, { totals: TOTALS, oneOffs: true, kinds: ALL_KINDS, categories: "all", external: true, merchants: "all", payers: topPayers(s.months).map((x) => x.key) });
+    add(s.prior, { totals: ["income", "spending"], categories: mergeCategories(s.months, (m) => m.spendingByCategory).map((c) => c.category) });
+    const recent = all.slice(Math.max(0, lo - 12), lo);
+    add(recent, { merchants: quietMerchants(recent, s.months).map((x) => x.key) });
+  }
+  for (const [, ms] of byYear(all)) add(ms, { totals: TOTALS, kinds: ALL_KINDS, categories: "all" });
+  for (const mode of ["month", "ytd", "12m"] as const) {
+    const y = yoyWindows(all, mode);
+    if (y.missing.length) continue;
+    const { up, down } = merchantMovers(y.now, y.then);
+    add(y.now, { totals: TOTALS, kinds: ["everyday"], categories: "all", merchants: [...up, ...down].filter((x) => x.now).map((x) => x.key) });
+    add(y.then, { totals: TOTALS, kinds: ["everyday"], categories: "all", merchants: [...up, ...down].filter((x) => x.then).map((x) => x.key) });
+  }
+  const m = momentumWindows(all, hi);
+  add(last12At(all, hi), { totals: ["income", "spending"], kinds: ["everyday"] });
+  add(all.slice(Math.max(0, hi - 2), hi + 1), { kinds: ["everyday"] });
+  add(m.recent, { categories: "all" });
+  add(m.before, { categories: "all" });
+  return [...byKey.values()];
+}
+
 /** One figure over a run of months: its recipe and the total the page shows. */
 export type CashFlowFigure = { descriptor: CashFlowDescriptor; cents: number };
 
 /**
- * Every figure the tabs show over one run of months, with the total each shows: income,
- * spending, outside money and saved; each category of each; the three bands of spending;
- * spending less one-offs; and each merchant and payer.
+ * The figures the tabs draw over one run of months (cashFlowWindowDraws), with the total
+ * each shows: income, spending and saved; spending less one-offs; the bands of spending;
+ * each category of spending and of outside money; and the merchants and payers drawn.
  */
-export function windowFigures(months: SpendingMonth[]): CashFlowFigure[] {
+export function windowFigures(months: SpendingMonth[], draws: WindowDraws): CashFlowFigure[] {
   const out: CashFlowFigure[] = [];
   const add = (metric: CashFlowMetric, o: CashFlowRecipe, cents: number) => out.push({ descriptor: cashFlowDescriptor(metric, months, undefined, o), cents });
   const income = sum(months, (m) => m.incomeCents);
   const spending = sum(months, (m) => m.spendingCents);
-  add("income", {}, income);
-  add("spending", {}, spending);
-  add("net", {}, income - spending);
-  add("external", {}, sum(months, (m) => sum(m.externalByCategory, (c) => c.cents)));
-  add("spending", { excludeOneOffs: true }, spending - sum(months, (m) => m.oneOffCents));
-  for (const k of ["bill", "big", "everyday"] as const) add("spending", { spendingKind: k }, sum(months, (m) => m.kinds[KIND_FIELD[k]]));
-  for (const c of mergeCategories(months, (m) => m.spendingByCategory)) add("spending", { category: c.category }, c.cents);
-  for (const c of mergeCategories(months, (m) => m.incomeByCategory)) add("income", { category: c.category }, c.cents);
-  for (const c of mergeCategories(months, (m) => m.externalByCategory)) add("external", { category: c.category }, c.cents);
-  for (const x of mergeMerchants(months)) add("spending", { merchantKey: x.key }, x.cents);
-  // A month's drill also lists its credits (a merchant that paid back more than it charged).
-  if (months.length === 1) for (const x of months[0]!.merchants.filter((m) => m.cents < 0)) add("spending", { merchantKey: x.key }, x.cents);
-  for (const x of mergeMerchants(months, (m) => m.payers)) add("income", { merchantKey: x.key }, x.cents);
+  const total = { income, spending, net: income - spending };
+  for (const metric of draws.totals) add(metric, {}, total[metric]);
+  if (draws.oneOffs) add("spending", { excludeOneOffs: true }, spending - sum(months, (m) => m.oneOffCents));
+  for (const k of draws.kinds) add("spending", { spendingKind: k }, sum(months, (m) => m.kinds[KIND_FIELD[k]]));
+  for (const c of mergeCategories(months, (m) => m.spendingByCategory)) if (draws.categories === "all" || draws.categories.includes(c.category)) add("spending", { category: c.category }, c.cents);
+  if (draws.external) for (const c of mergeCategories(months, (m) => m.externalByCategory)) add("external", { category: c.category }, c.cents);
+  const merchants = mergeMerchants(months);
+  if (draws.merchants === "all") for (const x of merchants) add("spending", { merchantKey: x.key }, x.cents);
+  else {
+    // A month's credits (a merchant that paid back more than it charged) as well as what it charged.
+    const cents = new Map([...merchants.map((x) => [x.key, x.cents] as const), ...(months.length === 1 ? months[0]!.merchants.filter((x) => x.cents < 0).map((x) => [x.key, x.cents] as const) : [])]);
+    for (const k of draws.merchants) if (cents.has(k)) add("spending", { merchantKey: k }, cents.get(k)!);
+  }
+  const payers = new Map(mergeMerchants(months, (m) => m.payers).map((x) => [x.key, x.cents]));
+  for (const k of draws.payers) if (payers.has(k)) add("income", { merchantKey: k }, payers.get(k)!);
   return out;
 }

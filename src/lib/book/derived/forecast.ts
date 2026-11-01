@@ -14,6 +14,12 @@ export function scheduleKeys(schedule: readonly Pick<ScheduledBonus, "key" | "pe
   });
 }
 
+/** Bonus payments lists the schedule through this many years after the current one. */
+export const BONUS_LIST_YEARS = 2;
+
+/** Whether Bonus payments lists a payment: through BONUS_LIST_YEARS after the current year. */
+export const bonusListed = (b: Pick<ScheduledBonus, "key">, currentYear: number) => b.key <= `${currentYear + BONUS_LIST_YEARS}-12`;
+
 /**
  * Forecast's derived figures on the saved drivers, beyond its ledger cells and seeds (proven
  * as forecast figures): each bonus payment in the schedule and the share of its award it is,
@@ -24,6 +30,7 @@ export function forecastDerived(f: Forecast, s: Pick<OutlookSeeds, "currentYear"
   const out: DerivedFigure[] = [];
   const keys = scheduleKeys(f.schedule);
   f.schedule.forEach((b, i) => {
+    if (!bonusListed(b, s.currentYear)) return;
     const describes = `${b.personName}'s bonus, ${b.label}`;
     out.push({ figure: "bonus", key: keys[i], describes, value: c(b.gross), lines: [ln(describes, c(b.gross), undefined, { source: b.source === "ESTIMATE" ? "estimate" : "proven" })] });
     if (b.share != null) out.push({ figure: "bonus-share", key: keys[i], describes: `${describes}: its share of the award`, value: r(b.share), lines: [ln("The latest letter's split of an award", r(b.share))] });

@@ -13,7 +13,7 @@ import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { carProof, fmtDate, miles, perMile, throughText, usd2 } from "./parts";
-import { yearKey } from "@/lib/book/derived/car";
+import { PREMIUMS_LISTED, yearKey } from "@/lib/book/derived/car";
 import { noFigure } from "@/lib/book/proof/clearance";
 
 export function CostsTab({ ctx }: { ctx: CarCtx }) {
@@ -181,7 +181,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
             ) : (
               "Each premium and what it works out to a month."
             )}
-            {r.insurance.premiums.length > 12 ? " The latest 12 are listed." : ""}
+            {r.insurance.premiums.length > PREMIUMS_LISTED ? ` The latest ${PREMIUMS_LISTED} are listed.` : ""}
           </>
         }
       >
@@ -201,7 +201,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...r.insurance.premiums].map((x, i) => ({ x, k: `${s.id}|${i}` })).reverse().slice(0, 12).map(({ x, k }, i) => (
+                  {[...r.insurance.premiums].map((x, i) => ({ x, k: `${s.id}|${i}` })).reverse().slice(0, PREMIUMS_LISTED).map(({ x, k }, i) => (
                     <tr key={i} className={table.tr}>
                       <td className={table.td}>
                         {fmtDate(x.date)} {x.source === "STATEMENT" && <Badge tone="info">statement</Badge>}

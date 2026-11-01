@@ -18,6 +18,17 @@ export type W4Cell = { row: string; col: string; describes: string; value: Proof
 /** The walk from the year's tax to the balance, as Reconcile lists it. */
 export const W4_WALK = ["tax", "withheldStubs", "withheldSinceStub", "withheldTooSoon", "withheldReached", "withheldBonus", "withheldOther", "estimates", "otherCredits", "balanceNow", "change", "balanceAfter"] as const satisfies readonly (keyof W4Balance)[];
 
+/**
+ * Whether Reconcile draws a step of the walk: the tax and the balances always; the paychecks
+ * before the new W-4 takes effect only when there are any; every other step only when either
+ * return has one.
+ */
+export function walkShown(k: (typeof W4_WALK)[number], federal: Pick<W4Balance, (typeof W4_WALK)[number]>, ct: Pick<W4Balance, (typeof W4_WALK)[number]>, tooSoon: number): boolean {
+  if (k === "tax" || k === "balanceNow" || k === "change" || k === "balanceAfter") return true;
+  if (k === "withheldTooSoon" && !tooSoon) return false;
+  return federal[k] !== 0 || ct[k] !== 0;
+}
+
 /** The W-4 lines the plan sets (the on-file ones are your entries, not figures). */
 export const W4_LINES = ["credits", "extraPerPaycheck", "ctAdditional", "ctReduced", "federalPerCheck", "federalAfter", "ctPerCheck", "ctAfter"] as const;
 
@@ -25,8 +36,9 @@ export function w4Cells(r: TaxReport, reach: W4Reach): W4Cell[] {
   if (!r.isCurrentYear) return [];
   const plan = planW4(r, { tooSoonCount: Number(reach), paidThrough: {} });
   const out: W4Cell[] = [];
+  const tooSoon = plan.people.flatMap((p) => p.tooSoon).length;
   for (const [col, b] of [["federal", plan.federal], ["ct", plan.ct]] as const) {
-    for (const k of W4_WALK) out.push({ row: `walk:${k}`, col, describes: `W-4 plan (${col}): ${k}`, value: { cents: b[k] } });
+    for (const k of W4_WALK) if (walkShown(k, plan.federal, plan.ct, tooSoon)) out.push({ row: `walk:${k}`, col, describes: `W-4 plan (${col}): ${k}`, value: { cents: b[k] } });
     out.push({ row: "unreachable", col, describes: `W-4 plan (${col}): what no paycheck left can take`, value: { cents: plan.unreachable[col] } });
   }
   for (const p of plan.people) {

@@ -268,7 +268,7 @@ describe("buildHsaProof", () => {
   it("proves every figure the page shows, its parts re-adding exactly", () => {
     expect(r.hsa.balanceCents).toBe(237_099);
     const figures = hsaFigures(r);
-    expect(figures.length).toBe(13);
+    expect(figures.length).toBe(10);
     for (const { descriptor, shown } of figures) {
       const d = descriptor as HsaDescriptor;
       const p = buildHsaProof(book, r, d);

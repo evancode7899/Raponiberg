@@ -22,7 +22,8 @@ export function taxesDerived(report: TaxReport): DerivedFigure[] {
   return [
     ...tableFigures("compare", y, cells),
     ...tableFigures("dependents", y, deps),
-    { figure: "compare-diff", key: String(y), describes: `${y}: separate returns' tax less the joint return's`, value: c(cmp.diff), lines: [] },
+    // Joint vs separate says what one saves only once it's $100 or more ("about the same" under that).
+    ...(Math.abs(cmp.diff) >= 100 ? [{ figure: "compare-diff", key: String(y), describes: `${y}: separate returns' tax less the joint return's`, value: c(cmp.diff), lines: [] }] : []),
     ...tableFigures("overview", y, overviewCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...W4_REACHES.flatMap((reach) => tableFigures("w4", `${y}:${reach}`, w4Cells(report, reach).map((x) => ({ ...x, describes: `${y} ${x.describes}, the new W-4 reaching paycheck ${Number(reach) + 1} from now` })))),
     ...tableFigures("income", y, incomeCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),

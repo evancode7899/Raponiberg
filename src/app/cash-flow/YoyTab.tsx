@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
 import { yoyWindows } from "@/lib/book/reports/cashFlowWindows";
-import { KINDS, mergeCategories, mergeMerchants, MONTH_NAMES, monthKey, SPEND_CATEGORIES, sum, totals } from "./model";
+import { KINDS, mergeCategories, merchantMovers, MONTH_NAMES, monthKey, SPEND_CATEGORIES, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
@@ -76,22 +76,14 @@ function compareCategories(now: SpendingMonth[], then: SpendingMonth[]) {
     .sort((x, y) => Math.abs(y.now - y.then) - Math.abs(x.now - x.then));
 }
 
-/** Spending by merchant in both periods. */
-function compareMerchants(now: SpendingMonth[], then: SpendingMonth[]) {
-  const n = new Map(mergeMerchants(now).map((m) => [m.key, m]));
-  const t = new Map(mergeMerchants(then).map((m) => [m.key, m]));
-  return [...new Set([...n.keys(), ...t.keys()])].map((key) => ({ key, name: (n.get(key) ?? t.get(key))!.name, now: n.get(key)?.cents ?? 0, then: t.get(key)?.cents ?? 0 }));
-}
-
 function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: SpendingMonth[] }) {
   const { chart } = ctx;
   const a = useMemo(() => totals(now), [now]);
   const b = useMemo(() => totals(then), [then]);
   const categories = useMemo(() => compareCategories(now, then), [now, then]);
-  const merchants = useMemo(() => compareMerchants(now, then), [now, then]);
+  // The ten that rose and fell most (merchantMovers: the lists the proof sweep enumerates too).
+  const { up, down } = useMemo(() => merchantMovers(now, then), [now, then]);
   const maxChange = Math.max(1, ...categories.map((c) => Math.abs(c.now - c.then)));
-  const up = merchants.filter((m) => m.now - m.then > 0).sort((x, y) => y.now - y.then - (x.now - x.then)).slice(0, 10);
-  const down = merchants.filter((m) => m.now - m.then < 0).sort((x, y) => x.now - x.then - (y.now - y.then)).slice(0, 10);
 
   return (
     <>

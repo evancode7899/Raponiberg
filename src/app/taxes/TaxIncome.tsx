@@ -11,7 +11,7 @@ import { EstimateValue, formatDate, lawLabel, NumberTable, pct, usd, type Row } 
 import { NotFigure } from "@/components/ui/kit";
 import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
-import { ACCOUNT_ROWS, accountRow, employerRow, lineRow, W2_ROWS, w2Value, type W2Row } from "@/lib/tax/incomeExtras";
+import { ACCOUNT_ROWS, accountRow, employerRow, lineRow, showsChet, showsIraMoves, showsProjectedW2, W2_ROWS, w2Value, type W2Row } from "@/lib/tax/incomeExtras";
 
 /** A cell of the year's income figures (lib/tax/incomeExtras), drawn as its figure. */
 type Cell = (row: string, col: string, cents: number) => ReactNode;
@@ -133,9 +133,9 @@ function PersonIncome({ p, year, isCurrentYear, cell }: { p: PersonReport; year:
             <W2Table
               cell={(row, side) => cell(employerRow(p, e, row), side, w2Value(e, row, side))}
               grossProof={isCurrentYear && e.active ? { descriptor: { report: "planning", page: "taxes", figure: "projected-gross", year, personId: p.id }, shownCents: e.projected.gross } : unswept("projected only for the year in progress")}
-              ytd={e.w2Ytd} projected={e.w2Projected} gross={{ ytd: e.ytd.gross, projected: e.projected.gross }} nonTaxable={{ ytd: e.ytd.nonTaxable, projected: e.projected.nonTaxable }} pretax={{ ytd: e.ytd.section125 + e.ytd.hsa + e.ytd.dependentCareFsa, projected: e.projected.section125 + e.projected.hsa + e.projected.dependentCareFsa }} showProjected={e.active && e.remainingPayDates.length > 0} />
+              ytd={e.w2Ytd} projected={e.w2Projected} gross={{ ytd: e.ytd.gross, projected: e.projected.gross }} nonTaxable={{ ytd: e.ytd.nonTaxable, projected: e.projected.nonTaxable }} pretax={{ ytd: e.ytd.section125 + e.ytd.hsa + e.ytd.dependentCareFsa, projected: e.projected.section125 + e.projected.hsa + e.projected.dependentCareFsa }} showProjected={showsProjectedW2(e)} />
             <details className="mt-2">
-              <summary className="cursor-pointer text-xs font-medium text-fg-2">Pay stub lines and how each is treated</summary>
+              <summary data-audit-drill={`${e.employer} pay stub lines`} className="cursor-pointer text-xs font-medium text-fg-2">Pay stub lines and how each is treated</summary>
               <NumberTable
                 columns={["Treatment", "Latest check", "Year to date"]}
                 rows={e.lines.map((l, i) => ({ label: l.name, values: [KIND_LABEL[l.kind] ?? l.kind, cell(lineRow(p, e, i), "current", l.current ?? 0), cell(lineRow(p, e, i), "ytd", l.ytd ?? 0)] }))}
@@ -228,7 +228,7 @@ function Accounts({ p, cell }: { p: PersonReport; cell: Cell }) {
           </p>
         </div>
       )}
-      {(p.retirement.conversions > 0 || p.retirement.rollovers > 0 || p.retirement.otherDistributions > 0) && (
+      {showsIraMoves(p) && (
         <div>
           <h3 className="mb-1 text-sm font-semibold text-fg">IRA moves</h3>
           <NumberTable
@@ -243,7 +243,7 @@ function Accounts({ p, cell }: { p: PersonReport; cell: Cell }) {
           />
         </div>
       )}
-      {p.accounts.some((a) => a.isChet) && (
+      {showsChet(p) && (
         <p className="text-xs text-muted">
           CHET 529 contributions this year: {cell(`chet:${p.id}`, "joint", p.income.ctChetContributions)} (deductible on the CT
           return).
