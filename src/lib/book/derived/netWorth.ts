@@ -1,6 +1,5 @@
 import type { NetWorthReport } from "../reports/netWorth.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
-import type { RollforwardReport } from "../../profile/rollforwards.ts";
 import type { ProofValue } from "../proof/types.ts";
 import { c, ln, r, t, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 
@@ -146,22 +145,4 @@ export function builtDerived(rep: Pick<NetWorthReport, "granularity" | "periods"
     );
   }
   return tableFigures("built", g, cells);
-}
-
-/**
- * Net worth › Account roll-forwards: each account's return since it was first on file, its
- * calendar years' returns chained (a year a finding blocks leaves it with none), or that a
- * year once it spans one. Each year's return is the roll-forward's own figure, linked.
- */
-export function rollforwardReturnsDerived(rep: Pick<RollforwardReport, "accounts">): DerivedFigure[] {
-  return rep.accounts.flatMap((a): DerivedFigure[] => {
-    if (a.cumulative == null) return [];
-    const years = a.years
-      .filter((x) => x.returnRatio != null)
-      .map((x) => ln(`${x.year}`, r(x.returnRatio!), undefined, { source: "proven", link: { label: `${x.year} return`, descriptor: { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line: "return" } } }));
-    const cumulative = ln("Chained: (1 + r₁) × (1 + r₂) × … − 1", r(a.cumulative), "=");
-    // The page draws the return a year once it spans one, else the cumulative return.
-    if (a.annualized == null) return [{ figure: "rollforward-return", key: a.id, describes: `${a.name}: return since first on file (${a.firstDay}), each year's chained`, value: r(a.cumulative), lines: [...years, cumulative] }];
-    return [{ figure: "rollforward-annualized", key: a.id, describes: `${a.name}: return since first on file (${a.firstDay}), a year`, value: r(a.annualized), lines: [...years, cumulative, ln("Over its days, a year", r(a.annualized), "=", { note: "(1 + cumulative)^(365 ÷ days) − 1" })] }];
-  });
 }

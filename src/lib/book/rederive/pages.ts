@@ -111,6 +111,5 @@ export const LIMITS_WHY = "The tax plan's verdict per yearly limit, or wages as 
 export const CALENDAR_WHY = "The tax plan's amount (W-4 extra per paycheck, a Q4 safe-harbor shortfall): Taxes › W-4 and the estimate's own proofs re-derive the plan.";
 export const FORECAST_WHY = "The forecast's own schedule and balances on the saved drivers: a projection, not a sum of statements. Its ledger cells and seeds are proven as forecast figures, and the pay and letters behind each bonus by their own proofs.";
 export const BUILT_WHY = "A part of the period's roll-forward as the report splits it: the change proof re-adds opening + those flows = closing from each account's timeline, and the closing balance is proven from its statements.";
-export const ROLL_RETURN_WHY = "Each calendar year's return chained: every year is its own roll-forward figure (Account roll-forwards › Rate of return), re-derived by the annual proof from the account's timeline, and the chain links each one.";
 export const TAXES_WHY = "The tax engine's own lines for each return (joint, each spouse separately), as the Worksheet states them: the tax estimate's proofs re-derive the engine's inputs from the Book.";
 export const FUNDS_WHY = "As the manager's notices and capital statements print it: each notice is its own source, and the chain re-adds what's worked from them.";
