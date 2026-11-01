@@ -1,5 +1,6 @@
 "use client";
 
+import { compositeOf } from "@/components/ui/proof/context";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
@@ -210,8 +211,8 @@ function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }
           {...total("headline", t.headlineCents)}
           sub={`${fullYears.length} year${fullYears.length === 1 ? "" : "s"} on letters (${[...fullYears].sort().join(", ")})`}
         />
-        <StatCell label="Paid up front" {...total("upfront", t.upfrontCents)} sub={`${ratio(t.upfrontCents, t.headlineCents)} of headline`} />
-        <StatCell label="Deferred" {...total("deferred", t.deferredCents)} sub={`${ratio(t.deferredCents, t.headlineCents)} of headline`} />
+        <StatCell label="Paid up front" {...total("upfront", t.upfrontCents)} sub={<><ProofValue proof={compositeOf("share", [total("upfront", t.upfrontCents).proof, total("headline", t.headlineCents).proof], { ratio: t.headlineCents ? t.upfrontCents / t.headlineCents : 0 })}>{ratio(t.upfrontCents, t.headlineCents)}</ProofValue> of headline</>} />
+        <StatCell label="Deferred" {...total("deferred", t.deferredCents)} sub={<><ProofValue proof={compositeOf("share", [total("deferred", t.deferredCents).proof, total("headline", t.headlineCents).proof], { ratio: t.headlineCents ? t.deferredCents / t.headlineCents : 0 })}>{ratio(t.deferredCents, t.headlineCents)}</ProofValue> of headline</>} />
         <StatCell
           label="Deferred paid out"
           {...total("deferredPaid", t.deferredPaidCents)}
@@ -286,29 +287,35 @@ function AwardTr({ a, asOf }: { a: AwardRow; asOf: string }) {
       <td className={table.tdR} title={baseTitle(a)}>
         {a.base?.from === "STUBS" ? (
           a.base.blockers?.length ? <BlockedValue blockers={a.base.blockers} /> : <ProofValue proof={yearPay(asOf, a.personId, a.year, ["base"], a.base.cents)}>{usd0(a.base.cents)}</ProofValue>
+        ) : a.base ? (
+          <BonusValue proof={awardProof(a, "base", a.base.cents)}>{usd0(a.base.cents)}</BonusValue>
         ) : (
-          usd0(a.base?.cents ?? null)
+          usd0(null)
         )}
         {baseOk && <span className="ml-1 text-pos" aria-label="matches the stubs">✓</span>}
         {a.base?.from === "STUBS" && <div className="text-[11px] text-faint">from stubs{a.base.parts.length > 1 ? `, ${a.base.parts.length} employers` : ""}</div>}
       </td>
       <td className={`${table.tdR} font-semibold`}>
         {a.totalBonusCents != null ? <BonusValue proof={awardProof(a, "headline", a.totalBonusCents)}>{usd0(a.totalBonusCents)}</BonusValue> : usd0(null)}
-        {a.oneOffCents > 0 && <div className="text-[11px] font-normal text-faint">+ {usd0(a.oneOffCents)} sign-on / make-whole</div>}
+        {a.oneOffCents > 0 && (
+          <div className="text-[11px] font-normal text-faint">
+            + <BonusValue proof={awardProof(a, "oneOff", a.oneOffCents)}>{usd0(a.oneOffCents)}</BonusValue> sign-on / make-whole
+          </div>
+        )}
       </td>
       <td className={table.tdR} title={a.totalComp?.from === "SUM" ? "Base + headline bonus + sign-on / make-whole (the letter prints no total)" : undefined}>
         {a.totalComp ? <BonusValue proof={awardProof(a, "totalComp", a.totalComp.cents)}>{usd0(a.totalComp.cents)}</BonusValue> : usd0(null)}
       </td>
       <td className={table.tdR}>
         <BonusValue proof={awardProof(a, "upfront", a.upfrontCents)}>{usd0(a.upfrontCents)}</BonusValue>
-        {a.totalBonusCents ? <span className="ml-1 text-[11px] text-faint">{ratio(a.upfrontCents, a.totalBonusCents)}</span> : null}
+        {a.totalBonusCents ? <span className="ml-1 text-[11px] text-faint"><ProofValue proof={compositeOf("share", [awardProof(a, "upfront", a.upfrontCents), awardProof(a, "headline", a.totalBonusCents)], { ratio: a.upfrontCents / a.totalBonusCents })}>{ratio(a.upfrontCents, a.totalBonusCents)}</ProofValue></span> : null}
       </td>
       <td className={table.tdR}>
         <BonusValue proof={awardProof(a, "deferred", a.deferredCents + a.planDeferredCents)}>{usd0(a.deferredCents + a.planDeferredCents)}</BonusValue>
-        {a.totalBonusCents ? <span className="ml-1 text-[11px] text-faint">{ratio(a.deferredCents + a.planDeferredCents, a.totalBonusCents)}</span> : null}
+        {a.totalBonusCents ? <span className="ml-1 text-[11px] text-faint"><ProofValue proof={compositeOf("share", [awardProof(a, "deferred", a.deferredCents + a.planDeferredCents), awardProof(a, "headline", a.totalBonusCents)], { ratio: (a.deferredCents + a.planDeferredCents) / a.totalBonusCents })}>{ratio(a.deferredCents + a.planDeferredCents, a.totalBonusCents)}</ProofValue></span> : null}
         {a.planDeferredCents > 0 && (
           <div className="text-[11px] text-faint" title="Deferred into a deferred compensation plan: paid out under the plan's terms, not on the pay stubs.">
-            {usd0(a.planDeferredCents)} to the deferral plan
+            <BonusValue proof={awardProof(a, "planDeferred", a.planDeferredCents)}>{usd0(a.planDeferredCents)}</BonusValue> to the deferral plan
           </div>
         )}
       </td>
@@ -587,7 +594,28 @@ function Schedule({ r }: { r: BonusesReport }) {
 }
 
 function WindowLi({ w }: { w: VestWindow }) {
-  const parts = w.parts.map((p) => `${p.awardYear} ${KIND[p.kind].part} ${usd0(p.amountCents)}`).join(" + ");
+  // Each part is its award's tranche; what was paid is the window's own figure.
+  const parts = w.parts.map((p, i) => (
+    <span key={i}>
+      {i ? " + " : ""}
+      {p.awardYear} {KIND[p.kind].part} <BonusValue proof={bon({ figure: "tranche", letterId: w.letterId, year: p.awardYear, window: w.key, kind: p.kind } as Fig, p.amountCents)}>{usd0(p.amountCents)}</BonusValue>
+    </span>
+  ));
+  const diff = w.paidCents - w.scheduledCents;
+  const paid = w.payments.length ? (
+    <>
+      Paid {w.payments.map((p) => p.date).join(" + ")} (<BonusValue proof={windowProof(w, "paid")}>{usd0(w.paidCents)}</BonusValue>)
+      {diff ? (
+        <>
+          , <ProofValue proof={compositeOf("diff", [windowProof(w, "paid"), windowProof(w, "scheduled")], { cents: diff })}>{`${diff > 0 ? "+" : "−"}${usd0(Math.abs(diff))}`}</ProofValue> vs the letter.
+        </>
+      ) : (
+        ", exactly as scheduled."
+      )}
+    </>
+  ) : (
+    w.detail
+  );
   return (
     <li className="py-2">
       <div className="flex items-center justify-between gap-3">
@@ -598,7 +626,7 @@ function WindowLi({ w }: { w: VestWindow }) {
         </span>
       </div>
       <div className="mt-0.5 text-xs text-muted">{parts}</div>
-      <div className="mt-0.5 text-xs text-fg-2">{w.detail}</div>
+      <div className="mt-0.5 text-xs text-fg-2">{paid}</div>
     </li>
   );
 }

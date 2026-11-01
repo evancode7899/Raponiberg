@@ -7,7 +7,7 @@ import { insuranceDerived } from "./insurance.ts";
 import { loadInsurancePage } from "../../insurance/page.ts";
 import { fundsDerived } from "./funds.ts";
 import { loadFundsPage } from "../../funds/page.ts";
-import { accountLimitsDerived, calendarDerived, hsaDerived } from "./planning.ts";
+import { accountLimitsDerived, calendarDerived, hsaPageDerived } from "./planning.ts";
 import { loadHsaReport } from "../../hsa/loadReport.ts";
 import { taxLink } from "../../forecast/forecast.ts";
 import { loadForecast } from "../../forecast/load.ts";
@@ -20,7 +20,7 @@ import { integrityDerived } from "./integrity.ts";
 import { taxesDerived } from "./taxes.ts";
 import { forecastDerived } from "./forecast.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
-import { builtDerived, changeStepsDerived, netWorthDerived } from "./netWorth.ts";
+import { builtDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived } from "./netWorth.ts";
 import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
 import { NET_WORTH_CHECKS } from "../proof/netWorthProof.ts";
@@ -91,7 +91,7 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const changes = (["month", "quarter", "year"] as const).map((granularity) => buildNetWorthChanges(book, { granularity }));
     // How it was built, at each granularity its control offers.
     const built = [r, ...(["quarter", "year"] as const).map((granularity) => buildNetWorth(book, { granularity }))].flatMap(builtDerived);
-    const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived), ...built];
+    const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeTypicalDerived), ...built];
     return { figures, rederived: { ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), ...declared(BUILT_WHY)(built) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },
   integrity: async ({ book }) => {
@@ -100,7 +100,7 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
   },
   hsa: async ({ db, book }) => {
     const r = await loadHsaReport(db);
-    const figures = hsaDerived(r);
+    const figures = hsaPageDerived(r);
     return { figures, rederived: rederiveHsa(r, figures), scope: null, through: book.horizon.netWorth };
   },
   "account-limits": async (ctx) => {

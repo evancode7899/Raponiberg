@@ -158,7 +158,8 @@ describe("swept = rendered: Cash flow", () => {
       return s.length % 2 ? s[h]! : (s[h - 1]! + s[h]!) / 2;
     };
     let checked = 0;
-    for (const [i, m, partial] of [...ms.map((m, i) => [i, m, false] as const), [ms.length, current, true] as const])
+    // The tab draws the pace of the latest whole month and the month under way (derived/cashFlow.ts paceDerived).
+    for (const [i, m, partial] of [[ms.length - 1, ms.at(-1)!, false] as const, [ms.length, current, true] as const])
       for (const basis of ["all", "everyday"] as const) {
         const days = (x: SpendingMonth) => (basis === "all" ? x.daily.allCents : x.daily.everydayCents);
         const cur = cumulative(days(m));

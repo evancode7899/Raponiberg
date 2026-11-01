@@ -10,6 +10,27 @@ import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Col } from "./AnnualStatement";
 import { axisUsd, usd } from "./profileUi";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
+import { noFigure } from "@/lib/book/proof/clearance";
+import type { ProofDescriptor } from "@/lib/book/proof";
+
+/** A column's closing net worth: the year's, or the estimate's for Dec 31. */
+const closeOf = (c: Col): ProofDescriptor | null =>
+  c.y ? { report: "annual", figure: "net-worth", year: c.y.year, line: "net-worth" } : c.est ? { report: "planning", page: "annual-estimate", line: "net-worth" } : null;
+/** What moved net worth over the column: its bridge's total. */
+const movedOf = (c: Col): ProofDescriptor | null =>
+  c.y ? { report: "annual", figure: "bridge", year: c.y.year, line: "total" } : c.est ? { report: "planning", page: "annual-estimate", line: "bridge:total" } : null;
+/** The opening (Jan 1) of a column: its closing less everything that moved it. */
+function openProof(c: Col, cents: number): ProofRef {
+  const close = closeOf(c);
+  const moved = movedOf(c);
+  return close && moved ? compositeOf("diff", [{ descriptor: close, shownCents: null }, { descriptor: moved, shownCents: null }], { cents }) : noFigure("no proven start");
+}
+const closeProof = (c: Col, cents: number): ProofRef => {
+  const d = closeOf(c);
+  return d ? { descriptor: d, shownCents: cents } : noFigure("no proven close");
+};
 
 type Step = { name: string; full: string; kind: "up" | "down" | "total"; delta: number; range: [number, number]; running: number; label: string };
 type Flow = { label: string; full: string; cents: number };
@@ -108,7 +129,8 @@ export function NetWorthWaterfall({ r, cols }: { r: AnnualProfileReport; cols: C
       subtitle={
         l.open != null && l.close != null ? (
           <>
-            {usd(l.open)} on Jan 1{col ? "" : `, ${first!.y!.year}`} → {usd(l.close)} {endOf(col ?? last!)}.{" "}
+            <ProofValue proof={openProof(col ?? first!, l.open)}>{usd(l.open)}</ProofValue> on Jan 1{col ? "" : `, ${first!.y!.year}`} →{" "}
+            <ProofValue proof={closeProof(col ?? last!, l.close)}>{usd(l.close)}</ProofValue> {endOf(col ?? last!)}.{" "}
             {col
               ? "Income steps down to what was saved, then growth and outside money step up to the change."
               : `Each line summed over ${ltd!.cols.length} years of statements${cols.some((c) => c.est) ? "; the estimate is left out" : ""}.`}

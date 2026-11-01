@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import { monthLabel, pct, usd } from "./forecastUi";
 import { unswept } from "@/lib/book/proof/clearance";
 import { NotFigure } from "@/components/ui/kit";
-import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { scheduleKeys } from "@/lib/book/derived/forecast";
 import type { Dp } from "./forecastUi";
 
@@ -228,7 +228,11 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                                 "share",
                                 [
                                   { descriptor: cellProof(p, "saved"), shownCents: x.saved },
-                                  { descriptor: { report: "composite", op: "sum", of: (["salary", "bonus", "otherIncome"] as const).filter((l) => ledgerDraws(l, periods)).map((l) => cellProof(p, l)) }, shownCents: gross },
+                                  // The income lines this column has (a zero adds nothing, and may be a cell no view draws).
+                                  sumOf(
+                                    (["salary", "bonus", "otherIncome"] as const).filter((l) => ledgerDraws(l, periods) && x[l]).map((l) => ({ descriptor: cellProof(p, l), shownCents: x[l]! })),
+                                    gross,
+                                  ),
                                 ],
                                 { ratio: x.saved / gross },
                               )

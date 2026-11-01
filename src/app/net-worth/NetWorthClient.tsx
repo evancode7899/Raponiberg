@@ -7,7 +7,7 @@ import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, groupRank, useChartPalette } from "@/components/shell/chartPalette";
-import type { ProofTarget, ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
@@ -301,7 +301,9 @@ function Overview({ r }: { r: NetWorthReport }) {
                       {g}
                     </td>
                     <td className={`${table.tdR} font-semibold ${sub < 0 ? "text-neg" : ""}`}>{subBlockers.length ? shown(usd0(sub), subBlockers) : <ProofValue proof={balanceProof(r.current.asOf, sub, { accountIds: group?.accountIds ?? list.map((a) => a.id) })}>{usd0(sub)}</ProofValue>}</td>
-                    <td className={`${table.tdR} text-muted`}>{!cur.length && sub > 0 ? formatPercentRatio(sub / assets, 0) : ""}</td>
+                    <td className={`${table.tdR} text-muted`}>
+                      {!cur.length && sub > 0 ? <ProofValue proof={compositeOf("share", [balanceProof(r.current.asOf, sub, { accountIds: group?.accountIds ?? list.map((a) => a.id) }), balanceProof(r.current.asOf, assets, { side: "assets" })], { ratio: sub / assets })}>{formatPercentRatio(sub / assets, 0)}</ProofValue> : ""}
+                    </td>
                   </tr>
                   {list.map((a) => (
                     <tr key={a.id} className={`${table.trHover} ${a.closed ? "opacity-55" : ""}`}>
@@ -327,7 +329,9 @@ function Overview({ r }: { r: NetWorthReport }) {
                           </>
                         )}
                       </td>
-                      <td className={`${table.tdR} text-xs text-faint`}>{!cur.length && a.currentCents > 0 ? formatPercentRatio(a.currentCents / assets, 1) : ""}</td>
+                      <td className={`${table.tdR} text-xs text-faint`}>
+                        {!cur.length && a.currentCents > 0 ? <ProofValue proof={compositeOf("share", [balanceProof(r.current.asOf, a.currentCents, { accountIds: [a.id] }), balanceProof(r.current.asOf, assets, { side: "assets" })], { ratio: a.currentCents / assets })}>{formatPercentRatio(a.currentCents / assets, 1)}</ProofValue> : ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -471,8 +475,8 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                 return (
                   <Fragment key={p.start}>
                     <tr className={`${table.trHover} cursor-pointer ${isOpen ? "bg-surface-2" : ""}`} onClick={() => setOpenRow(isOpen ? null : p.start)}>
-                      <td className={`${table.td} whitespace-nowrap font-medium`} data-audit-drill={p.label}>
-                        <span className="text-faint">{isOpen ? "▾" : "▸"}</span>{" "}
+                      <td className={`${table.td} whitespace-nowrap font-medium`}>
+                        <span className="text-faint" data-audit-drill={p.label}>{isOpen ? "▾" : "▸"}</span>{" "}
                         <ProofValue proof={changeProof(granularity, p.start, p.end, h.closingCents - h.openingCents)} drawn="words">{p.label}</ProofValue>
                         <QualityBadge quality={h.quality} />
                       </td>
@@ -633,8 +637,10 @@ function Returns({ r }: { r: NetWorthReport }) {
                         {x.from} → {a?.lastDay}
                         {x.limited && <span className="ml-1 text-warn">(earlier history unproven)</span>}
                       </td>
-                      <td className={`${table.tdR} ${x.total < 0 ? "text-neg" : ""}`}>{formatPercentRatio(x.total, 1)}</td>
-                      <td className={table.tdR}>{x.annualized == null ? "—" : formatPercentRatio(x.annualized, 2)}</td>
+                      <td className={`${table.tdR} ${x.total < 0 ? "text-neg" : ""}`}>
+                        <ProofValue proof={derivedTarget("net-worth", derived, "account-return", x.accountId)}>{formatPercentRatio(x.total, 1)}</ProofValue>
+                      </td>
+                      <td className={table.tdR}>{x.annualized == null ? "—" : <ProofValue proof={derivedTarget("net-worth", derived, "account-return-annualized", x.accountId)}>{formatPercentRatio(x.annualized, 2)}</ProofValue>}</td>
                     </tr>
                   );
                 })}

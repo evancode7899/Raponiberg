@@ -2,6 +2,8 @@
 
 import { Badge, btn, Card, EmptyState, Field, selectCls, table } from "@/components/ui/kit";
 import { formatUsdCents } from "@/lib/formatMoney";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { chargesSum } from "./derived";
 import { EXPENSE_KINDS, type ExpenseKind } from "@/lib/hsa/qualify";
 import type { HsaReport, Suggestion } from "@/lib/hsa/report";
 import { useState } from "react";
@@ -92,7 +94,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
               {chosen.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted">
-                    {chosen.length} selected · <span className="num text-fg">{formatUsdCents(chosen.reduce((s, x) => s + x.amountCents, 0))}</span>
+                    {chosen.length} selected · <span className="num text-fg"><ProofValue proof={chargesSum(chosen)}>{formatUsdCents(chosen.reduce((s, x) => s + x.amountCents, 0))}</ProofValue></span>
                   </span>
                   <button type="button" className={btn.primary} onClick={() => add(chosen)}>
                     Add selected
@@ -160,7 +162,9 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
                           ))}
                         </select>
                       </td>
-                      <td className={table.tdR}>{formatUsdCents(s.amountCents)}</td>
+                      <td className={table.tdR}>
+                        <ProofValue proof={chargesSum([s])}>{formatUsdCents(s.amountCents)}</ProofValue>
+                      </td>
                       <td className={`${table.td} whitespace-nowrap`}>
                         <button type="button" className={btn.ghost} onClick={() => add([s])}>
                           Add
@@ -190,7 +194,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
                 {r.dismissed.map((d) => (
                   <li key={`${d.date}|${d.amountCents}|${d.payee}`} className="flex items-center justify-between gap-2 py-1.5">
                     <span>
-                      <span className="num text-muted">{d.date}</span> {d.payee} <span className="num">{formatUsdCents(d.amountCents)}</span>
+                      <span className="num text-muted">{d.date}</span> {d.payee} <span className="num"><ProofValue proof={chargesSum([d])}>{formatUsdCents(d.amountCents)}</ProofValue></span>
                     </span>
                     <button type="button" className={btn.link} onClick={() => send({ op: "undismiss", rows: [d.fp] })}>
                       Restore

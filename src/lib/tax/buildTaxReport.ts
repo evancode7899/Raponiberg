@@ -797,7 +797,7 @@ export function buildTaxReport(
     assumptions.push(`Connecticut's prior-year safe harbor uses ${year - 1}'s part-year return (under Inputs). It covered all twelve months, but only part of the income; check CT-2210 before leaning on it.`);
   }
   if (priorYearSource === "NONE") {
-    warnings.push(`No ${year - 1} return is in the tax documents folder, so the prior-year safe harbor isn't used (the 90%-of-this-year test is). Add the filed return to the folder, or type its figures under Inputs.`);
+    warnings.push(`No ${year - 1} return is in the tax documents folder, so the prior-year safe harbor isn't used (only the this-year test is). Add the filed return to the folder, or type its figures under Inputs.`);
   } else if (priorYearSource === "ESTIMATED") {
     warnings.push(
       `The prior-year safe harbor uses this app's estimate of ${year - 1} federal tax (under Inputs): no filed ${year - 1} return is in the tax documents folder yet. Add it (or type Form 1040 line 24 under Inputs) before relying on it.`,

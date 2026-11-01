@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, btn, Card, Callout, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
+import { Badge, btn, Card, Callout, NotFigure, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
+import { ONE_OFF_MIN_CENTS } from "@/lib/book/definitions";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { fireNumber } from "@/lib/fire/fire";
 import { resolveBasePay } from "@/lib/profile/basePay";
@@ -103,14 +104,14 @@ export function OneOffsTab({
         <StatCell proof={fire ? { descriptor: { report: "planning", page: "fire", figure: "fire-number", fire: fire.settings }, shownCents: fire.number } : noFigure("needs a proven full year")}
           label="Your FIRE number"
           value={fire ? usd(fire.number) : "—"}
-          sub={fire ? (fire.typed ? "uses the living cost typed on FIRE, so tags here don't move it" : `at a ${pct(fire.wr)} withdrawal rate, after tax`) : "needs a proven full year"}
+          sub={fire ? (fire.typed ? "uses the living cost typed on FIRE, so tags here don't move it" : <>at a <NotFigure why="your withdrawal rate (FIRE)">{pct(fire.wr)}</NotFigure> withdrawal rate, after tax</>) : "needs a proven full year"}
         />
         <WordsCell label="Status" value={recalculating ? "Recalculating…" : status?.tone === "neg" ? "Not saved" : "Up to date"} sub={status ? <span className={status.tone === "neg" ? "text-neg" : status.tone === "pos" ? "text-pos" : ""}>{status.text}</span> : "ticks save instantly"} />
       </StatGrid>
 
       <Card
         title="Big expenses, by year"
-        subtitle="Single charges of $1,500 or more (rent left out), plus anything already marked. Tick the ones that won't happen in a normal year."
+        subtitle={<>Single charges of <NotFigure why="the one-off rule (book/definitions.ts)">{usd(ONE_OFF_MIN_CENTS)}</NotFigure> or more (rent left out), plus anything already marked. Tick the ones that won&apos;t happen in a normal year.</>}
       >
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           {r.years.map((x) => {
@@ -136,7 +137,7 @@ export function OneOffsTab({
           </p>
         )}
         {!y || y.oneOffCandidates.length === 0 ? (
-          <p className="text-xs text-muted">No expenses of $1,500 or more in {y?.label ?? year}.</p>
+          <p className="text-xs text-muted">No expenses of <NotFigure why="the one-off rule (book/definitions.ts)">{usd(ONE_OFF_MIN_CENTS)}</NotFigure> or more in {y?.label ?? year}.</p>
         ) : (
           <div className={table.wrap}>
             <table className={table.table}>
@@ -231,7 +232,7 @@ function Explainer({ basis, wr }: { basis: string | null; wr: number }) {
       </Link>,
       <>
         The plan&apos;s spending starts from living expenses over {basis ? <em>{basis.toLowerCase()}</em> : "the window chosen on FIRE"} (last 12 months by default), one-offs
-        left out. A one-off tagged inside that window lowers it — and lowers your FIRE number by roughly {Math.round(1 / wr)}× the amount (1 ÷ {pct(wr)} withdrawal rate, a
+        left out. A one-off tagged inside that window lowers it — and lowers your FIRE number by roughly {Math.round(1 / wr)}× the amount (1 ÷ <NotFigure why="your withdrawal rate (FIRE)">{pct(wr)}</NotFigure> withdrawal rate, a
         bit more after tax). Tags outside the window don&apos;t move FIRE.
       </>,
     ],
@@ -241,7 +242,7 @@ function Explainer({ basis, wr }: { basis: string | null; wr: number }) {
       </Link>,
       <>
         The <em>Excluding one-offs</em> monthly average on Overview leaves it out, and the month table shows it in the <em>One-offs</em> column. In the Trends,
-        Patterns and year-over-year views it counts as <em>Big &amp; one-off</em> instead of <em>Everyday</em>, even under $1,500. <em>Mark one-off</em> on Cash flow › Spending is the same switch as here.
+        Patterns and year-over-year views it counts as <em>Big &amp; one-off</em> instead of <em>Everyday</em>, even under <NotFigure why="the one-off rule (book/definitions.ts)">{usd(ONE_OFF_MIN_CENTS)}</NotFigure>. <em>Mark one-off</em> on Cash flow › Spending is the same switch as here.
       </>,
     ],
   ];

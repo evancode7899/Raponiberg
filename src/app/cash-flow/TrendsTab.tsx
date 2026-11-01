@@ -292,7 +292,12 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
                 <YAxis {...ui.yAxis} width={44} tickFormatter={pctAxis} />
                 <Tooltip {...ui.tooltip} formatter={(v) => [v == null ? "—" : formatPercentRatio(Number(v), 1), "Savings rate"]} />
                 <ReferenceLine y={0} stroke={chart.axisLine} />
-                <ReferenceLine y={0.2} stroke={chart.axis} strokeDasharray="4 4" label={{ value: "20%", fill: chart.axis, fontSize: 10, position: "insideTopLeft" }} />
+                <ReferenceLine y={0.2} stroke={chart.axis} strokeDasharray="4 4" label={(p: { viewBox?: { x?: number; y?: number } }) => (
+                    // A guide, not a figure: the savings rate many plans aim for.
+                    <text x={(p.viewBox?.x ?? 0) + 4} y={(p.viewBox?.y ?? 0) + 12} fill={chart.axis} fontSize={10} data-not-figure="a guide line: a 20% savings rate">
+                      20%
+                    </text>
+                  )} />
                 <Area type="linear" dataKey="rate" stroke={chart.growth} fill={chart.growth} fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </RechartsResponsive>

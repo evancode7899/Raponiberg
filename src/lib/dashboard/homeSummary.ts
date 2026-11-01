@@ -77,6 +77,10 @@ export function buildHomeSummary(book: Book) {
           lastMonthCents: lastMonth?.spendingByCategory.find((c) => c.category === category)?.cents ?? 0,
           avgCents: Math.round(avg.get(category)!),
           proof: lastMonth ? cashFlow("spending", lastMonth.start, lastMonth.end, category) : undefined,
+          // The twelve months' spending in it (the average is this ÷ the months).
+          totalCents: Math.round(avg.get(category)! * cf.periods.length),
+          totalProof: cf.periods.length ? cashFlow("spending", cf.periods[0]!.start, cf.periods.at(-1)!.end, category) : undefined,
+          months: cf.periods.length,
         }))
         .filter((c) => c.lastMonthCents > 0 || c.avgCents > 0)
         .sort((a, b) => b.avgCents - a.avgCents)

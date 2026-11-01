@@ -111,6 +111,13 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
         if (total && "ratio" in total && "ratio" in v) out.push(invariant("annualized from the cumulative return", v, Math.abs((1 + total.ratio) ** (365 / c.days) - 1 - v.ratio) < 1e-9, "(1 + cumulative)^(365 ÷ days) − 1"));
         return out;
       }
+      case "account-return":
+      case "account-return-annualized":
+        return { none: "One account's monthly returns chained over its unbroken proven stretch: each month's return is that account's cell of How it was built (month), re-derived there." };
+      case "change-return":
+        return { none: "Each month's return chained, as Investment returns chains them: every month's return is a figure of How it was built (month), re-derived there." };
+      case "change-typical":
+        return { none: "The mean of the same figure over the whole proven periods before it: each of those is a figure of its own on this tab (its change, saving, markets, income, spending or category), re-derived by its own proof." };
       case "accounts-measured":
         return { none: "A count of the accounts whose statements give an unbroken stretch to measure: which stretch is unbroken is the integrity checks' call, not a sum." };
       case "change-step": {

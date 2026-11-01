@@ -16,7 +16,7 @@ import { readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
-import { auditRender, BYPASS_PENDING, drawerStrays, pageOf, type DrawnView, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
+import { auditRender, BYPASS_PENDING, drawerStrays, figureFamily, pageOf, UNDRAWN_PENDING, type DrawnView, type RenderProblem, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const base = (process.argv[2] ?? "").replace(/\/$/, "");
@@ -38,6 +38,8 @@ const TODAY = process.env.APP_TODAY?.trim();
 /** Drill-downs opened per view, and proof drawers held to their proofs per view. */
 const DRILLS_PER_VIEW = 80;
 const DRAWERS_PER_VIEW = 4;
+/** The whole audit's time budget (F6e): the owner wants proof checks in minutes, so a slower run fails. RENDER_AUDIT_BUDGET_MS overrides (0: none). */
+const BUDGET_MS = Number(process.env.RENDER_AUDIT_BUDGET_MS ?? 240_000);
 /** The pages with the most views, started first so they don't finish last. */
 const SLOW = ["/cash-flow", "/taxes", "/net-worth", "/car", "/hsa", "/statements", "/fire", "/home-budget"];
 
@@ -101,7 +103,8 @@ function collect() {
     const t = n.textContent ?? "";
     if (!re.test(t)) continue;
     const el = n.parentElement;
-    if (!el || el.closest('[data-proof-key], [data-not-figure]:not([data-not-figure=""]), .recharts-cartesian-axis-tick-value, #recharts_measurement_span, input, textarea, select, option, script, style, noscript') || !visible(el)) continue;
+    // An open proof drawer's numbers are held to its proof's JSON (drawerTokens), not to this view.
+    if (!el || el.closest('.pf-drawer:has([data-proof-clearance]), [data-proof-key], [data-not-figure]:not([data-not-figure=""]), .recharts-cartesian-axis-tick-value, #recharts_measurement_span, input, textarea, select, option, script, style, noscript') || !visible(el)) continue;
     const where = (el.closest("tr, li, [class*='rounded-lg'], section") ?? el).textContent?.replace(/\s+/g, " ").trim().slice(0, 90) ?? "";
     // In a chart (SVG): a label for a figure the view draws, held to it in renderAudit.ts.
     if (el.closest("svg")) chart.add(t.replace(/\s+/g, " ").trim());
@@ -424,13 +427,17 @@ if (audit.pending.length) {
   console.log(`\n[PENDING] ${audit.pending.length} bypass(es) on pages a later stage holds (BYPASS_PENDING, lib/book/proof/renderAudit.ts):`);
   for (const [page, n] of count(audit.pending.map((p) => pageOf(p.view)))) console.log(`   ${page.padEnd(16)} ${String(n).padStart(5)}  ${BYPASS_PENDING[page]}`);
 }
-if (audit.missing.length) {
-  const family = (k: string) => {
-    const d = JSON.parse(k) as Record<string, unknown>;
-    return [d.report, d.page, d.figure ?? d.metric ?? d.line].filter((x) => typeof x === "string").join(" › ");
-  };
-  console.log(`\n[NOT DRAWN] ${audit.missing.length} cleared figure(s) no view drew (F6d drives year pickers and drill-downs, then fails on them):`);
-  for (const [f, n] of count(audit.missing.map(family)).slice(0, LISTED)) console.log(`   ${f.padEnd(44)} ${String(n).padStart(6)}`);
+const undrawn = audit.missing.filter((k) => UNDRAWN_PENDING[figureFamily(k)]);
+if (undrawn.length) {
+  console.log(`\n[NOT DRAWN] ${undrawn.length} cleared figure(s) of families still pending (UNDRAWN_PENDING, lib/book/proof/renderAudit.ts):`);
+  for (const [f, n] of count(undrawn.map(figureFamily)).slice(0, LISTED)) console.log(`   ${f.padEnd(44)} ${String(n).padStart(6)}  ${UNDRAWN_PENDING[f]}`);
+}
+const took = Date.now() - started;
+if (BUDGET_MS && took > BUDGET_MS) {
+  const p: RenderProblem = { kind: "RENDER_ERROR", view: "(the whole audit)", detail: `Took ${Math.round(took / 1000)} s, over its ${Math.round(BUDGET_MS / 1000)} s budget: find the slow view (RENDER_AUDIT_JSON) before raising it.` };
+  audit.problems.push(p);
+  console.log(`
+[RENDER_ERROR] ${p.detail}`);
 }
 const bad = audit.problems.length;
 console.log(`\n${bad ? `${bad} render problem(s).` : "Every drawn figure is the one its proof cleared, at the value drawn; no money reaches a held page outside a figure."}`);

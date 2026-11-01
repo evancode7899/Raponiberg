@@ -7,6 +7,8 @@ import { KIND_LABEL } from "@/lib/hsa/qualify";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { Send } from "./HsaClient";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { chargesSum, expensesSum, useHsaDerived, type HsaDp } from "./derived";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 
 type Status = "open" | "done" | "review" | "all";
@@ -66,6 +68,7 @@ export function ReceiptsTab({
     sort,
     { date: (e) => e.date, amount: (e) => e.amountCents, name: (e) => e.provider },
   );
+  const dp = useHsaDerived(r);
   const picked = r.expenses.filter((e) => selected.has(e.id));
   const pickedCents = picked.reduce((s, e) => s + e.amountCents, 0);
   const shownCents = shown.reduce((s, e) => s + e.amountCents, 0);
@@ -98,7 +101,7 @@ export function ReceiptsTab({
           }
         >
           When the HSA&apos;s own card pays a provider, the HSA paid that bill: no money came back to you, so it can&apos;t reimburse a different expense you paid out of pocket. These were
-          tied because their amounts added up ({usd0(badTies.reduce((s, e) => s + e.amountCents, 0))} in all). Only a distribution to your bank reimburses a receipt.
+          tied because their amounts added up (<ProofValue proof={expensesSum(dp, badTies)}>{usd0(badTies.reduce((s, e) => s + e.amountCents, 0))}</ProofValue> in all). Only a distribution to your bank reimburses a receipt.
         </Callout>
       )}
       {notMedical.length > 0 && (
@@ -130,7 +133,13 @@ export function ReceiptsTab({
       )}
       {dups.length > 0 && (
         <Callout tone="warn" title={`${dups.length} expenses share a date and amount with another`}>
-          {[...new Set(dups.map((e) => `${e.date} ${formatUsdCents(e.amountCents)}`))].join(" · ")}. If one is the same bill logged twice (a copied row), delete it so it isn&apos;t reimbursed twice.
+          {[...new Map(dups.map((e) => [`${e.date} ${e.amountCents}`, e])).values()].map((e, i) => (
+            <span key={e.id}>
+              {i ? " · " : ""}
+              {e.date} <ProofValue proof={dp("expense", e.id)}>{formatUsdCents(e.amountCents)}</ProofValue>
+            </span>
+          ))}
+          . If one is the same bill logged twice (a copied row), delete it so it isn&apos;t reimbursed twice.
         </Callout>
       )}
       {early.length > 0 && (
@@ -148,12 +157,13 @@ export function ReceiptsTab({
             </button>
           }
         >
-          {[
-            likely.length > 0 && `${likely.length} look${likely.length === 1 ? "s" : ""} like qualified care (${usd0(likely.reduce((s, x) => s + x.amountCents, 0))})`,
-            r.suggestions.length > likely.length && `${r.suggestions.length - likely.length} ${r.suggestions.length - likely.length === 1 ? "is a" : "are"} drug-store purchase${r.suggestions.length - likely.length === 1 ? "" : "s"} to check against the receipt`,
-          ]
-            .filter(Boolean)
-            .join("; ")}
+          {likely.length > 0 && (
+            <>
+              {likely.length} look{likely.length === 1 ? "s" : ""} like qualified care (<ProofValue proof={dp("found-likely")}>{usd0(likely.reduce((s, x) => s + x.amountCents, 0))}</ProofValue>)
+            </>
+          )}
+          {likely.length > 0 && r.suggestions.length > likely.length && "; "}
+          {r.suggestions.length > likely.length && `${r.suggestions.length - likely.length} ${r.suggestions.length - likely.length === 1 ? "is a" : "are"} drug-store purchase${r.suggestions.length - likely.length === 1 ? "" : "s"} to check against the receipt`}
           .
         </Callout>
       )}
@@ -201,14 +211,14 @@ export function ReceiptsTab({
           )}
           <input className={`${inputCls} w-48 py-1 text-xs`} placeholder="Search provider or notes" value={q} onChange={(e) => setQ(e.target.value)} />
           <span className="ml-auto text-xs text-muted">
-            {shown.length} shown · <span className="num text-fg">{formatUsdCents(shownCents)}</span>
+            {shown.length} shown · <span className="num text-fg"><ProofValue proof={expensesSum(dp, shown)}>{formatUsdCents(shownCents)}</ProofValue></span>
           </span>
         </div>
 
         {picked.length > 0 && (
           <div className="sticky top-12 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-md border border-accent/40 bg-accent-soft px-3 py-2 text-xs">
             <span className="font-medium text-fg">
-              {picked.length} selected · <span className="num">{formatUsdCents(pickedCents)}</span>
+              {picked.length} selected · <span className="num"><ProofValue proof={expensesSum(dp, picked)}>{formatUsdCents(pickedCents)}</ProofValue></span>
             </span>
             <span className="flex-1" />
             {picked.some((e) => !e.reimbursement) && (
@@ -297,7 +307,7 @@ export function ReceiptsTab({
               </thead>
               <tbody>
                 {shown.map((e) => (
-                  <Row key={e.id} e={e} picked={selected.has(e.id)} toggle={() => toggle(e.id)} send={send} onEdit={() => onEdit(e.id)} />
+                  <Row key={e.id} e={e} dp={dp} picked={selected.has(e.id)} toggle={() => toggle(e.id)} send={send} onEdit={() => onEdit(e.id)} />
                 ))}
               </tbody>
             </table>
@@ -456,7 +466,7 @@ function ReceiptCell({ e, send }: { e: ExpenseView; send: Send }) {
   );
 }
 
-function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: boolean; toggle: () => void; send: Send; onEdit: () => void }) {
+function Row({ e, dp, picked, toggle, send, onEdit }: { e: ExpenseView; dp: HsaDp; picked: boolean; toggle: () => void; send: Send; onEdit: () => void }) {
   return (
     <tr className={`${table.trHover} ${picked ? "bg-accent-soft/50" : ""} ${e.flags.includes("BEFORE_OPEN") ? "opacity-60" : ""}`}>
       <td className={table.td}>
@@ -496,7 +506,9 @@ function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: bool
       <td className={table.td}>
         <ReceiptCell e={e} send={send} />
       </td>
-      <td className={table.tdR}>{formatUsdCents(e.amountCents)}</td>
+      <td className={table.tdR}>
+        <ProofValue proof={dp("expense", e.id)}>{formatUsdCents(e.amountCents)}</ProofValue>
+      </td>
       <td className={`${table.td} whitespace-nowrap text-xs`}>
         {e.reimbursement ? (
           <span className="flex flex-col gap-0.5">
@@ -513,7 +525,11 @@ function Row({ e, picked, toggle, send, onEdit }: { e: ExpenseView; picked: bool
         ) : (
           <span className="text-muted" title="Days since paid, and the estimated tax-free growth on the money left in the HSA meanwhile">
             waiting {waitLabel(e.daysWaiting)}
-            {e.growthCents > 0 && <span className="ml-1 text-pos">+{usd0(e.growthCents)}</span>}
+            {e.growthCents > 0 && (
+              <span className="ml-1 text-pos">
+                +<ProofValue proof={dp("expense-growth", e.id)}>{usd0(e.growthCents)}</ProofValue>
+              </span>
+            )}
           </span>
         )}
       </td>

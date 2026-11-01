@@ -25,14 +25,18 @@ import type { ChainLine, Proof, ProofBlock, ProofFact, ProofKind } from "./types
  * pieces (one per bank payment) is listed whole, as printed.
  */
 
-export type StatementDescriptor = { report: "statement"; statementId: string };
+/** `line`: another line the statement prints (its opening balance, market change or fees) as the figure; the closing balance by default. */
+export type StatementLine = "opening" | "growth" | "fees";
+export type StatementDescriptor = { report: "statement"; statementId: string; line?: StatementLine };
+const LINE_WORDS: Record<StatementLine, string> = { opening: "opening balance", growth: "market change", fees: "fees" };
 
 /** The checks that can withhold a figure built on this statement, in the order the drawer lists them. */
 export const STATEMENT_CHECKS: CheckId[] = ["statement.held", "statement.chain", "statement.gap", "statement.history", "transfer.unmatched", "ledger.consistency", "ledger.freshness"];
 
 export function parseStatementDescriptor(d: Record<string, unknown>): StatementDescriptor | { error: string } {
   if (typeof d.statementId !== "string" || !d.statementId) return { error: "statementId must name a statement." };
-  return { report: "statement", statementId: d.statementId };
+  if (d.line != null && !(typeof d.line === "string" && d.line in LINE_WORDS)) return { error: "line must be opening, growth or fees." };
+  return { report: "statement", statementId: d.statementId, ...(d.line ? { line: d.line as StatementLine } : {}) };
 }
 
 const money = (c: number) => (c === 0 ? "$0.00" : formatUsdFromCents(c));
@@ -270,8 +274,8 @@ export function buildStatementProof(book: Book, d: StatementDescriptor): Proof {
   return {
     report: "statement",
     descriptor: d,
-    describes: `${name} statement, ${s.periodStart} – ${s.periodEnd}`,
-    figure: { cents: p.closingCents },
+    describes: `${name} statement, ${s.periodStart} – ${s.periodEnd}${d.line ? `: its printed ${LINE_WORDS[d.line]}` : ""}`,
+    figure: { cents: d.line ? p[`${d.line}Cents`] : p.closingCents },
     selfCheck: counted
       ? {
           ok: partsCents === p.closingCents,

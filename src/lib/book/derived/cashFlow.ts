@@ -273,7 +273,7 @@ export const SMALL_BUCKETS = 3;
 
 /** Charges by size over a run of months: how many, and the small ones' share of the count and of the dollars. */
 export function chargeSplit(months: SpendingMonth[]) {
-  const b = CHARGE_BUCKETS.map((_, i) => ({ count: sum(months, (m) => m.chargeSizes[i]!.count), cents: sum(months, (m) => m.chargeSizes[i]!.cents) }));
+  const b = CHARGE_BUCKETS.map((_, i) => ({ count: sum(months, (m) => m.chargeSizes[i]?.count ?? 0), cents: sum(months, (m) => m.chargeSizes[i]?.cents ?? 0) }));
   const n = sum(b, (x) => x.count);
   const c = sum(b, (x) => x.cents);
   const small = b.slice(0, SMALL_BUCKETS);

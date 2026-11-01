@@ -4,6 +4,8 @@ import type { HouseholdPeriod, NetWorthPeriod } from "../../ledger/netWorthRepor
 import { chainReturns, type Quality } from "../../ledger/timeline.ts";
 import type { Book } from "../load.ts";
 import type { ProofDescriptor } from "../proof/index.ts";
+import { derivedDescriptor } from "../derived/types.ts";
+import { typicalKey } from "../derived/netWorth.ts";
 import { buildCashFlowReport, type CashFlowPeriod, type CategoryAmount } from "./cashFlow.ts";
 import { buildNetWorth, netWorthSpanQuality } from "./netWorth.ts";
 
@@ -56,15 +58,18 @@ export type NetWorthChange = {
   portfolioReturn: number | null;
   steps: ChangeStep[];
   /** Averages over the comparison periods: the whole periods just before this one that are proven. Null for a period cut short or with none before it. */
-  typical: { periods: number; changeCents: number; savedCents: number; marketsCents: number; incomeCents: number; spendingCents: number } | null;
+  typical: { periods: number; changeCents: number; savedCents: number; marketsCents: number; incomeCents: number; spendingCents: number; of: string[] } | null;
   /** Spending categories that moved most against their average (up first, then down). */
   spendingMovers: ChangeMover[];
   /** Income categories that moved most against their average. */
   incomeMovers: ChangeMover[];
-  /** The period in plain sentences, from the figures above. */
-  highlights: string[];
+  /** The period in plain sentences, from the figures above: every number in them a figure with its proof. */
+  highlights: HighlightSeg[][];
   proofs: { opening: ProofDescriptor; closing: ProofDescriptor; change: ProofDescriptor; saved: ProofDescriptor; markets: ProofDescriptor; income: ProofDescriptor; spending: ProofDescriptor };
 };
+
+/** Words, or a number in them with the proof it is held to (and its value as the proof states it). */
+export type HighlightSeg = string | { text: string; descriptor: ProofDescriptor; cents?: number; ratio?: number };
 
 export type NetWorthChangesReport = {
   granularity: Granularity;
@@ -109,32 +114,57 @@ function movers(now: CategoryAmount[], before: CategoryAmount[][], typicalTotal:
 /** +$1,234 / −$1,234, the sign joined to the amount (U+2060) so a line never breaks between them. */
 const signed = (cents: number) => `${cents > 0 ? "+" : "−"}⁠${usd0(Math.abs(cents))}`;
 const verb = (cents: number, up: string, down: string) => (cents >= 0 ? up : down);
-const list = (xs: string[]) => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+const list = (xs: HighlightSeg[][]): HighlightSeg[] => xs.flatMap((x, i) => [...(i === 0 ? [] : i === xs.length - 1 ? [" and "] : [", "]), ...x]);
+/** A sentence's words as plain text (tests, titles). */
+export const highlightText = (segs: HighlightSeg[]) => segs.map((x) => (typeof x === "string" ? x : x.text)).join("");
 
-function highlightsOf(c: Omit<NetWorthChange, "highlights">, g: Granularity): string[] {
+function highlightsOf(c: Omit<NetWorthChange, "highlights">, g: Granularity): HighlightSeg[][] {
   const unit = UNIT[g];
   const t = c.typical;
-  const out: string[] = [];
-  // Cents left over at the edges aren't worth a mention.
-  const transit = Math.round((c.steps.find((s) => s.key === "transit")?.cents ?? 0) / 100) * 100;
-  out.push(
-    `Net worth ${verb(c.changeCents, "rose", "fell")} ${usd0(Math.abs(c.changeCents))}: saving ${verb(c.savedCents, "added", "took away")} ${usd0(Math.abs(c.savedCents))} and markets ${verb(c.marketsCents, "added", "took away")} ${usd0(Math.abs(c.marketsCents))}${transit ? `, with ${usd0(Math.abs(transit))} mid-move between your accounts` : ""}.`,
-  );
+  const out: HighlightSeg[][] = [];
+  const fig = (text: string, descriptor: ProofDescriptor, cents: number): HighlightSeg => ({ text, descriptor, cents });
+  const typical = (what: string): ProofDescriptor => derivedDescriptor("net-worth", { figure: "change-typical", key: typicalKey(g, c.start, what) });
+  // How far a figure is from its average: a composite of the two, worked out from their cleared values.
+  const vs = (a: ProofDescriptor, what: string): ProofDescriptor => ({ report: "composite", op: "diff", of: [a, typical(what)] });
+  const step = c.steps.find((s) => s.key === "transit");
+  // Dollars left over at the edges aren't worth a mention.
+  const transit = step && Math.abs(step.cents) >= 50_00 ? step : null;
+  out.push([
+    `Net worth ${verb(c.changeCents, "rose", "fell")} `,
+    fig(usd0(Math.abs(c.changeCents)), c.proofs.change, c.changeCents),
+    `: saving ${verb(c.savedCents, "added", "took away")} `,
+    fig(usd0(Math.abs(c.savedCents)), c.proofs.saved, c.savedCents),
+    ` and markets ${verb(c.marketsCents, "added", "took away")} `,
+    fig(usd0(Math.abs(c.marketsCents)), c.proofs.markets, c.marketsCents),
+    ...(transit ? [", with ", fig(usd0(Math.abs(transit.cents)), transit.proof ?? derivedDescriptor("net-worth", { figure: "change-step", key: `${g}|${c.start}|transit` }), transit.cents), " mid-move between your accounts"] : []),
+    ".",
+  ]);
   if (t) {
+    const mover = (metric: "spending" | "income") => (m: ChangeMover): HighlightSeg[] => [`${m.category} (`, fig(signed(m.deltaCents), vs(m.proof, `${metric}:${m.category}`), m.deltaCents), ")"];
     const d = c.changeCents - t.changeCents;
-    out.push(`That's ${usd0(Math.abs(d))} ${verb(d, "more", "less")} than your average ${unit} over the ${t.periods === 1 ? `${unit} before` : `${t.periods} ${unit}s before`} (${usd0(t.changeCents)}).`);
+    out.push([
+      "That's ",
+      fig(usd0(Math.abs(d)), vs(c.proofs.change, "change"), d),
+      ` ${verb(d, "more", "less")} than your average ${unit} over the ${t.periods === 1 ? `${unit} before` : `${t.periods} ${unit}s before`} (`,
+      fig(usd0(t.changeCents), typical("change"), t.changeCents),
+      ").",
+    ]);
     const ds = c.spendingCents - t.spendingCents;
-    const ups = c.spendingMovers.filter((m) => m.deltaCents > 0).map((m) => `${m.category} (${signed(m.deltaCents)})`);
-    const downs = c.spendingMovers.filter((m) => m.deltaCents < 0).map((m) => `${m.category} (${signed(m.deltaCents)})`);
-    const why = ds >= 0 ? ups : downs;
-    out.push(`Spending was ${usd0(c.spendingCents)}, ${usd0(Math.abs(ds))} ${verb(ds, "above", "below")} average${why.length ? `, mostly ${list(why)}` : ""}.`);
+    const why = c.spendingMovers.filter((m) => (ds >= 0 ? m.deltaCents > 0 : m.deltaCents < 0)).map(mover("spending"));
+    out.push(["Spending was ", fig(usd0(c.spendingCents), c.proofs.spending, c.spendingCents), ", ", fig(usd0(Math.abs(ds)), vs(c.proofs.spending, "spending"), ds), ` ${verb(ds, "above", "below")} average`, ...(why.length ? [", mostly ", ...list(why)] : []), "."]);
     const di = c.incomeCents - t.incomeCents;
-    const incomeWhy = c.incomeMovers.filter((m) => Math.sign(m.deltaCents) === Math.sign(di)).map((m) => `${m.category} (${signed(m.deltaCents)})`);
-    out.push(`Income was ${usd0(c.incomeCents)}, ${usd0(Math.abs(di))} ${verb(di, "above", "below")} average${incomeWhy.length ? `, mostly ${list(incomeWhy)}` : ""}.`);
+    const incomeWhy = c.incomeMovers.filter((m) => Math.sign(m.deltaCents) === Math.sign(di)).map(mover("income"));
+    out.push(["Income was ", fig(usd0(c.incomeCents), c.proofs.income, c.incomeCents), ", ", fig(usd0(Math.abs(di)), vs(c.proofs.income, "income"), di), ` ${verb(di, "above", "below")} average`, ...(incomeWhy.length ? [", mostly ", ...list(incomeWhy)] : []), "."]);
   } else {
-    out.push(`Income was ${usd0(c.incomeCents)} and spending ${usd0(c.spendingCents)}.`);
+    out.push(["Income was ", fig(usd0(c.incomeCents), c.proofs.income, c.incomeCents), " and spending ", fig(usd0(c.spendingCents), c.proofs.spending, c.spendingCents), "."]);
   }
-  if (c.portfolioReturn != null) out.push(`Your investments returned ${formatPercentRatio(c.portfolioReturn, 1)} (time-weighted, net of fees).`);
+  if (c.portfolioReturn != null)
+    out.push([
+      "Your investments returned ",
+      // Its months' returns chained (derived/netWorth.ts changeTypicalDerived "change-return"), as Investment returns chains them.
+      { text: formatPercentRatio(c.portfolioReturn, 1), descriptor: derivedDescriptor("net-worth", { figure: "change-return", key: typicalKey(g, c.start, "return") }), ratio: c.portfolioReturn },
+      " (time-weighted, net of fees).",
+    ]);
   return out;
 }
 
@@ -182,6 +212,7 @@ function changeOf(j: Joined, before: Joined[], g: Granularity): NetWorthChange {
         marketsCents: mean(before.map((b) => b.nw.household.growthNetOfFeesCents)),
         incomeCents: mean(before.map((b) => b.cf.incomeCents)),
         spendingCents: mean(before.map((b) => b.cf.spendingCents)),
+        of: before.map((b) => b.nw.label),
       }
     : null;
   const category = (metric: "income" | "spending") => (c: string): ProofDescriptor => ({ report: "cash-flow", metric, granularity: g, ...span, category: c });

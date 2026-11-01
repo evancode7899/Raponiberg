@@ -1,5 +1,6 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
 import { btn, Callout, Card, Field, inputCls, Segmented } from "@/components/ui/kit";
 import { carName, newId, type Car, type RentParking } from "@/lib/car/settings";
 import { useState } from "react";
@@ -102,7 +103,7 @@ export function SetupTab({ ctx }: { ctx: CarCtx }) {
           </div>
         </Card>
 
-        <Card title="Purchase" subtitle={`All-in: ${usd2(allIn)}. Depreciation starts from this.`}>
+        <Card title="Purchase" subtitle={<>All-in: <NotFigure why="the purchase fields below, added up as you type them">{usd2(allIn)}</NotFigure>. Depreciation starts from this.</>}>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Field label="Vehicle price">
               <CentsInput cents={p.priceCents} onChange={(c) => setP({ priceCents: c ?? 0 })} />

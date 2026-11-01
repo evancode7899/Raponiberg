@@ -20,12 +20,12 @@ import type { ProofValue } from "./types.ts";
  *    own label, with data-not-figure). Pages still in BYPASS_PENDING are listed, not failed;
  *  - RENDER_DRAWER: a proof drawer draws money or a rate its proof (/api/proof) doesn't hold;
  *  - RENDER_ERROR: a page that threw, or never settled.
- * And it lists every figure the sweep cleared that no page drew (`missing`: a recipe the
- * sweep holds that nothing shows, or one only a year picker or drill-down reaches); F6d
- * drives those views and makes it fail.
+ *  - RENDER_UNDRAWN (F6d): a figure the sweep cleared that no view drew — a recipe nothing
+ *    shows, or one only a view the audit can't reach. Families still in UNDRAWN_PENDING are
+ *    listed, not failed, and the list only shrinks (a listed family drawn in full fails).
  */
 
-export type RenderProblemKind = "RENDER_NOT_CLEARED" | "RENDER_TEXT" | "RENDER_WITHHELD" | "RENDER_BYPASS" | "RENDER_DRAWER" | "RENDER_ERROR";
+export type RenderProblemKind = "RENDER_NOT_CLEARED" | "RENDER_TEXT" | "RENDER_WITHHELD" | "RENDER_BYPASS" | "RENDER_DRAWER" | "RENDER_UNDRAWN" | "RENDER_ERROR";
 export type RenderProblem = { kind: RenderProblemKind; view: string; key?: string; detail: string };
 
 /** One figure as drawn: ProofValue's data attributes and its visible text (marks left out). */
@@ -142,9 +142,28 @@ export const BYPASS_PENDING: Readonly<Record<string, string>> = {
   "/home-budget": "F6c",
   "/investments": "F6c",
   "/mortgage": "F6c",
-  "/statements": "F6c",
   "/taxes": "F6c",
 };
+
+/** A cleared figure's family: its report, page and figure (or metric, or line): "derived › taxes › worksheet". */
+export function figureFamily(key: string): string {
+  try {
+    const d = JSON.parse(key) as Record<string, unknown>;
+    return [d.report, d.page, d.figure ?? d.metric ?? d.line].filter((x) => typeof x === "string").join(" › ");
+  } catch {
+    return key;
+  }
+}
+
+/**
+ * Families of cleared figures some members of which no view draws yet (F6d): each sweeps
+ * more members than the audit's views reach (every year, basis and filer of an estimate;
+ * every granularity and period of a drill-down; every window of a cash-flow slice). Their
+ * undrawn members are listed on every run, not failed; any other family fails on its first
+ * undrawn figure, and a family listed here that draws every member fails too, so the list
+ * only shrinks. The way off it: drive the view that draws them, or stop sweeping what no page shows.
+ */
+export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {};
 
 /** The page a view is on: "/cash-flow › Trends · Months shown=6M ▸ Dining" → "/cash-flow". */
 export const pageOf = (view: string) => view.split(/ [›·▸] /)[0]!;
@@ -157,7 +176,7 @@ export type RenderAudit = {
   /** Distinct cleared figures drawn, of the sweep's `cleared`. */
   drawn: number;
   cleared: number;
-  /** Cleared figures no view drew (F6d holds pages to drawing them). */
+  /** Cleared figures no view drew: those of families UNDRAWN_PENDING lists are listed, the rest fail (RENDER_UNDRAWN). */
   missing: string[];
 };
 
@@ -184,7 +203,8 @@ export function chartStrays(v: Pick<DrawnView, "chart">, figures: readonly Drawn
 }
 
 /** Every problem in what the pages drew, held to the sweep; and how many cleared figures were drawn. */
-export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPages: Readonly<Record<string, string>> = BYPASS_PENDING, opts: { partial?: boolean } = {}): RenderAudit {
+export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPages: Readonly<Record<string, string>> = BYPASS_PENDING, opts: { partial?: boolean; undrawnPending?: Readonly<Record<string, string>> } = {}): RenderAudit {
+  const undrawnPending = opts.undrawnPending ?? UNDRAWN_PENDING;
   const all: RenderProblem[] = [];
   const problems: RenderProblem[] = [];
   const drawn = new Set<string>();
@@ -222,6 +242,14 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
     if (audited.has(page) && !pending.some((p) => pageOf(p.view) === page))
       problems.push({ kind: "RENDER_BYPASS", view: page, detail: `Draws nothing outside its figures now: take it off BYPASS_PENDING (it waited for ${stage}), so a new bypass fails.` });
   const missing = opts.partial ? [] : Object.keys(sweep.cleared).filter((k) => !drawn.has(k));
+  // F6d: a cleared figure no view draws fails, unless its family is still listed as pending.
+  const byFamily = new Map<string, string[]>();
+  for (const k of missing) byFamily.set(figureFamily(k), [...(byFamily.get(figureFamily(k)) ?? []), k]);
+  for (const [family, keys] of byFamily)
+    if (!undrawnPending[family]) problems.push({ kind: "RENDER_UNDRAWN", view: family, key: keys[0], detail: `${keys.length} cleared figure(s) no view draws (first: ${keys[0]}): draw them, or stop sweeping what no page shows.` });
+  if (!opts.partial)
+    for (const [family, stage] of Object.entries(undrawnPending))
+      if (!byFamily.has(family)) problems.push({ kind: "RENDER_UNDRAWN", view: family, detail: `Every cleared figure of it is drawn now: take it off UNDRAWN_PENDING (it waited for ${stage}), so a new undrawn one fails.` });
   return { problems, pending, drawn: drawn.size, cleared: Object.keys(sweep.cleared).length, missing };
 }
 

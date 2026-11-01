@@ -3,9 +3,9 @@
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
-import { Badge, btn, Callout, Card, Drawer, EmptyState, ErrorNote, Field, inputCls, Loading, MoneyInput, PageBody, type Tone } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, Drawer, EmptyState, ErrorNote, Field, inputCls, Loading, MoneyInput, NotFigure, PageBody, type Tone } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import { compositeOf, type ProofTarget } from "@/components/ui/proof/context";
 import type { GoalFigure } from "@/lib/book/proof/planningProof";
 import type { GoalProgress, GoalsReport } from "@/lib/book/reports/goals";
 import { formatPercentRatio, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
@@ -258,7 +258,7 @@ function Roadmap({ r }: { r: GoalsReport }) {
           return (
             <div key={g.goal.id} className="contents">
               <span className="mt-2 truncate text-fg sm:mt-0" title={g.goal.name}>
-                {g.goal.name}
+                <NotFigure why="the goal's name, as you typed it">{g.goal.name}</NotFigure>
               </span>
               <div className="relative h-10">
                 {years.map((y) => (
@@ -323,7 +323,7 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
           <span className="num flex h-5 w-5 items-center justify-center rounded bg-surface-3 text-[11px] text-muted" title="Order: goals higher in the list get money first">
             {rank}
           </span>
-          {g.goal.name}
+          <NotFigure why="the goal's name, as you typed it">{g.goal.name}</NotFigure>
           <Badge tone={s.tone}>{s.label}</Badge>
           {track && (
             <Badge tone="neutral" title="Counts whole balances and claims nothing, so savings goals can use the same money.">
@@ -354,7 +354,15 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
             of {g.targetCents == null ? "—" : <ProofValue proof={goalProof(g, "target", g.targetCents)}>{usd0(g.targetCents)}</ProofValue>}
           </span>
         </span>
-        {g.targetCents != null && <span className={`num text-sm font-semibold ${s.ink}`}>{formatPercentRatio(share, 0)}</span>}
+        {g.targetCents != null && (
+          <span className={`num text-sm font-semibold ${s.ink}`}>
+            {share >= 1 || blocked ? (
+              <NotFigure why="funded: the bar stops at 100%">{formatPercentRatio(share, 0)}</NotFigure>
+            ) : (
+              <ProofValue proof={compositeOf("share", [goalProof(g, "current", g.currentCents), goalProof(g, "target", g.targetCents)], { ratio: share })}>{formatPercentRatio(share, 0)}</ProofValue>
+            )}
+          </span>
+        )}
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-3" role="meter" aria-valuenow={g.currentCents} aria-valuemax={g.targetCents ?? undefined} aria-label={`${g.goal.name} progress`}>
         <div className={`h-full rounded-full ${s.bg}`} style={{ width: `${share * 100}%` }} />

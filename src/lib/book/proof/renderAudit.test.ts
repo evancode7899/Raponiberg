@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { descriptorKey } from "./key";
-import { auditRender, drawerStrays, readDrawn, textMatches, type DrawnFigure, type DrawnView } from "./renderAudit";
+import { auditRender, drawerStrays, figureFamily, readDrawn, textMatches, type DrawnFigure, type DrawnView } from "./renderAudit";
 
 const fig = (over: Partial<DrawnFigure> = {}): DrawnFigure => ({ key: "k1", shown: "4125.50", shownKind: "cents", perMonths: null, clearance: "cleared", text: "$4,126", ...over });
 const view = (over: Partial<DrawnView> = {}): DrawnView => ({ view: "/example", figures: [fig()], strays: [], errors: [], ...over });
@@ -73,6 +73,16 @@ describe("auditRender: what the pages drew, held to the sweep", () => {
 
   it("lists cleared figures no page drew", () => {
     expect(auditRender([view({ figures: [] })], sweep).missing).toEqual(["k1"]);
+  });
+
+  it("fails a cleared figure no page drew, unless its family is still pending; and a pending family drawn in full", () => {
+    const d = JSON.stringify({ report: "derived", page: "example", figure: "cell", key: "a" });
+    const s = { cleared: { [d]: { cents: 100 } }, problems: {} };
+    expect(figureFamily(d)).toBe("derived › example › cell");
+    expect(auditRender([view({ figures: [] })], s, {}, { undrawnPending: {} }).problems).toMatchObject([{ kind: "RENDER_UNDRAWN", view: "derived › example › cell" }]);
+    expect(auditRender([view({ figures: [] })], s, {}, { undrawnPending: { "derived › example › cell": "F6x" } }).problems).toEqual([]);
+    const drawnAll = view({ figures: [fig({ key: d, shown: "1.00", text: "$1" })] });
+    expect(auditRender([drawnAll], s, {}, { undrawnPending: { "derived › example › cell": "F6x" } }).problems).toMatchObject([{ kind: "RENDER_UNDRAWN", detail: expect.stringContaining("take it off UNDRAWN_PENDING") }]);
   });
 });
 
