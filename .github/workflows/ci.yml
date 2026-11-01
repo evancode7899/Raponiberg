@@ -79,5 +79,95 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-      - name: Demo data builds, every figure ties to its proof, and every page draws what its proof cleared
-        run: npm run demo -- --sweep --render-audit
+      - name: Demo data builds and every figure ties to its proof
+        run: npm run demo -- --sweep
+
+  # Every page draws what its proof cleared (SSOT F6, scripts/render-audit.ts), in shards run
+  # side by side with fresh-clone. The demo is seeded once and shared, since each seed mints its
+  # own record ids and proof keys carry them. Each shard builds the app, renders its share of
+  # the pages' tabs (dealt from scripts/render-audit-costs.json) against its own budget, and
+  # hands what it drew to render-audit, which holds the whole run (a pending page gone clean, a
+  # cleared figure no page draws) exactly as one unsharded run would.
+  demo-data:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Seed the demo
+        run: npm run demo -- --build-only
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: demo-data
+          path: data/demo/
+          retention-days: 1
+
+  render-audit-shard:
+    needs: demo-data
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      RENDER_AUDIT_SHARD: ${{ matrix.shard }}/3
+      RENDER_AUDIT_OUT: render-audit-${{ matrix.shard }}.json
+      RENDER_AUDIT_BUDGET_MS: "100000"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Set up (empty database, no shortcut)
+        run: npm run setup -- --no-shortcuts
+      - name: Build
+        run: npm run build
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: demo-data
+          path: data/demo
+      - name: Render shard ${{ matrix.shard }} of 3 and hold what it draws to the proof sweep
+        run: npm run demo -- --render-audit --reuse-data
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: render-audit-${{ matrix.shard }}
+          path: render-audit-${{ matrix.shard }}.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+  render-audit:
+    needs: render-audit-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: render-audit-*
+          merge-multiple: true
+      - name: The whole run, merged from its shards
+        env:
+          RENDER_AUDIT_COSTS: render-audit-costs.json
+        run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/render-audit.ts --merge render-audit-1.json render-audit-2.json render-audit-3.json
+      # This run's unit costs: copy over scripts/render-audit-costs.json when the shards drift apart.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: render-audit-costs
+          path: render-audit-costs.json
+          if-no-files-found: ignore
+          retention-days: 7
