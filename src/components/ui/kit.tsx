@@ -706,7 +706,7 @@ export type TableRow =
       label: ReactNode;
       help?: string;
       /** Each figure's proof is required, as for any figure (ProofValue). */
-      cells: ({ text: ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[] } | null)[];
+      cells: ({ text: ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[]; drawn?: FigureProps["drawn"] } | null)[];
       strong?: boolean;
       /** A total that closes a section: double rule. */
       total?: boolean;
@@ -776,7 +776,7 @@ export function StatementTable({
                     className={`num whitespace-nowrap px-2 py-1 text-right ${colCls(j)} ${c?.dim ? "text-faint" : ""} ${r.muted ? "text-[12px]" : ""}`}
                   >
                     {c ? (
-                      <ProofValue proof={c.proof} blockers={c.blockers}>
+                      <ProofValue proof={c.proof} blockers={c.blockers} drawn={c.drawn}>
                         {c.text}
                       </ProofValue>
                     ) : (

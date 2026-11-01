@@ -245,7 +245,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], q
       const label = ((await o.getAttribute("data-audit-drill")) || (await o.innerText()).slice(0, 30)).replace(/\s+/g, " ").trim();
       await o.click();
       const back = page.locator("[data-audit-back]").first();
-      await Promise.race([page.locator('[role="dialog"]').first().waitFor({ timeout: 5000 }), back.waitFor({ timeout: 5000 })]).catch(() => {});
+      // A drawer, a view in place with a way back, or a row that opens where it is: whichever came, once it settles.
       await draw(`${name} ▸ ${label}`);
       if (await back.isVisible().catch(() => false)) {
         const steps = page.locator("[data-audit-step]");
@@ -256,7 +256,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], q
           }
         await back.click();
         await settle(page);
-      } else await closeDialog();
+      } else if (await page.locator('[role="dialog"]').count()) await closeDialog();
     }
   };
 

@@ -18,7 +18,7 @@ import type { ChainLine, ProofLink, ProofValue } from "../proof/types.ts";
  * independently (F5's independent proofs).
  */
 
-export type DerivedPage = "investments" | "car" | "cash-flow" | "card-perks" | "net-worth" | "integrity" | "hsa" | "account-limits" | "calendar" | "lp-funds" | "insurance" | "taxes";
+export type DerivedPage = "investments" | "car" | "cash-flow" | "card-perks" | "net-worth" | "integrity" | "hsa" | "account-limits" | "calendar" | "lp-funds" | "insurance" | "taxes" | "forecast";
 
 export type DerivedDescriptor = {
   report: "derived";

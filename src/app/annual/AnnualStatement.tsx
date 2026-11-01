@@ -14,7 +14,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { estimateFigures, type EstimateValue, type YearEstimate } from "./estimate";
 import { NetWorthWaterfall } from "./NetWorthWaterfall";
 import { blockedCell, pct, usd, YearTable, type Cell, type TableRow } from "./profileUi";
-import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { isUnswept, noFigure, unswept } from "@/lib/book/proof/clearance";
+import { compositeOf } from "@/components/ui/proof/context";
 import { annualPayDescriptor } from "@/lib/profile/annualPay";
 
 /** A figure that opens its annual proof (shown: the proof's own figure, for the drawer's stale-data warning). */
@@ -506,7 +507,10 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
     const tone = good == null ? "" : (d > 0) === (good === "up") ? "text-pos" : "text-neg";
     const rel = l.fmt !== "pct" && p.v !== 0 ? ` (${d > 0 ? "+" : "−"}${pct(Math.abs(d / p.v), 0)})` : "";
     const text = l.fmt === "pct" ? `${d > 0 ? "+" : "−"}${(Math.abs(d) * 100).toFixed(1)} pts` : `${d > 0 ? "+" : "−"}${usd(Math.abs(d))}`;
-    return { text: <span className={tone}>{text}</span>, proof: unswept("change mode: the difference of two proven figures has no recipe of its own yet"), title: `${cols[c.prev!]!.head}: ${fmtV(p.v, l.fmt)} → ${fmtV(x.v, l.fmt)}${rel}` };
+    // The change is the difference of the two years' figures: a composite that clears from theirs (rates drawn in points).
+    const both = x.proof && p.proof && !isUnswept(x.proof) && !isUnswept(p.proof);
+    const proof = both ? compositeOf("diff", [x.proof!, p.proof!], l.fmt === "pct" ? { ratio: d } : { cents: d }) : unswept("change mode: one of the two years has no proof");
+    return { text: <span className={tone}>{text}</span>, proof, ...(l.fmt === "pct" ? { drawn: { per: 0.01 } } : {}), title: `${cols[c.prev!]!.head}: ${fmtV(p.v, l.fmt)} → ${fmtV(x.v, l.fmt)}${rel}` };
   });
   return { label: l.label, help: l.help, total: l.total, strong: l.strong, indent: l.indent, muted: l.muted, cells };
 }

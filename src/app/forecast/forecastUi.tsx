@@ -6,6 +6,9 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 export const monthName = (m: number) => MONTHS[(m - 1 + 12) % 12]!;
 /** "Jul ’26" */
+/** A forecast derived figure's proof (book/derived/forecast.ts), withheld while the drivers have unsaved edits. */
+export type Dp = (figure: string, key?: string) => import("@/components/ui/proof/context").ProofRef;
+
 export const monthLabel = (year: number, month: number) => `${monthName(month)} ’${String(year).slice(2)}`;
 
 /** A year typed in; blank (or out of range) = null. Commits on blur or Enter. */

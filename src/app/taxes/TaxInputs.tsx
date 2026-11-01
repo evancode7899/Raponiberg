@@ -319,7 +319,13 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
 
       <Card title="Sources and assumptions">
         <ul className="list-disc space-y-1 pl-4 text-xs text-fg-2">
-          {(r.blocked ? [] : [...r.paramsNotes, ...r.assumptions]).map((a, i) => (
+          {/* The rules the estimate follows (tax law, your choices under Inputs) say so; an assumption that names a figure is held to its proof like any other. */}
+          {(r.blocked ? [] : [...r.paramsNotes, ...r.rules]).map((a, i) => (
+            <li key={`rule-${i}`}>
+              <NotFigure why="a rule the estimate follows: tax law, or your choice under Inputs">{a}</NotFigure>
+            </li>
+          ))}
+          {(r.blocked ? [] : r.assumptions).map((a, i) => (
             <li key={i}>{a}</li>
           ))}
         </ul>

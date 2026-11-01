@@ -614,6 +614,7 @@ const DERIVED_PAGE_NAME: Record<DerivedPage, string> = {
   "lp-funds": "Investments › Private funds",
   insurance: "Insurance",
   taxes: "Taxes",
+  forecast: "Forecast",
 };
 
 /** A page's derived figures (derived/types.ts), each at the value its list states. */

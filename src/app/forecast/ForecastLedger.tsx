@@ -11,6 +11,10 @@ import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import { useMemo, useState } from "react";
 import { monthLabel, pct, usd } from "./forecastUi";
 import { unswept } from "@/lib/book/proof/clearance";
+import { NotFigure } from "@/components/ui/kit";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
+import { scheduleKeys } from "@/lib/book/derived/forecast";
+import type { Dp } from "./forecastUi";
 
 type Row = {
   /** The cell's proof line (forecastProof.ts LedgerLine). */
@@ -215,7 +219,27 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                 const gross = x.salary == null || x.bonus == null || x.otherIncome == null ? null : x.salary + x.bonus + x.otherIncome;
                 return (
                   <td key={p.id} className={`num px-1.5 py-[3px] text-right text-muted ${colCls(p)}`}>
-                    {gross && x.saved != null ? pct(x.saved / gross, 0) : "—"}
+                    {gross && x.saved != null ? (
+                      // Saved ÷ (salary + bonuses + other income): a share of the column's own cells.
+                      <ProofValue
+                        proof={
+                          provable
+                            ? compositeOf(
+                                "share",
+                                [
+                                  { descriptor: cellProof(p, "saved"), shownCents: x.saved },
+                                  { descriptor: { report: "composite", op: "sum", of: (["salary", "bonus", "otherIncome"] as const).map((l) => cellProof(p, l)) }, shownCents: gross },
+                                ],
+                                { ratio: x.saved / gross },
+                              )
+                            : unswept("a forecast line with no proof")
+                        }
+                      >
+                        {pct(x.saved / gross, 0)}
+                      </ProofValue>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 );
               })}
@@ -237,14 +261,21 @@ const thousands = (c: number) => {
 const colCls = (p: Period) => (p.kind === "ACTUAL" ? "bg-surface-2/70" : p.kind === "TOTAL" ? "border-x border-line-strong bg-accent-soft/40" : "");
 
 /** Every bonus payment the forecast knows about in the next few years, counted or not. */
-export function BonusPayments({ f, throughYear }: { f: Forecast; throughYear: number }) {
+export function BonusPayments({ f, throughYear, dp }: { f: Forecast; throughYear: number; dp: Dp }) {
+  const keys = useMemo(() => new Map(scheduleKeys(f.schedule).map((k, i) => [f.schedule[i]!, k])), [f.schedule]);
   const [all, setAll] = useState(false);
   const shown = f.schedule.filter((b) => b.key <= `${throughYear}-12` && (all || b.counted));
   const hidden = f.schedule.filter((b) => b.key <= `${throughYear}-12` && !b.counted).length;
   return (
     <Card
       title="Bonus payments"
-      subtitle={`What the Bonuses row is made of, through ${throughYear}. Taxes reads the ones still to come this year. Kept after tax ${pct(f.pay.bonus.keepRate)}, saved ${pct(f.assumptions.bonus.savedShare, 0)} of that.`}
+      subtitle={
+        <>
+          What the Bonuses row is made of, through {throughYear}. Taxes reads the ones still to come this year. Kept after tax{" "}
+          {f.pay.bonus.keepTyped ? <NotFigure why="your input (Drivers)">{pct(f.pay.bonus.keepRate)}</NotFigure> : <ProofValue proof={dp("bonus-keep")}>{pct(f.pay.bonus.keepRate)}</ProofValue>}, saved{" "}
+          <NotFigure why="your input (Drivers)">{pct(f.assumptions.bonus.savedShare, 0)}</NotFigure> of that.
+        </>
+      }
       actions={
         hidden > 0 ? (
           <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => setAll(!all)}>
@@ -267,10 +298,12 @@ export function BonusPayments({ f, throughYear }: { f: Forecast; throughYear: nu
                     <Badge tone={SOURCE[b.source].tone}>{SOURCE[b.source].label}</Badge>
                   </td>
                   <td className="w-full pr-2 text-fg-2">
-                    {b.label}
+                    <BonusLabel b={b} share={b.share != null ? dp("bonus-share", keys.get(b)) : null} />
                     {!b.counted && b.why ? <span className="text-muted"> — not counted: {b.why}</span> : null}
                   </td>
-                  <td className={`num whitespace-nowrap text-right ${b.counted ? "font-medium text-fg" : "line-through"}`}>{usd(b.gross)}</td>
+                  <td className={`num whitespace-nowrap text-right ${b.counted ? "font-medium text-fg" : "line-through"}`}>
+                    <ProofValue proof={dp("bonus", keys.get(b))}>{usd(b.gross)}</ProofValue>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -286,3 +319,16 @@ const cellProof = (p: Period, line: LedgerLine): ForecastDescriptor => {
   const through = p.through.slice(0, 7);
   return { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line };
 };
+
+/** A bonus payment's label, the share of its award it is (from the latest letter's split) drawn as its figure. */
+function BonusLabel({ b, share }: { b: ScheduledBonus; share: ProofRef | null }) {
+  const m = share && b.share != null ? /(\d+)% as/.exec(b.label) : null;
+  if (!m || !share) return <>{b.label}</>;
+  return (
+    <>
+      {b.label.slice(0, m.index)}
+      <ProofValue proof={share}>{`${m[1]}%`}</ProofValue>
+      {b.label.slice(m.index + m[1]!.length + 1)}
+    </>
+  );
+}

@@ -1,5 +1,6 @@
 "use client";
 
+import type { FigureProps } from "@/components/ui/proof/ProofValue";
 import { StatementTable } from "@/components/ui/kit";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
@@ -13,7 +14,7 @@ export { axisUsd } from "@/lib/formatMoney";
 export const usd = usd0;
 export const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
 
-export type Cell = { text: React.ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[] } | null;
+export type Cell = { text: React.ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[]; drawn?: FigureProps["drawn"] } | null;
 
 /** Year-per-column statement table (shared with Taxes). */
 export const YearTable = StatementTable;
