@@ -35,8 +35,8 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
         title="Every investment account, year by year"
         subtitle={
           <>
-            Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are Modified Dietz (money
-            moved in or out doesn&apos;t count as performance); a year with under $1,000 invested shows no return. Dividends and interest are split out where the
+            Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are time-weighted: each month&apos;s
+            Modified Dietz (money moved in or out doesn&apos;t count as performance), chained; a month with under $1,000 invested is left out. Dividends and interest are split out where the
             statement reports them (Fidelity); elsewhere they&apos;re inside market change.
           </>
         }

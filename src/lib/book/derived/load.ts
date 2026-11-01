@@ -92,7 +92,8 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     // How it was built, at each granularity its control offers.
     const built = [r, ...(["quarter", "year"] as const).map((granularity) => buildNetWorth(book, { granularity }))].flatMap(builtDerived);
     const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeTypicalDerived), ...built];
-    return { figures, rederived: { ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), ...declared(BUILT_WHY)(built) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
+    // Built's returns are re-derived (rederiveNetWorth); its other cells are declared.
+    return { figures, rederived: { ...declared(BUILT_WHY)(built), ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },
   integrity: async ({ book }) => {
     const figures = integrityDerived({ ...book.integrity, horizon: book.horizon });

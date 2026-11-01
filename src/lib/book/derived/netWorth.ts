@@ -72,11 +72,8 @@ export function changeTypicalDerived(rep: Pick<NetWorthChangesReport, "granulari
   const g = rep.granularity;
   return rep.periods.flatMap((p) => {
     const t = p.typical;
-    const ret: DerivedFigure[] =
-      p.portfolioReturn == null
-        ? []
-        : [{ figure: "change-return", key: typicalKey(g, p.start, "return"), describes: `The portfolio's return, ${p.label}: its months' returns chained`, value: r(p.portfolioReturn), lines: [ln("Each month's time-weighted return, chained: (1 + r₁) × (1 + r₂) × … − 1", r(p.portfolioReturn), undefined, { note: "As Investment returns chains them; net of fees." })] }];
-    if (!t) return ret;
+    // Its return is How it was built's figure for the same period (builtDerived), not one of its own.
+    if (!t) return [];
     const over = `the average over ${t.of.join(", ")}`;
     const fig = (what: string, label: string, cents: number): DerivedFigure => ({
       figure: "change-typical",
@@ -94,7 +91,6 @@ export function changeTypicalDerived(rep: Pick<NetWorthChangesReport, "granulari
       ...p.steps.filter((s) => s.typicalCents != null && s.key !== "spending").map((s) => fig(`step:${s.key}`, s.label, s.typicalCents!)),
       ...p.spendingMovers.map((m) => fig(`spending:${m.category}`, `${m.category} spending`, m.typicalCents)),
       ...p.incomeMovers.map((m) => fig(`income:${m.category}`, `${m.category} income`, m.typicalCents)),
-      ...ret,
     ];
   });
 }
