@@ -64,7 +64,10 @@ export function cardPerksDerived(rep: Report): DerivedFigure[] {
       opt(l.key, "spend", `${l.label}: spending`, l.spendCents, l.byCard.map((b, i) => ln(b.accountId, c(b.spendCents), i ? "+" : undefined)));
       opt(l.key, "actual", `${l.label}: earned on the card that paid`, l.actualCents);
       opt(l.key, "best", `${l.label}: earned on the best card held that day`, l.bestCents);
-      for (const b of l.byCard.slice(0, SPLIT_SHOWN)) opt(`${l.key}|${b.accountId}`, "spend", `${l.label}: spending on one card`, b.spendCents);
+      // The split under each line: each card's share of the line's spending.
+      for (const b of l.byCard.slice(0, SPLIT_SHOWN))
+        if (l.spendCents)
+          out.push({ figure: "optimizer", key: optKey(y, `${l.key}|${b.accountId}`, "share"), describes: `Best card, ${y}: ${l.label}, one card's share of the spending`, value: r(b.spendCents / l.spendCents), lines: [ln("Spending on the card", c(b.spendCents)), ln("÷ the line's spending", c(l.spendCents), "÷"), ln("Share", r(b.spendCents / l.spendCents), "=")] });
     }
   }
   for (const m of rep.rewardsMix ?? []) out.push({ figure: "mix", key: cellKey(y, m.label, "value"), describes: `Rewards from ${m.label}, ${y}`, value: c(m.valueCents), lines: [ln("Expected rewards on that spending, valued at each program's point value", c(m.valueCents))] });

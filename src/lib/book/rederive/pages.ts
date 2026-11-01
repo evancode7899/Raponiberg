@@ -114,6 +114,9 @@ export function rederiveCardPerks(reports: (Pick<CardPerksReport, "year" | "card
         if (row === "all" && col === "missed") return [centsRoute("each kind of purchase, re-added", v, sum(lines, (l) => l.bestCents - l.actualCents), "best less earned, line by line")];
         const line = lines.find((l) => l.key === row);
         if (line && col === "spend") return [centsRoute("each card's spending on it, re-added", v, sum(line.byCard, (b) => b.spendCents), "card by card")];
+        const split = lines.find((l) => row.startsWith(`${l.key}|`));
+        const part = split?.byCard.find((b) => row === `${split.key}|${b.accountId}`);
+        if (split && part && col === "share") return [ratioRoute("the card's spending over every card's, re-added", v, part.spendCents / sum(split.byCard, (b) => b.spendCents), "one card's spending ÷ all the cards' on that line")];
         return { none: "Purchases valued at the card list's rates and your point values: a what-if over the statement rows, not a sum of them." };
       }
       case "mix": {

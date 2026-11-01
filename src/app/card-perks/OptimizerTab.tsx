@@ -75,7 +75,7 @@ export function OptimizerTab({ r }: { r: CardPerksPage }) {
                     <td className={`${table.td} font-medium`}>{l.label}</td>
                     <td className={table.tdR}><ProofValue proof={cf.opt(l.key, "spend")}>{usd0(l.spendCents)}</ProofValue></td>
                     <td className={`${table.td} w-56`}>
-                      <SplitBar parts={l.byCard} byId={byId} total={l.spendCents} share={(accountId, cents) => compositeOf("share", [cf.opt(`${l.key}|${accountId}`, "spend"), cf.opt(l.key, "spend")], { ratio: cents / l.spendCents })} />
+                      <SplitBar parts={l.byCard} byId={byId} total={l.spendCents} share={(accountId) => cf.opt(`${l.key}|${accountId}`, "share")} />
                     </td>
                     <td className={table.tdR}><ProofValue proof={cf.opt(l.key, "actual")}>{usd0(l.actualCents)}</ProofValue></td>
                     <td className={table.tdR}><ProofValue proof={cf.opt(l.key, "best")}>{usd0(l.bestCents)}</ProofValue></td>
@@ -94,7 +94,7 @@ export function OptimizerTab({ r }: { r: CardPerksPage }) {
 
 const COLORS = ["bg-accent", "bg-pos", "bg-info", "bg-warn", "bg-neg", "bg-fg-2"];
 
-function SplitBar({ parts, byId, total, share }: { parts: { accountId: string; spendCents: number }[]; byId: Map<string, CardScore>; total: number; share: (accountId: string, cents: number) => ProofRef }) {
+function SplitBar({ parts, byId, total, share }: { parts: { accountId: string; spendCents: number }[]; byId: Map<string, CardScore>; total: number; share: (accountId: string) => ProofRef }) {
   const ids = [...byId.keys()];
   return (
     <div>
@@ -107,7 +107,7 @@ function SplitBar({ parts, byId, total, share }: { parts: { accountId: string; s
         {parts.slice(0, SPLIT_SHOWN).map((p, i) => (
           <span key={p.accountId}>
             {i ? " · " : ""}
-            {byId.get(p.accountId) ? shortName(byId.get(p.accountId)!) : "Card"} <ProofValue proof={share(p.accountId, p.spendCents)}>{`${Math.round((p.spendCents / Math.max(total, 1)) * 100)}%`}</ProofValue>
+            {byId.get(p.accountId) ? shortName(byId.get(p.accountId)!) : "Card"} <ProofValue proof={share(p.accountId)}>{`${Math.round((p.spendCents / Math.max(total, 1)) * 100)}%`}</ProofValue>
           </span>
         ))}
       </div>
