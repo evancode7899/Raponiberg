@@ -186,9 +186,6 @@ function shownValue(f: DrawnFigure): ProofValue | null {
  * out loud: a page listed here that draws none fails, so the list only ever shrinks.
  */
 export const BYPASS_PENDING: Readonly<Record<string, string>> = {
-  "/bonuses": "F6f",
-  "/hsa": "F6f",
-  "/net-worth": "F6f",
   "/card-perks": "F6f",
   "/investments": "F6f",
 };
