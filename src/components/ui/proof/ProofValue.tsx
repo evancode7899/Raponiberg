@@ -92,6 +92,7 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
         type="button"
         {...data}
         onClick={(e) => {
+          e.preventDefault();
           e.stopPropagation();
           open?.(target, c);
         }}
@@ -109,7 +110,8 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
       type="button"
       {...data}
       onClick={(e) => {
-        // Inside a clickable row, open the proof rather than the row's own drill-down.
+        // Inside a clickable row or a link, open the proof rather than the row's own drill-down or the link's page.
+        e.preventDefault();
         e.stopPropagation();
         open?.(target, c);
       }}
