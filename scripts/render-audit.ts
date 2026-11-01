@@ -132,6 +132,10 @@ function collect() {
   const strays = new Set<string>();
   const chart = new Set<string>();
   const re = /\$\s?\d|\d(?:[.,]\d+)*\s?%/;
+  const tokenRe = /[+\-−]?\(?\$\s?\d[\d,]*(?:\.\d+)?[kMB]?\)?|[+\-−]?\(?\d[\d,]*(?:\.\d+)?\s?%\)?/g;
+  // What-if regions (kit WhatIf): their bare numbers aren't strays, but renderAudit.ts holds them (and the figures inside) to the ledger.
+  const regions = [...document.querySelectorAll<HTMLElement>("[data-what-if]")].filter((r) => visible(r) && !r.closest('[role="dialog"]'));
+  const regionTokens = new Map<Element, string[]>(regions.map((r) => [r, []]));
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const t = n.textContent ?? "";
@@ -139,12 +143,22 @@ function collect() {
     const el = n.parentElement;
     // An open proof drawer's numbers are held to its proof's JSON (drawerTokens), not to this view; a chart tooltip is where the mouse last was.
     if (!el || el.closest('.pf-drawer:has([data-proof-clearance]), .recharts-tooltip-wrapper, [data-proof-key], [data-not-figure]:not([data-not-figure=""]), .recharts-cartesian-axis-tick-value, #recharts_measurement_span, input, textarea, select, option, script, style, noscript') || !visible(el)) continue;
+    const region = el.closest("[data-what-if]");
+    if (region) {
+      regionTokens.get(region)?.push(...[...t.matchAll(tokenRe)].map((m) => m[0]));
+      continue;
+    }
     const where = (el.closest("tr, li, [class*='rounded-lg'], section") ?? el).textContent?.replace(/\s+/g, " ").trim().slice(0, 90) ?? "";
     // In a chart (SVG): a label for a figure the view draws, held to it in renderAudit.ts.
     if (el.closest("svg")) chart.add(t.replace(/\s+/g, " ").trim());
     else strays.add(`${t.replace(/\s+/g, " ").trim().slice(0, 60)}" in "${where}`);
   }
-  return { figures, strays: [...strays], chart: [...chart], verifying: document.querySelectorAll('[data-clearance="verifying"]').length, size: document.body.innerText.length };
+  const whatIf = regions.map((r) => ({
+    why: r.dataset.whatIf || "(no reason given)",
+    figures: [...r.querySelectorAll<HTMLElement>("[data-proof-key]")].filter(visible).map((f) => ({ key: f.dataset.proofKey ?? "", clearance: f.dataset.clearance ?? "" })),
+    tokens: regionTokens.get(r) ?? [],
+  }));
+  return { figures, strays: [...strays], chart: [...chart], whatIf, verifying: document.querySelectorAll('[data-clearance="verifying"]').length, size: document.body.innerText.length };
 }
 
 /** Money and rates a proof drawer (the dialog the figure opened) draws. Runs in the browser. */
@@ -251,8 +265,8 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
   const draw = async (name: string): Promise<DrawnView & { repeat: boolean }> => {
     const unsettled = await settle(page);
     const s = await page.evaluate(collect);
-    const v: DrawnView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, errors: [...errors.splice(0), ...(unsettled ? [unsettled] : [])] };
-    const sig = JSON.stringify([s.figures.map((f) => [f.key, f.clearance, f.text]), s.strays]);
+    const v: DrawnView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, ...(s.whatIf.length ? { whatIf: s.whatIf } : {}), errors: [...errors.splice(0), ...(unsettled ? [unsettled] : [])] };
+    const sig = JSON.stringify([s.figures.map((f) => [f.key, f.clearance, f.text]), s.strays, s.whatIf]);
     const repeat = seen.has(sig) && !v.errors.length;
     seen.add(sig);
     stats.draws++;
@@ -603,6 +617,11 @@ function finish(parts: Drawn[]) {
     if (ps.length > LISTED) console.log(`   …and ${ps.length - LISTED} more`);
   }
   // Debts said out loud, not failed yet: bypasses on pages a later stage holds, and cleared figures no view drew.
+  const regions = Object.entries(audit.whatIf);
+  if (regions.length) {
+    console.log(`\n[WHAT-IF] Exploratory regions (kit WhatIf): their numbers are scenarios, held only to keep real data out:`);
+    for (const [page, whys] of regions) console.log(`   ${page.padEnd(16)} ${String(Object.keys(whys).length).padStart(3)} region(s): ${Object.keys(whys).join("; ")}`);
+  }
   if (audit.pending.length) {
     console.log(`\n[PENDING] ${audit.pending.length} bypass(es) on pages a later stage holds (BYPASS_PENDING, lib/book/proof/renderAudit.ts):`);
     for (const [page, n] of count(audit.pending.map((p) => pageOf(p.view)))) console.log(`   ${page.padEnd(16)} ${String(n).padStart(5)}  ${BYPASS_PENDING[page]}`);

@@ -1,12 +1,12 @@
 import { addDays, daysBetween } from "../../dates/isoDate.ts";
-import { analyzeFire, drawFor, extended, FAT_SHARE, fireNumber, firePlans, LEAN_SHARE, livingIn, stressTest, type FireAnalysis, type StressTest } from "../../fire/fire.ts";
+import { analyzeFire, drawFor, extended, FAT_SHARE, fireNumber, firePlans, firstYearIncome, LEAN_SHARE, livingIn, stressTest, type FireAnalysis, type StressTest } from "../../fire/fire.ts";
 import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type LongTermTable, type StressFigure } from "../../fire/longTerm.ts";
 import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
 import { balancesAt, buildForecast, homeForecast, milestones as netWorthMilestones, taxLink, type Forecast } from "../../forecast/forecast.ts";
 import { forecastInputs, loadForecastData, type ForecastData } from "../../forecast/load.ts";
 import { monthPeriods, yearPeriods } from "../../forecast/periods.ts";
 import { GOALS_KEY, normalizeGoals } from "../../goals/settings.ts";
-import { computeLenderMax, computeMaxApproval, defaultHomeBudgetInputs, monthlyPaymentOnLoan, type HomeBudgetInputs, type MaxApprovalResult } from "../../home-budget/homeBudgetModel.ts";
+import { computeBudgetScenario, computeLenderMax, computeMaxApproval, defaultHomeBudgetInputs, monthlyPaymentOnLoan, type HomeBudgetInputs, type MaxApprovalResult } from "../../home-budget/homeBudgetModel.ts";
 import { defaultFunds, linkHome, type FundsBook, type FundsConfig, type HomeLinked } from "../../home-budget/homeLinked.ts";
 import { employerKey } from "../../ingest/payroll/types.ts";
 import { RENT_VS_BUY_FIGURES, rentVsBuyFigures, SIM_YEARS, type RentVsBuyFigure } from "../../home-budget/rentVsBuy.ts";
@@ -73,7 +73,11 @@ export type FireFigure =
   | "fat-year"
   | "coast-year"
   | "savings-rate"
+  /** The plan year one: take-home from base pay plus employer money (what FIRE › Levers runs the savings-rate chart on). */
+  | "income"
   | "years-saved"
+  /** The share of today's net worth that is liquid (FIRE › Playbook). */
+  | "liquid-share"
   | "runway"
   | "progress"
   | "milestone"
@@ -86,7 +90,8 @@ export type FireFigure =
 /** FIRE's own settings as the page has them (edited there, maybe unsaved). */
 export type FireSettings = Pick<OutlookAssumptions, "walkAwayYear" | "withdrawalRate" | "stateTaxRate" | "retirementAge">;
 export type GoalFigure = "current" | "target" | "to-go" | "lands" | "needed" | "spending";
-export type HomeFigure = "cash" | "salary" | "income-tax" | "gains-tax" | "max-price" | "lender-max" | "lender-income" | RentVsBuyFigure;
+/** `max-monthly`: housing a month at the most you can afford; `take-home`: salary after income tax, a year; `spending`: today's typical month outside housing. */
+export type HomeFigure = "cash" | "salary" | "income-tax" | "gains-tax" | "max-price" | "max-monthly" | "take-home" | "spending" | "gain" | "lender-max" | "lender-income" | RentVsBuyFigure;
 export type TaxFigure = "bonus-expected" | "projected-gross";
 
 export type PlanningDescriptor =
@@ -102,11 +107,11 @@ export type PlanningDescriptor =
   /** The annual statement's whole-year estimate for the year in progress: one line (estimateFigures' id). */
   | { report: "planning"; page: "annual-estimate"; line: string };
 
-const FIRE_FIGURES: FireFigure[] = ["fire-number", "lean-number", "fat-number", "coast-number", "fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "years-saved", "runway", "progress", "milestone", "plan-cell", "access", "stress"];
+const FIRE_FIGURES: FireFigure[] = ["fire-number", "lean-number", "fat-number", "coast-number", "fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "income", "years-saved", "liquid-share", "runway", "progress", "milestone", "plan-cell", "access", "stress"];
 const ACCESS_FIGURES: AccessFigure[] = ["liquid", "illiquid", "liquid-out", "access-year"];
 const STRESS_FIGURES: StressFigure[] = ["p50", "p10", "p90", "by-fi"];
 const GOAL_FIGURES: GoalFigure[] = ["current", "target", "to-go", "lands", "needed", "spending"];
-const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "lender-max", "lender-income", ...RENT_VS_BUY_FIGURES];
+const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "max-monthly", "take-home", "spending", "gain", "lender-max", "lender-income", ...RENT_VS_BUY_FIGURES];
 const TAX_FIGURES: TaxFigure[] = ["bonus-expected", "projected-gross"];
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -594,7 +599,39 @@ function savingsRateProof(c: FireCtx): Built {
   };
 }
 
-function ratioOfNowProof(c: FireCtx, which: "years-saved" | "runway" | "progress"): Built {
+/** Year one's take-home from base pay and employer money: base salary × the share kept after tax, plus the employer's 401(k)/HSA money (firstYearIncome). */
+function incomeProof(c: FireCtx): Built {
+  const plan = c.fa.plan;
+  const takeHome = Math.round(plan.salary * plan.takeHomeRate);
+  const income = firstYearIncome(plan);
+  const { checks, withheld } = forecastChecks(c);
+  return {
+    describes: "Take-home from base pay plus employer money, the plan's first year",
+    figure: { cents: income },
+    selfCheck: sumCheck(income, takeHome + plan.employerMatch, `Take-home and employer money add up to ${money(takeHome + plan.employerMatch)}`),
+    blocks: [
+      {
+        kind: "chain",
+        title: "Year one's income from pay",
+        lines: [
+          { label: "Household base salary", value: { cents: plan.salary }, source: "derived", link: seedLink("Kept after tax", { report: "forecast", figure: "seed", which: "take-home" }) },
+          { op: "×", label: "Kept after tax", value: { ratio: plan.takeHomeRate }, source: c.f.pay.rateTyped ? "assumption" : "derived", link: seedLink("Kept after tax", { report: "forecast", figure: "seed", which: "take-home" }) },
+          { op: "=", label: "Take-home from base pay", value: { cents: takeHome }, source: "derived" },
+          { op: "+", label: "Employer 401(k) and HSA money", value: { cents: plan.employerMatch }, source: c.f.pay.employerTyped ? "assumption" : "derived", link: seedLink("Employer money", { report: "forecast", figure: "seed", which: "employer" }) },
+          { op: "=", label: "Income the savings-rate chart runs on", value: { cents: income }, source: "derived" },
+        ],
+        note: "Bonuses stay as set: each point of the chart changes only living cost.",
+      },
+      driversBlock(c),
+    ],
+    checks,
+    withheld,
+    estimates: [],
+    through: c.seeds.start.asOf,
+  };
+}
+
+function ratioOfNowProof(c: FireCtx, which: "years-saved" | "runway" | "progress" | "liquid-share"): Built {
   const { now } = c.fa;
   const { checks, withheld } = forecastChecks(c);
   const liquid: ChainLine = { label: `Liquid money at the end of ${c.seeds.start.asOf}`, value: { cents: now.liquid }, source: "proven", note: "Cash and taxable investments, less card balances.", link: START };
@@ -603,12 +640,15 @@ function ratioOfNowProof(c: FireCtx, which: "years-saved" | "runway" | "progress
       ? [startLine(c), livingLine(c, "÷"), now.yearsOfSpending, "Years of spending saved"]
       : which === "runway"
         ? [liquid, livingLine(c, "÷"), now.liquidYears, "Runway (liquid)"]
-        : [startLine(c), { op: "÷" as const, label: "FIRE number", value: { cents: now.fireNumber }, source: "derived" as const, link: fireLink(c, "FIRE number", "fire-number") }, now.progress, "Progress to financial independence"];
+        : which === "liquid-share"
+          ? [liquid, startLine(c, "÷"), now.liquid / Math.max(1, now.netWorth), "Share of net worth that is liquid"]
+          : [startLine(c), { op: "÷" as const, label: "FIRE number", value: { cents: now.fireNumber }, source: "derived" as const, link: fireLink(c, "FIRE number", "fire-number") }, now.progress, "Progress to financial independence"];
+  const ratio = which === "progress" || which === "liquid-share";
   return {
     describes: word,
-    figure: which === "progress" ? { ratio: value } : { text: value.toFixed(1) },
+    figure: ratio ? { ratio: value } : { text: value.toFixed(1) },
     selfCheck: null,
-    blocks: [{ kind: "chain", title: word, lines: [top, bottom, { op: "=", label: word, value: which === "progress" ? { ratio: value } : { text: value.toFixed(2) }, source: "derived" }] }],
+    blocks: [{ kind: "chain", title: word, lines: [top, bottom, { op: "=", label: word, value: ratio ? { ratio: value } : { text: value.toFixed(2) }, source: "derived" }] }],
     checks,
     withheld,
     estimates: [],
@@ -827,9 +867,12 @@ function buildFire(c: FireCtx, d: Extract<PlanningDescriptor, { page: "fire" }>)
       return coastYearProof(c);
     case "savings-rate":
       return savingsRateProof(c);
+    case "income":
+      return incomeProof(c);
     case "years-saved":
     case "runway":
     case "progress":
+    case "liquid-share":
       return ratioOfNowProof(c, d.figure);
     case "milestone":
       return milestoneProof(c, d.milestone!);
@@ -1316,6 +1359,119 @@ function homeMaxProof(c: HomeCtx, lender: boolean): Built {
   };
 }
 
+/** Housing a month at the most you can afford: the limit's share of gross pay, cost by cost at that price (as the page's headline). */
+function homeMonthlyProof(c: HomeCtx): Built {
+  const { L } = c;
+  const ins = L.ins;
+  const max = computeMaxApproval(ins);
+  const at = computeBudgetScenario({ ...ins, budgetHomePrice: max.impliedMaxHomeValue, budgetDownPaymentPct: max.downPaymentPctOfHome });
+  const totalC = cents(at.monthlyTotalHousing);
+  const parts: [string, number][] = [
+    ["Mortgage (principal and interest)", at.monthlyMortgagePayment],
+    ["Property tax", at.monthlyPropertyTax],
+    ["Insurance", at.monthlyInsurance],
+    ["Maintenance", at.monthlyMaintenance],
+    ["Utilities", at.monthlyUtilities],
+    ["HOA", at.monthlyHoa],
+    ["Mortgage insurance", at.monthlyMortgageInsurance],
+  ];
+  const lines: ChainLine[] = parts.filter(([, v]) => v).map(([label, v], i) => ({ ...(i ? { op: "+" as const } : {}), label, value: { cents: cents(v) }, source: "derived" as const }));
+  // Each cost rounded to the cent; the mortgage line takes the rounding so the lines re-add to the total.
+  const rest = lines.slice(1).reduce((t, l) => t + ("cents" in l.value ? l.value.cents : 0), 0);
+  if (lines[0]) lines[0] = { ...lines[0], value: { cents: totalC - rest } };
+  lines.push({ op: "=", label: "Housing a month, all-in", value: { cents: totalC }, source: "derived" });
+  const { checks, withheld } = homeChecks(c);
+  return {
+    describes: "Housing a month at the most you can afford",
+    figure: { cents: totalC },
+    selfCheck: null,
+    blocks: [
+      { kind: "chain", title: "At the most you can afford, every month", lines, note: "The price is solved so this is your housing limit's share of gross pay." },
+      { kind: "chain", title: "The limit it fills", lines: [{ label: "Household salary a year", value: { cents: cents(ins.annualHouseholdSalary) }, source: L.buy.salaryLinked ? "derived" : "assumption", link: homeLink(c, "Household salary", "salary") }, { op: "÷", label: "Months", value: { text: "12" }, source: "derived" }, { op: "×", label: "Your housing limit (% of gross)", value: { ratio: ins.housingCostMaxOfGross }, source: "assumption" }, { op: "=", label: "Housing a month at the limit", value: { cents: cents(max.maxHousingBudgetMonthly) }, source: "derived" }] },
+    ],
+    checks,
+    withheld: withheld || (L.linked && c.fb.blockers.length > 0),
+    estimates: L.buy.key && c.b ? [projectionEstimate(c.b)] : [],
+    through: c.fb.asOf,
+  };
+}
+
+/** Salary after income tax, a year: what the headline's share of take-home divides by. */
+function homeTakeHomeProof(c: HomeCtx): Built {
+  const ins = c.L.ins;
+  const salaryC = cents(ins.annualHouseholdSalary);
+  const takeHomeC = cents(ins.annualHouseholdSalary * (1 - ins.incomeTaxRate));
+  return {
+    describes: "Household salary after income tax, a year",
+    figure: { cents: takeHomeC },
+    selfCheck: null,
+    blocks: [
+      {
+        kind: "chain",
+        title: "Take-home",
+        lines: [
+          { label: "Household salary", value: { cents: salaryC }, source: c.L.buy.salaryLinked ? "derived" : "assumption", link: homeLink(c, "Household salary", "salary") },
+          { op: "×", label: "1 − income tax (federal, Connecticut and payroll)", value: { ratio: 1 - ins.incomeTaxRate }, source: c.L.tax.income.linked ? "derived" : "assumption", link: homeLink(c, "Income tax rate", "income-tax") },
+          { op: "=", label: "Take-home a year", value: { cents: takeHomeC }, source: "derived" },
+        ],
+      },
+    ],
+    estimates: [],
+    through: c.fb.asOf,
+  };
+}
+
+/** The long-term gain the engine's capital-gains rate is priced on (at least $50,000): the taxable investments' growth, as the Cash for the home proof works it out. */
+function homeGainProof(c: HomeCtx): Built {
+  const g = c.L.tax.gains.gain;
+  const priced = cents(Math.max(50_000, g));
+  return {
+    describes: "The gain the capital-gains tax rate is priced on",
+    figure: { cents: priced },
+    selfCheck: null,
+    blocks: [
+      {
+        kind: "chain",
+        title: "Gain",
+        lines: [
+          { label: "Growth in taxable investments since their first statements, plus what the forecast earns by the buy month", value: { cents: cents(g) }, source: "derived", link: homeLink(c, "Cash for the home", "cash") },
+          ...(g < 50_000 ? [{ label: "Priced at least at", value: { cents: 5_000_000 }, source: "assumption" as const, note: "Too small a gain would price the rate on a sliver of a bracket." }] : []),
+        ],
+      },
+    ],
+    estimates: [],
+    through: c.fb.asOf,
+  };
+}
+
+/** Today's typical month of spending outside housing (book/reports/homeFunds.ts buildHomeSpending): the real-spend check beside what a price leaves. */
+function homeSpendingProof(c: HomeCtx): Built {
+  const s = c.fb.spending;
+  if (!s) return notFound("No proven month of spending yet.");
+  const { checks, withheld } = checksFor(c.book, { affects: "CASH_FLOW", from: s.from, to: s.to }, CASH_FLOW_CHECKS);
+  return {
+    describes: "Today's typical month of spending, housing and utilities left out",
+    figure: { cents: s.monthlyCents },
+    selfCheck: null,
+    blocks: [
+      {
+        kind: "chain",
+        title: `The typical month, ${s.from} to ${s.to}`,
+        lines: [
+          { label: "Typical month of living cost, one-offs out", value: { cents: s.monthlyCents + s.housingMonthlyCents }, source: "proven" },
+          { op: "−", label: "Housing and utilities (the home's all-in cost takes their place)", value: { cents: s.housingMonthlyCents }, source: "proven" },
+          { op: "=", label: "Outside housing", value: { cents: s.monthlyCents }, source: "derived" },
+        ],
+        note: `The last ${s.months} months, as Goals and the forecast read living cost.`,
+      },
+    ],
+    checks,
+    withheld,
+    estimates: [],
+    through: s.to,
+  };
+}
+
 function lenderIncomeProof(c: HomeCtx): Built {
   const { L } = c;
   const salary: ChainLine = { label: "Household salary", value: { cents: cents(L.ins.annualHouseholdSalary) }, source: L.buy.salaryLinked ? "derived" : "assumption", link: homeLink(c, "Household salary", "salary") };
@@ -1431,6 +1587,14 @@ function buildHome(c: HomeCtx): Built {
       return homeMaxProof(c, true);
     case "lender-income":
       return lenderIncomeProof(c);
+    case "max-monthly":
+      return homeMonthlyProof(c);
+    case "take-home":
+      return homeTakeHomeProof(c);
+    case "spending":
+      return homeSpendingProof(c);
+    case "gain":
+      return homeGainProof(c);
   }
 }
 

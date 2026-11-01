@@ -3,8 +3,10 @@
 import { Segmented } from "@/components/ui/kit";
 import type { FireAnalysis } from "@/lib/fire/fire";
 import type { FireFigure, FireSettings } from "@/lib/book/proof/planningProof";
-import type { ProofRef, ProofTarget } from "@/components/ui/proof/context";
+import { compositeOf, sumOf, unswept, type ProofRef } from "@/components/ui/proof/context";
 import { noFigure } from "@/lib/book/proof/clearance";
+import type { OutlookSeeds, ResolvedBasePay } from "@/lib/profile/basePay";
+import type { OutlookAssumptions } from "@/lib/profile/settings";
 import { planValue, type AccessFigure, type PlanCellValue, type StressFigure } from "@/lib/fire/longTerm";
 import { formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import type { OutlookPlan } from "@/lib/profile/outlook";
@@ -54,21 +56,49 @@ export const yearsFrom = (year: number | null | undefined, plan: OutlookPlan) =>
   return n <= 0 ? "already there" : `in ${n} year${n === 1 ? "" : "s"}`;
 };
 
-export type FireProps = { f: FireAnalysis; dollars: Dollars; setDollars: (d: Dollars) => void };
+export type FireProps = { f: FireAnalysis; dollars: Dollars; setDollars: (d: Dollars) => void; d: FireData };
 
-/** A FIRE figure's proof ("planning" kind), on the settings as the page has them. */
-export type FireProof = (figure: FireFigure, shownCents: number | null, milestone?: string) => ProofTarget;
+/** Why every FIRE figure is withheld while the settings differ from the saved ones: the sweep proves the saved plan only. */
+const UNSAVED = "the settings have unsaved edits: save them to have these proven";
+
+/** A FIRE figure's proof ("planning" kind), on the saved settings; withheld while they have unsaved edits. */
+export type FireProof = (figure: FireFigure, shownCents: number | null, milestone?: string) => ProofRef;
 export const fireProof =
-  (fire: FireSettings): FireProof =>
-  (figure, shownCents, milestone) => ({ descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, shownCents });
+  (fire: FireSettings, dirty = false): FireProof =>
+  (figure, shownCents, milestone) => (dirty ? unswept(UNSAVED) : { descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, shownCents });
+
+/**
+ * The owner's own numbers the plan starts from, each its forecast seed proof: starting net
+ * worth, household base salary (each person's pay), the share kept after tax, living cost.
+ * Null where it was typed on the Forecast page instead (a labelled assumption, not data).
+ */
+export type FireData = { start: ProofRef; salary: ProofRef | null; keep: ProofRef | null; living: ProofRef | null };
+export function fireData(s: OutlookSeeds, a: OutlookAssumptions, pay: ResolvedBasePay): FireData {
+  const seed = s.living[a.livingBasis];
+  return {
+    start: { descriptor: { report: "forecast", figure: "seed", which: "start" }, shownCents: s.start.liquid + s.start.illiquid },
+    salary: pay.people.some((p) => p.salaryTyped)
+      ? null
+      : sumOf(
+          pay.people.map((p) => ({ descriptor: { report: "forecast", figure: "seed", which: "pay", personId: p.personId, paycheck: p.basis }, shownCents: p.salary })),
+          pay.salary,
+        ),
+    keep: pay.rateTyped ? null : { descriptor: { report: "forecast", figure: "seed", which: "take-home", paycheck: Object.fromEntries(pay.people.map((p) => [p.personId, p.basis])) }, shownCents: null, shown: { ratio: pay.computedRate } },
+    living: pay.living.typed || !seed ? null : { descriptor: { report: "forecast", figure: "seed", which: "living", basis: a.livingBasis }, shownCents: seed.cents },
+  };
+}
+
+/** Living cost times a share (Lean FIRE's 70%), a composite of the living-cost seed; null when living cost was typed. */
+export const livingTimes = (d: FireData, share: number, cents: number): ProofRef | null => (d.living ? compositeOf("times", [d.living], { cents: Math.round(cents) }, undefined, share) : null);
 
 /** Which FIRE › Plan or Stress test figure: a long-term table cell, a bridge tile, a stress tile. */
 export type FirePlanFigure = { figure: "plan-cell"; row: string; col: string } | { figure: "access"; metric: AccessFigure } | { figure: "stress"; metric: StressFigure; volatility: number };
 /** A FIRE › Plan or Stress test figure's proof, on the settings as the page has them; a dash (no value) is no figure. */
 export type FirePlanProof = (which: FirePlanFigure, v: PlanCellValue) => ProofRef;
 export const firePlanProof =
-  (fire: FireSettings): FirePlanProof =>
+  (fire: FireSettings, dirty = false): FirePlanProof =>
   (which, v) => {
+    if (dirty) return unswept(UNSAVED);
     const value = planValue(v);
     if (!value) return noFigure("nothing that year");
     return { descriptor: { report: "planning", page: "fire", fire, ...which }, shownCents: "cents" in value ? value.cents : null, ...("cents" in value ? {} : { shown: value }) };

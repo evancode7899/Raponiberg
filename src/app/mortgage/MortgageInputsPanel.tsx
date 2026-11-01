@@ -4,7 +4,9 @@ import { Group } from "@/app/home-budget/parts";
 import { fmtValue, RangeSlider } from "@/app/home-budget/RangeSlider";
 import { LINKED_KEYS, type LinkedKey } from "@/lib/mortgage/inputs";
 import type { MortgageLinks } from "./MortgageClient";
-import { btn, Card, MoneyInput, Segmented, selectCls } from "@/components/ui/kit";
+import { btn, Card, MoneyInput, NotFigure, Segmented, selectCls, WhatIf } from "@/components/ui/kit";
+import type { ProofRef } from "@/components/ui/proof/context";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatUsd } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
 import { defaultInputs, fromHomeBudget, MONTHS, SPECS, type LumpRow, type MortgageInputs } from "./inputs";
@@ -17,7 +19,7 @@ function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2);
 }
 
-function Toggle<T extends string>({ label, hint, value, options, onChange }: { label: string; hint?: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+function Toggle<T extends string>({ label, hint, value, options, onChange }: { label: string; hint?: string; value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void }) {
   return (
     <div className="flex items-center justify-between gap-2 py-2">
       <span title={hint} className={`text-xs font-medium text-fg-2 ${hint ? "cursor-help underline decoration-line-strong decoration-dotted underline-offset-2" : ""}`}>
@@ -32,6 +34,7 @@ export function MortgageInputsPanel({
   ins,
   typed,
   links,
+  year,
   set,
   payment,
   onReset,
@@ -41,6 +44,8 @@ export function MortgageInputsPanel({
   /** Linked inputs the owner typed over. */
   typed: Partial<Record<LinkedKey, true>>;
   links: MortgageLinks;
+  /** The tax year the links read, which their proofs name. */
+  year: number | null;
   set: (p: Partial<MortgageInputs>) => void;
   payment: number;
   onReset: () => void;
@@ -51,7 +56,17 @@ export function MortgageInputsPanel({
     if (!isLinked(k)) return null;
     const l = links[k];
     if (!l) return null;
-    const shown = fmtValue(l.value, SPECS[k].unit, "digits" in SPECS[k] ? (SPECS[k] as { digits: number }).digits : 1);
+    const text = fmtValue(l.value, SPECS[k].unit, "digits" in SPECS[k] ? (SPECS[k] as { digits: number }).digits : 1);
+    // The tax engine's figures open their proofs; the Forecast's return and inflation are settings, the standard deduction is law.
+    const proof: ProofRef | null =
+      year == null
+        ? null
+        : k === "fedMarginalRate"
+          ? { descriptor: { report: "derived", page: "taxes", figure: "marginal-federal", key: String(year) }, shownCents: null, shown: { ratio: l.value } }
+          : k === "stateIncomeTax"
+            ? { descriptor: { report: "tax-estimate", year, basis: "projected", key: "ct.totalTax" }, shownCents: null }
+            : null;
+    const shown = proof ? <ProofValue proof={proof}>{text}</ProofValue> : <NotFigure why={k === "standardDeduction" ? "set by law" : "your setting (Forecast)"}>{text}</NotFigure>;
     if (!typed[k]) return <span>Linked: {l.from} ({shown}).</span>;
     return (
       <span>
@@ -90,7 +105,11 @@ export function MortgageInputsPanel({
     <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-14 lg:max-h-[calc(100vh-4.5rem)] lg:self-start lg:overflow-y-auto">
       <Card
         title="The loan"
-        subtitle={`Principal & interest ${formatUsd(payment)} a month.`}
+        subtitle={
+          <WhatIf inline why="the payment on the loan you typed">
+            Principal &amp; interest {formatUsd(payment)} a month.
+          </WhatIf>
+        }
         actions={
           <button type="button" className={btn.ghost} onClick={homeBudget} title="Loan amount, rate, term, return and property tax from the Home budget page's Test a price scenario">
             Use home budget
@@ -247,9 +266,9 @@ export function MortgageInputsPanel({
               hint="Interest on the balance above this isn't deductible."
               value={String(ins.debtCap)}
               options={[
-                { value: "750000", label: "$750k" },
-                { value: "375000", label: "$375k MFS" },
-                { value: "1000000", label: "$1M pre-2018" },
+                { value: "750000", label: <NotFigure why="set by law">$750k</NotFigure> },
+                { value: "375000", label: <NotFigure why="set by law">$375k MFS</NotFigure> },
+                { value: "1000000", label: <NotFigure why="set by law">$1M pre-2018</NotFigure> },
               ]}
               onChange={(v) => set({ debtCap: Number(v) })}
             />

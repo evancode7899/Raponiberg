@@ -18,7 +18,7 @@ import { OverviewTab } from "./OverviewTab";
 import { PlanTab } from "./PlanTab";
 import { PlaybookTab } from "./PlaybookTab";
 import { StressTab } from "./StressTab";
-import { fireProof, firePlanProof, type Dollars } from "./ui";
+import { fireData, fireProof, firePlanProof, type Dollars } from "./ui";
 import { WalkAwayTab } from "./WalkAwayTab";
 
 const TABS = ["overview", "plan", "walk-away", "levers", "stress", "playbook"] as const;
@@ -140,10 +140,12 @@ function Fire({
   };
 
   const fireSettings = { walkAwayYear: a.walkAwayYear, withdrawalRate: a.withdrawalRate, stateTaxRate: a.stateTaxRate, retirementAge: a.retirementAge };
-  const pf = fireProof(fireSettings);
-  const pp = firePlanProof(fireSettings);
-  if (tab === "playbook") return <PlaybookTab f={f} />;
-  const props = { f, dollars, setDollars };
+  // On the saved settings only: unsaved edits make figures no sweep has seen, so they wait for Save.
+  const pf = fireProof(fireSettings, dirty);
+  const pp = firePlanProof(fireSettings, dirty);
+  const d = fireData(s, a, pay);
+  if (tab === "playbook") return <PlaybookTab f={f} pf={pf} d={d} />;
+  const props = { f, dollars, setDollars, d };
   const header = (
     <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5">
       <span className="text-[13px] font-semibold text-fg">FIRE settings</span>
@@ -173,7 +175,7 @@ function Fire({
 
   return (
     <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-      <FireInputs s={s} a={a} set={set} f={forecast} header={header} />
+      <FireInputs s={s} a={a} set={set} f={forecast} header={header} d={d} />
       <div className="flex min-w-0 flex-col gap-4">
         {tab === "overview" ? (
           <OverviewTab {...props} pf={pf} r={r} s={s} livingLabel={pay.living.typed ? "typed in" : (pay.living.seed?.label ?? "")} livingTyped={pay.living.typed} onGo={setTab} />
@@ -182,7 +184,7 @@ function Fire({
         ) : tab === "walk-away" ? (
           <WalkAwayTab {...props} walkBase={walkBase} />
         ) : tab === "levers" ? (
-          <LeversTab {...props} />
+          <LeversTab {...props} pf={pf} />
         ) : (
           <StressTab {...props} volatility={a.volatility} proof={pp} />
         )}

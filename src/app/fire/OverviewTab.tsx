@@ -2,8 +2,9 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { btn, Callout, Card, StatCell, StatGrid } from "@/components/ui/kit";
+import { btn, Callout, Card, NotFigure, StatCell, StatGrid, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { compositeOf, sumOf, unswept } from "@/components/ui/proof/context";
 import { FAT_SHARE, fireNumber, fiYear, LEAN_SHARE, livingIn, type FireRow } from "@/lib/fire/fire";
 import type { FireFigure } from "@/lib/book/proof/planningProof";
 import { axisUsd } from "@/lib/formatMoney";
@@ -14,13 +15,22 @@ import type { FireTab } from "./FireClient";
 import Link from "next/link";
 import { Fragment, useMemo, type ReactNode } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { deflator, DollarsToggle, pct, short, tipUsd, usd, yearAge, yearsFrom, type FireProof, type FireProps } from "./ui";
+import { deflator, DollarsToggle, livingTimes, pct, short, tipUsd, usd, yearAge, yearsFrom, type FireData, type FireProof, type FireProps } from "./ui";
+
+/** Living cost as the plan has it: its seed proof, or what you typed on the Forecast page. */
+export function Living({ d, children }: { d: FireData; children: ReactNode }) {
+  return d.living ? <ProofValue proof={d.living}>{children}</ProofValue> : <NotFigure why="your input (Forecast)">{children}</NotFigure>;
+}
+
+/** A setting you chose (a rate, a growth): an assumption, not data. */
+export const Setting = ({ children }: { children: ReactNode }) => <NotFigure why="your setting">{children}</NotFigure>;
 
 type Tab = FireTab;
 
 export function OverviewTab({
   f,
   pf,
+  d,
   dollars,
   setDollars,
   r,
@@ -33,9 +43,18 @@ export function OverviewTab({
   const fiIn = f.fi ? f.fi.year - plan.start.year : null;
   return (
     <>
-      <Progress f={f} pf={pf} />
+      <Progress f={f} pf={pf} d={d} />
       <StatGrid cols={3}>
-        <StatCell label="FIRE number" value={short(now.fireNumber)} proof={pf("fire-number", now.fireNumber)} sub={`${now.multiple.toFixed(1)}× living cost of ${short(now.livingCost)}`} />
+        <StatCell
+          label="FIRE number"
+          value={short(now.fireNumber)}
+          proof={pf("fire-number", now.fireNumber)}
+          sub={
+            <>
+              {now.multiple.toFixed(1)}× living cost of <Living d={d}>{short(now.livingCost)}</Living>
+            </>
+          }
+        />
         <StatCell
           label="Financially independent"
           value={f.fi ? String(f.fi.year) : "Not in 60 yrs"}
@@ -49,7 +68,16 @@ export function OverviewTab({
           }
         />
         <StatCell label="Planned savings rate" value={pct(f.savingsRate, 0)} proof={pf("savings-rate", null)} sub="of take-home + employer money, this year's plan" />
-        <StatCell label="Years of spending saved" value={now.yearsOfSpending.toFixed(1)} proof={pf("years-saved", null)} sub={`net worth ÷ ${short(now.livingCost)} a year`} />
+        <StatCell
+          label="Years of spending saved"
+          value={now.yearsOfSpending.toFixed(1)}
+          proof={pf("years-saved", null)}
+          sub={
+            <>
+              net worth ÷ <Living d={d}>{short(now.livingCost)}</Living> a year
+            </>
+          }
+        />
         <StatCell label="Runway (liquid)" value={`${now.liquidYears.toFixed(1)} yrs`} proof={pf("runway", null)} sub="taxable money ÷ a year's living cost" />
         <StatCell
           label="Coast FIRE"
@@ -60,21 +88,21 @@ export function OverviewTab({
       </StatGrid>
       <Insights f={f} onGo={onGo} />
       <TargetChart f={f} r={r} dollars={dollars} setDollars={setDollars} />
-      <Flavors f={f} pf={pf} />
+      <Flavors f={f} pf={pf} d={d} />
       <Milestones f={f} pf={pf} />
-      <OneOffsNote f={f} r={r} s={s} livingLabel={livingLabel} livingTyped={livingTyped} />
+      <OneOffsNote f={f} r={r} s={s} d={d} livingLabel={livingLabel} livingTyped={livingTyped} />
     </>
   );
 }
 
-function Progress({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
+function Progress({ f, pf, d }: { f: FireProps["f"]; pf: FireProof; d: FireData }) {
   const { now } = f;
   const max = Math.max(now.fatNumber, now.netWorth) * 1.04;
   const at = (v: number) => `${Math.min(100, (v / max) * 100)}%`;
   const marks = [
-    { v: now.leanNumber, label: "Lean" },
-    { v: now.fireNumber, label: "FIRE" },
-    { v: now.fatNumber, label: "Fat" },
+    { v: now.leanNumber, label: "Lean", figure: "lean-number" as const },
+    { v: now.fireNumber, label: "FIRE", figure: "fire-number" as const },
+    { v: now.fatNumber, label: "Fat", figure: "fat-number" as const },
   ];
   return (
     <Card>
@@ -86,13 +114,23 @@ function Progress({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
           </div>
         </div>
         <div className="text-right text-xs text-muted">
-          <span className="num font-medium text-fg">{usd(now.netWorth)}</span> net worth ({now.asOf}) of a{" "}
+          <span className="num font-medium text-fg">
+            <ProofValue proof={d.start}>{usd(now.netWorth)}</ProofValue>
+          </span>{" "}
+          net worth ({now.asOf}) of a{" "}
           <span className="num font-medium text-fg">
             <ProofValue proof={pf("fire-number", now.fireNumber)}>{usd(now.fireNumber)}</ProofValue>
           </span>{" "}
           FIRE number
           <br />
-          {now.netWorth >= now.fireNumber ? "You're there — your money can cover your living cost." : `${usd(now.fireNumber - now.netWorth)} to go in today's terms`}
+          {now.netWorth >= now.fireNumber ? (
+            "You're there — your money can cover your living cost."
+          ) : (
+            <>
+              <ProofValue proof={compositeOf("diff", [pf("fire-number", now.fireNumber), d.start], { cents: now.fireNumber - now.netWorth })}>{usd(now.fireNumber - now.netWorth)}</ProofValue> to go in
+              today&apos;s terms
+            </>
+          )}
         </div>
       </div>
       <div className="relative mt-6 mb-5 h-3 rounded-full bg-surface-3" role="meter" aria-valuenow={Math.round(now.progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Progress to FI">
@@ -100,7 +138,9 @@ function Progress({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
         {marks.map((m) => (
           <div key={m.label} className="absolute -top-1.5 h-6 w-0.5 bg-fg-2" style={{ left: at(m.v) }} title={`${m.label} FIRE: ${usd(m.v)}`}>
             <span className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium text-fg-2">{m.label}</span>
-            <span className="num absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted">{short(m.v)}</span>
+            <span className="num absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted">
+              <ProofValue proof={pf(m.figure, m.v)}>{short(m.v)}</ProofValue>
+            </span>
           </div>
         ))}
       </div>
@@ -110,16 +150,20 @@ function Progress({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
 
 function Insights({ f, onGo }: { f: FireProps["f"]; onGo: (t: Tab) => void }) {
   const { plan } = f;
-  const items: { tone: "info" | "warn" | "good"; title: string; body: ReactNode; action?: ReactNode }[] = [];
+  const items: { tone: "info" | "warn" | "good"; title: ReactNode; body: ReactNode; action?: ReactNode }[] = [];
   const creep = plan.livingGrowth - plan.inflation;
   const creepFi = useMemo(() => (creep > 0.0001 ? fiYear({ ...plan, livingGrowth: plan.inflation }) : null), [plan, creep]);
   if (creep > 0.0001) {
     items.push({
       tone: "info",
-      title: `Spending grows ${pct(creep)} a year faster than inflation`,
+      title: <Setting>{`Spending grows ${pct(creep)} a year faster than inflation`}</Setting>,
       body: (
         <>
-          That&apos;s lifestyle creep compounding: living cost reaches {short(livingIn(plan, plan.start.year + 10))} in ten years. If spending only kept pace with inflation, FI would come in{" "}
+          That&apos;s lifestyle creep compounding: living cost reaches{" "}
+          <WhatIf inline why="living cost ten years out at your growth setting">
+            {short(livingIn(plan, plan.start.year + 10))}
+          </WhatIf>{" "}
+          in ten years. If spending only kept pace with inflation, FI would come in{" "}
           <strong>{creepFi ?? "more than 60 years"}</strong>
           {f.fi && creepFi ? ` instead of ${f.fi.year}` : ""}.
         </>
@@ -136,7 +180,13 @@ function Insights({ f, onGo }: { f: FireProps["f"]; onGo: (t: Tab) => void }) {
     items.push({
       tone: "warn",
       title: `Walking away in ${plan.walkAwayYear} is before financial independence`,
-      body: row ? `Walk-away income would cover ${pct(row.coverage, 0)} of that year's living cost — about ${usd(row.gapMonthly)} a month short.` : "",
+      body: row ? (
+        <WhatIf inline why="the walk-away year's row of the walk-away income table">
+          Walk-away income would cover {pct(row.coverage, 0)} of that year&apos;s living cost — about {usd(row.gapMonthly)} a month short.
+        </WhatIf>
+      ) : (
+        ""
+      ),
       action: (
         <button type="button" className={btn.secondary} onClick={() => onGo("walk-away")}>
           Walk-away income
@@ -160,8 +210,8 @@ function Insights({ f, onGo }: { f: FireProps["f"]; onGo: (t: Tab) => void }) {
   if (!items.length) return null;
   return (
     <div className="flex flex-col gap-2">
-      {items.map((i) => (
-        <Callout key={i.title} tone={i.tone} title={i.title} action={i.action}>
+      {items.map((i, k) => (
+        <Callout key={k} tone={i.tone} title={i.title} action={i.action}>
           {i.body}
         </Callout>
       ))}
@@ -170,12 +220,15 @@ function Insights({ f, onGo }: { f: FireProps["f"]; onGo: (t: Tab) => void }) {
 }
 
 /** A quiet note at the foot of the page: the base year's large charges not yet marked one-off may be inflating living cost. */
-function OneOffsNote({ f, r, s, livingLabel, livingTyped }: { f: FireProps["f"]; r: AnnualProfileReport; s: OutlookSeeds; livingLabel: string; livingTyped: boolean }) {
+function OneOffsNote({ f, r, s, d, livingLabel, livingTyped }: { f: FireProps["f"]; r: AnnualProfileReport; s: OutlookSeeds; d: FireData; livingLabel: string; livingTyped: boolean }) {
   const { plan } = f;
   const base = r.years.find((y) => y.year === s.baseYear);
   const untagged = base?.oneOffUntagged ?? { count: 0, cents: 0 };
   if (livingTyped || !untagged.count) return null;
   const cents = untagged.cents;
+  // The charges themselves, each its row's proof: the list holds every untagged one when there are few enough to list.
+  const rows = (base?.oneOffCandidates ?? []).filter((c) => !c.tagged);
+  const charges = rows.length === untagged.count ? sumOf(rows.map((c) => ({ descriptor: { report: "row", rowId: c.rowId }, shownCents: -c.cents })), -cents) : unswept("more charges than Annual › One-off expenses lists: see them there");
   return (
     <Callout
       tone="info"
@@ -186,14 +239,17 @@ function OneOffsNote({ f, r, s, livingLabel, livingTyped }: { f: FireProps["f"];
         </Link>
       }
     >
-      The plan starts from {usd(f.now.livingCost)} a year ({livingLabel.toLowerCase()}). {s.baseYear} living expenses include {usd(cents)} in {untagged.count} single charges of $1,500 or more not marked one-off. Each
-      $1,000 a year that won&apos;t recur lowers your FIRE number by about {short(fireNumber(plan, plan.start.year, 1_000_00))}.
+      The plan starts from <Living d={d}>{usd(f.now.livingCost)}</Living> a year ({livingLabel.toLowerCase()}). {s.baseYear} living expenses include <ProofValue proof={charges}>{usd(cents)}</ProofValue> in{" "}
+      {untagged.count} single charges of <NotFigure why="the size Annual reviews one-offs from">$1,500</NotFigure> or more not marked one-off.{" "}
+      <WhatIf inline why="the FIRE number on $1,000 a year of spending">
+        Each $1,000 a year that won&apos;t recur lowers your FIRE number by about {short(fireNumber(plan, plan.start.year, 1_000_00))}.
+      </WhatIf>
     </Callout>
   );
 }
 
 /** Net worth (actual dots, plan line) against the FIRE number it has to reach, on Jan 1 of each year. */
-function TargetChart({ f, r, dollars, setDollars }: FireProps & { r: AnnualProfileReport }) {
+function TargetChart({ f, r, dollars, setDollars }: Omit<FireProps, "d"> & { r: AnnualProfileReport }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const { plan } = f;
@@ -233,7 +289,12 @@ function TargetChart({ f, r, dollars, setDollars }: FireProps & { r: AnnualProfi
   return (
     <Card
       title="Net worth vs. your FIRE number"
-      subtitle={`On Jan 1 of each year. Where the plan line crosses the FIRE number, walk-away income covers living cost. The FIRE number rises with living cost (${pct(plan.livingGrowth)} a year).`}
+      subtitle={
+        <>
+          On Jan 1 of each year. Where the plan line crosses the FIRE number, walk-away income covers living cost. The FIRE number rises with living cost (
+          <Setting>{pct(plan.livingGrowth)}</Setting> a year).
+        </>
+      }
       actions={<DollarsToggle value={dollars} onChange={setDollars} />}
     >
       <div className="h-[340px] w-full min-w-0">
@@ -263,7 +324,9 @@ function TargetChart({ f, r, dollars, setDollars }: FireProps & { r: AnnualProfi
   );
 }
 
-function Flavors({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
+function Flavors({ f, pf, d }: { f: FireProps["f"]; pf: FireProof; d: FireData }) {
+  const lean = Math.round(f.now.livingCost * LEAN_SHARE);
+  const share = (x: number) => <NotFigure why="the FIRE community's definition">{x * 100}%</NotFigure>;
   const { plan, now } = f;
   const card = (title: string, target: string, row: FireRow | null, what: ReactNode, reached: boolean, proofs: Proofs) => (
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-line bg-surface p-3">
@@ -280,7 +343,12 @@ function Flavors({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
     </div>
   );
   const flavors: { title: string; target: string; row: FireRow | null; what: ReactNode; reached: boolean; proofs: Proofs }[] = [
-    { title: "Lean FIRE", proofs: { year: "lean-year", number: "lean-number", cents: now.leanNumber }, target: `${short(now.leanNumber)} today`, row: f.lean, what: `Retire on a leaner budget: ${LEAN_SHARE * 100}% of today's living cost (${short(now.livingCost * LEAN_SHARE)}/yr).`, reached: now.netWorth >= now.leanNumber },
+    { title: "Lean FIRE", proofs: { year: "lean-year", number: "lean-number", cents: now.leanNumber }, target: `${short(now.leanNumber)} today`, row: f.lean, what: (
+        <>
+          Retire on a leaner budget: {share(LEAN_SHARE)} of today&apos;s living cost (
+          {livingTimes(d, LEAN_SHARE, lean) ? <ProofValue proof={livingTimes(d, LEAN_SHARE, lean)!}>{short(lean)}</ProofValue> : <NotFigure why="your input (Forecast)">{short(lean)}</NotFigure>}/yr).
+        </>
+      ), reached: now.netWorth >= now.leanNumber },
     {
       title: "Coast FIRE",
       proofs: { year: "coast-year", number: "coast-number", cents: now.coastNumber },
@@ -292,7 +360,7 @@ function Flavors({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
       reached: now.coastNumber != null && now.netWorth >= now.coastNumber,
     },
     { title: "FIRE", proofs: { year: "fi-year", number: "fire-number", cents: now.fireNumber }, target: `${short(now.fireNumber)} today`, row: f.fi, what: "Walk-away income covers your full living cost, after tax. Work becomes optional.", reached: now.netWorth >= now.fireNumber },
-    { title: "Fat FIRE", proofs: { year: "fat-year", number: "fat-number", cents: now.fatNumber }, target: `${short(now.fatNumber)} today`, row: f.fat, what: `Room to spare: walk-away income covers ${FAT_SHARE * 100}% of living cost — upgrades, travel, a buffer for bad markets.`, reached: now.netWorth >= now.fatNumber },
+    { title: "Fat FIRE", proofs: { year: "fat-year", number: "fat-number", cents: now.fatNumber }, target: `${short(now.fatNumber)} today`, row: f.fat, what: <>Room to spare: walk-away income covers {share(FAT_SHARE)} of living cost — upgrades, travel, a buffer for bad markets.</>, reached: now.netWorth >= now.fatNumber },
   ];
   // Soonest first: reached now, then by year, never-reached last (ties keep the order above).
   const when = (x: (typeof flavors)[number]) => (x.reached ? -Infinity : (x.row?.year ?? Infinity));
@@ -326,14 +394,20 @@ function Milestones({ f, pf }: { f: FireProps["f"]; pf: FireProof }) {
           <li key={m.id} className="relative pb-3 pl-5 last:pb-0">
             <span className={`absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 ${m.reached ? "border-pos bg-pos" : m.year ? "border-accent bg-surface" : "border-line-strong bg-surface"}`} aria-hidden />
             <div className="flex flex-wrap items-baseline gap-x-3">
-              <span className={`text-sm font-medium ${m.reached ? "text-fg" : "text-fg-2"}`}>{m.label}</span>
+              <span className={`text-sm font-medium ${m.reached ? "text-fg" : "text-fg-2"}`}>
+                <NotFigure why="a milestone's mark">{m.label}</NotFigure>
+              </span>
               <span className={`num text-xs ${m.reached ? "text-pos" : "text-muted"}`}>
                 <ProofValue proof={MILESTONE_FIGURE[m.id] ? pf(MILESTONE_FIGURE[m.id]!, null) : pf("milestone", null, m.id)}>
                   {m.reached ? "✓ reached" : m.key ? `${monthLabel(m.year!, Number(m.key.slice(5)))}${m.age != null ? ` (age ${m.age})` : ""} · ${yearsFrom(m.year, plan)}` : m.year ? `Jan 1, ${yearAge(m.year, plan)} · ${yearsFrom(m.year, plan)}` : "not within 60 years"}
                 </ProofValue>
               </span>
             </div>
-            {m.hint && <div className="text-[11px] text-muted">{m.hint}</div>}
+            {m.hint && (
+              <div className="text-[11px] text-muted">
+                <NotFigure why="a milestone's definition">{m.hint}</NotFigure>
+              </div>
+            )}
           </li>
         ))}
       </ol>

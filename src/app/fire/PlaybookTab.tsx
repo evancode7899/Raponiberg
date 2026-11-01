@@ -1,10 +1,12 @@
 "use client";
 
-import { btn, Card } from "@/components/ui/kit";
+import { btn, Card, NotFigure } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { FAT_SHARE, LEAN_SHARE, type FireAnalysis } from "@/lib/fire/fire";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { pct, short, usd } from "./ui";
+import { Living, Setting } from "./OverviewTab";
+import { fireProof, pct, short, usd, type FireData, type FireProof } from "./ui";
 
 type Principle = { id: string; title: string; idea: ReactNode; yours?: ReactNode; link?: { href: string; label: string } };
 
@@ -12,9 +14,10 @@ type Principle = { id: string; title: string; idea: ReactNode; yours?: ReactNode
  * The FIRE movement's core ideas in plain language, each tied to the household's own
  * numbers where the plan is available. Education, not financial advice.
  */
-export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
+export function PlaybookTab({ f, pf = fireProof({ walkAwayYear: null, withdrawalRate: 0, stateTaxRate: null, retirementAge: 0 }, true), d }: { f: FireAnalysis | null; pf?: FireProof; d?: FireData }) {
   const p = f?.plan;
   const n = f?.now;
+  const share = (x: number) => <NotFigure why="the FIRE community's definition">{pct(x, 0)}</NotFigure>;
   const principles: Principle[] = [
     {
       id: "number",
@@ -25,10 +28,13 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
           withdrawal rate. At 3.5% it&apos;s about 28.6×; at 3% it&apos;s 33×. Spending, not income, sets the target.
         </>
       ),
-      yours: n && p && (
+      yours: n && p && d && (
         <>
-          You spend about {short(n.livingCost)} a year. At {pct(p.withdrawalRate)} and after tax, your FIRE number is <strong>{usd(n.fireNumber)}</strong> ({n.multiple.toFixed(1)}× spending)
-          — you&apos;re {pct(n.progress, 0)} of the way there.
+          You spend about <Living d={d}>{short(n.livingCost)}</Living> a year. At <Setting>{pct(p.withdrawalRate)}</Setting> and after tax, your FIRE number is{" "}
+          <strong>
+            <ProofValue proof={pf("fire-number", n.fireNumber)}>{usd(n.fireNumber)}</ProofValue>
+          </strong>{" "}
+          ({n.multiple.toFixed(1)}× spending) — you&apos;re <ProofValue proof={pf("progress", null)}>{pct(n.progress, 0)}</ProofValue> of the way there.
         </>
       ),
     },
@@ -43,7 +49,7 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
       ),
       yours: f && (
         <>
-          This year&apos;s plan saves {pct(f.savingsRate, 0)} of take-home + employer money. The Levers tab plots your years to FI at every savings rate.
+          This year&apos;s plan saves <ProofValue proof={pf("savings-rate", null)}>{pct(f.savingsRate, 0)}</ProofValue> of take-home + employer money. The Levers tab plots your years to FI at every savings rate.
         </>
       ),
     },
@@ -59,7 +65,7 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
       ),
       yours: p && (
         <>
-          You plan to draw {pct(p.withdrawalRate)}. The Levers tab shows how the date moves between 3% and 5%.
+          <NotFigure why="your setting and the Levers tab's range">You plan to draw {pct(p.withdrawalRate)}. The Levers tab shows how the date moves between 3% and 5%.</NotFigure>
         </>
       ),
     },
@@ -74,8 +80,9 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
       ),
       yours: f && n && (
         <>
-          Lean ({pct(LEAN_SHARE, 0)} of spending): {short(n.leanNumber)} · FIRE: {short(n.fireNumber)} · Fat ({pct(FAT_SHARE, 0)}): {short(n.fatNumber)}. Years for each are on the
-          Overview.
+          Lean ({share(LEAN_SHARE)} of spending): <ProofValue proof={pf("lean-number", n.leanNumber)}>{short(n.leanNumber)}</ProofValue> · FIRE:{" "}
+          <ProofValue proof={pf("fire-number", n.fireNumber)}>{short(n.fireNumber)}</ProofValue> · Fat ({share(FAT_SHARE)}): <ProofValue proof={pf("fat-number", n.fatNumber)}>{short(n.fatNumber)}</ProofValue>.
+          Years for each are on the Overview.
         </>
       ),
     },
@@ -104,7 +111,11 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
       ),
       yours: p && (
         <>
-          Today about {pct(p.start.liquid / Math.max(1, p.start.liquid + p.start.illiquid), 0)} of your net worth is liquid. Plan &amp; projection checks whether it lasts until 59½.
+          Today about{" "}
+          <ProofValue proof={pf("liquid-share", null)}>
+            {pct(p.start.liquid / Math.max(1, p.start.liquid + p.start.illiquid), 0)}
+          </ProofValue>{" "}
+          of your net worth is liquid. Plan &amp; projection checks whether it lasts until 59½.
         </>
       ),
     },
@@ -151,8 +162,10 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
       ),
       yours: p && (
         <>
-          Your plan grows living cost {pct(p.livingGrowth)} a year against {pct(p.inflation)} inflation
-          {p.livingGrowth > p.inflation + 1e-9 ? ` — ${pct(p.livingGrowth - p.inflation)} of creep a year. Levers shows what it costs.` : " — no creep."}
+          <Setting>
+            Your plan grows living cost {pct(p.livingGrowth)} a year against {pct(p.inflation)} inflation
+            {p.livingGrowth > p.inflation + 1e-9 ? ` — ${pct(p.livingGrowth - p.inflation)} of creep a year. Levers shows what it costs.` : " — no creep."}
+          </Setting>
         </>
       ),
     },
@@ -194,7 +207,9 @@ export function PlaybookTab({ f }: { f: FireAnalysis | null }) {
       <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         {principles.map((x) => (
           <Card key={x.id} title={x.title}>
-            <p className="text-[13px] leading-relaxed text-fg-2">{x.idea}</p>
+            <p className="text-[13px] leading-relaxed text-fg-2">
+              <NotFigure why="general FIRE guidance, not your data">{x.idea}</NotFigure>
+            </p>
             {x.yours && <p className="mt-2 rounded-md bg-accent-soft px-2.5 py-1.5 text-xs leading-snug text-fg">{x.yours}</p>}
             {x.link && (
               <Link href={x.link.href} className={`${btn.link} mt-2 inline-block`}>
