@@ -172,7 +172,7 @@ CI checks that every number the demo's pages draw is one the proof sweep cleared
 data, on your computer only:
 
 - It starts a second, read-only copy of the app on the last production build (`npm run
-  build` first), on a free port (never 3000), reading your `DATA_DIR` and `DATABASE_URL`
+  build` first: like the demo's audit, it refuses a build older than the code), on a free port (never 3000), reading your `DATA_DIR` and `DATABASE_URL`
   from `.env`. It doesn't re-read statements, move files or back up, the audit refuses every
   write, and it stops only the server it started. The running app is left alone.
 - It gets past the lock screen the way the lock screen does: it reads your password from
