@@ -16,6 +16,8 @@
  *   npm run demo -- --render-audit start the demo on the production build, render every page in a
  *                                  headless browser and hold what it draws to the sweep (CI, SSOT F6;
  *                                  scripts/render-audit.ts): exits 1 on any problem. Takes --sweep too.
+ *   npm run demo -- --render-audit --reuse-data   on the data/demo already there (CI's shards share
+ *                                  one: each seed mints its own record ids, which proof keys carry)
  * DEMO_PORT changes the port (default 3001).
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -115,7 +117,8 @@ async function renderAudit() {
 }
 
 try {
-  buildDemoData();
+  if (!process.argv.includes("--reuse-data")) buildDemoData();
+  else if (!existsSync(DB)) throw new Error(`--reuse-data: no demo database at ${path.relative(ROOT, DB)}.`);
   if (process.argv.includes("--sweep")) {
     node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "proof-sweep.ts")], "The demo's proof sweep");
   }
