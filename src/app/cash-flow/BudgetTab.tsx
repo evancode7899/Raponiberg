@@ -1,8 +1,9 @@
 "use client";
 
 import { Badge, btn, Callout, Card, ErrorNote, Loading, MoneyInput, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { cashFlowDerived, windowKey } from "@/lib/book/derived/cashFlow";
+import { cashFlowDerived, categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
 import { derivedTarget } from "@/lib/book/derived/types";
+import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { BudgetSettings } from "@/lib/budget/settings";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
@@ -10,7 +11,7 @@ import { useEffect, useState } from "react";
 import type { Ctx } from "./CashFlowClient";
 import { categoryCents, median, SPEND_CATEGORIES, totals } from "./model";
 import { Bar, categoryColor, Dot } from "./parts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 const round10 = (cents: number) => Math.round(cents / 1000) * 1000;
 
@@ -80,13 +81,28 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
           label={`${last.label} vs budget`}
           value={hasTargets ? usd0(latestTotal) : "—"}
           tone={hasTargets ? (latestTotal > budgeted ? "neg" : "pos") : "neutral"}
-          sub={hasTargets ? `${latestTotal > budgeted ? "over" : "under"} by ${usd0(Math.abs(budgeted - latestTotal))}` : undefined}
+          sub={
+            hasTargets ? (
+              <>
+                {latestTotal > budgeted ? "over" : "under"} by{" "}
+                <ProofValue proof={compositeOf("diff", [dp("budget-latest", windowKey(slice.months)), dp("budget-monthly")], { cents: latestTotal - budgeted })}>{usd0(Math.abs(budgeted - latestTotal))}</ProofValue>
+              </>
+            ) : undefined
+          }
         />
         <StatCell proof={dp("typical-income", windowKey(slice.months))} label="Typical income" value={usd0(t.typicalIncome)} sub="median month in range" />
         <StatCell proof={dp("budget-savings-rate", windowKey(slice.months))}
           label="Planned savings rate"
           value={hasTargets && t.typicalIncome > 0 ? formatPercentRatio((t.typicalIncome - budgeted) / t.typicalIncome, 0) : "—"}
-          sub={hasTargets ? `${usd0(t.typicalIncome - budgeted)}/mo left of a typical month` : "set targets to see it"}
+          sub={
+            hasTargets ? (
+              <>
+                <ProofValue proof={compositeOf("diff", [dp("typical-income", windowKey(slice.months)), dp("budget-monthly")], { cents: t.typicalIncome - budgeted })}>{usd0(t.typicalIncome - budgeted)}</ProofValue>/mo left of a typical month
+              </>
+            ) : (
+              "set targets to see it"
+            )
+          }
         />
       </StatGrid>
 
@@ -173,7 +189,9 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
                     <td className={`${table.tdR} font-medium`}>
                       <ProofValue proof={ctx.proof("spending", [last], { category: r.c, shownCents: r.latest })}>{usd0(r.latest)}</ProofValue>
                     </td>
-                    <td className={`${table.tdR} text-muted`}>{usd0(r.typical)}</td>
+                    <td className={`${table.tdR} text-muted`}>
+                      <ProofValue proof={r.total > 0 ? dp("category-typical", categoryKey(slice.months, "EXPENSE", r.c)) : noFigure("nothing spent in it in range")}>{usd0(r.typical)}</ProofValue>
+                    </td>
                     <td className={`${table.tdR} text-muted`}>
                       <ProofValue proof={ctx.proof("spending", slice.months, { category: r.c, perMonth: true, shownCents: r.total })}>{usd0(r.avg)}</ProofValue>
                     </td>
@@ -184,12 +202,14 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
               })}
               <tr className={`${table.tr} font-semibold`}>
                 <td className={table.td}>Total</td>
-                <td className={table.tdR}>{hasTargets ? usd0(budgeted) : "—"}</td>
+                <td className={table.tdR}>{hasTargets ? <ProofValue proof={dp("budget-monthly")}>{usd0(budgeted)}</ProofValue> : "—"}</td>
                 <td className={table.td} />
                 <td className={table.tdR}>
                   <ProofValue proof={ctx.proof("spending", [last], { shownCents: last.spendingCents })}>{usd0(last.spendingCents)}</ProofValue>
                 </td>
-                <td className={`${table.tdR} text-muted`}>{usd0(t.typicalSpending)}</td>
+                <td className={`${table.tdR} text-muted`}>
+                  <ProofValue proof={dp("typical-spending", windowKey(slice.months))}>{usd0(t.typicalSpending)}</ProofValue>
+                </td>
                 <td className={`${table.tdR} text-muted`}>
                   <ProofValue proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })}>{usd0(t.avgSpending)}</ProofValue>
                 </td>

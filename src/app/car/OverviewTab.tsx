@@ -70,7 +70,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
           title="Where the money goes"
           subtitle={view.note}
           actions={
-            <Segmented
+            <Segmented view
               size="xs"
               value={span}
               onChange={setSpan}
@@ -109,7 +109,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                       <td className={table.tdR}>
                         <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : ctx.dp("outlook", outlookKey(r.carId, l))}>{usd0(c)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, l))}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, l))} drawn={proven ? undefined : { per: 100 }}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
                       <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, l))}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
                       <td className={`${table.tdR} text-muted`}>{view.total ? formatPercentRatio(c / view.total, 0) : "—"}</td>
                     </tr>
@@ -120,7 +120,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                   <td className={table.tdR}>
                     <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : ctx.dp("outlook", outlookKey(r.carId, "total"))}>{usd0(view.total)}</ProofValue>
                   </td>
-                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, "total"))}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, "total"))} drawn={proven ? undefined : { per: 100 }}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
                   <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, "total"))}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
                   <td className={table.tdR} />
                 </tr>

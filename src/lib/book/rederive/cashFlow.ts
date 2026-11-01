@@ -2,6 +2,7 @@ import { addDays, endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { bookedCents } from "../booking.ts";
 import { savingsRate } from "../definitions.ts";
+import { MAP_TOP } from "../derived/cashFlow.ts";
 import type { DerivedFigure } from "../derived/types.ts";
 import type { Book, BookRow } from "../load.ts";
 import { centsRoute, ratioRoute, rederiveList, textRoute } from "../proof/independence.ts";
@@ -146,6 +147,13 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       }
       case "typical-income":
         return [centsRoute(ROWS, v, median(windowOf(k).map((m) => m.income)), "the middle month's re-added income")];
+      case "typical-spending-earlier":
+        return [centsRoute(ROWS, v, median(windowOf(k).slice(0, -1).map((m) => m.spending)), "the middle month's re-added spending, before the latest")];
+      case "typical-spending":
+        return [centsRoute(ROWS, v, median(windowOf(k).map((m) => m.spending)), "the middle month's re-added spending")];
+      case "retirement-employee":
+      case "retirement-employer":
+        return { none: "Employer money as the pay stubs print it: the pay proofs re-add each stub, and the retirement figure ties it to the accounts' contribution rows." };
       case "above-typical": {
         const ms = windowOf(k);
         const inc = ms.reduce((s, m) => s + m.income, 0);
@@ -158,6 +166,13 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
         const sp = ms.reduce((s, m) => s + m.spending, 0);
         return [ratioRoute(ROWS, v, sp > 0 ? merged(ms, "EXPENSE").slice(0, 10).reduce((s, [, a]) => s + a.cents, 0) / sp : null, "the ten largest merchants over spending")];
       }
+      case "map-share": {
+        const ms = windowOf(k);
+        const sp = ms.reduce((s, m) => s + m.spending, 0);
+        return [ratioRoute(ROWS, v, sp > 0 ? merged(ms, "EXPENSE").slice(0, MAP_TOP).reduce((s, [, a]) => s + a.cents, 0) / sp : null, `the ${MAP_TOP} largest merchants over spending`)];
+      }
+      case "map-rest":
+        return [centsRoute(ROWS, v, merged(windowOf(k), "EXPENSE").slice(MAP_TOP).reduce((s, [, a]) => s + a.cents, 0), `every merchant past the ${MAP_TOP} largest`)];
       case "avg-charge": {
         const ms = merged(windowOf(k), "EXPENSE");
         const visits = ms.reduce((s, [, a]) => s + a.count, 0);
@@ -177,6 +192,11 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
         const budget = f.lines.find((l) => l.label === "Monthly budget")?.value;
         if (!budget || !("cents" in budget)) return null;
         return [ratioRoute(ROWS, v, typical > 0 ? (typical - budget.cents) / typical : null, "re-added typical income less the saved budget")];
+      }
+      case "category-typical-earlier": {
+        const [, lane, ...rest] = k.split("|");
+        const cat = rest.join("|");
+        return [centsRoute(ROWS, v, median(windowOf(k).slice(0, -1).map((m) => m.lanes[lane!]!.get(cat) ?? 0)), `${cat}'s middle month before the latest`)];
       }
       case "category-typical":
       case "category-share":
@@ -205,6 +225,15 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
         const m = month(start!);
         return [centsRoute(ROWS, v, cum(basis === "all" ? m.daily.all : m.daily.everyday, Number(day)), `expense rows counted on days 1–${day}`)];
       }
+      case "pace-typical-at":
+      case "pace-first-half":
+      case "weekend-share":
+      case "weekday-top":
+      case "weekday-low":
+      case "small-charges-count":
+      case "small-charges-dollars":
+      case "bills-first-week":
+        return { none: "Read off the months' daily series and charge sizes, which the running totals (pace) re-add day by day from the rows: a grouping of them, not a second sum." };
       case "pace-typical": {
         const [start, basis] = k.split("|");
         const idx = rep.months.findIndex((m) => m.start === start);
@@ -216,6 +245,15 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       case "price-changes":
       case "stopped":
         return recurringRoutes(f.figure, v, windowRows, windowEnd, last12From);
+      case "bills-yearly":
+      case "stopped-monthly":
+        return { none: "The recurring-charge detector's verdicts over each bill (which are active, which stopped), summed: each bill's charges are proven as spending at its merchant." };
+      case "recurring-typical":
+      case "recurring-last":
+      case "recurring-last12":
+      case "recurring-annual":
+      case "recurring-change":
+        return { none: "The recurring-charge detector's reading of one merchant's charges (its usual charge, its latest, its cadence): the merchant's spending figure re-adds the same rows." };
       case "budget-monthly":
         return { none: "The saved budget targets, as typed: an input, nothing to re-derive." };
       default:

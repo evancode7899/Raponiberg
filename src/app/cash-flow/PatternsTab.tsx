@@ -2,7 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Card, Segmented } from "@/components/ui/kit";
+import { Card, NotFigure, Segmented } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { CHARGE_BUCKETS, type SpendingMonth } from "@/lib/book/reports/spending";
@@ -10,17 +10,11 @@ import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney"
 import { useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
-import { median, sliceStart, sum } from "./model";
+import { median, sliceStart } from "./model";
 import { Delta } from "./parts";
-import { paceKey } from "@/lib/book/derived/cashFlow";
+import { billDays, chargeSplit, paceKey, weekdayStats, windowKey } from "@/lib/book/derived/cashFlow";
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const pctAxis = (v: number) => `${Math.round(v * 100)}%`;
-/** Monday = 0 … Sunday = 6, for a day of a month. */
-const weekday = (m: SpendingMonth, i: number) => {
-  const [y, mo] = m.start.split("-").map(Number) as [number, number];
-  return (new Date(Date.UTC(y, mo - 1, i + 1)).getUTCDay() + 6) % 7;
-};
 const bucketLabel = (i: number) => {
   const lo = i ? CHARGE_BUCKETS[i - 1]! / 100 : 0;
   const hi = CHARGE_BUCKETS[i]!;
@@ -95,9 +89,9 @@ function Pace({ ctx }: { ctx: Ctx }) {
   return (
     <Card
       title={`${month.label}, day by day${partial ? ` (through ${month.through})` : ""}`}
-      subtitle={`Running total of ${basis === "all" ? "all spending" : "everyday spending (no bills, nothing over $1,500)"} against ${prev ? prev.label : "the month before"} and a typical month — the median running total of the ${history.length} months before. Pick an earlier end month with the range picker.`}
+      subtitle={`Running total of ${basis === "all" ? "all spending" : "everyday spending (no bills, no one-offs)"} against ${prev ? prev.label : "the month before"} and a typical month — the median running total of the ${history.length} months before. Pick an earlier end month with the range picker.`}
       actions={
-        <Segmented
+        <Segmented view
           size="xs"
           ariaLabel="Which spending"
           options={[
@@ -112,19 +106,50 @@ function Pace({ ctx }: { ctx: Ctx }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-1 xl:content-start">
           {partial ? (
-            <Stat label={`Spent through day ${throughDay}`} value={usd0(nowAt)} proof={whole(month, nowAt, throughDay)} sub={typAt != null ? <><Delta now={nowAt} before={typAt} goodWhenDown /> vs typical {usd0(typAt)} by day {throughDay}</> : undefined} />
+            <Stat
+              label={`Spent through day ${throughDay}`}
+              value={usd0(nowAt)}
+              proof={whole(month, nowAt, throughDay)}
+              sub={
+                typAt != null ? (
+                  <>
+                    <Delta now={nowAt} before={typAt} goodWhenDown of={[whole(month, nowAt, throughDay), ctx.dp("pace-typical-at", paceKey(month, basis, throughDay))]} /> vs typical{" "}
+                    <ProofValue proof={ctx.dp("pace-typical-at", paceKey(month, basis, throughDay))}>{usd0(typAt)}</ProofValue> by day {throughDay}
+                  </>
+                ) : undefined
+              }
+            />
           ) : (
-            <Stat label="Spent in the month" value={usd0(nowAt)} proof={whole(month, nowAt, throughDay)} sub={typEnd != null ? <><Delta now={nowAt} before={typEnd} goodWhenDown /> vs a typical month</> : undefined} />
+            <Stat
+              label="Spent in the month"
+              value={usd0(nowAt)}
+              proof={whole(month, nowAt, throughDay)}
+              sub={
+                typEnd != null ? (
+                  <>
+                    <Delta now={nowAt} before={typEnd} goodWhenDown of={[whole(month, nowAt, throughDay), ctx.dp("pace-typical", paceKey(month, basis))]} /> vs a typical month
+                  </>
+                ) : undefined
+              }
+            />
           )}
           {prev && (
             <Stat
               label={partial ? `${prev.label} by day ${throughDay}` : prev.label}
               value={usd0(partial ? prevCum[Math.min(throughDay, prevCum.length) - 1] ?? 0 : prevCum.at(-1) ?? 0)}
               proof={partial ? ctx.dp("pace-spent", paceKey(prev, basis, throughDay)) : whole(prev, prevCum.at(-1) ?? 0, prevCum.length)}
-              sub={partial ? `${usd0(prevCum.at(-1) ?? 0)} for the whole month` : "the month before"}
+              sub={
+                partial ? (
+                  <>
+                    <ProofValue proof={whole(prev, prevCum.at(-1) ?? 0, prevCum.length)}>{usd0(prevCum.at(-1) ?? 0)}</ProofValue> for the whole month
+                  </>
+                ) : (
+                  "the month before"
+                )
+              }
             />
           )}
-          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={ctx.dp("pace-typical", paceKey(month, basis))} sub={firstHalf != null ? `${formatPercentRatio(firstHalf, 0)} of it gone by the 15th` : undefined} />}
+          {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={ctx.dp("pace-typical", paceKey(month, basis))} sub={firstHalf != null ? <><ProofValue proof={ctx.dp("pace-first-half", paceKey(month, basis))}>{formatPercentRatio(firstHalf, 0)}</ProofValue> of it gone by the 15th</> : undefined} />}
         </div>
         <div className="h-[280px] w-full min-w-0">
           <RechartsResponsive>
@@ -161,27 +186,22 @@ function Stat({ label, value, sub, proof }: { label: string; value: string; sub?
 function Weekdays({ ctx }: { ctx: Ctx }) {
   const { slice, chart } = ctx;
   const ui = chartChrome(chart);
-  const cents = WEEKDAYS.map(() => 0);
-  const seen = WEEKDAYS.map(() => 0);
-  for (const m of slice.months) {
-    m.daily.everydayCents.forEach((v, i) => {
-      const w = weekday(m, i);
-      cents[w]! += v;
-      seen[w]!++;
-    });
-  }
-  const rows = WEEKDAYS.map((name, w) => ({ name, avg: seen[w] ? cents[w]! / seen[w]! / 100 : 0 }));
-  const total = sum(cents, (c) => c);
-  const weekend = total > 0 ? (cents[5]! + cents[6]!) / total : null;
-  const top = [...rows].sort((a, b) => b.avg - a.avg)[0]!;
-  const low = [...rows].sort((a, b) => a.avg - b.avg)[0]!;
+  const wk = weekdayStats(slice.months);
+  const rows = wk.rows.map((r) => ({ name: r.name, avg: r.avgCents / 100 }));
+  const { weekend, top, low } = wk;
+  const key = windowKey(slice.months);
   return (
     <Card
       title="By weekday"
       subtitle={
         weekend == null
           ? "Average everyday spending on each day of the week."
-          : `Average everyday spending per day. Weekends take ${formatPercentRatio(weekend, 0)} of it on 29% of the days; ${top.name} is the priciest day (${usd0(top.avg * 100)}), ${low.name} the cheapest (${usd0(low.avg * 100)}).`
+          : (
+              <>
+                Average everyday spending per day. Weekends take <ProofValue proof={ctx.dp("weekend-share", key)}>{formatPercentRatio(weekend, 0)}</ProofValue> of it on <NotFigure why="two days in seven">29%</NotFigure> of the days; {top.name} is the priciest day (
+                <ProofValue proof={ctx.dp("weekday-top", key)}>{usd0(top.avgCents)}</ProofValue>), {low.name} the cheapest (<ProofValue proof={ctx.dp("weekday-low", key)}>{usd0(low.avgCents)}</ProofValue>).
+              </>
+            )
       }
     >
       <div className="h-[240px] w-full min-w-0">
@@ -203,17 +223,22 @@ function Weekdays({ ctx }: { ctx: Ctx }) {
 function ChargeSizes({ ctx, months }: { ctx: Ctx; months: SpendingMonth[] }) {
   const { chart } = ctx;
   const ui = chartChrome(chart);
-  const b = CHARGE_BUCKETS.map((_, i) => ({ count: sum(months, (m) => m.chargeSizes[i]!.count), cents: sum(months, (m) => m.chargeSizes[i]!.cents) }));
-  const n = sum(b, (x) => x.count);
-  const c = sum(b, (x) => x.cents);
+  const { buckets: b, n, cents: c, smallCount, smallUsd } = chargeSplit(months);
   const rows = b.map((x, i) => ({ name: bucketLabel(i), charges: n ? x.count / n : 0, dollars: c ? x.cents / c : 0, count: x.count, cents: x.cents }));
-  const small = rows.slice(0, 3);
-  const smallCount = sum(small, (r) => r.charges);
-  const smallUsd = sum(small, (r) => r.dollars);
+  const key = windowKey(months);
   return (
     <Card
       title="Charge sizes"
-      subtitle={n ? `${formatPercentRatio(smallCount, 0)} of the ${n.toLocaleString("en-US")} charges were under $50, but they add up to only ${formatPercentRatio(smallUsd, 0)} of the dollars — the few big charges set the total.` : "No charges in range."}
+      subtitle={
+        n ? (
+          <>
+            <ProofValue proof={ctx.dp("small-charges-count", key)}>{formatPercentRatio(smallCount, 0)}</ProofValue> of the {n.toLocaleString("en-US")} charges were under <NotFigure why="the size the chart calls small">$50</NotFigure>, but they add up to only{" "}
+            <ProofValue proof={ctx.dp("small-charges-dollars", key)}>{formatPercentRatio(smallUsd, 0)}</ProofValue> of the dollars — the few big charges set the total.
+          </>
+        ) : (
+          "No charges in range."
+        )
+      }
     >
       <div className="h-[240px] w-full min-w-0">
         <RechartsResponsive>
@@ -242,21 +267,25 @@ function ChargeSizes({ ctx, months }: { ctx: Ctx; months: SpendingMonth[] }) {
 function MonthDays({ ctx }: { ctx: Ctx }) {
   const { slice, chart } = ctx;
   const ui = chartChrome(chart);
-  const rows = Array.from({ length: 31 }, (_, d) => {
-    const has = slice.months.filter((m) => d < m.daily.allCents.length);
-    const avg = (f: (m: SpendingMonth) => number[]) => (has.length ? sum(has, (m) => f(m)[d]!) / has.length / 100 : 0);
-    return { day: d + 1, bills: avg((m) => m.daily.billCents), everyday: avg((m) => m.daily.everydayCents) };
-  });
-  const bills = sum(rows, (r) => r.bills);
-  const firstWeek = sum(rows.slice(0, 7), (r) => r.bills);
+  const bd = billDays(slice.months);
+  const rows = bd.rows.map((r) => ({ day: r.day, bills: r.bills / 100, everyday: r.everyday / 100 }));
   const everyday = rows.map((r) => r.everyday);
   const busiest = rows[everyday.indexOf(Math.max(...everyday))]!;
   return (
     <Card
       title="By day of the month"
-      subtitle={`Average per calendar day over ${slice.label}; big one-offs left out.${
-        bills > 0 ? ` ${formatPercentRatio(firstWeek / bills, 0)} of bill money leaves in the first week of the month.` : ""
-      } Everyday spending runs highest on the ${ordinal(busiest.day)}.`}
+      subtitle={
+        <>
+          Average per calendar day over {slice.label}; big one-offs left out.
+          {bd.firstWeek != null ? (
+            <>
+              {" "}
+              <ProofValue proof={ctx.dp("bills-first-week", windowKey(slice.months))}>{formatPercentRatio(bd.firstWeek, 0)}</ProofValue> of bill money leaves in the first week of the month.
+            </>
+          ) : null}{" "}
+          Everyday spending runs highest on the {ordinal(busiest.day)}.
+        </>
+      }
     >
       <div className="h-[260px] w-full min-w-0">
         <RechartsResponsive>

@@ -92,7 +92,7 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Segmented ariaLabel="Year" options={r.years.map((y) => ({ value: String(y), label: String(y) }))} value={String(r.year)} onChange={(y) => setYear(Number(y))} />
+              <Segmented view ariaLabel="Year" options={r.years.map((y) => ({ value: String(y), label: String(y) }))} value={String(r.year)} onChange={(y) => setYear(Number(y))} />
               {r.reading > 0 && (
                 <span className="flex items-center gap-1.5 text-xs text-muted">
                   <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />

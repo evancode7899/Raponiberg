@@ -177,7 +177,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
         title="Year by year"
         subtitle="Cash paid and kept → net worth at year end → what moved it. From pay stubs and statements that pass every check; click a figure for its proof."
         actions={
-          <Segmented
+          <Segmented view
             ariaLabel="Show"
             size="xs"
             value={mode}

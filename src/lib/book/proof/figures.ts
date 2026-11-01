@@ -3,7 +3,7 @@ import type { Forecast } from "../../forecast/forecast.ts";
 import { analyzeFire, firePlans, stressTest } from "../../fire/fire.ts";
 import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type StressFigure } from "../../fire/longTerm.ts";
 import { projectOutlook } from "../../profile/outlook.ts";
-import { monthPeriods, yearPeriods } from "../../forecast/periods.ts";
+import { ledgerColumns, ledgerDraws, ledgerViews } from "../../forecast/ledger.ts";
 import { COST_LINES } from "../../car/report.ts";
 import { CAR_KINDS } from "../../car/settings.ts";
 import type { HsaReport } from "../../hsa/report.ts";
@@ -490,21 +490,27 @@ export function goalsFigures(r: GoalsReport): PageFigure[] {
 const LINES = Object.keys(LEDGER_LINES) as LedgerLine[];
 
 /**
- * Every cell the Forecast ledger draws on the saved drivers: the year view (the proven
- * year, the year in progress and five years on) and each of those years month by month,
- * two years out.
+ * Every cell the Forecast ledger can draw on the saved drivers: every view it offers (each
+ * span of years, each year month by month) and the lines it draws over each, as the page
+ * reads them (forecast/ledger.ts). A cell two views share is one figure.
  */
 export function forecastFigures(f: Forecast, r: AnnualProfileReport): PageFigure[] {
-  const years = [...new Set(f.months.slice(0, 24).map((m) => m.year))];
-  const cols = [...yearPeriods(f, r, { actualYears: 1, throughYear: r.currentYear + 5 }), ...years.flatMap((y) => monthPeriods(f, r, y))];
   const out: PageFigure[] = [];
-  for (const p of cols)
-    for (const line of LINES) {
-      const v = ledgerValue(p.flows, line);
-      if (v == null) continue;
-      const through = p.through.slice(0, 7);
-      out.push({ page: "Forecast", descriptor: { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line }, shown: { cents: v } });
-    }
+  const seen = new Set<string>();
+  for (const view of ledgerViews(f)) {
+    const cols = ledgerColumns(f, r, view);
+    for (const line of LINES.filter((l) => ledgerDraws(l, cols)))
+      for (const p of cols) {
+        const v = ledgerValue(p.flows, line);
+        if (v == null) continue;
+        const through = p.through.slice(0, 7);
+        const descriptor = { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line } as const;
+        const k = `${p.from}|${through}|${line}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push({ page: "Forecast", descriptor, shown: { cents: v } });
+      }
+  }
   // The inputs panel's seeds, as ForecastInputs shows them on the saved drivers.
   const s = r.seeds;
   if (s) {
@@ -607,6 +613,7 @@ const DERIVED_PAGE_NAME: Record<DerivedPage, string> = {
   calendar: "Calendar",
   "lp-funds": "Investments › Private funds",
   insurance: "Insurance",
+  taxes: "Taxes",
 };
 
 /** A page's derived figures (derived/types.ts), each at the value its list states. */

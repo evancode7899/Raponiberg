@@ -610,7 +610,7 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
   const d = investmentsDerived(r);
   const picker = (
     <div className="flex flex-wrap items-center gap-2">
-      <select className={selectCls} value={which} onChange={(e) => setWhich(e.target.value)} aria-label="Account">
+      <select data-audit-view="" className={selectCls} value={which} onChange={(e) => setWhich(e.target.value)} aria-label="Account">
         {r.growth.map((g) => (
           <option key={g.accountId ?? "all"} value={g.accountId ?? "all"}>
             {g.name}

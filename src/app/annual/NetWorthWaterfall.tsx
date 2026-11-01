@@ -116,7 +116,7 @@ export function NetWorthWaterfall({ r, cols }: { r: AnnualProfileReport; cols: C
         ) : undefined
       }
       actions={
-        <Segmented
+        <Segmented view
           ariaLabel="Year"
           size="xs"
           value={col?.key ?? LTD}

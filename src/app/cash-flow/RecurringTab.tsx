@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { RecurringCharge } from "@/lib/book/reports/spending";
 import { usd0, usdDelta } from "@/lib/formatMoney";
@@ -25,17 +26,17 @@ export function RecurringTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={ctx.dp("bills-monthly")} label="Bills & subscriptions" value={`${usd0(sum(active, (c) => c.annualCents) / 12)}/mo`} sub={`${active.length} active · ${usd0(sum(active, (c) => c.annualCents))} a year`} />
-        <StatCell proof={ctx.dp("price-changes")} label="Price changes" value={raised.length} tone={raised.length ? "warn" : "neutral"} sub={raised.length ? `+${usd0(sum(raised, (c) => c.changeCents!))} per charge` : "latest charges match"} />
+        <StatCell proof={ctx.dp("bills-monthly")} label="Bills & subscriptions" value={`${usd0(sum(active, (c) => c.annualCents) / 12)}/mo`} sub={<>{active.length} active · <ProofValue proof={ctx.dp("bills-yearly")}>{usd0(sum(active, (c) => c.annualCents))}</ProofValue> a year</>} />
+        <StatCell proof={ctx.dp("price-changes")} label="Price changes" value={raised.length} tone={raised.length ? "warn" : "neutral"} sub={raised.length ? <>+<ProofValue proof={raised.length === 1 ? ctx.dp("recurring-change", raised[0]!.key) : compositeOf("sum", raised.map((c) => ctx.dp("recurring-change", c.key)), { cents: sum(raised, (c) => c.changeCents!) })}>{usd0(sum(raised, (c) => c.changeCents!))}</ProofValue> per charge</> : "latest charges match"} />
         <StatCell proof={ctx.dp("habits-monthly")} label="Habits" value={`${usd0(sum(activeHabits, (c) => c.last12Cents) / 12)}/mo`} sub={`${activeHabits.length} places you go often`} />
-        <StatCell proof={ctx.dp("stopped")} label="Stopped" value={stopped.length} sub={stopped.length ? `${usd0(sum(stopped, (c) => c.annualCents) / 12)}/mo no longer charged` : "none"} />
+        <StatCell proof={ctx.dp("stopped")} label="Stopped" value={stopped.length} sub={stopped.length ? <><ProofValue proof={ctx.dp("stopped-monthly")}>{usd0(sum(stopped, (c) => c.annualCents) / 12)}</ProofValue>/mo no longer charged</> : "none"} />
       </StatGrid>
 
       <Card
         title="Bills & subscriptions"
         subtitle={`Charges from the same merchant on a steady schedule for a steady amount, found in every proven month through ${end}. Totals are the last 12 months. A bill is "stopped" when its next charge is overdue — cancelled, moved to another card, or replaced (like rent moving to Bilt).`}
         actions={
-          <Segmented
+          <Segmented view
             size="xs"
             ariaLabel="Which bills"
             options={[
@@ -78,7 +79,9 @@ export function RecurringTab({ ctx }: { ctx: Ctx }) {
                     {c.count}
                     <span className="text-xs text-muted"> in {c.monthsSeen} mo</span>
                   </td>
-                  <td className={`${table.tdR} text-muted`}>{usd0(c.typicalCents)}</td>
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={ctx.dp("recurring-typical", c.key)}>{usd0(c.typicalCents)}</ProofValue>
+                  </td>
                   <td className={`${table.tdR} font-medium`}>
                     <ProofValue proof={ctx.proof("spending", report.months, { merchantKey: c.key, charges: true, shownCents: c.last12Cents })}>{usd0(c.last12Cents)}</ProofValue>
                   </td>
@@ -123,15 +126,17 @@ function BillTable({ ctx, list }: { ctx: Ctx; list: RecurringCharge[] }) {
               <td className={`${table.td} text-xs text-muted`}>
                 {CADENCE[c.cadence ?? ""] ?? "—"} · {c.count}×
               </td>
-              <td className={table.tdR}>{usd0(c.typicalCents)}</td>
-              <td className={`${table.tdR} font-medium`}>{c.active ? usd0(c.annualCents) : <span className="text-muted">—</span>}</td>
+              <td className={table.tdR}>
+                <ProofValue proof={ctx.dp("recurring-typical", c.key)}>{usd0(c.typicalCents)}</ProofValue>
+              </td>
+              <td className={`${table.tdR} font-medium`}>{c.active ? <ProofValue proof={ctx.dp("recurring-annual", c.key)}>{usd0(c.annualCents)}</ProofValue> : <span className="text-muted">—</span>}</td>
               <td className={`${table.tdR} text-xs text-muted`}>
-                {usd0(c.lastCents)} · {c.lastDate}
+                <ProofValue proof={ctx.dp("recurring-last", c.key)}>{usd0(c.lastCents)}</ProofValue> · {c.lastDate}
               </td>
               <td className={table.tdR}>
                 {c.changeCents ? (
                   <span className={`num text-xs font-medium ${c.changeCents > 0 ? "text-neg" : "text-pos"}`}>
-                    {c.changeCents > 0 ? "▲" : "▼"} {usdDelta(c.changeCents)}
+                    {c.changeCents > 0 ? "▲" : "▼"} <ProofValue proof={ctx.dp("recurring-change", c.key)}>{usdDelta(c.changeCents)}</ProofValue>
                   </span>
                 ) : (
                   <span className="text-xs text-faint">—</span>

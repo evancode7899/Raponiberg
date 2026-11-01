@@ -134,7 +134,7 @@ export function StatementPlan({ plan }: { plan: Plan }) {
       }
       actions={
         plan.targets.length > 1 && (
-          <Segmented
+          <Segmented view
             ariaLabel="Period to unlock"
             size="xs"
             value={target.end}

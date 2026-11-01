@@ -5,7 +5,8 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ForecastDescriptor, LedgerLine } from "@/lib/book/proof/forecastProof";
 import type { ScheduledBonus } from "@/lib/forecast/bonusSchedule";
 import type { Forecast } from "@/lib/forecast/forecast";
-import { monthPeriods, yearPeriods, type Flows, type Period } from "@/lib/forecast/periods";
+import { ledgerColumns, ledgerDraws, ledgerYears, type LedgerSpan } from "@/lib/forecast/ledger";
+import type { Flows, Period } from "@/lib/forecast/periods";
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import { useMemo, useState } from "react";
 import { monthLabel, pct, usd } from "./forecastUi";
@@ -20,8 +21,6 @@ type Row = {
   /** Shown negated (outflows). */
   out?: boolean;
   kind?: "sum" | "total" | "sub";
-  /** Hidden when zero in every column shown. */
-  optional?: boolean;
   /** Red when negative. */
   warnNegative?: boolean;
 };
@@ -29,7 +28,7 @@ type Row = {
 const ROWS: Row[] = [
   { line: "salary", label: "Base salary", help: "Regular pay before tax. Actual: pay stubs. Forecast: the drivers' base salary, raised each January.", get: (x) => x.salary },
   { line: "bonus", label: "Bonuses", help: "Gross. Actual: pay stubs. Forecast: the payments listed below (paid, on a letter, or estimated). Hover a cell for its payments.", get: (x) => x.bonus },
-  { line: "otherIncome", label: "Interest & other", help: "Actual only. The forecast counts interest and dividends in growth.", get: (x) => x.otherIncome, optional: true },
+  { line: "otherIncome", label: "Interest & other", help: "Actual only. The forecast counts interest and dividends in growth.", get: (x) => x.otherIncome },
   {
     line: "taxes",
     label: "Taxes & deductions",
@@ -44,11 +43,10 @@ const ROWS: Row[] = [
     help: "Actual only: a partner's net pay that reached only their own accounts (before the merge) — theirs, not the household's.",
     get: (x) => x.partnerKept,
     out: true,
-    optional: true,
   },
   { line: "living", label: "Living cost", help: "Everything spent except tagged one-offs.", get: (x) => x.living, out: true },
-  { line: "bonusSpent", label: "Bonus spent", help: "The part of bonuses kept after tax that isn't saved (the Bonus saved driver).", get: (x) => x.bonusSpent, out: true, optional: true },
-  { line: "oneOffs", label: "One-offs", help: "Actual: tagged one-off expenses. Forecast: planned one-offs.", get: (x) => x.oneOffs, out: true, optional: true },
+  { line: "bonusSpent", label: "Bonus spent", help: "The part of bonuses kept after tax that isn't saved (the Bonus saved driver).", get: (x) => x.bonusSpent, out: true },
+  { line: "oneOffs", label: "One-offs", help: "Actual: tagged one-off expenses. Forecast: planned one-offs.", get: (x) => x.oneOffs, out: true },
   { line: "saved", label: "Saved incl. retirement", help: "Income − taxes & deductions + employer money − spending (as Annual's; Cash flow's saved from take-home leaves out deferrals and employer money).", get: (x) => x.saved, kind: "sum" },
   { line: "toRetirement", label: "to retirement", help: "Your 401(k)/HSA deferrals + employer money.", get: (x) => x.toRetirement, kind: "sub" },
   {
@@ -82,21 +80,18 @@ const inPeriod = (p: Period, key: string) => key >= p.from && key <= p.through.s
  * walks from income to saved to the change in net worth.
  */
 export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfileReport; provable: boolean }) {
-  const lastYear = f.months.at(-1)?.year ?? f.plan.start.year;
-  const [view, setView] = usePersistentState<{ span: "5" | "10" | "all"; units: "k" | "usd" }>("pf-forecast-ledger", () => ({ span: "5", units: "k" }));
+  const { first: firstYear, last: lastYear } = ledgerYears(f);
+  const [view, setView] = usePersistentState<{ span: LedgerSpan; units: "k" | "usd" }>("pf-forecast-ledger", () => ({ span: "5", units: "k" }));
   const { span, units } = view;
   const money = (c: number) => (units === "usd" ? usd(c) : thousands(c));
   const [monthsOf, setMonthsOf] = useState<number | null>(null);
-  const firstYear = f.months[0]?.year ?? f.plan.start.year;
-  const through = span === "all" ? lastYear : r.currentYear + Number(span);
-  const periods = useMemo(
-    () => (monthsOf != null ? monthPeriods(f, r, monthsOf) : yearPeriods(f, r, { actualYears: 1, throughYear: through })),
-    [f, r, monthsOf, through],
-  );
+  // The views and the lines each draws are the proof sweep's too (forecast/ledger.ts): it clears exactly these cells.
+  const periods = useMemo(() => ledgerColumns(f, r, monthsOf != null ? { monthsOf } : { span }), [f, r, monthsOf, span]);
   const counted = f.schedule.filter((b) => b.counted);
-  const rows = ROWS.filter((row) => !row.optional || periods.some((p) => (row.get(p.flows) ?? 0) !== 0));
+  const rows = ROWS.filter((row) => ledgerDraws(row.line, periods));
   const nearTerm = (p: Period) => monthsOf == null && p.kind === "FORECAST" && p.nearTerm && f.assumptions.bonus.estimates === "AFTER_NEAR_TERM";
   const drill = (p: Period) => (p.kind !== "ACTUAL" && monthsOf == null ? () => setMonthsOf(p.year) : undefined);
+  const firstDrill = periods.find((p) => drill(p))?.id;
 
   return (
     <Card
@@ -109,19 +104,19 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
       actions={
         monthsOf != null ? (
           <span className="flex items-center gap-1">
-            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf <= firstYear} onClick={() => setMonthsOf(monthsOf - 1)} aria-label="Previous year">
+            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf <= firstYear} onClick={() => setMonthsOf(monthsOf - 1)} aria-label="Previous year" data-audit-step="">
               ‹
             </button>
             <span className="num text-xs font-medium text-fg">{monthsOf}</span>
-            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf >= lastYear} onClick={() => setMonthsOf(monthsOf + 1)} aria-label="Next year">
+            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf >= lastYear} onClick={() => setMonthsOf(monthsOf + 1)} aria-label="Next year" data-audit-step="">
               ›
             </button>
-            <button type="button" className="ml-1 rounded-md border border-line-strong px-2 py-0.5 text-[11px] text-fg-2 hover:bg-surface-2" onClick={() => setMonthsOf(null)}>
+            <button type="button" className="ml-1 rounded-md border border-line-strong px-2 py-0.5 text-[11px] text-fg-2 hover:bg-surface-2" onClick={() => setMonthsOf(null)} data-audit-back="">
               Years
             </button>
           </span>
         ) : (
-          <Segmented
+          <Segmented view
             size="xs"
             ariaLabel="Years shown"
             value={span}
@@ -140,7 +135,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
           <thead>
             <tr className="border-b border-line-strong">
               <th className="sticky left-0 z-[1] bg-surface px-2 py-1 text-left align-bottom font-normal">
-                <Segmented
+                <Segmented view
                   size="xs"
                   ariaLabel="Units"
                   value={units}
@@ -156,7 +151,13 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                 return (
                   <th key={p.id} className={`whitespace-nowrap px-1.5 py-1 text-right align-bottom ${colCls(p)}`} title={p.note ?? (onClick ? `Show ${p.year} month by month` : undefined)}>
                     {onClick ? (
-                      <button type="button" className="num font-semibold text-fg hover:text-accent hover:underline" onClick={onClick}>
+                      <button
+                        type="button"
+                        className="num font-semibold text-fg hover:text-accent hover:underline"
+                        onClick={onClick}
+                        // One way into the month views is enough for the render audit: it steps through every year from there.
+                        {...(p.id === firstDrill ? { "data-audit-drill": "months" } : {})}
+                      >
                         {p.label}
                       </button>
                     ) : (

@@ -173,7 +173,7 @@ export function ReceiptsTab({
         }
       >
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Segmented
+          <Segmented view
             ariaLabel="Status"
             size="xs"
             options={[
@@ -185,14 +185,14 @@ export function ReceiptsTab({
             value={status}
             onChange={setStatus}
           />
-          <select className={selectCls} value={year} onChange={(e) => setYear(e.target.value)} aria-label="Year">
+          <select data-audit-view="" className={selectCls} value={year} onChange={(e) => setYear(e.target.value)} aria-label="Year">
             <option value="">All years</option>
             {years.map((y) => (
               <option key={y}>{y}</option>
             ))}
           </select>
           {r.byPatient.length > 1 && (
-            <select className={selectCls} value={patient} onChange={(e) => setPatient(e.target.value)} aria-label="Patient">
+            <select data-audit-view="" className={selectCls} value={patient} onChange={(e) => setPatient(e.target.value)} aria-label="Patient">
               <option value="">Everyone</option>
               {r.byPatient.map((p) => (
                 <option key={p.key}>{p.key}</option>

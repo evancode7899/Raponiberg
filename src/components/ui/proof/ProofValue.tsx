@@ -18,9 +18,11 @@ export type FigureProps = ({ proof: ProofRef; figure?: never } | { figure: Figur
    * How the children draw the value, when not as the number itself: "words" (a label that
    * opens the proof and holds no number of its own), or the number in other units: one
    * drawn unit is `per` of the shown value's (dollars for money; 1000 for $k), rounded or
-   * floored to `step` drawn units. The render audit holds the drawn text to it (lib/book/proof/renderAudit.ts).
+   * floored to `step` drawn units; `zeroWithin`: words in place of a number (About even,
+   * Filled) that stand for zero, so the value is within this many drawn units of it. The
+   * render audit holds the drawn text to it (lib/book/proof/renderAudit.ts).
    */
-  drawn?: "words" | { per?: number; step?: number };
+  drawn?: "words" | { per?: number; step?: number; zeroWithin?: number };
 };
 
 const WEAKER: Record<FigureBasis, number> = { proven: 0, accepted: 1, estimate: 2 };
@@ -74,7 +76,7 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
     "data-shown": c.shown ? showValue(c.shown) : "",
     "data-shown-kind": c.shown ? ("cents" in c.shown ? "cents" : "ratio" in c.shown ? "ratio" : "text") : "",
     ...(target?.perMonths && target.perMonths > 1 ? { "data-per-months": target.perMonths } : {}),
-    ...(props.drawn === "words" ? { "data-drawn": "words" } : props.drawn ? { "data-drawn": `per:${props.drawn.per ?? 1};step:${props.drawn.step ?? 0}` } : {}),
+    ...(props.drawn === "words" ? { "data-drawn": "words" } : props.drawn ? { "data-drawn": `per:${props.drawn.per ?? 1};step:${props.drawn.step ?? 0};zero:${props.drawn.zeroWithin ?? -1}` } : {}),
     "data-clearance": c.state === "withheld" ? `withheld:${c.reason}` : c.state,
   };
   if (c.state === "verifying")

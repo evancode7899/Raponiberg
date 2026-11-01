@@ -79,7 +79,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
           <>
             <div className="mb-3 flex flex-wrap items-end gap-3">
               <Field label="Show">
-                <select className={selectCls} value={tier} onChange={(e) => setTier(e.target.value as typeof tier)}>
+                <select data-audit-view="" className={selectCls} value={tier} onChange={(e) => setTier(e.target.value as typeof tier)}>
                   <option value="ALL">All ({r.suggestions.length})</option>
                   <option value="LIKELY">Likely qualified ({r.suggestions.filter((s) => s.tier === "LIKELY").length})</option>
                   <option value="CHECK">Check the receipt ({r.suggestions.filter((s) => s.tier === "CHECK").length})</option>

@@ -1,10 +1,13 @@
 "use client";
 
 import { blockedTitle } from "@/components/ledger/Blocked";
-import { TransactionTable, type TxnRow } from "@/components/ledger/TransactionTable";
+import { rowsTotal, TransactionTable, type TxnRow } from "@/components/ledger/TransactionTable";
 import type { Api } from "@/components/ledger/useApi";
 import type { ChartPalette } from "@/components/shell/chartPalette";
-import { btn, Loading } from "@/components/ui/kit";
+import { btn, Loading, NotFigure } from "@/components/ui/kit";
+import { ONE_OFF_MIN_CENTS } from "@/lib/book/definitions";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth, WithheldMonth } from "@/lib/book/reports/spending";
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
@@ -54,16 +57,22 @@ export function Sparkline({ values, color, width = 84, height = 22 }: { values: 
  * A change between two figures. For spending, up is bad (`goodWhenDown`); the arrow and
  * sign carry the direction so it never rests on color alone.
  */
-export function Delta({ now, before, goodWhenDown = false, asPercent = true }: { now: number; before: number | null; goodWhenDown?: boolean; asPercent?: boolean }) {
+/**
+ * The change from `before` to `now`, as a rate (or in dollars). `of`: the two figures it
+ * compares (now, before), with `per` the months each spans when they're monthly averages:
+ * the change is then a composite figure that clears from theirs (proof/composite.ts).
+ */
+export function Delta({ now, before, goodWhenDown = false, asPercent = true, of, per }: { now: number; before: number | null; goodWhenDown?: boolean; asPercent?: boolean; of?: [ProofRef, ProofRef]; per?: [number, number] }) {
   if (before == null) return <span className="text-xs text-faint">—</span>;
   const diff = now - before;
   if (Math.abs(diff) < 100 || (before !== 0 && Math.abs(diff / before) < 0.02)) return <span className="text-xs text-muted">≈ same</span>;
   const up = diff > 0;
   const good = goodWhenDown ? !up : up;
-  const text = asPercent && before > 0 ? formatPercentRatio(Math.abs(diff / before), 0) : usd0(Math.abs(diff));
+  const rate = asPercent && before > 0;
+  const text = rate ? formatPercentRatio(Math.abs(diff / before), 0) : usd0(Math.abs(diff));
   return (
     <span className={`num whitespace-nowrap text-xs font-medium ${good ? "text-pos" : "text-neg"}`}>
-      {up ? "▲" : "▼"} {text}
+      {up ? "▲" : "▼"} {of ? <ProofValue proof={compositeOf(rate ? "growth" : "diff", of, rate ? { ratio: diff / before } : { cents: diff }, per)}>{text}</ProofValue> : text}
     </span>
   );
 }
@@ -149,7 +158,8 @@ export function TxnList({ api, query, onChanged }: { api: Api; query: TxnQuery; 
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
         <span className="num">
-          {total?.count ?? rows.length} transactions · net {usd0((total?.inCents ?? 0) + (total?.outCents ?? 0))}
+          {total?.count ?? rows.length} transactions · net{" "}
+          <ProofValue proof={rowsTotal(rows, "net", rows.length === (total?.count ?? rows.length)).proof}>{usd0(rows.reduce((t, r) => t + r.amountCents, 0))}</ProofValue>
         </span>
         <Link href={`/transactions?${key}`} className={btn.link}>
           Open in Transactions →
@@ -190,4 +200,9 @@ export function DivergingBar({ value, max, goodWhenDown = true }: { value: numbe
       />
     </span>
   );
+}
+
+/** The one-off threshold ($1,500) in a sentence: a rule the app applies (book/definitions.ts), not a figure. */
+export function OneOffLine() {
+  return <NotFigure why="the one-off threshold, a rule the app applies">{usd0(ONE_OFF_MIN_CENTS)}</NotFigure>;
 }

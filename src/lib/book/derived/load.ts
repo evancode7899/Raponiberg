@@ -17,6 +17,8 @@ import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxA
 import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { integrityDerived } from "./integrity.ts";
+import { taxesDerived } from "./taxes.ts";
+import type { TaxReport } from "../../tax/buildTaxReport.ts";
 import { changeStepsDerived, netWorthDerived } from "./netWorth.ts";
 import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
@@ -39,7 +41,7 @@ import { rederiveCashFlow } from "../rederive/cashFlow.ts";
 import { rederiveNetWorth } from "../rederive/netWorth.ts";
 import { rederiveInvestments } from "../rederive/investments.ts";
 import { rederiveCar } from "../rederive/car.ts";
-import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance } from "../rederive/pages.ts";
+import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance } from "../rederive/pages.ts";
 
 /**
  * Each page's derived figures, from its report built as the page's route builds it, once
@@ -102,6 +104,10 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const ys = await taxYears(ctx);
     const figures = ys.flatMap((y) => accountLimitsDerived(y.accounts));
     return { figures, rederived: declared(LIMITS_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
+  },
+  taxes: async (ctx) => {
+    const figures = (await taxYears(ctx)).flatMap((y) => (y.tax.blocked ? [] : taxesDerived(y.tax as TaxReport)));
+    return { figures, rederived: declared(TAXES_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
   calendar: async (ctx) => {
     const ys = await taxYears(ctx);

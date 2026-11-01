@@ -79,3 +79,23 @@ describe("sweepAnswer: one answer of the sweep route as the browser's state", ()
     expect(sweepAnswer(202, {}).status).toBe("failed");
   });
 });
+
+describe("composite clearance: a share, change or sum clears from its parts' cleared values", () => {
+  const a = { report: "row", rowId: "a" } as const;
+  const b = { report: "row", rowId: "b" } as const;
+  const cleared = { [descriptorKey(a)]: { cents: 250_00 }, [descriptorKey(b)]: { cents: 1000_00 } };
+  const share = (ratio: number) => ({ descriptor: { report: "composite", op: "share", of: [a, b] } as const, shownCents: null, shown: { ratio } });
+  it("clears at the value its parts work out to, never the page's", () => {
+    expect(clearanceOf(share(0.25), ready({ cleared }), "abc123")).toMatchObject({ state: "cleared", cleared: { ratio: 0.25 } });
+    expect(clearanceOf(share(0.3), ready({ cleared }), "abc123")).toMatchObject({ state: "withheld", reason: "mismatch" });
+  });
+  it("is withheld while a part hasn't cleared, or is flagged", () => {
+    expect(clearanceOf(share(0.25), ready({ cleared: { [descriptorKey(a)]: { cents: 250_00 } } }), "abc123")).toMatchObject({ state: "withheld", reason: "not-cleared" });
+    const flagged = ready({ cleared, problems: { [descriptorKey(b)]: [{ kind: "DIFFERS", page: "Example", descriptor: b, detail: "off" }] } });
+    expect(clearanceOf(share(0.25), flagged, "abc123")).toMatchObject({ state: "withheld", reason: "flagged" });
+  });
+  it("works out a change and a sum", () => {
+    const diff = { descriptor: { report: "composite", op: "diff", of: [b, a] } as const, shownCents: 750_00 };
+    expect(clearanceOf(diff, ready({ cleared }), "abc123")).toMatchObject({ state: "cleared", cleared: { cents: 750_00 } });
+  });
+});

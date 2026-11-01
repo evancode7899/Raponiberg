@@ -51,10 +51,18 @@ const inherited = Object.fromEntries(
   Object.entries(process.env).filter(([k]) => !k.startsWith("__NEXT") && !["NEXT_RUNTIME", "NEXT_PHASE", "NODE_ENV", "PORT"].includes(k)),
 );
 
+/**
+ * The demo's "today": its made-up statements run through June 2026, so it always reads as
+ * mid-July 2026, figure for figure, whatever the date (lib/dates/isoDate.ts localToday). The
+ * render audit pins the browser's clock to the same day. DEMO_TODAY moves it.
+ */
+const DEMO_TODAY = process.env.DEMO_TODAY?.trim() || "2026-07-15";
+
 const env: Record<string, string | undefined> = {
   ...inherited,
   ...Object.fromEntries(REAL_FILES.map((k) => [k, ""])),
   APP_PROFILE: "demo",
+  APP_TODAY: DEMO_TODAY,
   DATA_DIR: DEMO_DIR,
   DATABASE_URL: `file:${DB.replace(/\\/g, "/")}`,
   BACKUP_AUTO: "0",

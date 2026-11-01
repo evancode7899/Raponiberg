@@ -238,7 +238,7 @@ function Overview({ r }: { r: NetWorthReport }) {
         title="Net worth by month-end"
         subtitle={`Stacked by account type, debts below zero. Every account is valued on the same calendar month-ends: exact for bank and card accounts, spread evenly inside investment statements. Proven through ${r.provenThrough}; month-ends that can't be proven are left blank (see Integrity).`}
         actions={
-          <Segmented
+          <Segmented view
             size="xs"
             options={[
               { value: "24", label: "24 months" },
@@ -367,7 +367,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
   }, [run]);
 
   const control = (
-    <Segmented
+    <Segmented view
       options={[
         { value: "month", label: "Month" },
         { value: "quarter", label: "Quarter" },

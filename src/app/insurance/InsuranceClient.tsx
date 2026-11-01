@@ -76,7 +76,7 @@ export function InsuranceClient({ requiresApiSecret }: { requiresApiSecret: bool
         ) : (
           <div className="flex flex-col gap-4">
             {data.policies.length > 1 && (
-              <Segmented
+              <Segmented view
                 options={data.policies.map((p) => ({ value: p.policy.policyNumber, label: `${p.policy.product ?? p.policy.insurer} ••${p.policy.policyNumber.slice(-4)}` }))}
                 value={policy.policy.policyNumber}
                 onChange={setPicked}
@@ -397,7 +397,7 @@ function Premiums({ v, today }: { v: PolicyView; today: string }) {
         title="Table of premiums and face amounts"
         subtitle="From the contract. Each policy year starts on the anniversary of the date of issue, when that year's premium is due."
         actions={
-          <Segmented
+          <Segmented view
             options={[
               { value: "term", label: "Term +10 years" },
               { value: "all", label: `All ${v.years.length} years` },

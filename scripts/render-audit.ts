@@ -16,7 +16,7 @@ import { readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
-import { auditRender, BYPASS_PENDING, pageOf, type DrawnView, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
+import { auditRender, BYPASS_PENDING, drawerStrays, pageOf, type DrawnView, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const base = (process.argv[2] ?? "").replace(/\/$/, "");
@@ -29,6 +29,17 @@ if (!base) {
 const SETTLE_MS = 30_000;
 /** How many problems of each kind to list; the counts are always whole. */
 const LISTED = Number(process.env.RENDER_AUDIT_LIST ?? 40);
+/** Pages audited at once. */
+const WORKERS = Math.max(1, Number(process.env.RENDER_AUDIT_WORKERS ?? 8));
+/** RENDER_AUDIT_ONLY=/cash-flow,/taxes: just those pages (a partial run: it can't tell what no page draws). */
+const ONLY = process.env.RENDER_AUDIT_ONLY?.split(",").map((s) => s.trim()).filter(Boolean);
+/** The day the server pins (APP_TODAY, set by scripts/demo.ts): the browser's clock reads it too. */
+const TODAY = process.env.APP_TODAY?.trim();
+/** Drill-downs opened per view, and proof drawers held to their proofs per view. */
+const DRILLS_PER_VIEW = 80;
+const DRAWERS_PER_VIEW = 4;
+/** The pages with the most views, started first so they don't finish last. */
+const SLOW = ["/cash-flow", "/taxes", "/net-worth", "/car", "/hsa", "/statements", "/fire", "/home-budget"];
 
 /** Every page the app has: each folder under src/app with a page.tsx, bar the API and dynamic segments. */
 function routes(): string[] {
@@ -80,41 +91,268 @@ function collect() {
     };
   });
   // Money or a rate in a text node that no figure holds. Form fields, a chart axis's tick
-  // labels (a scale, not data) and text marked data-not-figure (a calculator's own step)
-  // aren't figures. Words that open a proof (data-drawn="words") are held in renderAudit.ts.
+  // labels (a scale, not data) and text marked data-not-figure with a reason (kit NotFigure:
+  // a rule's threshold, an input you typed) aren't figures. Words that open a proof (data-drawn="words") are held in renderAudit.ts.
   const strays = new Set<string>();
+  const chart = new Set<string>();
   const re = /\$\s?\d|\d(?:[.,]\d+)*\s?%/;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const t = n.textContent ?? "";
     if (!re.test(t)) continue;
     const el = n.parentElement;
-    if (!el || el.closest("[data-proof-key], [data-not-figure], .recharts-cartesian-axis-tick-value, input, textarea, select, option, script, style, noscript") || !visible(el)) continue;
+    if (!el || el.closest('[data-proof-key], [data-not-figure]:not([data-not-figure=""]), .recharts-cartesian-axis-tick-value, #recharts_measurement_span, input, textarea, select, option, script, style, noscript') || !visible(el)) continue;
     const where = (el.closest("tr, li, [class*='rounded-lg'], section") ?? el).textContent?.replace(/\s+/g, " ").trim().slice(0, 90) ?? "";
-    strays.add(`${t.replace(/\s+/g, " ").trim().slice(0, 60)}" in "${where}`);
+    // In a chart (SVG): a label for a figure the view draws, held to it in renderAudit.ts.
+    if (el.closest("svg")) chart.add(t.replace(/\s+/g, " ").trim());
+    else strays.add(`${t.replace(/\s+/g, " ").trim().slice(0, 60)}" in "${where}`);
   }
-  return { figures, strays: [...strays], verifying: document.querySelectorAll('[data-clearance="verifying"]').length, size: document.body.innerText.length };
+  return { figures, strays: [...strays], chart: [...chart], verifying: document.querySelectorAll('[data-clearance="verifying"]').length, size: document.body.innerText.length };
+}
+
+/** Money and rates a proof drawer (the dialog the figure opened) draws. Runs in the browser. */
+function drawerTokens(): string[] {
+  const d = [...document.querySelectorAll('[role="dialog"]')].at(-1);
+  if (!d) return [];
+  const re = /[+\-−]?\(?\$\s?\d[\d,]*(?:\.\d+)?[kMB]?\)?|[+\-−]?\(?\d[\d,]*(?:\.\d+)?\s?%\)?/g;
+  return [...((d as HTMLElement).innerText ?? "").matchAll(re)].map((m) => m[0]);
+}
+
+/** The page's requests still in flight, so settle() knows when a click's data has come back. */
+const inflight = new WeakMap<Page, number>();
+
+/** A cheap look at the page: what settle() waits on (figures verifying, how much is drawn). Runs in the browser. */
+function glance(): string {
+  const figures = document.querySelectorAll("[data-proof-key]");
+  let text = 0;
+  figures.forEach((f) => (text += (f.textContent ?? "").length));
+  return `${document.querySelectorAll('[data-clearance="verifying"]').length}|${figures.length}|${text}|${document.body.textContent?.length ?? 0}|${document.querySelectorAll('[role="dialog"]').length}`;
 }
 
 /** Waits until the view's data has loaded and nothing changes: no requests in flight, no figure verifying, the same drawing twice. */
 async function settle(page: Page): Promise<string | null> {
-  await page.waitForLoadState("networkidle", { timeout: SETTLE_MS }).catch(() => {});
   const until = Date.now() + SETTLE_MS;
   let last = "";
   while (Date.now() < until) {
-    const s = await page.evaluate(collect);
-    const sig = `${s.verifying}|${s.figures.length}|${s.size}|${s.figures.map((f) => f.clearance + f.text).join()}`;
-    if (!s.verifying && sig === last) return null;
-    last = sig;
-    await page.waitForTimeout(300);
+    const sig = await page.evaluate(glance);
+    if (!sig.startsWith("0|") || inflight.get(page)) last = "";
+    else if (sig === last) return null;
+    else last = sig;
+    await page.waitForTimeout(120);
   }
   return `never settled in ${SETTLE_MS / 1000}s (figures still verifying, or the page kept changing)`;
 }
 
-async function view(page: Page, name: string, errors: string[]): Promise<DrawnView> {
-  const unsettled = await settle(page);
-  const s = await page.evaluate(collect);
-  return { view: name, figures: s.figures, strays: s.strays, errors: [...errors.splice(0), ...(unsettled ? [unsettled] : [])] };
+/** One unit of the audit (a page's tab) and what it drew, in order. */
+type Unit = { route: string; tab: { id: string; label: string } | null };
+type UnitRun = Unit & { views: DrawnView[]; ms: number; skipped?: string };
+const unitName = (u: Unit) => (u.tab ? `${u.route} › ${u.tab.label}` : u.route);
+
+/** The proof drawers opened so far, by family (report › page › figure): one of each is enough to hold the drawer's drawing. */
+const drawerFamilies = new Set<string>();
+const familyOf = (key: string) => {
+  try {
+    const d = JSON.parse(key) as Record<string, unknown>;
+    return [d.report, d.page, d.figure ?? d.metric ?? d.line ?? d.measure ?? d.op].filter((x) => typeof x === "string").join(" › ");
+  } catch {
+    return key;
+  }
+};
+
+/**
+ * Audits one tab of one page in a browser context of its own (its own storage). The page's
+ * own first tab also finds the others (kit Tabs: data-tab-id) and queues them, so a page with
+ * many tabs runs on several workers at once.
+ */
+async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], queue: Unit[]): Promise<UnitRun> {
+  const t0 = Date.now();
+  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: "reduce" });
+  // The demo's day in the browser too (scripts/demo.ts DEMO_TODAY): the year a page opens on, its default range.
+  if (TODAY) await context.clock.setFixedTime(new Date(`${TODAY}T12:00:00`));
+  // The audit only looks: any write (a saved input, a decision) is refused, so the data the sweep cleared is the data drawn.
+  await context.route(/\/api\//, (r) => {
+    const q = r.request();
+    return q.method() === "GET" || (q.method() === "POST" && new URL(q.url()).pathname === "/api/proof") ? r.continue() : r.abort();
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(10_000);
+  inflight.set(page, 0);
+  page.on("request", () => inflight.set(page, (inflight.get(page) ?? 0) + 1));
+  const done = () => inflight.set(page, Math.max(0, (inflight.get(page) ?? 1) - 1));
+  page.on("requestfinished", done);
+  page.on("requestfailed", done);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(`The page threw: ${e.message.split("\n")[0]}`));
+  const views: DrawnView[] = [];
+  // A view drawn before (the same figures, the same strays): nothing new to drill into or explore from it.
+  const seen = new Set<string>();
+
+  const draw = async (name: string): Promise<DrawnView & { repeat: boolean }> => {
+    const unsettled = await settle(page);
+    const s = await page.evaluate(collect);
+    const v: DrawnView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, errors: [...errors.splice(0), ...(unsettled ? [unsettled] : [])] };
+    const sig = JSON.stringify([s.figures.map((f) => [f.key, f.clearance, f.text]), s.strays]);
+    const repeat = seen.has(sig) && !v.errors.length;
+    seen.add(sig);
+    if (!repeat) views.push(v);
+    // The view itself (drawers() adds to it), marked when it repeats one drawn before.
+    return Object.assign(v, { repeat });
+  };
+  const closeDialog = async () => {
+    for (let k = 0; k < 4 && (await page.locator('[role="dialog"]').count()); k++) {
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(50);
+    }
+    await page.locator('[role="dialog"]').first().waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+  };
+
+  /** Opens a few figures' proof drawers (F6e) and holds what each draws to the proof the server answered. */
+  const drawers = async (v: DrawnView) => {
+    const picks = v.figures.filter((f) => f.clearance === "cleared" && !drawerFamilies.has(familyOf(f.key)));
+    for (const f of picks.slice(0, DRAWERS_PER_VIEW)) {
+      if (drawerFamilies.has(familyOf(f.key))) continue;
+      drawerFamilies.add(familyOf(f.key));
+      const el = page.locator(`[data-clearance="cleared"][data-proof-key="${f.key.replace(/["\\]/g, "\\$&")}"]`).first();
+      if (!(await el.isVisible().catch(() => false))) continue;
+      // Caught as it's made: a click that throws mustn't leave it to reject unheard.
+      const answer = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/proof" && r.request().method() === "POST", { timeout: 15_000 }).catch(() => null);
+      await el.click();
+      const res = await answer;
+      if (!res) {
+        v.drawers = [...(v.drawers ?? []), { key: f.key, strays: ["(the drawer asked for no proof)"] }];
+        await closeDialog();
+        continue;
+      }
+      const proof = (await res.json()) as unknown;
+      await settle(page);
+      v.drawers = [...(v.drawers ?? []), { key: f.key, strays: drawerStrays(await page.evaluate(drawerTokens), proof, f.perMonths) }];
+      await closeDialog();
+    }
+  };
+
+  /**
+   * What each drill-down on the view opens (data-audit-drill: a month, a category, a
+   * merchant) as a view of its own. One that opens a drawer is closed again; one that
+   * changes the page in place (a year month by month) is stepped through with its
+   * data-audit-step buttons, each step drawn, and left with its data-audit-back button.
+   */
+  const drills = async (name: string) => {
+    const openers = page.locator('[data-audit-drill]:not([role="dialog"] *)');
+    const n = Math.min(await openers.count(), DRILLS_PER_VIEW);
+    for (let i = 0; i < n; i++) {
+      const o = openers.nth(i);
+      if (!(await o.isVisible().catch(() => false))) continue;
+      const label = ((await o.getAttribute("data-audit-drill")) || (await o.innerText()).slice(0, 30)).replace(/\s+/g, " ").trim();
+      await o.click();
+      const back = page.locator("[data-audit-back]").first();
+      await Promise.race([page.locator('[role="dialog"]').first().waitFor({ timeout: 5000 }), back.waitFor({ timeout: 5000 })]).catch(() => {});
+      await draw(`${name} ▸ ${label}`);
+      if (await back.isVisible().catch(() => false)) {
+        const steps = page.locator("[data-audit-step]");
+        for (let j = 0; j < (await steps.count()); j++)
+          for (let k = 1; k <= 60 && (await steps.nth(j).isEnabled().catch(() => false)); k++) {
+            await steps.nth(j).click();
+            await draw(`${name} ▸ ${label} ▸ ${(await steps.nth(j).getAttribute("aria-label")) ?? "step"} ${k}`);
+          }
+        await back.click();
+        await settle(page);
+      } else await closeDialog();
+    }
+  };
+
+  /**
+   * Every option of each control the page marks as a view (data-audit-view), and with each
+   * one, every option of the controls after it (a year, then its basis): every pair, so a
+   * column only a year and a basis together show is drawn too. Drill-downs open on each
+   * single change, not on every pair. Options the control names in data-audit-view are left
+   * alone (it says why in data-audit-skip-why).
+   */
+  const explore = async (name: string, from = 0, depth = 0) => {
+    const controls = page.locator('[data-audit-view]:not([role="dialog"] *)');
+    const count = await controls.count();
+    for (let i = from; i < count; i++) {
+      const c = controls.nth(i);
+      if (!(await c.isVisible().catch(() => false))) continue;
+      const label = (await c.getAttribute("aria-label")) || `view ${i + 1}`;
+      const skip = new Set(((await c.getAttribute("data-audit-view")) ?? "").split(",").filter(Boolean));
+      const show = async (opt: string) => {
+        const at = `${name} · ${label}=${opt}`;
+        const v = await draw(at);
+        if (v.repeat) return;
+        await drawers(v);
+        if (depth === 0) {
+          await drills(at);
+          await explore(at, i + 1, 1);
+        }
+      };
+      if ((await c.evaluate((e) => e.tagName)) === "SELECT") {
+        const was = await c.inputValue();
+        for (const value of await c.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))) {
+          if (value === was || skip.has(value)) continue;
+          await c.selectOption(value);
+          await show(value);
+        }
+        await c.selectOption(was);
+      } else {
+        const radios = c.locator('[role="radio"]');
+        const n = await radios.count();
+        let on = -1;
+        for (let j = 0; j < n; j++) if ((await radios.nth(j).getAttribute("aria-checked")) === "true") on = j;
+        for (let j = 0; j < n; j++) {
+          if (j === on || skip.has((await radios.nth(j).getAttribute("data-value")) ?? "")) continue;
+          await radios.nth(j).click();
+          await show((await radios.nth(j).innerText()).trim());
+        }
+        if (on >= 0) await radios.nth(on).click();
+      }
+      await settle(page);
+    }
+  };
+
+  const visit = async (name: string) => {
+    // "Show more" (data-audit-more) until there is no more: every row the page can list is drawn.
+    const more = page.locator('[data-audit-more]:not([role="dialog"] *)').first();
+    for (let k = 1; k <= 10 && (await more.isVisible().catch(() => false)); k++) {
+      await draw(`${name} (page ${k})`);
+      await more.click();
+    }
+    const v = await draw(name);
+    await drawers(v);
+    await drills(name);
+    await explore(name);
+  };
+
+  const name = unitName(unit);
+  try {
+    const r = await page.goto(`${base}${unit.route}${unit.tab ? `?tab=${encodeURIComponent(unit.tab.id)}` : ""}`, { waitUntil: "load" }).catch((e: Error) => (errors.push(`Couldn't open: ${e.message.split("\n")[0]}`), null));
+    if (r && !r.ok()) errors.push(`Answered ${r.status()}`);
+    // An old address that redirects to a page audited in its own right is that page.
+    const landed = new URL(page.url()).pathname;
+    if (!unit.tab && landed !== unit.route && all.includes(landed)) return { ...unit, views: [], ms: Date.now() - t0, skipped: `redirects to ${landed}` };
+    await visit(name);
+    if (!unit.tab) {
+      // The page's other tabs, each a unit of its own for the next free worker.
+      const tabs = page.locator('[role="tablist"] [role="tab"][data-tab-id]');
+      for (let i = 0; i < (await tabs.count()); i++) {
+        if ((await tabs.nth(i).getAttribute("aria-selected")) === "true") continue;
+        const id = (await tabs.nth(i).getAttribute("data-tab-id"))!;
+        queue.push({ route: unit.route, tab: { id, label: (await tabs.nth(i).innerText()).replace(/\d+$/, "").trim() } });
+      }
+    }
+    // Tabs of the page's own (one per car, one per policy): each drawn as a view of this unit.
+    const own = page.locator('[role="tablist"] [role="tab"]:not([data-tab-id])');
+    for (let i = 0; i < (await own.count()); i++) {
+      if ((await own.nth(i).getAttribute("aria-selected")) === "true") continue;
+      const label = (await own.nth(i).innerText()).trim();
+      await own.nth(i).click();
+      await visit(`${name} ▸ ${label}`);
+    }
+  } catch (e) {
+    views.push({ view: name, figures: [], strays: [], errors: [`The audit couldn't finish the page: ${(e as Error).message.split("\n")[0]}`] });
+  } finally {
+    await context.close();
+  }
+  return { ...unit, views, ms: Date.now() - t0 };
 }
 
 const started = Date.now();
@@ -127,44 +365,47 @@ if (!res.ok) {
 const report = (await res.json()) as SweepVerdicts & { stamp: string; figures: number; problemCount: number };
 console.log(`Sweep of ${report.stamp}: ${report.figures} figures, ${Object.keys(report.cleared).length} cleared, ${report.problemCount} problem(s) (${Date.now() - started}ms)`);
 
+const all = routes();
+const todo = ONLY ? all.filter((r) => ONLY.includes(r)) : all;
+if (!todo.length) {
+  console.error(`No page to audit${ONLY ? ` among ${ONLY.join(", ")} (pages: ${all.join(" ")})` : ""}.`);
+  process.exit(2);
+}
 const browser = await launch();
-const views: DrawnView[] = [];
+const runs: UnitRun[] = [];
 try {
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: "reduce", timezoneId: process.env.TZ || undefined });
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(`The page threw: ${e.message.split("\n")[0]}`));
-  const seen = new Set<string>();
-  for (const route of routes()) {
-    const t0 = Date.now();
-    const r = await page.goto(`${base}${route}`, { waitUntil: "load" }).catch((e: Error) => (errors.push(`Couldn't open: ${e.message.split("\n")[0]}`), null));
-    if (r && !r.ok()) errors.push(`Answered ${r.status()}`);
-    // A page that redirects to one already audited (an old address) is that page.
-    const landed = new URL(page.url()).pathname + new URL(page.url()).search;
-    if (seen.has(landed)) {
-      errors.splice(0);
-      continue;
-    }
-    seen.add(landed);
-    views.push(await view(page, route, errors));
-    const tabs = page.locator('[role="tablist"] [role="tab"]');
-    const labels = (await tabs.allTextContents()).map((l) => l.replace(/\d+$/, "").trim());
-    for (let i = 0; i < labels.length; i++) {
-      if ((await tabs.nth(i).getAttribute("aria-selected")) === "true") continue;
-      await tabs.nth(i).click();
-      views.push(await view(page, `${route} › ${labels[i]}`, errors));
-    }
-    console.log(`${route.padEnd(18)} ${String(labels.length || 1).padStart(2)} view(s) ${String(Date.now() - t0).padStart(6)}ms`);
-  }
+  // A few units at once; the busiest pages first, so their tabs fan out early.
+  const queue: Unit[] = [...todo].sort((a, b) => (SLOW.indexOf(b) + 1 || 0) - (SLOW.indexOf(a) + 1 || 0)).map((route) => ({ route, tab: null }));
+  let busy = 0;
+  await Promise.all(
+    Array.from({ length: WORKERS }, async () => {
+      // A worker with nothing queued waits while others may still queue tabs.
+      for (;;) {
+        const unit = queue.shift();
+        if (!unit) {
+          if (!busy) return;
+          await new Promise((r) => setTimeout(r, 100));
+          continue;
+        }
+        busy++;
+        const run = await auditUnit(browser, unit, all, queue).finally(() => busy--);
+        runs.push(run);
+        console.log(`${unitName(unit).padEnd(40)} ${run.skipped ?? `${String(run.views.length).padStart(4)} view(s)`} ${String(run.ms).padStart(7)}ms`);
+      }
+    }),
+  );
 } finally {
   await browser.close();
 }
+// In page order, each page's own tab first: the report reads the same whatever finished first.
+const views = todo.flatMap((route) => runs.filter((r) => r.route === route).sort((a, b) => (a.tab ? 1 : 0) - (b.tab ? 1 : 0) || unitName(a).localeCompare(unitName(b))).flatMap((r) => r.views));
 
-const audit = auditRender(views, report);
+const audit = auditRender(views, report, BYPASS_PENDING, { partial: !!ONLY });
 // RENDER_AUDIT_JSON=<file>: everything drawn and every problem, for working through them.
 if (process.env.RENDER_AUDIT_JSON) writeFileSync(process.env.RENDER_AUDIT_JSON, JSON.stringify({ views, audit }, null, 1));
 const figures = views.reduce((n, v) => n + v.figures.length, 0);
-console.log(`\nRendered ${views.length} views: ${figures} figures drawn, ${audit.drawn} of the sweep's ${audit.cleared} cleared figures among them (${Date.now() - started}ms).`);
+const opened = views.reduce((n, v) => n + (v.drawers?.length ?? 0), 0);
+console.log(`\nRendered ${views.length} views: ${figures} figures drawn, ${audit.drawn} of the sweep's ${audit.cleared} cleared figures among them; ${opened} proof drawers held to their proofs (${Date.now() - started}ms).`);
 const byKind = new Map<string, typeof audit.problems>();
 for (const p of audit.problems) byKind.set(p.kind, [...(byKind.get(p.kind) ?? []), p]);
 for (const [kind, ps] of byKind) {

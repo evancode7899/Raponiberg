@@ -8,6 +8,15 @@ import { planW4, type W4Balance, type W4PersonPlan } from "@/lib/tax/w4";
 import { useMemo, useState, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { BalanceBadge, Callout, EstimateValue, formatDate, NumberTable, usd } from "./taxUi";
+import { NotFigure } from "@/components/ui/kit";
+import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
+import { taxesDerived } from "@/lib/book/derived/taxes";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
+import { unswept } from "@/lib/book/proof/clearance";
+import { W4_WALK } from "@/lib/tax/w4Extras";
+
+/** A figure of the W-4 plan (lib/tax/w4Extras), by row and column, drawn as `text`. */
+type Fig = (row: string, col: string, text: ReactNode, drawn?: FigureProps["drawn"]) => ReactNode;
 
 const STATUS: Record<W4OnFile["filingStatus"], string> = { SINGLE: "Single or Married filing separately", MFJ: "Married filing jointly", HOH: "Head of household" };
 /** Each person's latest pay stub received, per year: kept in this browser (it's a working note, not a figure). */
@@ -49,6 +58,14 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
       return next;
     });
   const plan = useMemo(() => planW4(r, { tooSoonCount: Number(tooSoon), paidThrough }), [r, tooSoon, paidThrough]);
+  // The plan's figures (lib/tax/w4Extras), held on the stubs on file: a latest stub kept in this browser makes a plan no sweep has seen.
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const entered = Object.values(paidThrough).some(Boolean);
+  const fig: Fig = (row, col, text, drawn) => (
+    <ProofValue proof={entered ? unswept("planned on the latest stub you entered, which this browser keeps: no sweep holds it") : derivedTarget("taxes", derived, "w4", cellKey(`${r.year}:${tooSoon}`, row, col))} drawn={drawn}>
+      {text}
+    </ProofValue>
+  );
 
   if (!r.isCurrentYear) {
     return <Callout tone="info">A W-4 only changes paychecks still to come, so it&apos;s planned for the year in progress. Pick {r.today.slice(0, 4)} above.</Callout>;
@@ -62,7 +79,7 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
     <div className="flex flex-col gap-4">
       <Card
         tone="overview"
-        title={`W-4s for $0.00 in April ${r.year + 1}`}
+        title={<NotFigure why="the plan's goal">{`W-4s for $0.00 in April ${r.year + 1}`}</NotFigure>}
         subtitle="Starts from what each paycheck withholds under the W-4 on file now, then moves only Step 4(c) or Step 3 (CT-W4 line 2 or 3), so the joint return neither owes nor refunds."
       >
         <div className="flex flex-col gap-2 px-4 pb-3 text-xs text-muted">
@@ -87,7 +104,7 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
         </div>
         <div className="flex flex-wrap items-center gap-2 px-4 pb-3 text-xs text-muted">
           <span>The new W-4 reaches</span>
-          <Segmented
+          <Segmented view
             ariaLabel="First paycheck the new W-4 reaches"
             size="xs"
             value={tooSoon}
@@ -100,15 +117,17 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
           />
         </div>
         <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
-          <Headline name="Federal" b={plan.federal} year={r.year} k="fed.balance" />
-          <Headline name="Connecticut" b={plan.ct} year={r.year} k="ct.balance" />
+          <Headline name="Federal" col="federal" b={plan.federal} year={r.year} k="fed.balance" fig={fig} />
+          <Headline name="Connecticut" col="ct" b={plan.ct} year={r.year} k="ct.balance" fig={fig} />
         </div>
         <div className="flex flex-col gap-2 px-4 pb-4">
           {!reached && <Callout tone="warn">No paychecks are left this year for a new W-4 to reach. Settle the balance with an estimated payment by {formatDate(`${r.year + 1}-01-15`)}.</Callout>}
           {(plan.unreachable.federal > 0 || plan.unreachable.ct > 0) && reached > 0 && (
             <Callout tone="warn">
               The paychecks left can&apos;t take it all without going past take-home pay: pay{" "}
-              {[plan.unreachable.federal > 0 && `${usd(plan.unreachable.federal)} to the IRS`, plan.unreachable.ct > 0 && `${usd(plan.unreachable.ct)} to Connecticut`].filter(Boolean).join(" and ")} as an
+              {plan.unreachable.federal > 0 && <>{fig("unreachable", "federal", usd(plan.unreachable.federal))} to the IRS</>}
+              {plan.unreachable.federal > 0 && plan.unreachable.ct > 0 && " and "}
+              {plan.unreachable.ct > 0 && <>{fig("unreachable", "ct", usd(plan.unreachable.ct))} to Connecticut</>} as an
               estimated payment by {formatDate(`${r.year + 1}-01-15`)}.
             </Callout>
           )}
@@ -126,12 +145,12 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
       </Card>
 
       {plan.people.map((p) => (
-        <PersonW4 key={p.personId} p={p} r={r} onSave={onSave} />
+        <PersonW4 key={p.personId} p={p} r={r} onSave={onSave} fig={fig} />
       ))}
 
-      <Card title="How the balance gets to $0" subtitle="The joint return projected to December 31: tax, less everything withheld or paid, under the W-4s on file now; then what the new ones change.">
+      <Card title={<NotFigure why="the plan's goal">How the balance gets to $0</NotFigure>} subtitle="The joint return projected to December 31: tax, less everything withheld or paid, under the W-4s on file now; then what the new ones change.">
         <div className="px-4 pb-4">
-          <Reconcile federal={plan.federal} ct={plan.ct} people={plan.people} />
+          <Reconcile federal={plan.federal} ct={plan.ct} people={plan.people} fig={fig} />
         </div>
       </Card>
 
@@ -141,7 +160,9 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
             These amounts are for the rest of {r.year} only. In January, file a fresh W-4 and CT-W4 for {r.year + 1}: Step 3 and Step 4(c) here are sized to make up a whole year&apos;s gap over a few
             paychecks.
           </li>
-          <li>Bonuses still to come are withheld at the flat 22% supplemental rate (and 6.99% for Connecticut), which a W-4 doesn&apos;t change; they&apos;re counted as they are.</li>
+          <li>
+            <NotFigure why="supplemental rates set by tax law">Bonuses still to come are withheld at the flat 22% supplemental rate (and 6.99% for Connecticut), which a W-4 doesn&apos;t change; they&apos;re counted as they are.</NotFigure>
+          </li>
           <li>
             Paychecks after the latest stub on file are forecast at the same paycheck, including the ones already received past it: set each person&apos;s latest stub received above, and the
             new W-4 is spread over the paychecks after it. Upload newer stubs and the plan updates; so do the Forecast page&apos;s paycheck and bonus choices, and the Inputs tab&apos;s extras.
@@ -153,7 +174,7 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
   );
 }
 
-function Headline({ name, b, year, k }: { name: string; b: W4Balance; year: number; k: "fed.balance" | "ct.balance" }) {
+function Headline({ name, col, b, year, k, fig }: { name: string; col: "federal" | "ct"; b: W4Balance; year: number; k: "fed.balance" | "ct.balance"; fig: Fig }) {
   return (
     <div className="rounded-md border border-line bg-surface p-3">
       <div className="mb-1 text-xs font-medium text-muted">{name}</div>
@@ -164,19 +185,21 @@ function Headline({ name, b, year, k }: { name: string; b: W4Balance; year: numb
         </EstimateValue>
         <span className="text-faint">→</span>
         <span className="text-muted">with the new ones</span>
-        <span className="num font-semibold text-fg">{exact(b.balanceAfter)}</span>
+        <span className="num font-semibold text-fg">{fig("walk:balanceAfter", col, exact(b.balanceAfter), { zeroWithin: 0.01 })}</span>
       </div>
     </div>
   );
 }
 
-function PersonW4({ p, r, onSave }: { p: W4PersonPlan; r: TaxResponse; onSave: (p: TaxProfile) => Promise<void> }) {
+function PersonW4({ p, r, onSave, fig }: { p: W4PersonPlan; r: TaxResponse; onSave: (p: TaxProfile) => Promise<void>; fig: Fig }) {
   const on = p.onFile;
   const to = p.recommended;
   const yes = (b: boolean) => (b ? "Checked" : "Not checked");
+  // What's on file is your entry; what to set it to is the plan's figure.
+  const line = (row: string, cents: number) => fig(`line:${row}`, p.personId, amt(cents));
   const cell = (now: ReactNode, next: ReactNode, changed: boolean) => [
     <span key="now" className="text-muted">
-      {now}
+      <NotFigure why="your entry: the W-4 on file">{now}</NotFigure>
     </span>,
     <span key="to" className={changed ? "font-semibold text-accent" : ""}>
       {changed ? next : "Keep"}
@@ -199,22 +222,22 @@ function PersonW4({ p, r, onSave }: { p: W4PersonPlan; r: TaxResponse; onSave: (
             {
               label: "Step 3 Dependents and other credits",
               help: "An annual amount: payroll subtracts it ÷ pay periods per year from each paycheck's withholding.",
-              values: cell(amt(on.credits), amt(to.credits), to.credits !== on.credits),
+              values: cell(amt(on.credits), line("credits", to.credits), to.credits !== on.credits),
             },
             { label: "Step 4(a) Other income (not from jobs)", values: cell(amt(on.otherIncome), amt(to.otherIncome), false) },
             { label: "Step 4(b) Deductions", values: cell(amt(on.deductions), amt(to.deductions), false) },
-            { label: "Step 4(c) Extra withholding per pay period", values: cell(amt(on.extraPerPaycheck), amt(to.extraPerPaycheck), to.extraPerPaycheck !== on.extraPerPaycheck) },
+            { label: "Step 4(c) Extra withholding per pay period", values: cell(amt(on.extraPerPaycheck), line("extraPerPaycheck", to.extraPerPaycheck), to.extraPerPaycheck !== on.extraPerPaycheck) },
             { label: "Form CT-W4 (Connecticut)", values: [], heading: true },
             {
               label: "Line 1 Withholding code",
               help: "Married filing jointly with both spouses working and combined income over $100,500 is usually code A. Keep whichever code is on file; the amounts below are worked out from it.",
               values: cell(on.ct.code ?? "As on file", to.ct.code ?? "As on file", false),
             },
-            { label: "Line 2 Additional withholding per pay period", values: cell(amt(on.ct.additional), amt(to.ct.additional), to.ct.additional !== on.ct.additional) },
-            { label: "Line 3 Reduced withholding per pay period", values: cell(amt(on.ct.reduced), amt(to.ct.reduced), to.ct.reduced !== on.ct.reduced) },
+            { label: "Line 2 Additional withholding per pay period", values: cell(amt(on.ct.additional), line("ctAdditional", to.ct.additional), to.ct.additional !== on.ct.additional) },
+            { label: "Line 3 Reduced withholding per pay period", values: cell(amt(on.ct.reduced), line("ctReduced", to.ct.reduced), to.ct.reduced !== on.ct.reduced) },
             { label: "Each paycheck", values: [], heading: true },
-            { label: "Federal income tax withheld", values: [formatUsdCents(p.federalPerCheck), <b key="f">{formatUsdCents(fedAfter)}</b>] },
-            { label: "Connecticut income tax withheld", values: [formatUsdCents(p.ctPerCheck), <b key="c">{formatUsdCents(ctAfter)}</b>] },
+            { label: "Federal income tax withheld", values: [fig("line:federalPerCheck", p.personId, formatUsdCents(p.federalPerCheck)), <b key="f">{fig("line:federalAfter", p.personId, formatUsdCents(fedAfter))}</b>] },
+            { label: "Connecticut income tax withheld", values: [fig("line:ctPerCheck", p.personId, formatUsdCents(p.ctPerCheck)), <b key="c">{fig("line:ctAfter", p.personId, formatUsdCents(ctAfter))}</b>] },
           ]}
         />
         <p className="mt-2 text-xs text-muted">
@@ -316,32 +339,32 @@ function OnFileEditor({ p, r, onSave }: { p: W4PersonPlan; r: TaxResponse; onSav
   );
 }
 
-function Reconcile({ federal, ct, people }: { federal: W4Balance; ct: W4Balance; people: W4PersonPlan[] }) {
-  const row = (label: string, f: (b: W4Balance) => number, o: { strong?: boolean; indent?: boolean; help?: string; sign?: -1 } = {}) => {
-    const v = (b: W4Balance) => (o.sign ?? 1) * f(b);
-    if (!o.strong && f(federal) === 0 && f(ct) === 0) return null;
-    return { label, values: [usd(v(federal)), usd(v(ct))], strong: o.strong, indent: o.indent, help: o.help };
+function Reconcile({ federal, ct, people, fig }: { federal: W4Balance; ct: W4Balance; people: W4PersonPlan[]; fig: Fig }) {
+  const row = (label: string, k: (typeof W4_WALK)[number], o: { strong?: boolean; indent?: boolean; help?: string; sign?: -1 } = {}) => {
+    const v = (b: W4Balance) => (o.sign ?? 1) * b[k];
+    if (!o.strong && federal[k] === 0 && ct[k] === 0) return null;
+    return { label, values: [fig(`walk:${k}`, "federal", usd(v(federal))), fig(`walk:${k}`, "ct", usd(v(ct)))], strong: o.strong, indent: o.indent, help: o.help };
   };
   const tooSoon = people.flatMap((p) => p.tooSoon).length;
   const rows = [
-    row("Projected tax for the year", (b) => b.tax, { strong: true }),
-    row("Withheld on the pay stubs on file", (b) => b.withheldStubs, { indent: true, sign: -1 }),
-    row("Paychecks received since the stubs on file (forecast)", (b) => b.withheldSinceStub, { indent: true, sign: -1 }),
-    tooSoon ? row("Paychecks before the new W-4 takes effect", (b) => b.withheldTooSoon, { indent: true, sign: -1 }) : null,
-    row("Paychecks the new W-4 reaches, as withheld now", (b) => b.withheldReached, { indent: true, sign: -1 }),
-    row("Bonuses still to come (flat supplemental rate)", (b) => b.withheldBonus, { indent: true, sign: -1 }),
-    row("Other withholding (W-2s, earlier employers)", (b) => b.withheldOther, { indent: true, sign: -1 }),
-    row("Estimated payments", (b) => b.estimates, { indent: true, sign: -1 }),
-    row("Other payments and credits", (b) => b.otherCredits, { indent: true, sign: -1, help: "Additional Medicare tax withheld, excess Social Security withheld, refundable child tax credit." }),
+    row("Projected tax for the year", "tax", { strong: true }),
+    row("Withheld on the pay stubs on file", "withheldStubs", { indent: true, sign: -1 }),
+    row("Paychecks received since the stubs on file (forecast)", "withheldSinceStub", { indent: true, sign: -1 }),
+    tooSoon ? row("Paychecks before the new W-4 takes effect", "withheldTooSoon", { indent: true, sign: -1 }) : null,
+    row("Paychecks the new W-4 reaches, as withheld now", "withheldReached", { indent: true, sign: -1 }),
+    row("Bonuses still to come (flat supplemental rate)", "withheldBonus", { indent: true, sign: -1 }),
+    row("Other withholding (W-2s, earlier employers)", "withheldOther", { indent: true, sign: -1 }),
+    row("Estimated payments", "estimates", { indent: true, sign: -1 }),
+    row("Other payments and credits", "otherCredits", { indent: true, sign: -1, help: "Additional Medicare tax withheld, excess Social Security withheld, refundable child tax credit." }),
   ].filter((x) => x != null);
   return (
     <NumberTable
       columns={["Federal", "Connecticut"]}
       rows={[
         ...rows,
-        { label: "Owed (refund) on the W-4s now", values: [usd(federal.balanceNow), usd(ct.balanceNow)], strong: true },
-        { label: "Change from the new W-4s", values: [usd(-federal.change), usd(-ct.change)], indent: true, help: "In brackets: withheld on top of today's W-4s. Without: given back." },
-        { label: "Owed (refund) with the new W-4s", values: [exact(federal.balanceAfter), exact(ct.balanceAfter)], strong: true },
+        { label: "Owed (refund) on the W-4s now", values: [fig("walk:balanceNow", "federal", usd(federal.balanceNow)), fig("walk:balanceNow", "ct", usd(ct.balanceNow))], strong: true },
+        { label: "Change from the new W-4s", values: [fig("walk:change", "federal", usd(-federal.change)), fig("walk:change", "ct", usd(-ct.change))], indent: true, help: "In brackets: withheld on top of today's W-4s. Without: given back." },
+        { label: "Owed (refund) with the new W-4s", values: [fig("walk:balanceAfter", "federal", exact(federal.balanceAfter), { zeroWithin: 0.01 }), fig("walk:balanceAfter", "ct", exact(ct.balanceAfter), { zeroWithin: 0.01 })], strong: true },
       ]}
     />
   );

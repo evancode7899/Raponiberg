@@ -79,4 +79,5 @@ export const declared = (why: string) => (figures: readonly DerivedFigure[]) => 
 export const INTEGRITY_WHY = "A count over the integrity report's own lists (the proof lists every one it counts): the checks behind it are the independent source.";
 export const LIMITS_WHY = "The tax plan's verdict per yearly limit, or wages as the year's pay stubs print them: the limit's own proof and the pay proof re-add those from the Book.";
 export const CALENDAR_WHY = "The tax plan's amount (W-4 extra per paycheck, a Q4 safe-harbor shortfall): Taxes › W-4 and the estimate's own proofs re-derive the plan.";
+export const TAXES_WHY = "The tax engine's own lines for each return (joint, each spouse separately), as the Worksheet states them: the tax estimate's proofs re-derive the engine's inputs from the Book.";
 export const FUNDS_WHY = "As the manager's notices and capital statements print it: each notice is its own source, and the chain re-adds what's worked from them.";

@@ -1,12 +1,16 @@
 "use client";
 
 import { MoneyInput } from "@/components/ui/kit";
-import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { NotFigure } from "@/components/ui/kit";
+import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import type { EstimateBasis, EstimateKey } from "@/lib/tax/estimateLines";
 
 export { Callout } from "@/components/ui/kit";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import { taxesDerived } from "@/lib/book/derived/taxes";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
+import type { TaxReport, TaxReportBlocked } from "@/lib/tax/buildTaxReport";
 
 /** Whole dollars from cents; exact zero shows an em dash. */
 export const usd = (cents: number | null | undefined) => (cents == null ? "—" : formatUsd(Math.round(cents / 100)));
@@ -31,6 +35,9 @@ export function BalanceBadge({ cents }: { cents: number }) {
     </span>
   );
 }
+
+/** A row's label: rates and thresholds in it are set by tax law, not figures read from the data. */
+export const lawLabel = (label: ReactNode): ReactNode => (typeof label === "string" && /[$%]/.test(label) ? <NotFigure why="set by tax law">{label}</NotFigure> : label);
 
 export type Row = {
   label: ReactNode;
@@ -141,11 +148,24 @@ export function NullableMoneyField({
  * in lib/tax/estimateLines, for the joint return unless a filer is given. `cents` is the
  * figure as the page computed it, before any sign flip for display.
  */
-export function EstimateValue({ year, k, cents, basis = "projected", filer, children }: { year: number; k: EstimateKey | "found.FEDERAL" | "found.CT"; cents: number; basis?: EstimateBasis | "filed"; filer?: string; children: ReactNode }) {
-  return <ProofValue proof={{ descriptor: { report: "tax-estimate", year, basis, ...(filer ? { filer } : {}), key: k }, shownCents: cents }}>{children}</ProofValue>;
+export function EstimateValue({ year, k, cents, basis = "projected", filer, drawn, children }: { year: number; k: EstimateKey | "found.FEDERAL" | "found.CT"; cents: number; basis?: EstimateBasis | "filed"; filer?: string; drawn?: FigureProps["drawn"]; children: ReactNode }) {
+  return (
+    <ProofValue proof={{ descriptor: { report: "tax-estimate", year, basis, ...(filer ? { filer } : {}), key: k }, shownCents: cents }} drawn={drawn}>
+      {children}
+    </ProofValue>
+  );
 }
 
 export function formatDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y!, m! - 1, d!)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** Draws one of the year's Overview cells (lib/tax/overviewExtras) as its figure, by row and column. */
+export function useOverviewCell(r: TaxReport | (TaxReportBlocked & { year: number })) {
+  // A blocked year has no figures to draw: every cell is withheld with it.
+  const derived = useMemo(() => ("blocked" in r && r.blocked ? [] : taxesDerived(r as TaxReport)), [r]);
+  return function cell(row: string, col: string, text: ReactNode) {
+    return <ProofValue proof={derivedTarget("taxes", derived, "overview", cellKey(r.year, row, col))}>{text}</ProofValue>;
+  };
 }

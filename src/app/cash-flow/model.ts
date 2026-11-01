@@ -2,7 +2,8 @@ import type { SpendingKind, SpendingMonth, SpendingReport } from "@/lib/book/rep
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { savingsRate } from "@/lib/book/definitions";
 import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
-import type { ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
+import { categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { noFigure } from "@/lib/book/proof/clearance";
 import { cashFlowDescriptor, median, mergeCategories, sum, type CashFlowRecipe, type Slice } from "@/lib/book/reports/cashFlowWindows";
@@ -83,53 +84,73 @@ export function totals(months: SpendingMonth[]): Totals {
 
 export const categoryCents = (m: SpendingMonth, category: string) => m.spendingByCategory.find((c) => c.category === category)?.cents ?? 0;
 
-/** `proof`: the figure the title names, so a number in a sentence is as provable as one in a tile. */
-export type Insight = { tone: "good" | "bad" | "info" | "warn"; title: string; body: string; action?: { label: string; tab?: string; category?: string }; proof?: ProofRef };
+/** A number in an insight's words, and the figure it is: a sentence's numbers are as provable as a tile's. */
+export type Seg = string | { text: string; proof: ProofRef };
+
+/** `key`: the insight in plain words, for ordering and as a list key. */
+export type Insight = { tone: "good" | "bad" | "info" | "warn"; key: string; title: Seg[]; body: Seg[]; action?: { label: string; tab?: string; category?: string } };
 
 /** Builds a figure's proof target over months (CashFlowClient's ctx.proof). */
 export type ProofOf = (metric: CashFlowMetric, months: SpendingMonth[], o: ProofOptions) => ProofRef;
 
+/** The page's proofs an insight's numbers use: sums over months (ctx.proof) and derived figures (ctx.dp). */
+export type InsightProofs = { proof: ProofOf; dp: (figure: string, key?: string) => ProofRef };
+
 /** Which insights lead when there are more than fit: changes and warnings before context. */
 const RANK = ["Spending", "You kept", "ran high", "went up", "recurring bills", "of spending", "Bonuses", "Largest", "Top habit"];
 const rank = (i: Insight) => {
-  const r = RANK.findIndex((k) => i.title.includes(k));
+  const r = RANK.findIndex((k) => i.key.includes(k));
   return r < 0 ? RANK.length : r;
 };
 
 const pct = (r: number) => formatPercentRatio(Math.abs(r), 0);
+const words = (segs: Seg[]) => segs.map((x) => (typeof x === "string" ? x : x.text)).join("");
 
 /**
  * Plain-language observations about the selected months, most useful first. Each
  * compares like with like: averages per month against the same-length run before.
+ * Every number in them is a figure with its proof (Seg), never loose text.
  */
-export function buildInsights(slice: Slice, r: Report, proof?: ProofOf): Insight[] {
+export function buildInsights(slice: Slice, r: Report, x: InsightProofs): Insight[] {
   const out: Insight[] = [];
   const { months, prior } = slice;
   if (!months.length) return out;
   const t = totals(months);
   const p = prior.length ? totals(prior) : null;
+  const key = windowKey(months);
+  const fig = (text: string, proof: ProofRef): Seg => ({ text, proof });
+  const push = (i: Omit<Insight, "key">) => out.push({ ...i, key: words(i.title) });
+  const perMonth = (metric: CashFlowMetric, ms: SpendingMonth[], cents: number, o: Omit<ProofOptions, "shownCents" | "perMonth"> = {}) => fig(usd0(cents / Math.max(1, ms.length)), x.proof(metric, ms, { ...o, perMonth: true, shownCents: cents }));
 
   if (p && p.avgSpending > 0) {
     const ch = t.avgSpending / p.avgSpending - 1;
     const cats = mergeCategories(months, (m) => m.spendingByCategory);
     const prevCats = mergeCategories(prior, (m) => m.spendingByCategory);
-    const deltas = SPEND_CATEGORIES.map((c) => ({
-      c,
-      d: (cats.find((x) => x.category === c)?.cents ?? 0) / t.n - (prevCats.find((x) => x.category === c)?.cents ?? 0) / p.n,
-    })).sort((a, b) => (ch >= 0 ? b.d - a.d : a.d - b.d));
+    const deltas = SPEND_CATEGORIES.map((c) => {
+      const now = cats.find((y) => y.category === c)?.cents ?? 0;
+      const then = prevCats.find((y) => y.category === c)?.cents ?? 0;
+      return { c, now, then, d: now / t.n - then / p.n };
+    }).sort((a, b) => (ch >= 0 ? b.d - a.d : a.d - b.d));
     const driver = deltas[0];
+    // The change in a month's spending: this run against the one before, each over its months.
+    const change = fig(pct(ch), compositeOf("growth", [x.proof("spending", months, { shownCents: t.spending }), x.proof("spending", prior, { shownCents: p.spending })], { ratio: ch }, [t.n, p.n]));
     if (Math.abs(ch) >= 0.05) {
-      out.push({
+      const mover =
+        driver && Math.abs(driver.d) >= 5000
+          ? [
+              ` Biggest mover: ${driver.c} (${driver.d > 0 ? "+" : "−"}`,
+              fig(usd0(Math.abs(driver.d)), compositeOf("diff", [x.proof("spending", months, { category: driver.c, shownCents: driver.now }), x.proof("spending", prior, { category: driver.c, shownCents: driver.then })], { cents: driver.d }, [t.n, p.n])),
+              "/mo).",
+            ]
+          : [];
+      push({
         tone: ch > 0 ? "warn" : "good",
-        title: `Spending ${ch > 0 ? "up" : "down"} ${pct(ch)} vs the previous ${p.n} months`,
-        body: `${usd0(t.avgSpending)}/mo now against ${usd0(p.avgSpending)}/mo before.${
-          driver && Math.abs(driver.d) >= 5000 ? ` Biggest mover: ${driver.c} (${driver.d > 0 ? "+" : "−"}${usd0(Math.abs(driver.d))}/mo).` : ""
-        }`,
+        title: [`Spending ${ch > 0 ? "up" : "down"} `, change, ` vs the previous ${p.n} months`],
+        body: [perMonth("spending", months, t.spending), "/mo now against ", perMonth("spending", prior, p.spending), "/mo before.", ...mover],
         action: driver ? { label: `Open ${driver.c}`, tab: "spending", category: driver.c } : undefined,
-        proof: proof?.("spending", months, { perMonth: true, shownCents: t.spending }),
       });
     } else {
-      out.push({ tone: "info", proof: proof?.("spending", months, { perMonth: true, shownCents: t.spending }), title: "Spending is steady", body: `${usd0(t.avgSpending)}/mo, within ${pct(ch)} of the previous ${p.n} months (${usd0(p.avgSpending)}/mo).` });
+      push({ tone: "info", title: ["Spending is steady"], body: [perMonth("spending", months, t.spending), "/mo, within ", change, ` of the previous ${p.n} months (`, perMonth("spending", prior, p.spending), "/mo)."] });
     }
   }
 
@@ -137,22 +158,29 @@ export function buildInsights(slice: Slice, r: Report, proof?: ProofOf): Insight
     const months_ = months.filter((m) => m.incomeCents > 0);
     const best = [...months_].sort((a, b) => (b.savingsRate ?? -9) - (a.savingsRate ?? -9))[0];
     const deficit = months.filter((m) => m.netCents < 0).length;
-    out.push({
+    push({
       tone: t.savingsRate >= 0.2 ? "good" : t.savingsRate >= 0 ? "info" : "bad",
-      title: `You kept ${formatPercentRatio(t.savingsRate, 0)} of income`,
-      proof: proof?.("net", months, { shownCents: t.net }),
-      body: `${usd0(t.net)} saved over ${t.n} month${t.n === 1 ? "" : "s"}. ${deficit ? `${deficit} month${deficit === 1 ? "" : "s"} spent more than came in` : "No month spent more than came in"}${
-        best && t.n > 2 ? `; best was ${best.label} (${formatPercentRatio(best.savingsRate ?? 0, 0)})` : ""
-      }.`,
+      title: ["You kept ", fig(formatPercentRatio(t.savingsRate, 0), x.dp("savings-rate", key)), " of income"],
+      body: [
+        fig(usd0(t.net), x.proof("net", months, { shownCents: t.net })),
+        ` saved over ${t.n} month${t.n === 1 ? "" : "s"}. ${deficit ? `${deficit} month${deficit === 1 ? "" : "s"} spent more than came in` : "No month spent more than came in"}`,
+        ...(best && t.n > 2 ? [`; best was ${best.label} (`, fig(formatPercentRatio(best.savingsRate ?? 0, 0), x.dp("savings-rate", windowKey([best]))), ")"] : []),
+        ".",
+      ],
     });
   }
 
   if (t.n >= 3 && t.typicalIncome > 0 && t.avgIncome > t.typicalIncome * 1.25) {
-    out.push({
+    push({
       tone: "info",
-      title: "Bonuses lift the average",
-      proof: proof?.("income", months, { perMonth: true, shownCents: t.income }),
-      body: `A typical month brings in ${usd0(t.typicalIncome)}, but the average is ${usd0(t.avgIncome)} — the gap is irregular pay (bonuses, one-time deposits). Budget against the typical month.`,
+      title: ["Bonuses lift the average"],
+      body: [
+        "A typical month brings in ",
+        fig(usd0(t.typicalIncome), x.dp("typical-income", key)),
+        ", but the average is ",
+        perMonth("income", months, t.income),
+        " — the gap is irregular pay (bonuses, one-time deposits). Budget against the typical month.",
+      ],
       action: { label: "See income", tab: "income" },
     });
   }
@@ -160,11 +188,15 @@ export function buildInsights(slice: Slice, r: Report, proof?: ProofOf): Insight
   const cats = mergeCategories(months, (m) => m.spendingByCategory).filter((c) => c.cents > 0);
   const top = cats[0];
   if (top && t.spending > 0) {
-    out.push({
+    push({
       tone: "info",
-      title: `${top.category} is ${pct(top.cents / t.spending)} of spending`,
-      proof: proof?.("spending", months, { category: top.category, perMonth: true, shownCents: top.cents }),
-      body: `${usd0(top.cents / t.n)}/mo on average${cats[1] ? `, then ${cats[1].category} (${usd0(cats[1].cents / t.n)}/mo) and ${cats[2]?.category ?? "the rest"}` : ""}.`,
+      title: [`${top.category} is `, fig(pct(top.cents / t.spending), x.dp("category-share", categoryKey(months, "EXPENSE", top.category))), " of spending"],
+      body: [
+        perMonth("spending", months, top.cents, { category: top.category }),
+        "/mo on average",
+        ...(cats[1] ? [`, then ${cats[1].category} (`, perMonth("spending", months, cats[1].cents, { category: cats[1].category }), `/mo) and ${cats[2]?.category ?? "the rest"}`] : []),
+        ".",
+      ],
       action: { label: `Open ${top.category}`, tab: "spending", category: top.category },
     });
   }
@@ -174,62 +206,63 @@ export function buildInsights(slice: Slice, r: Report, proof?: ProofOf): Insight
   if (t.n >= 3) {
     const rest = months.slice(0, -1);
     const spikes = SPEND_CATEGORIES.map((c) => ({ c, now: categoryCents(last, c), typ: median(rest.map((m) => categoryCents(m, c))) }))
-      .filter((x) => x.now - x.typ >= 20000 && x.now > x.typ * 1.4)
+      .filter((y) => y.now - y.typ >= 20000 && y.now > y.typ * 1.4)
       .sort((a, b) => b.now - b.typ - (a.now - a.typ));
     const s = spikes[0];
     if (s) {
-      out.push({
+      const now = x.proof("spending", [last], { category: s.c, shownCents: s.now });
+      const typ = x.dp("category-typical-earlier", categoryKey(months, "EXPENSE", s.c));
+      push({
         tone: "warn",
-        title: `${s.c} ran high in ${last.label}`,
-        proof: proof?.("spending", [last], { category: s.c, shownCents: s.now }),
-        body: `${usd0(s.now)} against a typical ${usd0(s.typ)} — ${usd0(s.now - s.typ)} more than usual.`,
+        title: [`${s.c} ran high in ${last.label}`],
+        body: [fig(usd0(s.now), now), " against a typical ", fig(usd0(s.typ), typ), " — ", fig(usd0(s.now - s.typ), compositeOf("diff", [now, typ], { cents: s.now - s.typ })), " more than usual."],
         action: { label: `Open ${s.c}`, tab: "spending", category: s.c },
       });
     }
   }
 
+  const bill = (c: Report["recurring"][number], figure: string, cents: number) => fig(usd0(cents), x.dp(figure, c.key));
   const active = r.recurring.filter((c) => c.kind === "bill" && c.active);
   if (active.length) {
     const yearly = sum(active, (c) => c.annualCents);
-    out.push({
+    push({
       tone: "info",
-      title: `${active.length} recurring bills and subscriptions: ${usdCompact(yearly)}/yr`,
-      body: `${usd0(yearly / 12)}/mo is committed before you buy anything. Largest: ${active
-        .slice(0, 3)
-        .map((c) => `${c.name} (${usd0(c.typicalCents)})`)
-        .join(", ")}.`,
+      title: [`${active.length} recurring bills and subscriptions: `, fig(usdCompact(yearly), x.dp("bills-yearly")), "/yr"],
+      body: [
+        fig(usd0(yearly / 12), x.dp("bills-monthly")),
+        "/mo is committed before you buy anything. Largest: ",
+        ...active.slice(0, 3).flatMap((c, i): Seg[] => [...(i ? [", "] : []), `${c.name} (`, bill(c, "recurring-typical", c.typicalCents), ")"]),
+        ".",
+      ],
       action: { label: "Review recurring", tab: "recurring" },
     });
   }
   const raised = r.recurring.filter((c) => c.kind === "bill" && c.active && c.changeCents && c.changeCents > 0);
   if (raised.length) {
-    out.push({
+    push({
       tone: "warn",
-      title: `${raised.length} bill${raised.length === 1 ? "" : "s"} went up`,
-      body: raised
-        .slice(0, 3)
-        .map((c) => `${c.name} +${usd0(c.changeCents!)} to ${usd0(c.lastCents)}`)
-        .join(" · "),
+      title: [`${raised.length} bill${raised.length === 1 ? "" : "s"} went up`],
+      body: raised.slice(0, 3).flatMap((c, i): Seg[] => [...(i ? [" · "] : []), `${c.name} +`, bill(c, "recurring-change", c.changeCents!), " to ", bill(c, "recurring-last", c.lastCents)]),
       action: { label: "Review recurring", tab: "recurring" },
     });
   }
 
   const habit = r.recurring.filter((c) => c.kind === "habit" && c.active).sort((a, b) => b.last12Cents - a.last12Cents)[0];
   if (habit) {
-    out.push({
+    push({
       tone: "info",
-      title: `Top habit: ${habit.name}`,
-      body: `${habit.count} visits at about ${usd0(habit.typicalCents)} each — ${usd0(habit.last12Cents)} over the last 12 months.`,
+      title: [`Top habit: ${habit.name}`],
+      body: [`${habit.count} visits at about `, bill(habit, "recurring-typical", habit.typicalCents), " each — ", bill(habit, "recurring-last12", habit.last12Cents), " over the last 12 months."],
       action: { label: "See habits", tab: "recurring" },
     });
   }
 
   const big = r.oneOffs.filter((o) => o.date >= months[0]!.start && o.date <= last.end && !o.tagged)[0];
   if (big) {
-    out.push({
+    push({
       tone: "info",
-      title: `Largest single expense: ${usd0(big.cents)}`,
-      body: `${big.merchant} (${big.category}) on ${big.date}. Mark big one-offs so your typical spending isn't skewed.`,
+      title: ["Largest single expense: ", fig(usd0(big.cents), { descriptor: { report: "row", rowId: big.rowId }, shownCents: -big.cents })],
+      body: [`${big.merchant} (${big.category}) on ${big.date}. Mark big one-offs so your typical spending isn't skewed.`],
       action: { label: "Review one-offs", tab: "spending" },
     });
   }

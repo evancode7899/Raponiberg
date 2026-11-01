@@ -74,13 +74,13 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
     <>
       <div className="flex flex-wrap items-center gap-2">
         {many && (
-          <select className={selectCls} value={carFilter} onChange={(e) => setCarFilter(e.target.value as CarFilter)} aria-label="Car">
+          <select data-audit-view="" className={selectCls} value={carFilter} onChange={(e) => setCarFilter(e.target.value as CarFilter)} aria-label="Car">
             <option value="THIS">{carName(car)} (with shared)</option>
             <option value="ALL">All cars</option>
             <option value={SHARED}>Shared only</option>
           </select>
         )}
-        <select className={selectCls} value={kind} onChange={(e) => setKind(e.target.value as CarKind | "ALL")} aria-label="Kind">
+        <select data-audit-view="" className={selectCls} value={kind} onChange={(e) => setKind(e.target.value as CarKind | "ALL")} aria-label="Kind">
           <option value="ALL">All kinds</option>
           {CAR_KINDS.map((k) => (
             <option key={k} value={k}>
@@ -88,7 +88,7 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
             </option>
           ))}
         </select>
-        <select className={selectCls} value={show} onChange={(e) => setShow(e.target.value as Show)} aria-label="Show">
+        <select data-audit-view="" className={selectCls} value={show} onChange={(e) => setShow(e.target.value as Show)} aria-label="Show">
           <option value="ALL">Counted and not</option>
           <option value="COUNTED">Counted only</option>
           <option value="NOT_COUNTED">Not counted only</option>

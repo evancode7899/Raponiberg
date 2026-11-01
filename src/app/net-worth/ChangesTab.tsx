@@ -29,7 +29,7 @@ function Delta({ cents }: { cents: number | null }) {
 export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChangesReport | null; granularity: Granularity; setGranularity: (g: Granularity) => void }) {
   const [picked, setPicked] = useState<string | null>(null);
   const control = (
-    <Segmented
+    <Segmented view
       options={[
         { value: "month", label: "Month" },
         { value: "quarter", label: "Quarter" },
@@ -54,7 +54,7 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
       <button type="button" className={btn.secondary} disabled={i === 0} onClick={() => go(i - 1)} aria-label={`Previous ${UNIT[granularity]}`}>
         ‹
       </button>
-      <select className={selectCls} value={p.start} onChange={(e) => setPicked(e.target.value)} aria-label={`Pick a ${UNIT[granularity]}`}>
+      <select data-audit-view="" className={selectCls} value={p.start} onChange={(e) => setPicked(e.target.value)} aria-label={`Pick a ${UNIT[granularity]}`}>
         {[...r.periods].reverse().map((x) => (
           <option key={x.start} value={x.start}>
             {x.label}

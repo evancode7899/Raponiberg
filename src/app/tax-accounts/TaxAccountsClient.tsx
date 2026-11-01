@@ -75,7 +75,7 @@ export function TaxAccountsClient({ requiresApiSecret }: { requiresApiSecret: bo
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <Segmented
+              <Segmented view
                 ariaLabel="Tax year"
                 options={data.years.map((y) => ({ value: String(y), label: String(y) }))}
                 value={String(r.year)}

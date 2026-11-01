@@ -1,3 +1,5 @@
+import type { CompositeDescriptor } from "./composite.ts";
+import { compositeKind } from "./compositeProof.ts";
 import { cashFlowKind, type CashFlowDescriptor } from "./cashFlowProof.ts";
 import { netWorthKind, type NetWorthDescriptor } from "./netWorthProof.ts";
 import { payKind, type PayDescriptor } from "./payProof.ts";
@@ -36,7 +38,7 @@ import type { Proof, ProofContext, ProofKind } from "./types.ts";
  * Checks over the figure come from checksFor (common.ts), with the list of checks that
  * can withhold that kind of figure.
  */
-export type ProofDescriptor = CashFlowDescriptor | NetWorthDescriptor | PayDescriptor | InvestmentsDescriptor | FiledReturnDescriptor | HsaDescriptor | CarDescriptor | ForecastDescriptor | TaxEstimateDescriptor | BonusesDescriptor | PlanningDescriptor | AnnualDescriptor | DashboardDescriptor | AccountLimitsDescriptor | StatementDescriptor | RowDescriptor | StubDescriptor | DerivedDescriptor;
+export type ProofDescriptor = CashFlowDescriptor | NetWorthDescriptor | PayDescriptor | InvestmentsDescriptor | FiledReturnDescriptor | HsaDescriptor | CarDescriptor | ForecastDescriptor | TaxEstimateDescriptor | BonusesDescriptor | PlanningDescriptor | AnnualDescriptor | DashboardDescriptor | AccountLimitsDescriptor | StatementDescriptor | RowDescriptor | StubDescriptor | DerivedDescriptor | CompositeDescriptor;
 
 const KINDS: { [R in ProofDescriptor["report"]]: ProofKind<Extract<ProofDescriptor, { report: R }>> } = {
   "cash-flow": cashFlowKind,
@@ -57,6 +59,7 @@ const KINDS: { [R in ProofDescriptor["report"]]: ProofKind<Extract<ProofDescript
   row: rowKind,
   stub: stubKind,
   derived: derivedKind,
+  composite: compositeKind,
 };
 
 const kindOf = (report: string) => (Object.hasOwn(KINDS, report) ? (KINDS[report as ProofDescriptor["report"]] as ProofKind<ProofDescriptor>) : null);

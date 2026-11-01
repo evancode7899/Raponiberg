@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { auditRender, readDrawn, textMatches, type DrawnFigure, type DrawnView } from "./renderAudit";
+import { descriptorKey } from "./key";
+import { auditRender, drawerStrays, readDrawn, textMatches, type DrawnFigure, type DrawnView } from "./renderAudit";
 
 const fig = (over: Partial<DrawnFigure> = {}): DrawnFigure => ({ key: "k1", shown: "4125.50", shownKind: "cents", perMonths: null, clearance: "cleared", text: "$4,126", ...over });
 const view = (over: Partial<DrawnView> = {}): DrawnView => ({ view: "/example", figures: [fig()], strays: [], errors: [], ...over });
@@ -103,5 +104,55 @@ describe("BYPASS_PENDING: a page's stray money waits for its stage, and the list
 
   it("never excuses a mismatch on a pending page", () => {
     expect(auditRender([view({ strays: ["x"], figures: [fig({ text: "$9,999" })] })], sweep, { "/example": "F6b" }).problems).toMatchObject([{ kind: "RENDER_TEXT" }]);
+  });
+});
+
+describe("drawerStrays: every number a proof drawer draws is one its proof holds", () => {
+  const proof = { figure: { cents: 4125_50 }, selfCheck: { explain: "The 3 rows below add up to $4,125.50" }, blocks: [{ kind: "chain", lines: [{ value: { ratio: 0.065 } }, { value: { cents: -1200_00 } }] }] };
+  it("passes cents drawn as dollars, ratios as rates, per-month splits and the proof's own words", () => {
+    expect(drawerStrays(["$4,126", "$4,125.50", "6.5%", "($1,200)", "−$1.2k"], proof)).toEqual([]);
+    expect(drawerStrays(["$344"], proof, 12)).toEqual([]);
+  });
+  it("flags a number the drawer worked out by itself", () => {
+    expect(drawerStrays(["$4,200", "9%"], proof)).toEqual(["$4,200", "9%"]);
+  });
+});
+
+describe("a figure that states no value is held to the one the sweep cleared", () => {
+  it("passes text that is the cleared value, and catches text that isn't", () => {
+    const quiet = (text: string) => view({ figures: [fig({ shown: "", shownKind: "", text })] });
+    expect(auditRender([quiet("$4,126")], sweep, {}).problems).toEqual([]);
+    expect(auditRender([quiet("$5,000")], sweep, {}).problems).toMatchObject([{ kind: "RENDER_TEXT" }]);
+  });
+  it("finds the page of a driven view", () => {
+    expect(auditRender([view({ view: "/example · Year=2025 ▸ Dining", strays: ["x"] })], sweep, { "/example": "F6b" }).problems).toEqual([]);
+  });
+});
+
+describe("words that stand for zero", () => {
+  it("passes About even within the declared distance of zero, and nothing further", () => {
+    expect(textMatches(fig({ shown: "0.40", text: "About even", drawn: "per:1;step:0;zero:1" })).ok).toBe(true);
+    expect(textMatches(fig({ shown: "250.00", text: "About even", drawn: "per:1;step:0;zero:1" })).ok).toBe(false);
+    expect(textMatches(fig({ shown: "0.40", text: "—" })).ok).toBe(true);
+  });
+});
+
+describe("composite figures: arithmetic over figures the sweep proved", () => {
+  const a = { report: "row", rowId: "a" } as const;
+  const b = { report: "row", rowId: "b" } as const;
+  const key = descriptorKey({ report: "composite", op: "share", of: [a, b] });
+  const parts = { cleared: { [descriptorKey(a)]: { cents: 250_00 }, [descriptorKey(b)]: { cents: 1000_00 } }, problems: {} };
+  it("clears in the audit at the share its parts work out to, held to the text drawn", () => {
+    const share = (text: string, shown = "0.25") => view({ figures: [fig({ key, shown, shownKind: "ratio", text })] });
+    expect(auditRender([share("25%")], parts, {}, { partial: true }).problems).toEqual([]);
+    expect(auditRender([share("30%", "0.3")], parts, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_NOT_CLEARED" }]);
+    expect(auditRender([share("25%")], { cleared: {}, problems: {} }, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_NOT_CLEARED" }]);
+  });
+});
+
+describe("chart labels: a chart only pictures the figures the view draws", () => {
+  it("passes a label that is a drawn figure's value, and flags one that isn't", () => {
+    expect(auditRender([view({ chart: ["$4.1k"] })], sweep, {}, { partial: true }).problems).toEqual([]);
+    expect(auditRender([view({ chart: ["$9.9k"] })], sweep, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_BYPASS" }]);
   });
 });

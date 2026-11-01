@@ -357,6 +357,16 @@ export function WordsCell({ label, value, sub, tone = "neutral" }: { label: Reac
   );
 }
 
+/**
+ * Text that holds money or a rate but isn't a figure read from the data: a rule's threshold,
+ * an example, an input you typed. It says why, so the render audit (scripts/render-audit.ts),
+ * which fails on money drawn outside a figure, knows what it is. Anything read from the data
+ * is a figure with a proof (ProofValue), never this.
+ */
+export function NotFigure({ why, children }: { why: string; children: ReactNode }) {
+  return <span data-not-figure={why}>{children}</span>;
+}
+
 export function Badge({ tone = "neutral", children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
     <span
@@ -427,15 +437,23 @@ export function Segmented<T extends string>({
   onChange,
   size = "sm",
   ariaLabel,
+  view = false,
 }: {
   options: { value: T; label: ReactNode; title?: string }[];
   value: T;
   onChange: (v: T) => void;
   size?: "xs" | "sm";
   ariaLabel?: string;
+  /**
+   * It picks what the page shows (a range, a year, $ or $k), not an input the page saves:
+   * the render audit (scripts/render-audit.ts) clicks every option and holds what each draws.
+   * `skip` names options it leaves alone, and why (a custom range the sweep can't enumerate).
+   */
+  view?: boolean | { skip: T[]; why: string };
 }) {
+  const audit = view ? { "data-audit-view": typeof view === "object" ? view.skip.join(",") : "", ...(typeof view === "object" ? { "data-audit-skip-why": view.why } : {}) } : {};
   return (
-    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex rounded-md border border-line-strong bg-surface-2 p-0.5">
+    <div role="radiogroup" aria-label={ariaLabel} {...audit} className="inline-flex rounded-md border border-line-strong bg-surface-2 p-0.5">
       {options.map((o) => {
         const on = value === o.value;
         return (
@@ -443,6 +461,7 @@ export function Segmented<T extends string>({
             key={o.value}
             type="button"
             role="radio"
+            data-value={o.value}
             aria-checked={on}
             title={o.title}
             onClick={() => onChange(o.value)}
@@ -479,6 +498,7 @@ export function Tabs<T extends string>({
               type="button"
               role="tab"
               aria-selected={on}
+              data-tab-id={t.id}
               onClick={() => onChange(t.id)}
               className={`relative flex shrink-0 items-center gap-1.5 px-2.5 py-2.5 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus ${
                 on ? "text-fg" : "text-muted hover:text-fg"

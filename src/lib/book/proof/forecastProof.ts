@@ -1,7 +1,8 @@
 import { addDays, startOfMonth } from "../../dates/isoDate.ts";
 import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
 import { buildForecast, type Forecast } from "../../forecast/forecast.ts";
-import { monthPeriods, yearPeriods, type Flows, type Period } from "../../forecast/periods.ts";
+import { ledgerValue } from "../../forecast/ledger.ts";
+import { monthPeriods, yearPeriods, type Period } from "../../forecast/periods.ts";
 import type { AnnualProfileReport } from "../../profile/buildAnnualProfile.ts";
 import { grow, monthlyReturn, type OutlookMonth } from "../../profile/outlook.ts";
 import { forecastInputs, loadForecastData, type ForecastData } from "../../forecast/load.ts";
@@ -629,12 +630,8 @@ const BALANCES = new Set<LedgerLine>(["netWorth", "liquid", "illiquid"]);
 const cellOf = (month: string, through: string, line: LedgerLine): CellDescriptor => ({ report: "forecast", figure: "month", month, ...(through !== month ? { through } : {}), line });
 const colCell = (p: Period, line: LedgerLine) => cellOf(p.from, p.through.slice(0, 7), line);
 
-/** A line's value in a column, as the ledger reads it (ForecastLedger ROWS). */
-export function ledgerValue(x: Flows, line: LedgerLine): number | null {
-  if (line === "toLiquid") return x.saved == null || x.toRetirement == null ? null : x.saved - x.toRetirement;
-  if (line === "netWorth" || line === "liquid" || line === "illiquid") return x.close?.[line] ?? null;
-  return x[line];
-}
+/** A line's value in a column, as the ledger reads it (forecast/ledger.ts). */
+export { ledgerValue };
 
 /** Every column the ledger can draw that touches `year`: the year columns and that year's months. */
 function columnsOf(f: Forecast, r: AnnualProfileReport, year: number): Period[] {

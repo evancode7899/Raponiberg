@@ -112,7 +112,7 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
       actions={
         <>
           <input type="search" className={`${inputCls} w-52 !py-1 !text-xs`} placeholder="Filter by name or account…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <Segmented
+          <Segmented view
             options={[
               { value: "all", label: "All" },
               { value: "attention", label: "Needs attention" },

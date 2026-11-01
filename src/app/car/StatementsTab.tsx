@@ -143,7 +143,7 @@ function LogVsStatements({ ctx }: { ctx: CarCtx }) {
       title="Your log against your statements"
       subtitle="Each entry you logged, and the statement charge it is. A match is the statement's amount, counted once. An entry with no charge counts nothing: find its charge below, or mark it paid outside your statements if it will never be on one."
       actions={
-        <Segmented
+        <Segmented view
           size="xs"
           value={filter}
           onChange={setFilter}
@@ -322,7 +322,7 @@ function Charges({ ctx }: { ctx: CarCtx }) {
           : "Set the purchase date under Car details: statements are read from then on."
       }
       actions={
-        <Segmented
+        <Segmented view
           size="xs"
           value={filter}
           onChange={setFilter}

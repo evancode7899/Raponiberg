@@ -102,7 +102,7 @@ export function CategorizeQueue({ api, onCount }: { api: Api; onCount: (n: numbe
             </div>
           </div>
           <input type="search" className={`${inputCls} w-56`} placeholder="Find a merchant…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <Segmented
+          <Segmented view
             ariaLabel="Sort"
             options={[
               { value: "amount", label: "Biggest $" },
