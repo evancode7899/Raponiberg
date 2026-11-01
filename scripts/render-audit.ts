@@ -103,8 +103,8 @@ function collect() {
     const t = n.textContent ?? "";
     if (!re.test(t)) continue;
     const el = n.parentElement;
-    // An open proof drawer's numbers are held to its proof's JSON (drawerTokens), not to this view.
-    if (!el || el.closest('.pf-drawer:has([data-proof-clearance]), [data-proof-key], [data-not-figure]:not([data-not-figure=""]), .recharts-cartesian-axis-tick-value, #recharts_measurement_span, input, textarea, select, option, script, style, noscript') || !visible(el)) continue;
+    // An open proof drawer's numbers are held to its proof's JSON (drawerTokens), not to this view; a chart tooltip is where the mouse last was.
+    if (!el || el.closest('.pf-drawer:has([data-proof-clearance]), .recharts-tooltip-wrapper, [data-proof-key], [data-not-figure]:not([data-not-figure=""]), .recharts-cartesian-axis-tick-value, #recharts_measurement_span, input, textarea, select, option, script, style, noscript') || !visible(el)) continue;
     const where = (el.closest("tr, li, [class*='rounded-lg'], section") ?? el).textContent?.replace(/\s+/g, " ").trim().slice(0, 90) ?? "";
     // In a chart (SVG): a label for a figure the view draws, held to it in renderAudit.ts.
     if (el.closest("svg")) chart.add(t.replace(/\s+/g, " ").trim());
@@ -129,7 +129,9 @@ function glance(): string {
   const figures = document.querySelectorAll("[data-proof-key]");
   let text = 0;
   figures.forEach((f) => (text += (f.textContent ?? "").length));
-  return `${document.querySelectorAll('[data-clearance="verifying"]').length}|${figures.length}|${text}|${document.body.textContent?.length ?? 0}|${document.querySelectorAll('[role="dialog"]').length}`;
+  // A figure still verifying, or a spinner (kit Loading: data not loaded yet), means the view isn't drawn yet.
+  const waiting = document.querySelectorAll('[data-clearance="verifying"], [role="status"] .animate-spin').length;
+  return `${waiting}|${figures.length}|${text}|${document.body.textContent?.length ?? 0}|${document.querySelectorAll('[role="dialog"]').length}`;
 }
 
 /** Waits until the view's data has loaded and nothing changes: no requests in flight, no figure verifying, the same drawing twice. */

@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { descriptorKey } from "./key";
-import { auditRender, drawerStrays, figureFamily, readDrawn, textMatches, type DrawnFigure, type DrawnView } from "./renderAudit";
+import { auditRender as audit, drawerStrays, figureFamily, readDrawn, textMatches, type DrawnFigure, type DrawnView } from "./renderAudit";
 
 const fig = (over: Partial<DrawnFigure> = {}): DrawnFigure => ({ key: "k1", shown: "4125.50", shownKind: "cents", perMonths: null, clearance: "cleared", text: "$4,126", ...over });
 const view = (over: Partial<DrawnView> = {}): DrawnView => ({ view: "/example", figures: [fig()], strays: [], errors: [], ...over });
 const sweep = { cleared: { k1: { cents: 4125_50 } }, problems: {} };
+/** The audit as these tests knew it before F6d: whatever a test leaves undrawn counts as pending (the gate has its own test below). */
+const auditRender: typeof audit = (views, s, pending, opts = {}) => {
+  const drawn = new Set(views.flatMap((v) => v.figures.map((f) => f.key)));
+  const undrawn = Object.fromEntries(Object.keys(s.cleared).filter((k) => !drawn.has(k)).map((k) => [figureFamily(k), "test"]));
+  return audit(views, s, pending, { undrawnPending: undrawn, ...opts });
+};
 
 describe("readDrawn: a drawn number read back, with how far the drawing rounds it", () => {
   it("reads whole dollars, cents, compact and accounting negatives", () => {

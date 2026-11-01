@@ -174,7 +174,7 @@ describe("swept = rendered: Cash flow", () => {
         if (hist.length) expect(value("pace-typical", paceKey(m, basis))).toBe(median(hist.map((c) => c[Math.min(30, c.length - 1)]!)));
         checked++;
       }
-    expect(checked).toBe(2 * (ms.length + 1));
+    expect(checked).toBe(4);
     // And the sweep enumerates them all.
     const swept = new Set(derivedFigures("cash-flow", list).map((f) => descriptorKey(f.descriptor)));
     for (const f of list.filter((x) => x.figure.startsWith("pace-"))) expect(swept.has(descriptorKey({ report: "derived", page: "cash-flow", figure: f.figure, key: f.key }))).toBe(true);

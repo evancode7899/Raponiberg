@@ -350,7 +350,7 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
         <>
           <ProofValue proof={proofOf(lm.proof, lm.spendingCents)}>{usd0(lm.spendingCents)}</ProofValue> spent, {diff >= 0 ? "above" : "below"} the <ProofValue proof={avgProof}>{usd0(avgTotal)}</ProofValue> monthly average by{" "}
           <span className={diff > 0 ? "text-neg" : "text-pos"}>
-            <ProofValue proof={compositeOf("diff", [proofOf(lm.proof, lm.spendingCents), avgProof], { cents: diff }, [1, cf.last12.months])}>{usd0(Math.abs(diff))}</ProofValue>
+            <ProofValue proof={compositeOf("diff", [proofOf(lm.proof, lm.spendingCents), avgProof], { cents: lm.spendingCents - cf.last12.spendingCents / cf.last12.months }, [1, cf.last12.months])}>{usd0(Math.abs(diff))}</ProofValue>
           </span>
           . Click a category for its transactions.
         </>
@@ -389,7 +389,7 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
                 <ProofValue proof={proofOf(c.proof, c.lastMonthCents)}>{usd0(c.lastMonthCents)}</ProofValue>
               </span>
               <span className={`num text-right text-xs ${Math.abs(over) < 2500 ? "text-muted" : over > 0 ? "text-neg" : "text-pos"}`}>
-                {Math.abs(over) < 100 ? "—" : <ProofValue proof={compositeOf("diff", [proofOf(c.proof, c.lastMonthCents), proofOf(c.totalProof, c.totalCents)], { cents: over }, [1, c.months])}>{usdDelta(over)}</ProofValue>}
+                {Math.abs(over) < 100 ? "—" : <ProofValue proof={compositeOf("diff", [proofOf(c.proof, c.lastMonthCents), proofOf(c.totalProof, c.totalCents)], { cents: c.lastMonthCents - c.totalCents / c.months }, [1, c.months])}>{usdDelta(over)}</ProofValue>}
               </span>
             </li>
           );

@@ -172,7 +172,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
                   {t && <td className={`${table.tdR} text-muted`}>{s.typicalCents == null ? "—" : <ProofValue proof={avg}>{s.key === "spending" ? usd0(-s.typicalCents) : usd0(s.typicalCents)}</ProofValue>}</td>}
                   {t && (
                     <td className={table.tdR}>
-                      <Delta cents={s.typicalCents == null ? null : s.cents - s.typicalCents} of={[own, avg]} ofCents={s.typicalCents == null ? null : s.key === "spending" ? s.typicalCents - s.cents : s.cents - s.typicalCents} />
+                      <Delta cents={s.typicalCents == null ? null : s.cents - s.typicalCents} of={[own, avg]} ofCents={s.typicalCents == null ? null : s.key === "spending" ? p.spendingCents - (t?.spendingCents ?? 0) : s.cents - s.typicalCents} />
                     </td>
                   )}
                 </tr>

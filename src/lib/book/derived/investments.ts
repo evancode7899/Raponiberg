@@ -1,5 +1,5 @@
 import type { InvestmentsReport } from "../reports/investments.ts";
-import { c, ln, r, type DerivedFigure } from "./types.ts";
+import { c, cellKey, ln, r, type DerivedFigure } from "./types.ts";
 
 /** A growth series' key: its account, or the household's ("all"). */
 export const growthKey = (accountId: string | null) => accountId ?? "all";
@@ -78,7 +78,22 @@ export function investmentsDerived(rep: InvestmentsReport): DerivedFigure[] {
     value: c(g.costUnknownCents),
     lines: [ln("Taxable positions without a basis", c(g.costUnknownCents), undefined, { source: "proven" })],
   });
+  // By tax treatment: each treatment's value, its share of everything, and its classes' shares.
+  for (const t of rep.byTreatment) {
+    out.push({ figure: "treatment", key: t.treatment, describes: `Held ${t.treatment.toLowerCase()}`, value: c(t.cents), lines: [ln("Positions held that way, added up", c(t.cents), undefined, { source: "proven" })] });
+    if (rep.totalCents) out.push({ figure: "treatment-share", key: t.treatment, describes: `Held ${t.treatment.toLowerCase()}: share of everything invested`, value: r(t.cents / rep.totalCents), lines: [ln("Held that way", c(t.cents)), ln("÷ everything invested", c(rep.totalCents)), ln("Share", r(t.cents / rep.totalCents))] });
+    for (const a of t.allocation) out.push({ figure: "treatment-class", key: `${t.treatment}|${a.cls}`, describes: `Held ${t.treatment.toLowerCase()}: ${a.cls} share`, value: r(a.share), lines: [ln(a.cls, c(a.cents)), ln(`÷ held ${t.treatment.toLowerCase()}`, c(t.cents)), ln("Share", r(a.share))] });
+  }
   for (const s of rep.growth) {
+    // Quarter by quarter: money in, value and growth to date at each quarter-end.
+    for (const x of s.points) {
+      const k = (col: string) => cellKey(growthKey(s.accountId), x.end, col);
+      out.push(
+        { figure: "growth-point", key: k("money-in"), describes: `${s.name}: money in through ${x.label}`, value: c(x.investedCents), lines: [ln("Deposits, rollovers and opening balances, net of withdrawals", c(x.investedCents), undefined, { source: "proven" })] },
+        { figure: "growth-point", key: k("value"), describes: `${s.name}: value at the end of ${x.label}`, value: c(x.valueCents), lines: [ln(`Value, ${x.end}`, c(x.valueCents), undefined, { source: "proven" })] },
+        { figure: "growth-point", key: k("growth"), describes: `${s.name}: growth through ${x.label}`, value: c(x.valueCents - x.investedCents), lines: [ln("Value", c(x.valueCents)), ln("Money in", c(x.investedCents), "−"), ln("Growth", c(x.valueCents - x.investedCents), "=")] },
+      );
+    }
     const last = s.points.at(-1);
     if (!last) continue;
     const key = growthKey(s.accountId);

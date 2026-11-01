@@ -8,7 +8,7 @@ import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { Send } from "./HsaClient";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { chargesSum, expensesSum, useHsaDerived, type HsaDp } from "./derived";
+import { expensesSum, useHsaDerived, type HsaDp } from "./derived";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 
 type Status = "open" | "done" | "review" | "all";
