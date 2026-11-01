@@ -95,7 +95,8 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     // Account roll-forwards: each account since its first statement on file, held to its own statements.
     const rolls = rollforwardsDerived(buildAccountRollforwards(book)).map((f) => ({ ...f, scope: { query: { affects: "NET_WORTH" as const, from: book.ledger.firstDay ?? from, to: r.current.asOf, accountIds: [f.key!] }, checks: NET_WORTH_CHECKS } }));
     const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeTypicalDerived), ...built, ...rolls];
-    return { figures, rederived: { ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), ...declared(BUILT_WHY)(built), ...rederiveRollforwards(book, rolls) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
+    // Built's returns are re-derived (rederiveNetWorth); its other cells are declared.
+    return { figures, rederived: { ...declared(BUILT_WHY)(built), ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), ...rederiveRollforwards(book, rolls) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },
   integrity: async ({ book }) => {
     const figures = integrityDerived({ ...book.integrity, horizon: book.horizon });

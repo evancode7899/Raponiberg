@@ -198,7 +198,6 @@ export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {
   "annual › net-worth": "F6f",
   "derived › car › premium": "F6f",
   "derived › car › premium-monthly": "F6f",
-  "derived › net-worth › change-return": "F6f",
   "derived › car › premium-change": "F6f",
   "derived › taxes › compare-diff": "F6f",
   "cash-flow › net": "F6f",

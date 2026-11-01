@@ -5,13 +5,15 @@ import type { Book } from "../book/load.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import type { Lane } from "../classifier/taxonomy.ts";
 import type { AccountGroup } from "../ledger/loadLedger.ts";
-import { chainReturns, decompose, dietzParts, MIN_RETURN_CAPITAL_CENTS, type Quality } from "../ledger/timeline.ts";
+import { monthlyDietz, monthReturn, type MonthDietz } from "../ledger/netWorthReport.ts";
+import { chainedReturn, chainReturns, decompose, type Quality } from "../ledger/timeline.ts";
 import { bucketForGroup } from "./annualMath.ts";
 import type { NetWorthBucket } from "./settings.ts";
 
 /**
  * Each investment account, one calendar year at a time: opening → contributions →
- * withdrawals → income → market change → closing, with the year's Modified Dietz return.
+ * withdrawals → income → market change → closing, with the year's return (its months'
+ * Modified Dietz returns chained, as How it was built shows it).
  * A year that depends on a statement not on file carries its blockers instead of figures.
  * Shown on Net worth › Account roll-forwards.
  */
@@ -32,8 +34,8 @@ export type RollYear = {
   fees: number;
   closing: number;
   returnRatio: number | null;
-  /** The Modified Dietz parts behind returnRatio: gain ÷ time-weighted capital. */
-  dietz: { gainCents: number; capitalCents: number };
+  /** The months behind returnRatio, each gain ÷ time-weighted capital (Modified Dietz), chained. */
+  months: MonthDietz[];
   /** Change no statement explains (coverage missing inside the year); 0 when every day is covered. */
   unexplained: number;
   quality: Quality;
@@ -90,8 +92,8 @@ export function buildAccountRollforwards(book: Book): RollforwardReport {
         const inflow = (l: Lane) => d.inflowsByLane[l] ?? 0;
         const otherLanes: Lane[] = ["TRANSFER", "EXTERNAL_TRANSFER", "INCOME", "EXPENSE"];
         const inc = incomeByAccountYear.get(a.id)?.get(year) ?? null;
-        const parts = dietzParts(t, from, to);
-        const ret = parts.capitalCents >= MIN_RETURN_CAPITAL_CENTS ? parts.gainCents / parts.capitalCents : null;
+        const months = monthlyDietz(t, from, to);
+        const ret = chainedReturn(months.map(monthReturn));
         if (ret != null && blockers.length === 0) {
           const lo = t.firstDay! > from ? t.firstDay! : from;
           const hi = a.closed && t.lastDay! < to ? t.lastDay! : to;
@@ -111,7 +113,7 @@ export function buildAccountRollforwards(book: Book): RollforwardReport {
           fees: d.feesCents,
           closing: d.closingCents,
           returnRatio: ret,
-          dietz: parts,
+          months,
           unexplained: d.unexplainedCents,
           quality: d.quality,
         });

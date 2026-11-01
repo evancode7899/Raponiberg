@@ -1,10 +1,10 @@
-import { addDays, inclusiveDays, periodsBetween, type Granularity } from "../../dates/isoDate.ts";
+import { addDays, periodsBetween, type Granularity } from "../../dates/isoDate.ts";
 import { formatPercentRatio, usd0 } from "../../formatMoney.ts";
 import type { HouseholdPeriod, NetWorthPeriod } from "../../ledger/netWorthReport.ts";
-import { chainReturns, type Quality } from "../../ledger/timeline.ts";
+import { chainedReturn, type Quality } from "../../ledger/timeline.ts";
 import type { Book } from "../load.ts";
 import type { ProofDescriptor } from "../proof/index.ts";
-import { derivedDescriptor } from "../derived/types.ts";
+import { cellKey, derivedDescriptor } from "../derived/types.ts";
 import { typicalKey } from "../derived/netWorth.ts";
 import { buildCashFlowReport, type CashFlowPeriod, type CategoryAmount } from "./cashFlow.ts";
 import { buildNetWorth, netWorthSpanQuality } from "./netWorth.ts";
@@ -161,8 +161,8 @@ function highlightsOf(c: Omit<NetWorthChange, "highlights">, g: Granularity): Hi
   if (c.portfolioReturn != null)
     out.push([
       "Your investments returned ",
-      // Its months' returns chained (derived/netWorth.ts changeTypicalDerived "change-return"), as Investment returns chains them.
-      { text: formatPercentRatio(c.portfolioReturn, 1), descriptor: derivedDescriptor("net-worth", { figure: "change-return", key: typicalKey(g, c.start, "return") }), ratio: c.portfolioReturn },
+      // How it was built's return for the same period (derived/netWorth.ts builtDerived): its months' returns chained.
+      { text: formatPercentRatio(c.portfolioReturn, 1), descriptor: derivedDescriptor("net-worth", { figure: "built", key: cellKey(g, `${c.start}:return`, "household") }), ratio: c.portfolioReturn },
       " (time-weighted, net of fees).",
     ]);
   return out;
@@ -265,16 +265,15 @@ type SpanQuality = (start: string, end: string) => Quality;
 /**
  * A quarter or year of net worth as its months add up: Home's "from saving" and "from
  * markets" (and their proofs) add months, so the steps here do too. Opening is the first
- * month's, closing the last's; the return chains the months' returns, as Investment
- * returns does. Its quality is the span's own, not the worst of its months.
+ * month's, closing the last's; the return chains the months' returns (chainedReturn), as
+ * How it was built and Investment returns do. Its quality is the span's own, not the worst of its months.
  */
 function monthsAdded(label: string, months: NetWorthPeriod[], quality: Quality): NetWorthSpan {
   const first = months[0]!;
   const last = months.at(-1)!;
   const household = { ...first.household, closingCents: last.household.closingCents, quality };
   for (const k of SUMMED) household[k] = months.reduce((t, m) => t + m.household[k], 0);
-  const rs = months.map((m) => m.household.portfolioReturn);
-  household.portfolioReturn = rs.every((r) => r != null) ? chainReturns(months.map((m) => ({ r: m.household.portfolioReturn!, days: inclusiveDays(m.start, m.end) }))).total : null;
+  household.portfolioReturn = chainedReturn(months.map((m) => m.household.portfolioReturn));
   return { label, start: first.start, end: last.end, through: last.through, household };
 }
 

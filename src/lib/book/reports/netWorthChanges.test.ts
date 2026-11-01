@@ -124,4 +124,14 @@ describe("netWorthChangesOf", () => {
     expect(q2!.typical).toBeNull();
     expect(q2!.proofs.change).toMatchObject({ granularity: "quarter", start: "2025-04-01", end: "2025-05-20" });
   });
+
+  it("chains a quarter's measured months, as How it was built does, and points its return at that figure", () => {
+    const nw = months([typicalMonth, typicalMonth, typicalMonth]);
+    nw[1]!.household.portfolioReturn = null; // under $1,000 invested: no return that month
+    nw[2]!.household.portfolioReturn = -0.02;
+    const [q1] = netWorthChangesOf(nw, [cash("2025-01-01", "2025-03-31", [cat("Paycheck", 3 * PAY)], [cat("Groceries", 930_000)], "quarter")], "quarter", exact);
+    expect(q1!.portfolioReturn).toBeCloseTo(1.01 * 0.98 - 1, 12);
+    const ret = q1!.highlights.flat().find((s) => typeof s !== "string" && "ratio" in s);
+    expect(ret).toMatchObject({ descriptor: { report: "derived", page: "net-worth", figure: "built", key: "quarter|2025-01-01:return|household" } });
+  });
 });
