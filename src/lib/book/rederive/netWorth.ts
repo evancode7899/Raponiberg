@@ -49,6 +49,44 @@ export function contributionRows(book: Book, from: string, to: string, investmen
 }
 
 /**
+ * Account roll-forwards' returns since first on file, worked out a second way: each calendar
+ * year's Modified Dietz re-worked from the account's timeline and chained here, not read
+ * off the report's years.
+ */
+export function rederiveRollforwards(book: Book, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const through = book.horizon.netWorth;
+  const accounts = new Map(household(book).ledger.accounts.map((a) => [a.id, a]));
+  return rederiveList(figures, (f) => {
+    if (f.figure !== "rollforward-since") return null;
+    const a = accounts.get(f.key ?? "");
+    const t = a?.timeline;
+    if (!a || !t?.firstDay || !t.lastDay) return null;
+    let growth = 1;
+    let days = 0;
+    let years = 0;
+    for (let y = Number(t.firstDay.slice(0, 4)); y <= Number(through.slice(0, 4)); y++) {
+      const from = maxIso(`${y}-01-01`, t.firstDay);
+      const to = minIso(`${y}-12-31`, a.closed ? minIso(t.lastDay, through) : through);
+      if (from > to) continue;
+      // The year's months, each its own Modified Dietz from the timeline, chained; a month under the minimum capital left out.
+      const yearEnd = minIso(`${y}-12-31`, through);
+      let measured = 0;
+      for (const m of periodsBetween(`${y}-01-01`, yearEnd, "month")) {
+        const p = dietzParts(t, m.start, minIso(m.end, yearEnd));
+        if (p.capitalCents < MIN_RETURN_CAPITAL_CENTS) continue;
+        growth *= 1 + p.gainCents / p.capitalCents;
+        measured++;
+      }
+      if (!measured) continue;
+      days += inclusiveDays(from, to);
+      years++;
+    }
+    const annualized = days >= 365 ? growth ** (365 / days) - 1 : null;
+    return [ratioRoute("each month re-worked from the account's timeline (Modified Dietz), chained", f.value, annualized ?? growth - 1, `${years} years over ${days} days${annualized != null ? ", a year" : ""}`, 1e-9)];
+  });
+}
+
+/**
  * Net worth's derived figures worked out a second way (F5):
  *  - the portfolio return: each month's Modified Dietz worked out again from every
  *    investment account's timeline and chained here, not read off the report's periods or

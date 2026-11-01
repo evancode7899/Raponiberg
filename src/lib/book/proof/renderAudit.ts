@@ -159,7 +159,6 @@ export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {
   "tax-estimate": "F6f",
   "cash-flow › spending": "F6f",
   "derived › taxes › worksheet": "F6f",
-  "row": "F6f",
   "derived › taxes › income": "F6f",
   "derived › forecast › bonus": "F6f",
   "cash-flow › income": "F6f",

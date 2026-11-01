@@ -20,7 +20,8 @@ import { integrityDerived } from "./integrity.ts";
 import { taxesDerived } from "./taxes.ts";
 import { forecastDerived } from "./forecast.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
-import { builtDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived } from "./netWorth.ts";
+import { builtDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived, rollforwardsDerived } from "./netWorth.ts";
+import { buildAccountRollforwards } from "../../profile/rollforwards.ts";
 import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
 import { NET_WORTH_CHECKS } from "../proof/netWorthProof.ts";
@@ -39,7 +40,7 @@ import { buildInvestments } from "../reports/investments.ts";
 import { investmentsDerived } from "./investments.ts";
 import type { DerivedFigure, DerivedPage } from "./types.ts";
 import { rederiveCashFlow } from "../rederive/cashFlow.ts";
-import { rederiveNetWorth } from "../rederive/netWorth.ts";
+import { rederiveNetWorth, rederiveRollforwards } from "../rederive/netWorth.ts";
 import { rederiveInvestments } from "../rederive/investments.ts";
 import { rederiveCar } from "../rederive/car.ts";
 import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance } from "../rederive/pages.ts";
@@ -91,9 +92,11 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const changes = (["month", "quarter", "year"] as const).map((granularity) => buildNetWorthChanges(book, { granularity }));
     // How it was built, at each granularity its control offers.
     const built = [r, ...(["quarter", "year"] as const).map((granularity) => buildNetWorth(book, { granularity }))].flatMap(builtDerived);
-    const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeTypicalDerived), ...built];
+    // Account roll-forwards: each account since its first statement on file, held to its own statements.
+    const rolls = rollforwardsDerived(buildAccountRollforwards(book)).map((f) => ({ ...f, scope: { query: { affects: "NET_WORTH" as const, from: book.ledger.firstDay ?? from, to: r.current.asOf, accountIds: [f.key!] }, checks: NET_WORTH_CHECKS } }));
+    const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeTypicalDerived), ...built, ...rolls];
     // Built's returns are re-derived (rederiveNetWorth); its other cells are declared.
-    return { figures, rederived: { ...declared(BUILT_WHY)(built), ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
+    return { figures, rederived: { ...declared(BUILT_WHY)(built), ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), ...rederiveRollforwards(book, rolls) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },
   integrity: async ({ book }) => {
     const figures = integrityDerived({ ...book.integrity, horizon: book.horizon });
