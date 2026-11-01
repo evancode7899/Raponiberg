@@ -2,6 +2,11 @@
 
 import type { RewardKind } from "@/lib/cardPerks/catalog";
 import type { CardScore, PeriodStatus } from "@/lib/cardPerks/types";
+import { cardKey, cardPerksDerived, optKey, perkKey } from "@/lib/book/derived/cardPerks";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
+import type { ProofRef } from "@/components/ui/proof/context";
+import type { CardPerksPage } from "@/lib/cardPerks/page";
+import { useMemo } from "react";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
 
@@ -16,6 +21,27 @@ export const fmtMonth = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDa
 /** Dollars, saying $0 rather than a dash where the sentence needs a number. */
 export const money = (cents: number) => (cents === 0 ? "$0" : usd0(cents));
 export const pct = (r: number | null) => (r == null ? "—" : `${Math.round(r * 100)}%`);
+
+/** What the card list says a card offers (its fee, rates, credit amounts): its terms, not a figure of yours. */
+export const TERMS = "the card's terms, from the card list";
+
+/** The page's figures for its year (lib/book/derived/cardPerks.ts), as proofs. */
+export function useCardFigures(r: CardPerksPage) {
+  const list = useMemo(() => cardPerksDerived(r), [r]);
+  const y = r.year;
+  const at = (figure: string, key: string): ProofRef => derivedTarget("card-perks", list, figure, key);
+  return {
+    year: (figure: string) => at(figure, String(y)),
+    card: (accountId: string, what: string) => at("card", cardKey(y, accountId, what)),
+    perk: (accountId: string, perkId: string, what: string) => at("perk", perkKey(y, accountId, perkId, what)),
+    period: (accountId: string, perkId: string, period: string) => at("period", perkKey(y, accountId, perkId, period)),
+    act: (accountId: string, perkId: string) => at("act", perkKey(y, accountId, perkId, "left")),
+    opt: (row: string, col: string) => at("optimizer", optKey(y, row, col)),
+    mix: (label: string) => at("mix", cellKey(y, label, "value")),
+    pool: (pool: string, row: string, col: string) => at("pool", cellKey(y, `${pool}|${row}`, col)),
+  };
+}
+export type CardFigures = ReturnType<typeof useCardFigures>;
 
 /** A card's short name: the product's, without the issuer's boilerplate. */
 export const shortName = (c: Pick<CardScore, "product" | "accountName">) =>

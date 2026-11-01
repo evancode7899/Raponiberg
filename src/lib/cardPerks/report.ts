@@ -1,7 +1,7 @@
 import { applies, guessProduct, productById, PROGRAMS, type CardProduct } from "./catalog.ts";
 import { optimize } from "./optimizer.ts";
 import { addDays, daysBetween } from "./periods.ts";
-import { inAppUses, perkLines, sortCredits, isSpendRow, type Holding, type Sorted } from "./perks.ts";
+import { inAppUses, lineTotals, perkLines, sortCredits, isSpendRow, type Holding, type Sorted } from "./perks.ts";
 import { buildPools, estimateEarn, postedForCard, type EarnedRow } from "./rewards.ts";
 import { centsPerPoint, type CardPerksSettings } from "./settings.ts";
 import type { ActItem, CardAccount, CardPerksReport, CardRewards, CardScore, EarnLine, PerkLine, PerkRow, StatementRewards } from "./types.ts";
@@ -56,8 +56,8 @@ function mergeLines(lines: PerkLine[]): PerkLine[] {
     same.periods = same.periods.map((p, i) => (p.status === "NOT_OFFERED" ? l.periods[i]! : p));
     same.amountCents = l.amountCents;
     same.how = l.how;
-    for (const k of ["allowanceCents", "usedCents", "missedCents", "remainingCents"] as const) same[k] += l[k];
-    same.neverUsed &&= l.neverUsed;
+    // Over the periods kept: a period both versions offer (an annual credit whose terms changed mid-year) counts once.
+    Object.assign(same, lineTotals(same.periods));
   }
   return out;
 }

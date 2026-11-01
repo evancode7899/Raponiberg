@@ -186,8 +186,6 @@ function shownValue(f: DrawnFigure): ProofValue | null {
  * out loud: a page listed here that draws none fails, so the list only ever shrinks.
  */
 export const BYPASS_PENDING: Readonly<Record<string, string>> = {
-  "/card-perks": "F6f",
-  "/investments": "F6f",
 };
 
 /** A cleared figure's family: its report, page and figure (or metric, or line): "derived › taxes › worksheet". */

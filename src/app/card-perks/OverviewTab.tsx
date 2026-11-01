@@ -1,24 +1,25 @@
 "use client";
 
-import { Badge, btn, Card, Drawer, table } from "@/components/ui/kit";
+import { Badge, btn, Card, Drawer, NotFigure, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { CardPerksPage } from "@/lib/cardPerks/page";
 import type { CardScore } from "@/lib/cardPerks/types";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { useState } from "react";
-import { CardFace, fmtCpp, fmtDate, fmtMonth, fmtRate, fmtRewards, Meter, money, pct, SectionTitle, shortName, SourceTag } from "./parts";
+import { CardFace, fmtCpp, fmtDate, fmtMonth, fmtRate, fmtRewards, Meter, money, pct, SectionTitle, shortName, SourceTag, TERMS, useCardFigures, type CardFigures } from "./parts";
 
 const rowProof = (id: string, cents: number) => ({ descriptor: { report: "row" as const, rowId: id }, shownCents: cents });
 
-function Verdict({ c }: { c: CardScore }) {
+function Verdict({ c, cf }: { c: CardScore; cf: CardFigures }) {
   if (c.program.kind === "NONE" && !c.fee.cents) return <Badge>No rewards</Badge>;
   if (!c.fee.cents) return <Badge tone={c.netCents > 0 ? "pos" : "neutral"}>No fee</Badge>;
   if (c.netCents >= 0) return <Badge tone="pos">Pays for itself</Badge>;
-  return <Badge tone="neg">Short {usd0(-c.netCents)}</Badge>;
+  return <Badge tone="neg">Short <ProofValue proof={cf.card(c.accountId, "net")}>{usd0(-c.netCents)}</ProofValue></Badge>;
 }
 
 export function OverviewTab({ r, goCredits }: { r: CardPerksPage; goCredits: () => void }) {
   const [open, setOpen] = useState<string | null>(null);
+  const cf = useCardFigures(r);
   const card = r.cards.find((c) => c.accountId === open);
   const now = r.act.filter((a) => !a.neverUsed);
   const unused = r.act.filter((a) => a.neverUsed);
@@ -48,13 +49,20 @@ export function OverviewTab({ r, goCredits }: { r: CardPerksPage; goCredits: () 
                     {a.card.replace(/ from American Express/, "")} · ends {fmtDate(a.ends)}
                   </div>
                 </div>
-                <span className="num text-sm font-semibold text-accent">{formatUsdCents(a.leftCents)}</span>
+                <span className="num text-sm font-semibold text-accent"><ProofValue proof={cf.act(a.accountId, a.perkId)}>{formatUsdCents(a.leftCents)}</ProofValue></span>
               </li>
             ))}
           </ul>
           {unused.length > 0 && (
             <p className="mt-2 text-[11px] text-muted">
-              Also open, but unused all year: {unused.map((a) => `${a.name} (${formatUsdCents(a.leftCents)})`).join(" · ")}.
+              Also open, but unused all year:{" "}
+              {unused.map((a, i) => (
+                <span key={`${a.accountId}|${a.perkId}`}>
+                  {i ? " · " : ""}
+                  {a.name} (<ProofValue proof={cf.act(a.accountId, a.perkId)}>{formatUsdCents(a.leftCents)}</ProofValue>)
+                </span>
+              ))}
+              .
             </p>
           )}
         </Card>
@@ -62,19 +70,20 @@ export function OverviewTab({ r, goCredits }: { r: CardPerksPage; goCredits: () 
 
       <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
         {r.cards.map((c) => (
-          <CardTile key={c.accountId} c={c} onOpen={() => setOpen(c.accountId)} />
+          <CardTile key={c.accountId} c={c} cf={cf} onOpen={() => setOpen(c.accountId)} />
         ))}
       </div>
       {r.hidden.length > 0 && <p className="text-xs text-muted">Left off this page (Setup): {r.hidden.map((h) => h.accountName).join(", ")}.</p>}
 
       <Drawer open={!!card} onClose={() => setOpen(null)} title={card ? shortName(card) : ""} subtitle={card ? `${card.accountName} · ${r.year}` : undefined} width="40rem">
-        {card && <CardDetail c={card} year={r.year} />}
+        {card && <CardDetail c={card} year={r.year} cf={cf} />}
       </Drawer>
     </>
   );
 }
 
-function CardTile({ c, onOpen }: { c: CardScore; onOpen: () => void }) {
+function CardTile({ c, cf, onOpen }: { c: CardScore; cf: CardFigures; onOpen: () => void }) {
+  const k = (what: string) => cf.card(c.accountId, what);
   const gave = c.rewards.valueCents + c.perksValueCents + c.offersCents;
   const scale = Math.max(gave, c.fee.cents, 1);
   const seg = (v: number) => `${(v / scale) * 100}%`;
@@ -87,12 +96,12 @@ function CardTile({ c, onOpen }: { c: CardScore; onOpen: () => void }) {
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Verdict c={c} />
+            <Verdict c={c} cf={cf} />
             {!c.held.open && <Badge>Closed</Badge>}
             {c.held.open && !c.statementsInYear && <Badge title="No statement this year: the issuer sends none for a cycle without activity.">Idle this year</Badge>}
             {c.productSource === "UNKNOWN" && <Badge tone="warn" title="No catalog card matches the account name: pick one on Setup.">Pick the card on Setup</Badge>}
           </div>
-          <div className={`num text-2xl font-semibold ${c.netCents > 0 ? "text-pos" : c.netCents < 0 ? "text-neg" : "text-muted"}`}>{money(c.netCents)}</div>
+          <div className={`num text-2xl font-semibold ${c.netCents > 0 ? "text-pos" : c.netCents < 0 ? "text-neg" : "text-muted"}`}><ProofValue proof={k("net")}>{money(c.netCents)}</ProofValue></div>
           <div className="text-[11px] text-muted">
             net in the year · {c.program.name}
             {c.program.kind === "POINTS" && ` at ${fmtCpp(c.centsPerPoint)}`}
@@ -114,24 +123,24 @@ function CardTile({ c, onOpen }: { c: CardScore; onOpen: () => void }) {
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
           <span>
             <span className="mr-1 inline-block h-2 w-2 rounded-full bg-accent" />
-            Rewards {usd0(c.rewards.valueCents)}
+            Rewards <ProofValue proof={k("rewards")}>{usd0(c.rewards.valueCents)}</ProofValue>
           </span>
           {c.perksValueCents > 0 && (
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-pos" />
-              Perks {usd0(c.perksValueCents)}
+              Perks <ProofValue proof={k("perks")}>{usd0(c.perksValueCents)}</ProofValue>
             </span>
           )}
           {c.offersCents > 0 && (
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-info" />
-              Offers {usd0(c.offersCents)}
+              Offers <ProofValue proof={k("offers")}>{usd0(c.offersCents)}</ProofValue>
             </span>
           )}
           {c.fee.cents > 0 && (
             <span>
               <span className="mr-1 inline-block h-2 w-2 rounded-full bg-neg" />
-              Fee {usd0(c.fee.cents)}
+              Fee <ProofValue proof={k("fee")}>{usd0(c.fee.cents)}</ProofValue>
             </span>
           )}
         </div>
@@ -140,7 +149,7 @@ function CardTile({ c, onOpen }: { c: CardScore; onOpen: () => void }) {
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
         <div>
           <dt className="text-muted">Rewards</dt>
-          <dd className="num font-medium text-fg">{c.program.kind === "NONE" ? "—" : fmtRewards(c.rewards.kind, c.rewards.earned, true)}</dd>
+          <dd className="num font-medium text-fg">{c.program.kind === "NONE" ? "—" : c.rewards.kind === "CASH" ? <ProofValue proof={k("earned")}>{fmtRewards(c.rewards.kind, c.rewards.earned, true)}</ProofValue> : fmtRewards(c.rewards.kind, c.rewards.earned, true)}</dd>
           <dd>
             <SourceTag source={c.rewards.source} />
           </dd>
@@ -152,7 +161,7 @@ function CardTile({ c, onOpen }: { c: CardScore; onOpen: () => void }) {
           ) : (
             <>
               <dd className="num font-medium text-fg">
-                {pct(c.captureRate)} <span className="text-muted">· {money(c.perksValueCents)} used</span>
+                <ProofValue proof={k("capture")}>{pct(c.captureRate)}</ProofValue> <span className="text-muted">· <ProofValue proof={k("perks")}>{money(c.perksValueCents)}</ProofValue> used</span>
               </dd>
               <dd className="pt-1">
                 <Meter used={c.captureRate} of={1} tone={c.captureRate >= 0.75 ? "pos" : c.captureRate >= 0.4 ? "warn" : "neg"} />
@@ -162,12 +171,22 @@ function CardTile({ c, onOpen }: { c: CardScore; onOpen: () => void }) {
         </div>
         <div>
           <dt className="text-muted">Spending</dt>
-          <dd className="num font-medium text-fg">{usd0(c.spend.netCents)}</dd>
+          <dd className="num font-medium text-fg"><ProofValue proof={k("spend")}>{usd0(c.spend.netCents)}</ProofValue></dd>
         </div>
         <div>
           <dt className="text-muted">{c.rewards.balance ? "Balance on the statements" : "Annual fee"}</dt>
           <dd className="num font-medium text-fg">
-            {c.rewards.balance ? fmtRewards(c.rewards.kind, c.rewards.balance.value, true) : c.fee.termsCents ? usd0(c.fee.termsCents) : "None"}
+            {c.rewards.balance ? (
+              c.rewards.kind === "CASH" ? (
+                <ProofValue proof={k("balance")}>{fmtRewards(c.rewards.kind, c.rewards.balance.value, true)}</ProofValue>
+              ) : (
+                fmtRewards(c.rewards.kind, c.rewards.balance.value, true)
+              )
+            ) : c.fee.termsCents ? (
+              <NotFigure why={TERMS}>{usd0(c.fee.termsCents)}</NotFigure>
+            ) : (
+              "None"
+            )}
           </dd>
           {c.rewards.balance && <dd className="text-[11px] text-muted">as of {fmtDate(c.rewards.balance.date)}</dd>}
         </div>
@@ -176,20 +195,23 @@ function CardTile({ c, onOpen }: { c: CardScore; onOpen: () => void }) {
       {t && (c.fee.termsCents > 0 || t.feeCents > 0) && (
         <p className={`rounded-md px-2.5 py-1.5 text-[11px] leading-relaxed ${t.valueCents >= t.feeCents ? "bg-pos-soft text-fg-2" : "bg-warn-soft text-fg-2"}`}>
           <span className="font-semibold">{t.valueCents >= t.feeCents ? "Worth keeping" : "Worth a second look"}:</span> in the 12 months to {fmtDate(t.to)} it gave{" "}
-          <span className="num font-semibold">{usd0(t.valueCents)}</span> for a <span className="num font-semibold">{usd0(t.feeCents || c.fee.termsCents)}</span> fee.
+          <span className="num font-semibold"><ProofValue proof={k("trailing-value")}>{usd0(t.valueCents)}</ProofValue></span> for a{" "}
+          <span className="num font-semibold">{t.feeCents ? <ProofValue proof={k("trailing-fee")}>{usd0(t.feeCents)}</ProofValue> : <NotFigure why={TERMS}>{usd0(c.fee.termsCents)}</NotFigure>}</span> fee.
           {c.fee.nextDue && ` Next fee around ${fmtMonth(c.fee.nextDue)}.`}
         </p>
       )}
 
-      <button type="button" className={`${btn.secondary} mt-auto self-start`} onClick={onOpen}>
+      <button type="button" className={`${btn.secondary} mt-auto self-start`} onClick={onOpen} data-audit-drill={`Details: ${shortName(c)}`}>
         Details
       </button>
     </section>
   );
 }
 
-function CardDetail({ c, year }: { c: CardScore; year: number }) {
+function CardDetail({ c, year, cf }: { c: CardScore; year: number; cf: CardFigures }) {
   const kind = c.rewards.kind;
+  const k = (what: string) => cf.card(c.accountId, what);
+  const cash = kind === "CASH";
   return (
     <div className="space-y-5 text-sm">
       <div className="flex items-start gap-4">
@@ -204,8 +226,14 @@ function CardDetail({ c, year }: { c: CardScore; year: number }) {
             Statements {fmtDate(c.held.from)} to {fmtDate(c.held.through)}
             {!c.held.open && " · closed"}
           </li>
-          <li>{c.program.statementNote}</li>
-          {c.product?.note && <li className="text-muted">{c.product.note}</li>}
+          <li>
+            <NotFigure why={TERMS}>{c.program.statementNote}</NotFigure>
+          </li>
+          {c.product?.note && (
+            <li className="text-muted">
+              <NotFigure why={TERMS}>{c.product.note}</NotFigure>
+            </li>
+          )}
         </ul>
       </div>
 
@@ -226,28 +254,34 @@ function CardDetail({ c, year }: { c: CardScore; year: number }) {
                 {c.earn.map((l) => (
                   <tr key={l.label} className={table.tr}>
                     <td className={table.td}>{l.label}</td>
-                    <td className={table.tdR}>{fmtRate(kind, l.rate)}</td>
-                    <td className={table.tdR}>{usd0(l.spendCents)}</td>
-                    <td className={table.tdR}>{fmtRewards(kind, l.units)}</td>
+                    <td className={table.tdR}>
+                      <NotFigure why={TERMS}>{fmtRate(kind, l.rate)}</NotFigure>
+                    </td>
+                    <td className={table.tdR}><ProofValue proof={k(`earn|${l.label}|spend`)}>{usd0(l.spendCents)}</ProofValue></td>
+                    <td className={table.tdR}>{cash ? <ProofValue proof={k(`earn|${l.label}|units`)}>{fmtRewards(kind, l.units)}</ProofValue> : fmtRewards(kind, l.units)}</td>
                   </tr>
                 ))}
                 <tr className="border-t border-line-strong font-medium">
                   <td className={table.td} colSpan={3}>
                     Expected from spending
                   </td>
-                  <td className={table.tdR}>{fmtRewards(kind, c.rewards.expected)}</td>
+                  <td className={table.tdR}>{cash ? <ProofValue proof={k("expected")}>{fmtRewards(kind, c.rewards.expected)}</ProofValue> : fmtRewards(kind, c.rewards.expected)}</td>
                 </tr>
                 <tr className="font-semibold">
                   <td className={table.td} colSpan={3}>
                     Earned (statements where they print it)
                   </td>
-                  <td className={table.tdR}>{fmtRewards(kind, c.rewards.earned)}</td>
+                  <td className={table.tdR}>{cash ? <ProofValue proof={k("earned")}>{fmtRewards(kind, c.rewards.earned)}</ProofValue> : fmtRewards(kind, c.rewards.earned)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          {c.hiddenEarn.length > 0 && <p className="mt-1.5 text-[11px] text-muted">Not visible on a statement line: {c.hiddenEarn.join(", ")}. The printed balances catch them.</p>}
-          {c.rewards.redeemedCents > 0 && <p className="mt-1 text-[11px] text-muted">Cashed in as statement credits this year: {formatUsdCents(c.rewards.redeemedCents)} (already counted when earned).</p>}
+          {c.hiddenEarn.length > 0 && (
+            <p className="mt-1.5 text-[11px] text-muted">
+              Not visible on a statement line: <NotFigure why={TERMS}>{c.hiddenEarn.join(", ")}</NotFigure>. The printed balances catch them.
+            </p>
+          )}
+          {c.rewards.redeemedCents > 0 && <p className="mt-1 text-[11px] text-muted">Cashed in as statement credits this year: <ProofValue proof={k("redeemed")}>{formatUsdCents(c.rewards.redeemedCents)}</ProofValue> (already counted when earned).</p>}
         </div>
       )}
 
@@ -259,11 +293,13 @@ function CardDetail({ c, year }: { c: CardScore; year: number }) {
               <li key={p.id} className="flex items-center gap-3 px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-fg">{p.name}</div>
-                  <div className="text-[11px] text-muted">{p.how}</div>
+                  <div className="text-[11px] text-muted">
+                    <NotFigure why={TERMS}>{p.how}</NotFigure>
+                  </div>
                 </div>
                 <div className="w-28 shrink-0 text-right">
                   <div className="num text-xs">
-                    {formatUsdCents(p.usedCents)} <span className="text-muted">/ {usd0(p.allowanceCents)}</span>
+                    <ProofValue proof={cf.perk(c.accountId, p.id, "used")}>{formatUsdCents(p.usedCents)}</ProofValue> <span className="text-muted">/ <ProofValue proof={cf.perk(c.accountId, p.id, "allowance")}>{usd0(p.allowanceCents)}</ProofValue></span>
                   </div>
                   <Meter used={p.usedCents} of={p.allowanceCents} tone={p.missedCents > 0 ? (p.usedCents > 0 ? "warn" : "neg") : "pos"} />
                 </div>

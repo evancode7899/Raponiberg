@@ -1,4 +1,4 @@
-import type { CardPerksReport } from "../../cardPerks/types.ts";
+import type { CardPerksReport, CardScore, PerkPeriod } from "../../cardPerks/types.ts";
 import type { HsaReport } from "../../hsa/report.ts";
 import type { PolicyView } from "../../insurance/report.ts";
 import type { DerivedFigure } from "../derived/types.ts";
@@ -14,30 +14,115 @@ import type { Rederivation } from "../proof/types.ts";
  * fund notice, a policy schedule, the tax plan's amounts) say why there's no second route.
  */
 
-/** Card perks for each year (key: the year), from each card's own rows and perk lines rather than the year's totals. */
-export function rederiveCardPerks(reports: Pick<CardPerksReport, "year" | "cards">[], figures: readonly DerivedFigure[]): Record<string, Rederivation> {
-  const byYear = new Map(reports.map((r) => [String(r.year), r.cards]));
+/**
+ * Card perks for each year (key: the year, alone or leading), from each card's own rows and
+ * perk lines rather than the totals: the headline and each card from fee rows, offer credits
+ * and perk lines; each perk line from its periods; the Best card lines from each card's
+ * spending in them; the rewards mix from each card's earn lines. Valuations at the card
+ * list's rates and your point values, and what the matcher reads off a statement, say why
+ * there's no second route.
+ */
+export function rederiveCardPerks(reports: (Pick<CardPerksReport, "year" | "cards"> & Partial<Pick<CardPerksReport, "optimizer">>)[], figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const byYear = new Map(reports.map((r) => [String(r.year), r]));
   const ROUTE = "each card's fee rows, credits and perk lines, re-added";
+  const sum = <T,>(xs: readonly T[], g: (x: T) => number) => xs.reduce((s, x) => s + g(x), 0);
+  const lineUsed = (c: CardScore) => sum(c.perks, (l) => l.usedCents);
+  const offerCredits = (c: CardScore) => sum(c.credits.filter((x) => x.kind === "OFFER"), (x) => x.amountCents);
+  const feeRows = (c: CardScore) => -sum(c.fee.rows, (r) => r.amountCents);
+  const held = (x: PerkPeriod) => x.status !== "NOT_HELD" && x.status !== "NOT_OFFERED";
   return rederiveList(figures, (f) => {
-    const cards = byYear.get(f.key ?? "");
-    if (!cards) return null;
-    const sum = <T,>(xs: T[], g: (x: T) => number) => xs.reduce((s, x) => s + g(x), 0);
-    const used = sum(cards, (c) => sum(c.perks, (l) => l.usedCents));
+    const [year, ...rest] = (f.key ?? "").split("|");
+    const rep = byYear.get(year!);
+    if (!rep) return null;
+    const cards = rep.cards;
+    const card = cards.find((c) => c.accountId === rest[0]);
+    const used = sum(cards, lineUsed);
     const missed = sum(cards, (c) => sum(c.perks, (l) => l.missedCents));
-    const offers = sum(cards, (c) => sum(c.credits.filter((x) => x.kind === "OFFER"), (x) => x.amountCents));
-    const fees = sum(cards, (c) => -sum(c.fee.rows, (r) => r.amountCents));
+    const offers = sum(cards, offerCredits);
+    const fees = sum(cards, feeRows);
     const rewards = sum(cards, (c) => c.rewards.valueCents);
+    const v = f.value;
     switch (f.figure) {
       case "net-value":
-        return [centsRoute(ROUTE, f.value, rewards + used + offers - fees, "rewards + perk credits used + offers − the annual fee rows")];
+        return [centsRoute(ROUTE, v, rewards + used + offers - fees, "rewards + perk credits used + offers − the annual fee rows")];
       case "rewards":
-        return [centsRoute(ROUTE, f.value, rewards, "each card's rewards, as its statements print them (or expected)")];
+        return [centsRoute(ROUTE, v, rewards, "each card's rewards, as its statements print them (or expected)")];
       case "credits":
-        return [centsRoute(ROUTE, f.value, used + offers, "each perk line's credits used, plus the offer credits")];
+        return [centsRoute(ROUTE, v, used + offers, "each perk line's credits used, plus the offer credits")];
       case "capture":
-        return [ratioRoute(ROUTE, f.value, used + missed > 0 ? used / (used + missed) : null, "credits used over used and lapsed, perk line by perk line")];
+        return [ratioRoute(ROUTE, v, used + missed > 0 ? used / (used + missed) : null, "credits used over used and lapsed, perk line by perk line")];
       case "remaining":
-        return [centsRoute(ROUTE, f.value, sum(cards, (c) => sum(c.perks, (l) => l.remainingCents)), "what each perk line still has")];
+        return [centsRoute(ROUTE, v, sum(cards, (c) => sum(c.perks, (l) => l.remainingCents)), "what each perk line still has")];
+      case "fees":
+        return [centsRoute(ROUTE, v, fees, "each card's annual fee rows")];
+      case "spend":
+        return [centsRoute("each card's charges less its refunds", v, sum(cards, (c) => c.spend.chargesCents - c.spend.refundsCents), "card by card")];
+      case "perks":
+        return [centsRoute(ROUTE, v, used, "each perk line's credits used")];
+      case "offers":
+        return [centsRoute(ROUTE, v, offers, "the offer credits on each card")];
+      case "missed":
+        return [centsRoute(ROUTE, v, missed, "what each perk line let lapse")];
+      case "card": {
+        if (!card) return null;
+        const what = rest.slice(1).join("|");
+        const periods = card.perks.flatMap((l) => l.periods.filter(held));
+        switch (what) {
+          case "net":
+            return [centsRoute(ROUTE, v, card.rewards.valueCents + lineUsed(card) + offerCredits(card) - feeRows(card), "rewards + perk credits used + offers − the annual fee rows")];
+          case "perks":
+            return [centsRoute("the card's perk periods, re-added", v, sum(periods, (x) => x.usedCents), "credits used, period by period")];
+          case "offers":
+            return [centsRoute(ROUTE, v, offerCredits(card), "the card's offer credits")];
+          case "fee":
+            return [centsRoute(ROUTE, v, feeRows(card), "the card's annual fee rows")];
+          case "capture": {
+            const lapsed = sum(card.perks, (l) => l.missedCents);
+            return [ratioRoute(ROUTE, v, lineUsed(card) + lapsed > 0 ? lineUsed(card) / (lineUsed(card) + lapsed) : null, "credits used over used and lapsed")];
+          }
+          case "spend":
+            return [centsRoute("the card's charges less its refunds", v, card.spend.chargesCents - card.spend.refundsCents, "charges − refunds")];
+          case "allowance":
+            return [centsRoute("the card's perk periods, re-added", v, sum(periods, (x) => x.allowanceCents), "what each period held offered")];
+          case "remaining":
+            return [centsRoute(ROUTE, v, sum(card.perks, (l) => l.remainingCents), "what each perk line still has")];
+          case "expected":
+            return [centsRoute("the card's earn lines, re-added", v, sum(card.earn, (l) => l.units), "cash back expected on each kind of spending")];
+          default:
+            return { none: "A card's rewards as its statements print them, or what its spending earns at the card list's rates (the Rewards tab reconciles each stretch between printed balances); what lapsed as the perk matcher reads each period; the 12 months to its latest statement, a keep-or-cancel view." };
+        }
+      }
+      case "perk": {
+        const line = card?.perks.find((l) => l.id === rest[1]);
+        if (!line) return null;
+        const periods = line.periods.filter(held);
+        return [centsRoute("the line's periods, re-added", v, rest[2] === "used" ? sum(periods, (x) => x.usedCents) : sum(periods, (x) => x.allowanceCents), "period by period")];
+      }
+      case "period":
+        return { none: "A perk period as the matcher reads the statements: each credit it found is a row with its own proof (listed in the chain); what's left is the card's terms less those." };
+      case "act": {
+        const open = card?.perks.find((l) => l.id === rest[1])?.periods.find((x) => x.status === "OPEN");
+        if (!open) return { none: "What a perk's open period still has this year: its terms less the credits found in it (Credits lists each)." };
+        return [centsRoute("the open period in the Credits grid", v, open.allowanceCents - open.usedCents, "offered less used")];
+      }
+      case "optimizer": {
+        const row = rest.slice(0, -1).join("|");
+        const col = rest.at(-1);
+        const lines = rep.optimizer?.lines ?? [];
+        if (row === "all" && col === "spend") return [centsRoute("each kind of purchase, re-added", v, sum(lines, (l) => l.spendCents), "line by line")];
+        if (row === "all" && col === "actual") return [centsRoute("each kind of purchase, re-added", v, sum(lines, (l) => l.actualCents), "line by line")];
+        if (row === "all" && col === "missed") return [centsRoute("each kind of purchase, re-added", v, sum(lines, (l) => l.bestCents - l.actualCents), "best less earned, line by line")];
+        const line = lines.find((l) => l.key === row);
+        if (line && col === "spend") return [centsRoute("each card's spending on it, re-added", v, sum(line.byCard, (b) => b.spendCents), "card by card")];
+        return { none: "Purchases valued at the card list's rates and your point values: a what-if over the statement rows, not a sum of them." };
+      }
+      case "mix": {
+        const label = rest.slice(0, -1).join("|");
+        const cents = sum(cards, (c) => sum(c.earn.filter((l) => l.label.replace(/ \(past the cap\)$/, "") === label), (l) => l.units * (c.rewards.kind === "CASH" ? 1 : c.centsPerPoint)));
+        return [centsRoute("each card's earn lines, re-added", v, Math.round(cents), "expected rewards on that spending at each card's point value", 1)];
+      }
+      case "pool":
+        return { none: "Rewards as the statements print their balances, reconciled stretch by stretch against what the spending should earn (each balance opens its statement)." };
       default:
         return null;
     }

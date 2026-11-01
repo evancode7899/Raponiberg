@@ -1,13 +1,15 @@
 "use client";
 
-import { Badge, Card, Drawer } from "@/components/ui/kit";
+import { Badge, Card, Drawer, NotFigure } from "@/components/ui/kit";
+import type { ProofRef } from "@/components/ui/proof/context";
+import { periodShows } from "@/lib/book/derived/cardPerks";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { CADENCE_INFO } from "@/lib/cardPerks/catalog";
 import type { CardPerksPage } from "@/lib/cardPerks/page";
 import type { CardScore, PerkLine, PerkPeriod, PeriodStatus } from "@/lib/cardPerks/types";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
-import { useState } from "react";
-import { CardFace, fmtDate, Meter, money, shortName, STATUS } from "./parts";
+import { useState, type ReactNode } from "react";
+import { CardFace, fmtDate, Meter, money, shortName, STATUS, TERMS, useCardFigures, type CardFigures } from "./parts";
 
 const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 const KEY: PeriodStatus[] = ["USED", "PARTIAL", "MISSED", "OPEN", "AWAITING", "FUTURE"];
@@ -24,10 +26,11 @@ export function CreditsTab({ r }: { r: CardPerksPage }) {
   const card = r.cards.find((c) => c.accountId === focus?.accountId);
   const perk = card?.perks.find((p) => p.id === focus?.perkId);
   const withPerks = r.cards.filter((c) => c.perks.length);
+  const cf = useCardFigures(r);
   return (
     <>
       {withPerks.map((c) => (
-        <PerkGrid key={c.accountId} c={c} onPick={(perkId, period) => setFocus({ accountId: c.accountId, perkId, period })} focus={focus} />
+        <PerkGrid key={c.accountId} c={c} cf={cf} onPick={(perkId, period) => setFocus({ accountId: c.accountId, perkId, period })} focus={focus} />
       ))}
       {!withPerks.length && <p className="text-sm text-muted">None of the cards held in {r.year} has recurring credits.</p>}
       {withPerks.length > 0 && (
@@ -42,13 +45,14 @@ export function CreditsTab({ r }: { r: CardPerksPage }) {
         </div>
       )}
       <Drawer open={!!perk && !!card} onClose={() => setFocus(null)} title={perk?.name ?? ""} subtitle={card ? `${shortName(card)} · ${r.year}` : undefined} width="36rem">
-        {perk && card && focus && <PerkDetail c={card} perk={perk} focus={focus.period} accounts={r.cards} />}
+        {perk && card && focus && <PerkDetail c={card} perk={perk} focus={focus.period} accounts={r.cards} cf={cf} />}
       </Drawer>
     </>
   );
 }
 
-function PerkGrid({ c, onPick, focus }: { c: CardScore; onPick: (perkId: string, period: string) => void; focus: Focus | null }) {
+function PerkGrid({ c, cf, onPick, focus }: { c: CardScore; cf: CardFigures; onPick: (perkId: string, period: string) => void; focus: Focus | null }) {
+  const k = (what: string) => cf.card(c.accountId, what);
   return (
     <Card
       title={
@@ -58,7 +62,13 @@ function PerkGrid({ c, onPick, focus }: { c: CardScore; onPick: (perkId: string,
           {!c.held.open && <Badge>Closed</Badge>}
         </span>
       }
-      subtitle={`${c.accountName} · ${money(c.perksValueCents)} of ${usd0(c.perksAllowanceCents)} used${c.missedCents ? ` · ${usd0(c.missedCents)} let lapse` : ""}${c.remainingCents ? ` · ${usd0(c.remainingCents)} still to come` : ""}`}
+      subtitle={
+        <>
+          {c.accountName} · <ProofValue proof={k("perks")}>{money(c.perksValueCents)}</ProofValue> of <ProofValue proof={k("allowance")}>{usd0(c.perksAllowanceCents)}</ProofValue> used
+          {c.missedCents ? <> · <ProofValue proof={k("missed")}>{usd0(c.missedCents)}</ProofValue> let lapse</> : null}
+          {c.remainingCents ? <> · <ProofValue proof={k("remaining")}>{usd0(c.remainingCents)}</ProofValue> still to come</> : null}
+        </>
+      }
     >
       <div className="overflow-x-auto">
         <div className="grid min-w-[46rem] items-center gap-x-1 gap-y-1.5" style={{ gridTemplateColumns: "minmax(11rem,15rem) repeat(12,minmax(2.25rem,1fr)) 6.5rem" }}>
@@ -70,7 +80,7 @@ function PerkGrid({ c, onPick, focus }: { c: CardScore; onPick: (perkId: string,
           ))}
           <div className="text-right text-[10px] font-semibold uppercase text-faint">Used</div>
           {c.perks.map((p) => (
-            <PerkRowCells key={p.id} p={p} onPick={(period) => onPick(p.id, period)} focus={focus?.accountId === c.accountId && focus.perkId === p.id ? focus.period : null} />
+            <PerkRowCells key={p.id} p={p} figure={(period) => cf.period(c.accountId, p.id, period)} used={cf.perk(c.accountId, p.id, "used")} onPick={(period) => onPick(p.id, period)} focus={focus?.accountId === c.accountId && focus.perkId === p.id ? focus.period : null} />
           ))}
         </div>
       </div>
@@ -78,16 +88,17 @@ function PerkGrid({ c, onPick, focus }: { c: CardScore; onPick: (perkId: string,
   );
 }
 
-function cellText(p: PerkLine, x: PerkPeriod): string {
-  if (x.status === "USED") return p.detection === "IN_APP" ? "✓" : usd0(x.usedCents);
-  if (x.status === "PARTIAL") return usd0(x.usedCents);
-  if (x.status === "OPEN") return usd0(x.allowanceCents - x.usedCents);
+function cellText(p: PerkLine, x: PerkPeriod, figure: ProofRef): ReactNode {
+  // Used or left, the period's own figure (derived/cardPerks.ts periodShows); an in-app credit used in full says so in words.
+  if (x.status === "USED") return p.detection === "IN_APP" ? <ProofValue proof={figure} drawn="words">✓</ProofValue> : <ProofValue proof={figure}>{usd0(x.usedCents)}</ProofValue>;
+  if (x.status === "PARTIAL") return <ProofValue proof={figure}>{usd0(x.usedCents)}</ProofValue>;
+  if (x.status === "OPEN") return <ProofValue proof={figure}>{usd0(x.allowanceCents - x.usedCents)}</ProofValue>;
   if (x.status === "MISSED") return "✕";
   if (x.status === "AWAITING") return "…";
   return "";
 }
 
-function PerkRowCells({ p, onPick, focus }: { p: PerkLine; onPick: (period: string) => void; focus: string | null }) {
+function PerkRowCells({ p, figure, used, onPick, focus }: { p: PerkLine; figure: (period: string) => ProofRef; used: ProofRef; onPick: (period: string) => void; focus: string | null }) {
   const span = CADENCE_INFO[p.cadence].months;
   return (
     <>
@@ -96,33 +107,40 @@ function PerkRowCells({ p, onPick, focus }: { p: PerkLine; onPick: (period: stri
           {p.name}
         </div>
         <div className="truncate text-[11px] text-muted">
-          {usd0(p.amountCents)} {CADENCE_INFO[p.cadence].label.toLowerCase()} · {p.detection === "IN_APP" ? "inferred from charges" : "statement credit"}
+          <NotFigure why={TERMS}>{usd0(p.amountCents)}</NotFigure> {CADENCE_INFO[p.cadence].label.toLowerCase()} · {p.detection === "IN_APP" ? "inferred from charges" : "statement credit"}
           {p.neverUsed && " · not used this year"}
         </div>
       </div>
       {p.periods.map((x) => (
-        <button
+        <div
           key={x.key}
-          type="button"
+          role="button"
+          tabIndex={0}
           onClick={() => onPick(x.key)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onPick(x.key);
+            }
+          }}
           style={{ gridColumn: `span ${span}` }}
           title={`${x.label}: ${STATUS[x.status].label}${x.usedCents ? ` · ${formatUsdCents(x.usedCents)} of ${formatUsdCents(x.allowanceCents)}` : ` · ${formatUsdCents(x.allowanceCents)}`}${x.unmatchedSpend ? ` · ${x.unmatchedSpend} charge(s) at its merchants got no credit` : ""}`}
-          className={`num relative h-8 rounded-md border text-[11px] font-semibold outline-none transition hover:brightness-95 focus-visible:ring-2 focus-visible:ring-focus ${STATUS[x.status].cls} ${p.neverUsed && x.status === "MISSED" ? "opacity-50" : ""} ${focus === x.key ? "ring-2 ring-focus" : ""}`}
+          className={`num relative flex h-8 cursor-pointer items-center justify-center rounded-md border text-[11px] font-semibold outline-none transition hover:brightness-95 focus-visible:ring-2 focus-visible:ring-focus ${STATUS[x.status].cls} ${p.neverUsed && x.status === "MISSED" ? "opacity-50" : ""} ${focus === x.key ? "ring-2 ring-focus" : ""}`}
         >
           {span > 1 && x.status !== "NOT_OFFERED" && x.status !== "NOT_HELD" ? <span className="mr-1 font-normal opacity-70">{x.label}</span> : null}
-          {cellText(p, x)}
+          {cellText(p, x, figure(x.key))}
           {x.unmatchedSpend > 0 && <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-warn" aria-hidden />}
-        </button>
+        </div>
       ))}
       <div className="pl-2 text-right">
-        <div className="num text-xs font-medium">{usd0(p.usedCents)}</div>
+        <div className="num text-xs font-medium"><ProofValue proof={used}>{usd0(p.usedCents)}</ProofValue></div>
         <Meter used={p.usedCents} of={p.allowanceCents} tone={p.missedCents > 0 ? (p.usedCents > 0 ? "warn" : "neg") : "pos"} />
       </div>
     </>
   );
 }
 
-function PerkDetail({ c, perk, focus, accounts }: { c: CardScore; perk: PerkLine; focus: string; accounts: CardScore[] }) {
+function PerkDetail({ c, perk, focus, accounts, cf }: { c: CardScore; perk: PerkLine; focus: string; accounts: CardScore[]; cf: CardFigures }) {
   const nameOf = (id: string) => {
     const a = accounts.find((x) => x.accountId === id);
     return a ? shortName(a) : "another account";
@@ -130,7 +148,7 @@ function PerkDetail({ c, perk, focus, accounts }: { c: CardScore; perk: PerkLine
   return (
     <div className="space-y-4">
       <p className="text-xs leading-relaxed text-muted">
-        {formatUsdCents(perk.amountCents)} {CADENCE_INFO[perk.cadence].label.toLowerCase()}. {perk.how}{" "}
+        <NotFigure why={TERMS}>{formatUsdCents(perk.amountCents)}</NotFigure> {CADENCE_INFO[perk.cadence].label.toLowerCase()}. <NotFigure why={TERMS}>{perk.how}</NotFigure>{" "}
         {perk.detection === "IN_APP"
           ? "It never shows on a statement, so a month counts as used when the household paid that merchant (on any card) that month: each charge covers one card's credit."
           : "Counted from the statement credit the issuer posts, in the period of the charge it pays back."}
@@ -148,7 +166,18 @@ function PerkDetail({ c, perk, focus, accounts }: { c: CardScore; perk: PerkLine
                   </span>
                 </div>
                 <span className="num text-xs text-fg-2">
-                  {x.usedCents ? formatUsdCents(x.usedCents) : "$0"} <span className="text-muted">of {formatUsdCents(x.allowanceCents)}</span>
+                  {periodShows(x) === "used" ? (
+                    <ProofValue proof={cf.period(c.accountId, perk.id, x.key)}>{formatUsdCents(x.usedCents)}</ProofValue>
+                  ) : periodShows(x) === "left" ? (
+                    <>
+                      <ProofValue proof={cf.period(c.accountId, perk.id, x.key)}>{formatUsdCents(x.allowanceCents - x.usedCents)}</ProofValue> left
+                    </>
+                  ) : (
+                    "nothing used"
+                  )}{" "}
+                  <span className="text-muted">
+                    of <NotFigure why={TERMS}>{formatUsdCents(x.allowanceCents)}</NotFigure>
+                  </span>
                 </span>
               </div>
               {x.evidence.length > 0 && (

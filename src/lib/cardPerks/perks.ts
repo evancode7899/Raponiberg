@@ -213,9 +213,6 @@ export function perkLines(input: {
                     : "AWAITING";
         return { ...p, allowanceCents: allow, usedCents, status, evidence, unmatchedSpend };
       });
-      const counted = periods.filter((p) => p.status !== "NOT_HELD" && p.status !== "NOT_OFFERED");
-      const short = (p: PerkPeriod) => Math.max(0, p.allowanceCents - p.usedCents);
-      const decided = counted.filter((p) => p.status === "USED" || p.status === "PARTIAL" || p.status === "MISSED");
       return {
         id: perk.id,
         name: perk.name,
@@ -224,12 +221,22 @@ export function perkLines(input: {
         how: perk.how,
         detection: perk.inApp ? "IN_APP" : "CREDIT",
         periods,
-        allowanceCents: counted.reduce((t, p) => t + p.allowanceCents, 0),
-        usedCents: counted.reduce((t, p) => t + p.usedCents, 0),
-        missedCents: counted.filter((p) => p.status === "MISSED" || p.status === "PARTIAL").reduce((t, p) => t + short(p), 0),
-        remainingCents: counted.filter((p) => p.status === "OPEN" || p.status === "AWAITING" || p.status === "FUTURE").reduce((t, p) => t + short(p), 0),
-        neverUsed: decided.length >= 2 && decided.every((p) => p.usedCents === 0),
+        ...lineTotals(periods),
       };
     })
     .filter((l) => l.periods.some((p) => p.status !== "NOT_HELD" && p.status !== "NOT_OFFERED"));
+}
+
+/** A perk line's totals over the periods the card held and offered it: offered, used, let lapse, still to come, and whether it's never used. */
+export function lineTotals(periods: readonly PerkPeriod[]): Pick<PerkLine, "allowanceCents" | "usedCents" | "missedCents" | "remainingCents" | "neverUsed"> {
+  const counted = periods.filter((p) => p.status !== "NOT_HELD" && p.status !== "NOT_OFFERED");
+  const short = (p: PerkPeriod) => Math.max(0, p.allowanceCents - p.usedCents);
+  const decided = counted.filter((p) => p.status === "USED" || p.status === "PARTIAL" || p.status === "MISSED");
+  return {
+    allowanceCents: counted.reduce((t, p) => t + p.allowanceCents, 0),
+    usedCents: counted.reduce((t, p) => t + p.usedCents, 0),
+    missedCents: counted.filter((p) => p.status === "MISSED" || p.status === "PARTIAL").reduce((t, p) => t + short(p), 0),
+    remainingCents: counted.filter((p) => p.status === "OPEN" || p.status === "AWAITING" || p.status === "FUTURE").reduce((t, p) => t + short(p), 0),
+    neverUsed: decided.length >= 2 && decided.every((p) => p.usedCents === 0),
+  };
 }
