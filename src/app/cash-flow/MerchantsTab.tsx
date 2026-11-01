@@ -10,7 +10,7 @@ import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
 import { Treemap, type TreemapNode } from "recharts";
 import { useMemo, useState } from "react";
 import type { Ctx } from "./CashFlowClient";
-import { mergeMerchants, sliceStart, SPEND_CATEGORIES, sum, totals, type MerchantTotal } from "./model";
+import { mergeMerchants, quietMerchants, sliceStart, SPEND_CATEGORIES, sum, totals, type MerchantTotal } from "./model";
 import { categoryColor, Dot, Sparkline } from "./parts";
 
 type SortKey = "cents" | "count" | "avg" | "months" | "name";
@@ -224,11 +224,9 @@ function NewAndQuiet({ ctx }: { ctx: Ctx }) {
   const recent = report.months.slice(Math.max(0, lo - 12), lo);
   const inSlice = mergeMerchants(slice.months);
   const seenBefore = new Set(earlier.flatMap((m) => m.merchants.map((x) => x.key)));
-  const sliceKeys = new Set(inSlice.map((m) => m.key));
   const fresh = earlier.length >= 6 ? inSlice.filter((m) => !seenBefore.has(m.key)) : [];
-  const quiet = mergeMerchants(recent)
-    .filter((m) => m.months >= 3 && !sliceKeys.has(m.key))
-    .sort((a, b) => b.cents - a.cents);
+  // The ten biggest (quietMerchants: the list the proof sweep enumerates too).
+  const quiet = quietMerchants(recent, slice.months);
   // Each figure is the merchant's total over the months it was summed over, per month.
   const list = (rows: MerchantTotal[], months: SpendingMonth[], empty: string) =>
     rows.length === 0 ? (

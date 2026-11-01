@@ -24,6 +24,12 @@ export function taxBuckets(c: EstimateColumn) {
 
 export const jointColumn = (r: Parameters<typeof estimateColumns>[0]) => estimateColumns(r, "projected").cols.find((c) => c.id === "joint")!;
 
+/** The returns Overview › At filing draws a card for: federal always, Connecticut when it taxes or holds payments (or you live there), New York with a New York return. */
+export function atFilingReturns(r: Pick<TaxReport, "scenarios" | "residency">): ("fed" | "ct" | "ny")[] {
+  const mfj = r.scenarios.mfj;
+  return ["fed", ...(mfj.ct.totalTax || mfj.ct.totalPayments || r.residency.ct !== "NONRESIDENT" ? (["ct"] as const) : []), ...(mfj.ny ? (["ny"] as const) : [])];
+}
+
 /** Where the next $1,000 of pay goes, in cents of it. */
 export function nextThousand(m: TaxReport["marginal"]) {
   return {
@@ -59,12 +65,18 @@ export function overviewCells(r: TaxReport): OverviewCell[] {
   const out: OverviewCell[] = [];
   const add = (row: string, col: string, describes: string, value: ProofValue) => out.push({ row, col, describes, value });
   const b = taxBuckets(jointColumn(r));
-  for (const [id, cents] of Object.entries({ kept: b.kept, federal: b.federal, ct: b.ct, ny: b.ny, other: b.other, payroll: b.payroll })) add("bucket", id, `Where the income goes: ${id}`, { cents });
+  // Where the income goes: a state's or other states' share only once it taxes anything (as the bar draws it).
+  for (const [id, cents] of Object.entries({ kept: b.kept, federal: b.federal, ct: b.ct, ny: b.ny, other: b.other, payroll: b.payroll }))
+    if (!["ct", "ny", "other"].includes(id) || cents) add("bucket", id, `Where the income goes: ${id}`, { cents });
   const m = r.marginal;
   add("marginal", "all", "Marginal rate on the next $1,000 of pay, every tax", { ratio: m.federal + m.ct + m.ny + m.payroll });
-  for (const [id, cents] of Object.entries(nextThousand(m))) add("next", id, `The next $1,000 of pay: ${id}`, { cents });
+  // The next $1,000: a tax's part only where its marginal rate isn't zero.
+  const rateOf: Record<string, number> = { ct: m.ct, ny: m.ny, payroll: m.payroll };
+  for (const [id, cents] of Object.entries(nextThousand(m))) if (!(id in rateOf) || rateOf[id]) add("next", id, `The next $1,000 of pay: ${id}`, { cents });
+  // The dependent's effect, with dependents: each credit and the total (New York's with a New York return).
   const d = dependentEffect(r, b);
-  for (const [id, cents] of Object.entries(d)) add("dependent", id, `The dependent's effect: ${id}`, { cents });
+  if (r.dependents.length)
+    for (const [id, cents] of Object.entries({ fedChild: d.fedChild, otherCredits: d.otherCredits, ctChild: d.ctChild, ...(r.scenarios.mfj.ny ? { ny: d.ny } : {}), total: d.total })) add("dependent", id, `The dependent's effect: ${id}`, { cents });
   for (const which of ["federal", "ct"] as const) {
     const sh = r.safeHarbor[which];
     const plan = r.plan[which];
@@ -77,12 +89,14 @@ export function overviewCells(r: TaxReport): OverviewCell[] {
     t("balance", "projected balance at filing", plan.projectedBalanceDue);
     if (plan.perPaycheckForSafeHarbor != null) t("per-paycheck", "extra withholding per paycheck for the safe harbor", plan.perPaycheckForSafeHarbor);
     if (plan.perPaycheckToBreakEven != null) t("break-even", "extra withholding per paycheck to owe nothing", plan.perPaycheckToBreakEven);
-    if (r.plan.remainingPaychecks) t("over", "over-withheld per remaining paycheck", -plan.projectedBalanceDue / r.plan.remainingPaychecks);
+    // Said only beside a projected refund of $1 or more.
+    if (r.plan.remainingPaychecks && plan.projectedBalanceDue <= -100) t("over", "over-withheld per remaining paycheck", -plan.projectedBalanceDue / r.plan.remainingPaychecks);
   }
   for (const p of r.people) {
     for (const k of PAID_ROWS) add(`paid:${k}`, p.id, `${p.name}: paid so far, ${k}`, { cents: p.paidToDate[k] });
     add("paid:total", p.id, `${p.name}: paid so far, every tax`, { cents: paidTotal(p.paidToDate) });
-    for (const e of p.payroll) if (e.regularPaycheck) add(`paycheck:${e.employer}`, p.id, `${p.name}, ${e.employer}: the paycheck the year runs on, gross`, { cents: e.regularPaycheck.gross });
+    // Overview › forecast to December 31 (the year in progress): each employer still paying, at the paycheck the year runs on.
+    if (r.isCurrentYear) for (const e of p.payroll) if (e.active && e.remainingPayDates.length > 0 && e.regularPaycheck) add(`paycheck:${e.employer}`, p.id, `${p.name}, ${e.employer}: the paycheck the year runs on, gross`, { cents: e.regularPaycheck.gross });
   }
   // Last year's return, as read from the filed return or the app's estimate of it (Inputs; the safe harbor reads it).
   for (const [k, cents] of [["federalTotalTax", r.priorYear.federalTax], ["federalAgi", r.priorYear.federalAgi], ["ctTotalTax", r.priorYear.ctTax]] as const)
@@ -90,8 +104,10 @@ export function overviewCells(r: TaxReport): OverviewCell[] {
   // Each person's paychecks the year runs on, and the forecast's bonuses still to come (Inputs).
   for (const p of r.people) {
     const job = p.payroll.find((e) => e.active);
-    if (job?.latestRegular) add("paycheck:latest", p.id, `${p.name}: the latest regular paycheck, gross`, { cents: job.latestRegular.amounts.gross });
-    if (job?.typicalRegular) add("paycheck:typical", p.id, `${p.name}: the typical recent paycheck, gross`, { cents: job.typicalRegular.amounts.gross });
+    // Inputs (the year in progress) says which the forecast pays the rest of the year at.
+    const fc = r.isCurrentYear ? p.fromForecast : null;
+    if (fc?.paycheck === "LATEST" && job?.latestRegular) add("paycheck:latest", p.id, `${p.name}: the latest regular paycheck, gross`, { cents: job.latestRegular.amounts.gross });
+    if (fc?.paycheck === "TYPICAL" && job?.typicalRegular) add("paycheck:typical", p.id, `${p.name}: the typical recent paycheck, gross`, { cents: job.typicalRegular.amounts.gross });
     p.fromForecast?.items.forEach((b, i) => add(`forecast-item:${i}`, p.id, `${p.name}: ${b.label}, from the forecast`, { cents: b.gross }));
   }
   // The filed return against the model: what an amendment would change, and each source against the ledger (Filed return).

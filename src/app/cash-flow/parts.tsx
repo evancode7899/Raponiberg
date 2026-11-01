@@ -65,14 +65,17 @@ export function Sparkline({ values, color, width = 84, height = 22 }: { values: 
 export function Delta({ now, before, goodWhenDown = false, asPercent = true, of, per }: { now: number; before: number | null; goodWhenDown?: boolean; asPercent?: boolean; of?: [ProofRef, ProofRef]; per?: [number, number] }) {
   if (before == null) return <span className="text-xs text-faint">—</span>;
   const diff = now - before;
-  if (Math.abs(diff) < 100 || (before !== 0 && Math.abs(diff / before) < 0.02)) return <span className="text-xs text-muted">≈ same</span>;
+  const rate = asPercent && before > 0;
+  const change = of && compositeOf(rate ? "growth" : "diff", of, rate ? { ratio: diff / before } : { cents: diff }, per);
+  // About the same still opens the change's proof: the words stand for it.
+  if (Math.abs(diff) < 100 || (before !== 0 && Math.abs(diff / before) < 0.02))
+    return <span className="text-xs text-muted">{change ? <ProofValue proof={change} drawn="words">≈ same</ProofValue> : "≈ same"}</span>;
   const up = diff > 0;
   const good = goodWhenDown ? !up : up;
-  const rate = asPercent && before > 0;
   const text = rate ? formatPercentRatio(Math.abs(diff / before), 0) : usd0(Math.abs(diff));
   return (
     <span className={`num whitespace-nowrap text-xs font-medium ${good ? "text-pos" : "text-neg"}`}>
-      {up ? "▲" : "▼"} {of ? <ProofValue proof={compositeOf(rate ? "growth" : "diff", of, rate ? { ratio: diff / before } : { cents: diff }, per)}>{text}</ProofValue> : text}
+      {up ? "▲" : "▼"} {change ? <ProofValue proof={change}>{text}</ProofValue> : text}
     </span>
   );
 }

@@ -593,7 +593,7 @@ function LivingBreakdown({ years }: { years: YearProfile[] }) {
   return (
     <Card title="Living expenses by category" subtitle="What's behind the living-expense line (one-offs and income-tax payments excluded).">
       <details>
-        <summary className="cursor-pointer text-xs font-medium text-fg-2">Show categories</summary>
+        <summary data-audit-drill="Show categories" className="cursor-pointer text-xs font-medium text-fg-2">Show categories</summary>
         <div className="mt-2">
           <YearTable columns={years.map((y) => y.label)} rows={rows} highlight={highlight} />
         </div>

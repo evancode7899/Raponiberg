@@ -13,7 +13,7 @@ import { monthLabel, pct, usd } from "./forecastUi";
 import { unswept } from "@/lib/book/proof/clearance";
 import { NotFigure } from "@/components/ui/kit";
 import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
-import { scheduleKeys } from "@/lib/book/derived/forecast";
+import { BONUS_LIST_YEARS, bonusListed, scheduleKeys } from "@/lib/book/derived/forecast";
 import type { Dp } from "./forecastUi";
 
 type Row = {
@@ -265,11 +265,12 @@ const thousands = (c: number) => {
 const colCls = (p: Period) => (p.kind === "ACTUAL" ? "bg-surface-2/70" : p.kind === "TOTAL" ? "border-x border-line-strong bg-accent-soft/40" : "");
 
 /** Every bonus payment the forecast knows about in the next few years, counted or not. */
-export function BonusPayments({ f, throughYear, dp }: { f: Forecast; throughYear: number; dp: Dp }) {
+export function BonusPayments({ f, currentYear, dp }: { f: Forecast; currentYear: number; dp: Dp }) {
+  const throughYear = currentYear + BONUS_LIST_YEARS;
   const keys = useMemo(() => new Map(scheduleKeys(f.schedule).map((k, i) => [f.schedule[i]!, k])), [f.schedule]);
   const [all, setAll] = useState(false);
-  const shown = f.schedule.filter((b) => b.key <= `${throughYear}-12` && (all || b.counted));
-  const hidden = f.schedule.filter((b) => b.key <= `${throughYear}-12` && !b.counted).length;
+  const shown = f.schedule.filter((b) => bonusListed(b, currentYear) && (all || b.counted));
+  const hidden = f.schedule.filter((b) => bonusListed(b, currentYear) && !b.counted).length;
   return (
     <Card
       title="Bonus payments"
@@ -282,7 +283,7 @@ export function BonusPayments({ f, throughYear, dp }: { f: Forecast; throughYear
       }
       actions={
         hidden > 0 ? (
-          <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => setAll(!all)}>
+          <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => setAll(!all)} {...(all ? {} : { "data-audit-drill": "Not counted" })}>
             {all ? "Counted only" : `+${hidden} not counted`}
           </button>
         ) : undefined

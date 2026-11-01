@@ -209,6 +209,35 @@ export function lineValue(key: EstimateKey, c: EstimateColumn, all: EstimateColu
   return ESTIMATE_LINES[key].value(c, all);
 }
 
+/**
+ * The lines the Worksheet draws for these columns, in its order (each across every column,
+ * or only the one it names): the one list the page draws its rows from and the proof sweep
+ * enumerates (book/proof/figures.ts), so a line is swept exactly where a basis draws it.
+ * New York's lines come with a New York return, its city and other states' tax with tax.
+ */
+export function worksheetLines(cols: EstimateColumn[]): { key: EstimateKey; only?: "joint" }[] {
+  const ny = cols.some((c) => c.r.ny);
+  const any = (key: EstimateKey) => cols.some((c) => lineValue(key, c, cols));
+  const keys = (...ks: (EstimateKey | false)[]) => ks.filter((k): k is EstimateKey => !!k).map((key) => ({ key }));
+  return [
+    ...keys("pay.salary", "pay.bonus", "pay.earned", "pay.imputed", "pay.withBenefits", "pay.pretax", "pay.medicareWages", "pay.k401"),
+    ...keys("fed.wages", "fed.investmentIncome", "fed.adjustments", "fed.agi", "fed.deduction", "fed.qbiDeduction", "fed.taxableIncome", "fed.preferentialIncome"),
+    ...keys("ct.stateAgi", "ct.exemption", "ct.taxableIncome"),
+    ...keys(ny && "ny.stateAgi", ny && "ny.deductions", ny && "ny.taxableIncome", cols.some((c) => c.r.ny?.incomePercentage != null) && "ny.incomePercentage", cols.some((c) => c.r.ny?.city) && "ny.cityTaxableIncome"),
+    ...keys("fed.incomeTax", "fica.medicareTotal", "fed.niit", "fica.socialSecurity", "ct.totalTax", "fica.pfml", ny && "ny.incomeTax", any("ny.cityTax") && "ny.cityTax", any("all.otherStateTax") && "all.otherStateTax", "all.totalTaxes"),
+    ...(cols.length > 1 ? [{ key: "all.jointValue" as const, only: "joint" as const }] : []),
+    ...keys("all.earnedPlusInvestment", "all.takeHome"),
+    ...keys("fed.w2Withholding", "fed.estimatedPayments", "fica.medicareWithheld", "fica.ssWithheld", "ct.withheld", "ct.estimatedPayments", ny && "ny.withheldAll", ny && "ny.credits", "all.totalPaid"),
+    ...keys("fed.balance", "ct.balance", ny && "ny.balance", "all.balance"),
+  ];
+}
+
+/** The joint return's lines Taxes › Income & W-2 draws beyond the Worksheet's, projected (federal income to taxable income, Connecticut AGI to tax). */
+export const INCOME_TAB_LINES: readonly EstimateKey[] = [
+  "fed.taxableInterest", "fed.ordinaryDividends", "fed.capitalGain", "fed.iraTaxable", "fed.additionalIncome",
+  "ct.federalAgi", "ct.chet", "ct.usObligationSubtraction", "ct.childTaxCredit",
+];
+
 /** Every tax the worksheet totals (computeReturn.ts allTaxes, the one definition). */
 const totalTaxes = (c: EstimateColumn): number => allTaxes(c.r);
 

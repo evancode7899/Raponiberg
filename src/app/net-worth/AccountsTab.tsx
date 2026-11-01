@@ -3,7 +3,7 @@
 import { QualityBadge } from "@/components/ledger/LedgerBits";
 import { Card, NotFigure, StatementTable, type TableRow } from "@/components/ui/kit";
 import type { ProofTarget } from "@/components/ui/proof/context";
-import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
+import { rollTotalValue, rollValue, shownRollLines, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 as usd } from "@/lib/formatMoney";
 import type { AccountRollforward, RollforwardReport, RollYear } from "@/lib/profile/rollforwards";
@@ -97,7 +97,8 @@ function Summary({ accounts, years, currentYear }: { accounts: AccountRollforwar
 
 function AccountCard({ a, currentYear, derived }: { a: AccountRollforward; currentYear: number; derived: DerivedFigure[] }) {
   const ys = a.years;
-  const any = (f: (x: RollYear) => number | null) => ys.some((x) => !x.blockers.length && (f(x) ?? 0) !== 0);
+  // The lines this card draws (shownRollLines: the list the proof sweep enumerates too).
+  const shows = new Set(shownRollLines(ys));
   const cell = (x: RollYear, c: Cell): Cell => (x.blockers.length ? blockedCell(x.blockers) : c);
   const row = (label: string, line: Exclude<RollLine, "opening" | "closing" | "return">, f: (x: RollYear) => number | null, opts: Partial<Extract<TableRow, { cells: Cell[] }>> = {}): TableRow => ({
     label,
@@ -118,14 +119,14 @@ function AccountCard({ a, currentYear, derived }: { a: AccountRollforward; curre
       ),
     },
   ];
-  if (any((x) => x.employee)) rows.push(row("Your contributions", "employee", (x) => x.employee));
-  if (any((x) => x.employer)) rows.push(row("Employer contributions", "employer", (x) => x.employer));
-  if (any((x) => x.deposits)) rows.push(row("Deposits & transfers in", "deposits", (x) => x.deposits));
-  if (any((x) => x.withdrawals)) rows.push(row("Withdrawals & transfers out", "withdrawals", (x) => x.withdrawals));
+  if (shows.has("employee")) rows.push(row("Your contributions", "employee", (x) => x.employee));
+  if (shows.has("employer")) rows.push(row("Employer contributions", "employer", (x) => x.employer));
+  if (shows.has("deposits")) rows.push(row("Deposits & transfers in", "deposits", (x) => x.deposits));
+  if (shows.has("withdrawals")) rows.push(row("Withdrawals & transfers out", "withdrawals", (x) => x.withdrawals));
   rows.push(row("Balance after net contributions", "after-contributions", (x) => rollValue(x, "after-contributions"), { strong: true }));
-  if (ys.some((x) => x.income != null)) rows.push(row("Dividends & interest", "income", (x) => x.income));
+  if (shows.has("income")) rows.push(row("Dividends & interest", "income", (x) => x.income));
   rows.push(row("Net change in market value", "market", (x) => x.marketChange));
-  if (any((x) => x.fees)) rows.push(row("Fees", "fees", (x) => x.fees));
+  if (shows.has("fees")) rows.push(row("Fees", "fees", (x) => x.fees));
   rows.push({
     label: "Closing balance",
     total: true,

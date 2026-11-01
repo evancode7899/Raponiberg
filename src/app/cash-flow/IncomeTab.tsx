@@ -10,7 +10,7 @@ import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney"
 import { useMemo } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
-import { mergeCategories, mergeMerchants, totals } from "./model";
+import { mergeCategories, topPayers, totals } from "./model";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 
 /** Income types keep one color each, in the taxonomy's order (never by size). */
@@ -24,7 +24,7 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
   const t = totals(slice.months);
   const incomeCats = useMemo(() => mergeCategories(slice.months, (m) => m.incomeByCategory), [slice]);
   const external = useMemo(() => mergeCategories(slice.months, (m) => m.externalByCategory), [slice]);
-  const payers = useMemo(() => mergeMerchants(slice.months, (m) => m.payers), [slice]);
+  const payers = useMemo(() => topPayers(slice.months), [slice]);
   const catNames = INCOME_CATEGORIES.filter((c) => incomeCats.some((x) => x.category === c && x.cents > 0));
   const stack = slice.months.map((m) => Object.fromEntries([["label", m.label], ...catNames.map((c) => [c, (m.incomeByCategory.find((x) => x.category === c)?.cents ?? 0) / 100])]));
   const cumulative: { label: string; saved: number }[] = [];
@@ -91,7 +91,7 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
                 </tr>
               </thead>
               <tbody>
-                {payers.slice(0, 15).map((p) => (
+                {payers.map((p) => (
                   <tr key={p.key} className={`${table.trHover} cursor-pointer`} onClick={() => ctx.open({ kind: "merchant", key: p.key, name: p.name, lane: "INCOME" })}>
                     <td className={`${table.td} max-w-[14rem] truncate font-medium`} title={p.key} data-audit-drill={p.name}>
                       {p.name}

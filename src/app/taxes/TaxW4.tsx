@@ -13,7 +13,7 @@ import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { unswept } from "@/lib/book/proof/clearance";
-import { W4_WALK } from "@/lib/tax/w4Extras";
+import { W4_WALK, walkShown } from "@/lib/tax/w4Extras";
 
 /** A figure of the W-4 plan (lib/tax/w4Extras), by row and column, drawn as `text`. */
 type Fig = (row: string, col: string, text: ReactNode, drawn?: FigureProps["drawn"]) => ReactNode;
@@ -340,17 +340,17 @@ function OnFileEditor({ p, r, onSave }: { p: W4PersonPlan; r: TaxResponse; onSav
 }
 
 function Reconcile({ federal, ct, people, fig }: { federal: W4Balance; ct: W4Balance; people: W4PersonPlan[]; fig: Fig }) {
+  const tooSoon = people.flatMap((p) => p.tooSoon).length;
   const row = (label: string, k: (typeof W4_WALK)[number], o: { strong?: boolean; indent?: boolean; help?: string; sign?: -1 } = {}) => {
     const v = (b: W4Balance) => (o.sign ?? 1) * b[k];
-    if (!o.strong && federal[k] === 0 && ct[k] === 0) return null;
+    if (!walkShown(k, federal, ct, tooSoon)) return null;
     return { label, values: [fig(`walk:${k}`, "federal", usd(v(federal))), fig(`walk:${k}`, "ct", usd(v(ct)))], strong: o.strong, indent: o.indent, help: o.help };
   };
-  const tooSoon = people.flatMap((p) => p.tooSoon).length;
   const rows = [
     row("Projected tax for the year", "tax", { strong: true }),
     row("Withheld on the pay stubs on file", "withheldStubs", { indent: true, sign: -1 }),
     row("Paychecks received since the stubs on file (forecast)", "withheldSinceStub", { indent: true, sign: -1 }),
-    tooSoon ? row("Paychecks before the new W-4 takes effect", "withheldTooSoon", { indent: true, sign: -1 }) : null,
+    row("Paychecks before the new W-4 takes effect", "withheldTooSoon", { indent: true, sign: -1 }),
     row("Paychecks the new W-4 reaches, as withheld now", "withheldReached", { indent: true, sign: -1 }),
     row("Bonuses still to come (flat supplemental rate)", "withheldBonus", { indent: true, sign: -1 }),
     row("Other withholding (W-2s, earlier employers)", "withheldOther", { indent: true, sign: -1 }),

@@ -4,21 +4,22 @@ import { analyzeFire, firePlans, firstYearIncome, stressTest } from "../../fire/
 import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type StressFigure } from "../../fire/longTerm.ts";
 import { projectOutlook } from "../../profile/outlook.ts";
 import { ledgerColumns, ledgerDraws, ledgerViews } from "../../forecast/ledger.ts";
-import { COST_LINES } from "../../car/report.ts";
+import { COST_LINES, type CostLine } from "../../car/report.ts";
 import { CAR_KINDS } from "../../car/settings.ts";
 import type { HsaReport } from "../../hsa/report.ts";
 import type { AnnualProfileReport } from "../../profile/buildAnnualProfile.ts";
 import { annualPayDescriptor } from "../../profile/annualPay.ts";
-import { rollTotalValue, rollValue } from "../../profile/rollLines.ts";
+import { rollTotalValue, rollValue, shownRollLines } from "../../profile/rollLines.ts";
 import type { RollforwardReport } from "../../profile/rollforwards.ts";
 import { BUCKETS } from "../../profile/settings.ts";
-import { ESTIMATE_LINES, estimateColumns, estimatesFound, lineValue, type EstimateKey } from "../../tax/estimateLines.ts";
+import { ESTIMATE_LINES, estimateColumns, estimatesFound, INCOME_TAB_LINES, lineValue, worksheetLines, type EstimateColumn, type EstimateKey } from "../../tax/estimateLines.ts";
+import { atFilingReturns } from "../../tax/overviewExtras.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
 import type { BonusesReport } from "../reports/bonuses.ts";
 import { bonusPayFigures, estimateDescriptor, expectedBonuses, figureReads } from "../reports/bonusFigures.ts";
 import type { CashFlowPeriod } from "../reports/cashFlow.ts";
 import type { SpendingKinds, SpendingReport } from "../reports/spending.ts";
-import { cashFlowDescriptor, cashFlowWindows, windowFigures } from "../reports/cashFlowWindows.ts";
+import { cashFlowDescriptor, cashFlowWindowDraws, windowFigures } from "../reports/cashFlowWindows.ts";
 import type { CashFlowDescriptor } from "./cashFlowProof.ts";
 import type { GoalsReport } from "../reports/goals.ts";
 import type { InvestmentsReport } from "../reports/investments.ts";
@@ -33,7 +34,7 @@ import type { BonusesDescriptor } from "./bonusesProof.ts";
 import type { FireFigure, FireSettings, HomeFigure } from "./planningProof.ts";
 import { MORTGAGE_FIGURES, mortgageFigures } from "../../mortgage/figures.ts";
 import { RENT_VS_BUY_FIGURES } from "../../home-budget/rentVsBuy.ts";
-import { estimateFigures, yearEstimate } from "../../profile/yearEstimate.ts";
+import { estimateFigures, yearEstimate, type YearEstimate } from "../../profile/yearEstimate.ts";
 import type { ForecastData } from "../../forecast/load.ts";
 import { withLinks, type MortgageInputs } from "../../mortgage/inputs.ts";
 import type { MortgageLinks } from "../../mortgage/links.ts";
@@ -67,21 +68,19 @@ const cents = (c: number | null | undefined): ProofValue | null => (c == null ? 
 
 // ------------------------------------------------------------------ Cash flow
 
-/** Each proven month's income, spending, outside money and saved, each category of it, and (from the spending report) each band of spending. */
+/** Each proven month's income, spending and saved, each category of its spending, and (from the spending report) each band of spending. */
 export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKinds })[], accountIds?: string[]): PageFigure[] {
   const out: PageFigure[] = [];
   const scope = accountIds?.length ? { accountIds } : {};
   for (const p of periods) {
     if (p.blockers.length) continue;
-    const d = (metric: "income" | "spending" | "external" | "net", category?: string): ProofDescriptor => ({ report: "cash-flow", metric, granularity: "month", start: p.start, end: p.end, ...(category ? { category } : {}), ...scope });
+    const d = (metric: "income" | "spending" | "net", category?: string): ProofDescriptor => ({ report: "cash-flow", metric, granularity: "month", start: p.start, end: p.end, ...(category ? { category } : {}), ...scope });
     out.push(
       { page: "Cash flow", descriptor: d("income"), shown: cents(p.incomeCents) },
       { page: "Cash flow", descriptor: d("spending"), shown: cents(p.spendingCents) },
       { page: "Cash flow", descriptor: d("net"), shown: cents(p.netCents) },
-      { page: "Cash flow", descriptor: d("external"), shown: cents(p.externalByCategory.reduce((t, c) => t + c.cents, 0)) },
     );
     for (const c of p.spendingByCategory) out.push({ page: "Cash flow", descriptor: d("spending", c.category), shown: cents(c.cents) });
-    for (const c of p.incomeByCategory) out.push({ page: "Cash flow", descriptor: d("income", c.category), shown: cents(c.cents) });
     if (p.kinds)
       for (const [spendingKind, shown] of [["bill", p.kinds.billCents], ["big", p.kinds.bigCents], ["everyday", p.kinds.everydayCents]] as const)
         out.push({ page: "Cash flow", descriptor: { ...(d("spending") as CashFlowDescriptor), spendingKind }, shown: cents(shown) });
@@ -90,10 +89,11 @@ export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKin
 }
 
 /**
- * Every figure the Cash flow tabs sum over a run of months (cashFlowWindows: each preset
- * range and the run before it, each year, the year-over-year sides, Trends' windows), each
- * merchant and payer in each, and Recurring's twelve months of each recurring merchant's
- * charges. Built with the page's own helpers, so the recipes are the ones it renders.
+ * Every figure the Cash flow tabs draw over a run of months (cashFlowWindowDraws: each month,
+ * each preset range and the run before it, each year, the year-over-year sides, Trends'
+ * windows, each with what the tabs draw over it), and Recurring's twelve months of each
+ * recurring merchant's charges. Built with the page's own helpers and pickers, so the
+ * recipes are the ones it renders, and only those.
  */
 export function cashFlowWindowFigures(r: Pick<SpendingReport, "months" | "recurring">): PageFigure[] {
   const page = "Cash flow";
@@ -105,8 +105,9 @@ export function cashFlowWindowFigures(r: Pick<SpendingReport, "months" | "recurr
     seen.add(k);
     out.push({ page, descriptor, shown: cents(c) });
   };
-  for (const months of cashFlowWindows(r)) for (const f of windowFigures(months)) add(f.descriptor, f.cents);
-  if (r.months.length) for (const c of r.recurring) add(cashFlowDescriptor("spending", r.months, undefined, { merchantKey: c.key, charges: true }), c.last12Cents);
+  for (const { months, draws } of cashFlowWindowDraws(r)) for (const f of windowFigures(months, draws)) add(f.descriptor, f.cents);
+  // Recurring lists each habit's last twelve months of charges (its bills, a year of the usual charge: a derived figure).
+  if (r.months.length) for (const c of r.recurring.filter((x) => x.kind === "habit")) add(cashFlowDescriptor("spending", r.months, undefined, { merchantKey: c.key, charges: true }), c.last12Cents);
   return out;
 }
 
@@ -237,13 +238,36 @@ const CASH: [AnnualCashLine, (y: AnnualProfileReport["years"][number]) => number
   ["reimbursements", (y) => y.cash!.reimbursements],
   ["tax-rate", () => null],
   ["savings-of-gross", () => null],
-  ["savings-of-net", () => null],
 ];
 
-/** The annual statement's cash lines and categories, year-end net worth and its buckets, the bridge, and every roll-forward. */
-export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardReport): PageFigure[] {
+/**
+ * The statement's lines it draws only once some column has one (a year, or the year in
+ * progress's estimate), and whether it does: a partner's pay kept, transfers in transit, and
+ * the bridge's balances first on file, transfers in transit and timing.
+ */
+export function annualOptionalRows(profile: AnnualProfileReport, est: YearEstimate | null): Record<"partner-kept" | "in-transit" | "newlyTracked" | "inTransit" | "unexplainedSavings", boolean> {
+  const any = (f: (y: AnnualProfileReport["years"][number]) => number | null | undefined, e?: number | null) => profile.years.some((y) => (f(y) ?? 0) !== 0) || (e ?? 0) !== 0;
+  return {
+    "partner-kept": any((y) => y.cash?.waterfall.partnerKept, est?.partnerKept),
+    "in-transit": any((y) => y.netWorth?.inTransit),
+    newlyTracked: any((y) => y.bridge?.newlyTracked, est?.bridge?.newlyTracked),
+    inTransit: any((y) => y.bridge?.inTransit, est?.bridge?.inTransit),
+    unexplainedSavings: any((y) => y.bridge?.unexplainedSavings, est?.bridge?.unexplainedSavings),
+  };
+}
+
+/**
+ * The annual statement's cash lines and categories, year-end net worth and its buckets, the
+ * bridge (a line some years lack only once a column has it: annualOptionalRows), and each account's roll-forward
+ * lines its card draws (shownRollLines).
+ */
+export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardReport, est: YearEstimate | null = null): PageFigure[] {
   const out: PageFigure[] = [];
-  const add = (page: string, d: AnnualDescriptor, v: number | null) => out.push({ page, descriptor: d, shown: cents(v) });
+  const keep: Record<string, boolean> = annualOptionalRows(profile, est);
+  const add = (page: string, d: AnnualDescriptor, v: number | null) => {
+    if ("line" in d && keep[d.line as string] === false && d.figure !== "rollforward") return;
+    out.push({ page, descriptor: d, shown: cents(v) });
+  };
   for (const y of profile.years) {
     const year = y.year;
     if (y.cash) {
@@ -257,8 +281,6 @@ export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardRe
     if (n) {
       for (const b of BUCKETS) if (n.buckets[b.id] !== 0) add("Annual", { report: "annual", figure: "bucket", year, bucket: b.id }, b.debt ? -n.buckets[b.id] : n.buckets[b.id]);
       add("Annual", { report: "annual", figure: "net-worth", year, line: "net-worth" }, n.netWorth);
-      add("Annual", { report: "annual", figure: "net-worth", year, line: "assets" }, n.grossAssets);
-      add("Annual", { report: "annual", figure: "net-worth", year, line: "debt" }, -n.grossDebt);
       add("Annual", { report: "annual", figure: "net-worth", year, line: "liquid" }, n.liquid);
       add("Annual", { report: "annual", figure: "net-worth", year, line: "illiquid" }, n.illiquid);
       add("Annual", { report: "annual", figure: "net-worth", year, line: "in-transit" }, n.inTransit);
@@ -273,7 +295,7 @@ export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardRe
   }
   for (const a of rolls.accounts)
     for (const x of a.years) {
-      for (const line of ["opening", "employee", "employer", "deposits", "withdrawals", "after-contributions", "income", "market", "fees", "closing"] as const)
+      for (const line of shownRollLines(a.years).filter((l) => l !== "income" || x.income != null))
         add("Net worth › Account roll-forwards", { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line }, rollValue(x, line));
       add("Net worth › Account roll-forwards", { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line: "return" }, null);
     }
@@ -344,11 +366,9 @@ export function hsaFigures(r: HsaReport): PageFigure[] {
   const page = "HSA";
   const list: [ProofDescriptor, number | null][] = [
     [{ report: "hsa", metric: "balance" }, r.hsa.balanceCents],
-    [{ report: "hsa", metric: "contributions" }, r.growth.funding.employeeCents + r.growth.funding.employerCents],
-    [{ report: "hsa", metric: "contributions", part: "employee" }, r.growth.funding.employeeCents],
-    [{ report: "hsa", metric: "contributions", part: "employer" }, r.growth.funding.employerCents],
-    [{ report: "hsa", metric: "distributions", part: "distribution" }, r.withdrawalTotals.distributionCents],
-    [{ report: "hsa", metric: "distributions", part: "direct" }, r.withdrawalTotals.directCents],
+    // Reimburse says what distributions and direct payments came to once there are any.
+    ...(r.withdrawalTotals.distributionCents ? ([[{ report: "hsa", metric: "distributions", part: "distribution" }, r.withdrawalTotals.distributionCents]] as [ProofDescriptor, number][]) : []),
+    ...(r.withdrawalTotals.directCents ? ([[{ report: "hsa", metric: "distributions", part: "direct" }, r.withdrawalTotals.directCents]] as [ProofDescriptor, number][]) : []),
     [{ report: "hsa", metric: "reimbursable" }, r.totals.unreimbursedCents],
     [{ report: "hsa", metric: "ready" }, r.totals.readyCents],
     [{ report: "hsa", metric: "reimbursed" }, r.totals.reimbursedCents],
@@ -367,40 +387,40 @@ export function hsaFigures(r: HsaReport): PageFigure[] {
 
 // ------------------------------------------------------------------ Account limits
 
-/** Every limit, contribution, room and projection on Account limits for the report's year. */
+/**
+ * Every limit, contribution, room and projection Account limits draws for the report's year:
+ * a projection only where it differs from the year to date (the meters and amounts draw one
+ * arrow then); 401(k) room unless there is an excess, and only while there is room; HSA room
+ * with HSA coverage.
+ */
 export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
   const f = (x: Omit<AccountLimitsDescriptor, "report" | "year">, c: number): PageFigure => ({ page: "Account limits", descriptor: { report: "account-limits", year: r.year, ...x }, shown: { cents: c } });
   const chetStep = r.steps.find((s) => s.id === "chet");
   const out = [f({ account: "steps", figure: "room" }, r.pretax.roomCents), f({ account: "chet", figure: "used" }, r.household.chet.contributed), f({ account: "chet", figure: "limit" }, r.household.chet.deductionLimit)];
   if (chetStep) out.push(f({ account: "chet", figure: "room" }, chetStep.roomCents));
   if (r.pretax.taxSavedCents != null) out.push(f({ account: "steps", figure: "tax-saved" }, r.pretax.taxSavedCents));
+  // A year-to-date amount, and its projection where the page draws one (it differs).
+  const amount = (x: Omit<AccountLimitsDescriptor, "report" | "year" | "figure">, a: { ytd: number; projected: number }) => [
+    f({ ...x, figure: "used" }, a.ytd),
+    ...(a.projected !== a.ytd ? [f({ ...x, figure: "projected" }, a.projected)] : []),
+  ];
   for (const p of r.people) {
     const personId = p.id;
     out.push(
-      f({ account: "k401", personId, figure: "used" }, p.k401.total.ytd),
-      f({ account: "k401", personId, figure: "projected" }, p.k401.total.projected),
+      ...amount({ account: "k401", personId }, p.k401.total),
       f({ account: "k401", personId, figure: "limit" }, p.k401.limit),
-      f({ account: "k401", personId, figure: "room" }, p.k401.room),
-      f({ account: "hsa", personId, figure: "used" }, p.hsa.total.ytd),
-      f({ account: "hsa", personId, figure: "projected" }, p.hsa.total.projected),
+      ...(!p.k401.excess && p.k401.room ? [f({ account: "k401", personId, figure: "room" }, p.k401.room)] : []),
+      ...amount({ account: "hsa", personId }, p.hsa.total),
       f({ account: "hsa", personId, figure: "limit" }, p.hsa.limit),
-      f({ account: "hsa", personId, figure: "room" }, p.hsa.room),
-      f({ account: "hsa", personId, figure: "used", part: "employee" }, p.hsa.employee.ytd),
-      f({ account: "hsa", personId, figure: "projected", part: "employee" }, p.hsa.employee.projected),
-      f({ account: "hsa", personId, figure: "used", part: "employer" }, p.hsa.employer.ytd),
-      f({ account: "hsa", personId, figure: "projected", part: "employer" }, p.hsa.employer.projected),
+      ...(p.hsa.coverage !== "NONE" ? [f({ account: "hsa", personId, figure: "room" }, p.hsa.room)] : []),
+      ...amount({ account: "hsa", personId, part: "employee" }, p.hsa.employee),
+      ...amount({ account: "hsa", personId, part: "employer" }, p.hsa.employer),
       f({ account: "ira", personId, figure: "used" }, p.ira.total),
       f({ account: "ira", personId, figure: "limit" }, p.ira.limit),
       f({ account: "ira", personId, figure: "room" }, p.ira.room),
     );
     if (p.k401.excess) out.push(f({ account: "k401", personId, figure: "excess" }, p.k401.excess));
-    for (const e of p.k401.employers)
-      out.push(
-        f({ account: "k401", personId, figure: "used", employer: e.employer, part: "employee" }, e.employee.ytd),
-        f({ account: "k401", personId, figure: "projected", employer: e.employer, part: "employee" }, e.employee.projected),
-        f({ account: "k401", personId, figure: "used", employer: e.employer, part: "employer" }, e.employer$.ytd),
-        f({ account: "k401", personId, figure: "projected", employer: e.employer, part: "employer" }, e.employer$.projected),
-      );
+    for (const e of p.k401.employers) out.push(...amount({ account: "k401", personId, employer: e.employer, part: "employee" }, e.employee), ...amount({ account: "k401", personId, employer: e.employer, part: "employer" }, e.employer$));
   }
   return out;
 }
@@ -415,11 +435,12 @@ export function calendarFigures(r: MoneyCalendarReport): PageFigure[] {
 // ------------------------------------------------------------------ Car
 
 /**
- * Each car's cost per line and in total: to date, the last 12 months, each year and each
- * month; the same to date, over 12 months and each year as a rate per mile and per month
- * (rates the page shows only once there are miles or a month to divide by, held to no
- * value: the proof works the rate out); what was paid to date, kind by kind; and each
- * counted line of the log.
+ * Each car's cost as the tabs draw it: Overview's to date and last 12 months (the total, and
+ * each line that cost anything, each also per mile and per month once there are miles or a
+ * month to divide by: rates held to no value, the proof works them out); Costs' calendar
+ * years (the total, per mile and per month, and each line any year used, that line to date
+ * too); what was paid to date, kind by kind, for each kind paid (and financing interest,
+ * paid and used, once any was paid); and each counted line of the log.
  */
 export function carFigures(g: GarageReport): PageFigure[] {
   const out: PageFigure[] = [];
@@ -428,18 +449,51 @@ export function carFigures(g: GarageReport): PageFigure[] {
   if (g.blockers?.length) return out;
   for (const r of g.cars) {
     if (!r.configured) continue;
-    const fig = (x: Partial<CarFigureDescriptor>): CarFigureDescriptor => ({ report: "car", carId: r.carId, basis: "accrued", span: "toDate", ...x });
-    const spans = ["toDate", "last12", ...new Set(r.months.map((m) => m.month.slice(0, 4))), ...r.months.map((m) => m.month)];
-    for (const span of spans)
-      for (const line of [undefined, ...COST_LINES]) {
-        const shown =
-          span === "toDate" ? (line ? r.accrued[line] : r.totals.tco)
-          : span === "last12" ? (line ? r.last12.lines[line] : r.last12.total)
-          : r.months.filter((m) => m.month.startsWith(span)).reduce((t, m) => t + (line ? m.lines[line] : m.total), 0);
-        out.push({ page, descriptor: fig({ span, ...(line ? { line } : {}) }), shown: cents(shown) });
-        if (span.length !== 7) for (const per of ["mile", "month"] as const) out.push({ page, descriptor: fig({ span, ...(line ? { line } : {}), per }), shown: null });
+    const seen = new Set<string>();
+    const add = (x: Partial<CarFigureDescriptor>, shown: ProofValue | null) => {
+      const descriptor: CarFigureDescriptor = { report: "car", carId: r.carId, basis: "accrued", span: "toDate", ...x };
+      if (seen.has(descriptorKey(descriptor))) return;
+      seen.add(descriptorKey(descriptor));
+      out.push({ page, descriptor, shown });
+    };
+    // Overview: to date (months owned) or the last 12 months.
+    const views = [
+      { span: "toDate", lines: r.accrued as Partial<Record<CostLine, number>>, total: r.totals.tco, miles: r.odometer.driven, months: r.odometer.daysOwned / (365.25 / 12) },
+      { span: "last12", lines: r.last12.lines as Partial<Record<CostLine, number>>, total: r.last12.total, miles: r.last12.miles, months: 12 },
+    ];
+    for (const v of views)
+      for (const line of [undefined, ...COST_LINES.filter((l) => (v.lines[l] ?? 0) !== 0)]) {
+        add({ span: v.span, ...(line ? { line } : {}) }, cents(line ? v.lines[line] : v.total));
+        if (v.miles > 0) add({ span: v.span, ...(line ? { line } : {}), per: "mile" }, null);
+        if (v.months >= 1) add({ span: v.span, ...(line ? { line } : {}), per: "month" }, null);
       }
-    for (const line of [...CAR_KINDS, "INTEREST" as const]) out.push({ page, descriptor: fig({ basis: "cash", line }), shown: cents(line === "INTEREST" ? r.cash.INTEREST : r.cash[line]) });
+    // Costs: each calendar year of the months, the lines any year used, and each of those to date.
+    const years = new Map<string, { lines: Record<CostLine, number>; miles: number }>();
+    for (const m of r.months) {
+      const y = years.get(m.month.slice(0, 4)) ?? { lines: Object.fromEntries(COST_LINES.map((l) => [l, 0])) as Record<CostLine, number>, miles: 0 };
+      for (const l of COST_LINES) y.lines[l] += m.lines[l];
+      y.miles += m.miles;
+      years.set(m.month.slice(0, 4), y);
+    }
+    const used = COST_LINES.filter((l) => [...years.values()].some((y) => y.lines[l] !== 0));
+    for (const [span, y] of years) {
+      add({ span }, cents(Object.values(y.lines).reduce((a, b) => a + b, 0)));
+      if (y.miles) add({ span, per: "mile" }, null);
+      add({ span, per: "month" }, null);
+      for (const line of used) add({ span, line }, cents(y.lines[line]));
+    }
+    for (const line of used) add({ line }, cents(r.accrued[line]));
+    // Costs › Paid vs used: each kind paid, what of it was used, and financing interest.
+    for (const k of CAR_KINDS.filter((k) => r.cash[k] !== 0)) {
+      add({ basis: "cash", line: k }, cents(r.cash[k]));
+      if (k !== "PAYMENT") add({ line: k }, cents(r.accrued[k]));
+    }
+    if (r.cash.INTEREST > 0) {
+      add({ basis: "cash", line: "INTEREST" }, cents(r.cash.INTEREST));
+      add({ line: "INTEREST" }, cents(r.accrued.INTEREST));
+    }
+    // Fuel: fuel to date.
+    add({ line: "FUEL" }, cents(r.accrued.FUEL));
   }
   for (const i of g.log) if (i.counted) out.push({ page, descriptor: { report: "car", itemId: i.id }, shown: cents(i.cents) });
   return out;
@@ -447,12 +501,27 @@ export function carFigures(g: GarageReport): PageFigure[] {
 
 // ------------------------------------------------------------------ Taxes
 
-const KEYS = Object.keys(ESTIMATE_LINES) as EstimateKey[];
+/**
+ * The estimate lines a column draws on a basis: the Worksheet's (worksheetLines, the list it
+ * draws its rows from; New York's city tax beside them, a part of its rate row), and for the
+ * joint return projected, what Income & W-2 and Overview draw too (each At filing card's tax,
+ * paid and balance).
+ */
+function drawnEstimateKeys(report: TaxReport, basis: "projected" | "ytd", col: EstimateColumn, cols: EstimateColumn[]): EstimateKey[] {
+  const keys = new Set<EstimateKey>(worksheetLines(cols).flatMap((l) => (!l.only || l.only === col.id ? [l.key] : [])));
+  if (cols.some((c) => c.r.ny)) keys.add("ny.cityTax");
+  if (basis === "projected" && col.id === "joint") {
+    for (const k of INCOME_TAB_LINES) keys.add(k);
+    for (const p of atFilingReturns(report)) for (const k of ["balance", "totalPayments", "totalTax"] as const) keys.add(`${p}.${k}`);
+  }
+  return [...keys];
+}
 
 /**
- * Every Worksheet line of every return (each spouse separately, and joint), projected and
- * year to date; the estimated payments found on Payments; and, for the year in progress,
- * each person's gross pay projected to Dec 31 (Income & W-2, the first employer still paying).
+ * Every estimate line each return draws (each spouse separately, and joint), projected and
+ * year to date (drawnEstimateKeys); the estimated payments found on Payments; and, for the
+ * year in progress, each person's gross pay projected to Dec 31 (Income & W-2, the first
+ * employer still paying).
  */
 export function taxEstimateFigures(report: TaxReport, inProgress = false): PageFigure[] {
   const out: PageFigure[] = [];
@@ -467,7 +536,7 @@ export function taxEstimateFigures(report: TaxReport, inProgress = false): PageF
   for (const basis of ["projected", "ytd"] as const) {
     const { cols } = estimateColumns(report, basis);
     for (const col of cols)
-      for (const key of KEYS) {
+      for (const key of drawnEstimateKeys(report, basis, col, cols)) {
         const v = lineValue(key, col, cols);
         out.push({
           page: `Taxes ${report.year}`,
@@ -481,7 +550,7 @@ export function taxEstimateFigures(report: TaxReport, inProgress = false): PageF
 
 // ------------------------------------------------------------------ Goals
 
-/** Each goal's saved-so-far, target and monthly need, and the emergency fund's typical month. */
+/** Each goal's saved-so-far, target, what's left and monthly need (as its card draws them), and the emergency fund's typical month. */
 export function goalsFigures(r: GoalsReport): PageFigure[] {
   const page = "Goals";
   const out: PageFigure[] = [];
@@ -491,8 +560,10 @@ export function goalsFigures(r: GoalsReport): PageFigure[] {
     const d = (figure: "current" | "target" | "needed" | "to-go" | "lands"): ProofDescriptor => ({ report: "planning", page: "goals", figure, goalId: g.goal.id });
     out.push({ page, descriptor: d("current"), shown: cents(g.currentCents) });
     if (g.targetCents != null) out.push({ page, descriptor: d("target"), shown: cents(g.targetCents) });
-    if (g.neededMonthlyCents != null) out.push({ page, descriptor: d("needed"), shown: cents(g.neededMonthlyCents) });
-    out.push({ page, descriptor: d("to-go"), shown: null }, { page, descriptor: d("lands"), shown: null });
+    // A goal behind says what it needs a month; one with a target says what's left, while anything is.
+    if (g.status === "BEHIND" && g.neededMonthlyCents != null) out.push({ page, descriptor: d("needed"), shown: cents(g.neededMonthlyCents) });
+    if (g.targetCents != null && g.targetCents - g.currentCents > 0) out.push({ page, descriptor: d("to-go"), shown: null });
+    out.push({ page, descriptor: d("lands"), shown: null });
   }
   return out;
 }
@@ -523,14 +594,12 @@ export function forecastFigures(f: Forecast, r: AnnualProfileReport): PageFigure
         out.push({ page: "Forecast", descriptor, shown: { cents: v } });
       }
   }
-  // The inputs panel's seeds, as ForecastInputs shows them on the saved drivers.
+  // The inputs panel's seeds it draws as figures, on the saved drivers (the payroll seeds sit in their inputs; their labels open the proofs).
   const s = r.seeds;
   if (s) {
     const paycheck = Object.fromEntries(f.pay.people.map((p) => [p.personId, p.basis]));
     const seed = (x: Record<string, unknown>, c: number | null) => out.push({ page: "Forecast", descriptor: { report: "forecast", figure: "seed", ...x } as ProofDescriptor, shown: cents(c) });
     seed({ which: "start" }, s.start.liquid + s.start.illiquid);
-    seed({ which: "deferrals", paycheck }, f.pay.people.reduce((x, p) => x + p.deferrals, 0));
-    seed({ which: "employer", paycheck }, f.pay.people.reduce((x, p) => x + p.employer, 0));
     // Each person's base salary and the share kept after tax (FIRE's inputs panel draws them too).
     for (const p of f.pay.people) seed({ which: "pay", personId: p.personId, paycheck: p.basis }, null);
     seed({ which: "take-home", paycheck }, null);
@@ -601,7 +670,8 @@ export function homeBudgetFigures(saved: { inputs: Record<string, unknown> | nul
 export function annualEstimateFigures(data: ForecastData): PageFigure[] {
   const e = yearEstimate(data);
   if (!e) return [];
-  return Object.entries(estimateFigures(e)).map(([line, v]) => ({ page: "Annual", descriptor: { report: "planning", page: "annual-estimate", line }, shown: v }));
+  const rows: Record<string, boolean> = annualOptionalRows(data.profile, e);
+  return Object.entries(estimateFigures(e)).filter(([line]) => rows[line.replace(/^bridge:/, "")] !== false).map(([line, v]) => ({ page: "Annual", descriptor: { report: "planning", page: "annual-estimate", line }, shown: v }));
 }
 
 // ------------------------------------------------------------------ Mortgage
@@ -643,8 +713,8 @@ export function derivedFigures(page: DerivedPage, list: DerivedFigure[]): PageFi
 
 /**
  * Every source as it prints, under every figure above: each committed statement's closing
- * balance, each ledger row's amount (a bill payment booked in pieces is its pieces added
- * back) and each pay stub's net pay. The page is the document itself.
+ * balance and each ledger row's amount (a bill payment booked in pieces is its pieces added
+ * back). The page is the document itself (Statements, Transactions).
  */
 export function sourceFigures(book: Book): PageFigure[] {
   const out: PageFigure[] = [];
@@ -659,6 +729,6 @@ export function sourceFigures(book: Book): PageFigure[] {
   const printed = new Map(book.rows.map((r) => [r.id, r.amountCents]));
   for (const r of book.rows) if (r.partOf) printed.set(r.partOf, (printed.get(r.partOf) ?? 0) + r.amountCents);
   for (const r of book.rows) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });
-  for (const s of book.stubs) out.push({ page: "Pay stubs", descriptor: { report: "stub", stubId: s.id }, shown: s.printed.netCurrent == null ? null : { cents: s.printed.netCurrent }, asPrinted: true });
+  // A pay stub is no page's figure: the pay figures' proofs link to it, and the sweep holds every linked proof (judgeFigures).
   return out;
 }

@@ -467,10 +467,15 @@ export function Segmented<T extends string>({
    * It picks what the page shows (a range, a year, $ or $k), not an input the page saves:
    * the render audit (scripts/render-audit.ts) clicks every option and holds what each draws.
    * `skip` names options it leaves alone, and why (a custom range the sweep can't enumerate).
+   * `nested`: what it shows depends on two pickers before it together (a year and a basis), so
+   * the audit clicks it under every pair of theirs too, not just under each one.
    */
-  view?: boolean | { skip: T[]; why: string };
+  view?: boolean | { skip?: T[]; why?: string; nested?: boolean };
 }) {
-  const audit = view ? { "data-audit-view": typeof view === "object" ? view.skip.join(",") : "", ...(typeof view === "object" ? { "data-audit-skip-why": view.why } : {}) } : {};
+  const v = typeof view === "object" ? view : null;
+  const audit = view
+    ? { "data-audit-view": v?.skip?.join(",") ?? "", ...(v?.skip?.length ? { "data-audit-skip-why": v.why } : {}), ...(v?.nested ? { "data-audit-nest": "" } : {}) }
+    : {};
   return (
     <div role="radiogroup" aria-label={ariaLabel} {...audit} className="inline-flex rounded-md border border-line-strong bg-surface-2 p-0.5">
       {options.map((o) => {

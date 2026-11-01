@@ -68,6 +68,8 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
   const go = (j: number) => setPicked(r.periods[j]!.start);
   const picker = (
     <div className="flex flex-wrap items-center gap-1.5">
+      {/* The granularity first: the periods to pick from are its (the render audit picks each period of each). */}
+      {control}
       <button type="button" className={btn.secondary} disabled={i === 0} onClick={() => go(i - 1)} aria-label={`Previous ${UNIT[granularity]}`}>
         ‹
       </button>
@@ -82,7 +84,6 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
       <button type="button" className={btn.secondary} disabled={i === r.periods.length - 1} onClick={() => go(i + 1)} aria-label={`Next ${UNIT[granularity]}`}>
         ›
       </button>
-      {control}
     </div>
   );
   return <Period p={p} granularity={granularity} compareWith={r.compareWith} picker={picker} steps={steps} />;

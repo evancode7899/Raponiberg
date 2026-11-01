@@ -347,8 +347,10 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
    * Every option of each control the page marks as a view (data-audit-view), and with each
    * one, every option of the controls after it (a year, then its basis): every pair, so a
    * column only a year and a basis together show is drawn too. Drill-downs open on each
-   * single change, not on every pair. Options the control names in data-audit-view are left
-   * alone (it says why in data-audit-skip-why).
+   * single change, not on every pair. A control marked data-audit-nest (kit Segmented view
+   * nested) is clicked under every pair too: what it shows hangs on both pickers before it.
+   * Options the control names in data-audit-view are left alone (it says why in
+   * data-audit-skip-why).
    */
   const explore = async (name: string, from = 0, depth = 0) => {
     const controls = page.locator('[data-audit-view]:not([role="dialog"] *)');
@@ -356,6 +358,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
     for (let i = from; i < count; i++) {
       const c = controls.nth(i);
       if (!(await c.isVisible().catch(() => false))) continue;
+      if (depth === 2 && (await c.getAttribute("data-audit-nest")) == null) continue;
       const label = (await c.getAttribute("aria-label")) || `view ${i + 1}`;
       const skip = new Set(((await c.getAttribute("data-audit-view")) ?? "").split(",").filter(Boolean));
       const show = async (opt: string) => {
@@ -366,7 +369,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
         if (depth === 0) {
           await drills(at);
           await explore(at, i + 1, 1);
-        }
+        } else if (depth === 1 && (await page.locator("[data-audit-nest]").count())) await explore(at, i + 1, 2);
       };
       if ((await c.evaluate((e) => e.tagName)) === "SELECT") {
         const was = await c.inputValue();
