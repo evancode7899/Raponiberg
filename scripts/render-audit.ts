@@ -10,7 +10,9 @@
  *   node scripts/render-audit.ts <base-url>
  *
  * Drives the Chrome or Edge already installed (playwright-core downloads no browser);
- * RENDER_AUDIT_BROWSER names another executable.
+ * RENDER_AUDIT_BROWSER names another executable. On the owner's own data it runs through
+ * scripts/render-audit-real.ts (npm run audit:real), which sets RENDER_AUDIT_UNLOCK and
+ * RENDER_AUDIT_REDACT.
  */
 import { readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -35,11 +37,15 @@ const WORKERS = Math.max(1, Number(process.env.RENDER_AUDIT_WORKERS ?? 8));
 const ONLY = process.env.RENDER_AUDIT_ONLY?.split(",").map((s) => s.trim()).filter(Boolean);
 /** The day the server pins (APP_TODAY, set by scripts/demo.ts): the browser's clock reads it too. */
 const TODAY = process.env.APP_TODAY?.trim();
-/** Drill-downs opened per view, and proof drawers held to their proofs per view. */
-const DRILLS_PER_VIEW = 80;
+/** Drill-downs opened per view (RENDER_AUDIT_DRILLS caps it on a big Book), and proof drawers held to their proofs per view. */
+const DRILLS_PER_VIEW = Number(process.env.RENDER_AUDIT_DRILLS ?? 80);
 const DRAWERS_PER_VIEW = 4;
 /** The whole audit's time budget (F6e): the owner wants proof checks in minutes, so a slower run fails. RENDER_AUDIT_BUDGET_MS overrides (0: none). */
 const BUDGET_MS = Number(process.env.RENDER_AUDIT_BUDGET_MS ?? 240_000);
+/** RENDER_AUDIT_UNLOCK=1: the caller had the server check the lock-screen password (render-audit-real.ts), so each tab starts unlocked, as the lock screen leaves it. */
+const UNLOCK = process.env.RENDER_AUDIT_UNLOCK === "1";
+/** RENDER_AUDIT_REDACT=1: real data, so the console says problem kinds, pages and counts, never a drawn value, key or name. */
+const REDACT = process.env.RENDER_AUDIT_REDACT === "1";
 /** The pages with the most views, started first so they don't finish last. */
 const SLOW = ["/cash-flow", "/taxes", "/net-worth", "/car", "/hsa", "/statements", "/fire", "/home-budget"];
 
@@ -174,6 +180,8 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], q
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: "reduce" });
   // The demo's day in the browser too (scripts/demo.ts DEMO_TODAY): the year a page opens on, its default range.
   if (TODAY) await context.clock.setFixedTime(new Date(`${TODAY}T12:00:00`));
+  // The flag the lock screen sets once its password is accepted (components/shell/LockScreen.tsx).
+  if (UNLOCK) await context.addInitScript(() => sessionStorage.setItem("pf-unlocked", "1"));
   // The audit only looks: any write (a saved input, a decision) is refused, so the data the sweep cleared is the data drawn.
   await context.route(/\/api\//, (r) => {
     const q = r.request();
@@ -366,14 +374,20 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], q
 }
 
 const started = Date.now();
-// The sweep the pages clear from, run to the end first: the server's own report.
-const res = await fetch(`${base}/api/proof/sweep?wait=1`);
+// The sweep the pages clear from, run to the end first: the server's own report. Asked
+// again while it runs (202), as pages do: one request held open past fetch's 5-minute
+// header timeout would fail on a large Book's cold start.
+let res = await fetch(`${base}/api/proof/sweep`);
+while (res.status === 202) {
+  await new Promise((r) => setTimeout(r, 1000));
+  res = await fetch(`${base}/api/proof/sweep`);
+}
 if (!res.ok) {
   console.error(`The server's proof sweep answered ${res.status}: ${await res.text()}`);
   process.exit(1);
 }
 const report = (await res.json()) as SweepVerdicts & { stamp: string; figures: number; problemCount: number };
-console.log(`Sweep of ${report.stamp}: ${report.figures} figures, ${Object.keys(report.cleared).length} cleared, ${report.problemCount} problem(s) (${Date.now() - started}ms)`);
+console.log(`Sweep${REDACT ? "" : ` of ${report.stamp}`}:${report.figures} figures, ${Object.keys(report.cleared).length} cleared, ${report.problemCount} problem(s) (${Date.now() - started}ms)`);
 
 const all = routes();
 const todo = ONLY ? all.filter((r) => ONLY.includes(r)) : all;
@@ -416,15 +430,19 @@ if (process.env.RENDER_AUDIT_JSON) writeFileSync(process.env.RENDER_AUDIT_JSON, 
 const figures = views.reduce((n, v) => n + v.figures.length, 0);
 const opened = views.reduce((n, v) => n + (v.drawers?.length ?? 0), 0);
 console.log(`\nRendered ${views.length} views: ${figures} figures drawn, ${audit.drawn} of the sweep's ${audit.cleared} cleared figures among them; ${opened} proof drawers held to their proofs (${Date.now() - started}ms).`);
+const count = (xs: string[]) => [...xs.reduce((m, x) => m.set(x, (m.get(x) ?? 0) + 1), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
 const byKind = new Map<string, typeof audit.problems>();
 for (const p of audit.problems) byKind.set(p.kind, [...(byKind.get(p.kind) ?? []), p]);
 for (const [kind, ps] of byKind) {
   console.log(`\n[${kind}] ${ps.length}`);
+  if (REDACT) {
+    for (const [page, n] of count(ps.map((p) => pageOf(p.view)))) console.log(`   ${page.padEnd(16)} ${String(n).padStart(5)}`);
+    continue;
+  }
   for (const p of ps.slice(0, LISTED)) console.log(`   ${p.view}: ${p.detail}${p.key ? `\n      ${p.key}` : ""}`);
   if (ps.length > LISTED) console.log(`   …and ${ps.length - LISTED} more`);
 }
 // Debts said out loud, not failed yet: bypasses on pages a later stage holds, and cleared figures no view drew.
-const count = (xs: string[]) => [...xs.reduce((m, x) => m.set(x, (m.get(x) ?? 0) + 1), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
 if (audit.pending.length) {
   console.log(`\n[PENDING] ${audit.pending.length} bypass(es) on pages a later stage holds (BYPASS_PENDING, lib/book/proof/renderAudit.ts):`);
   for (const [page, n] of count(audit.pending.map((p) => pageOf(p.view)))) console.log(`   ${page.padEnd(16)} ${String(n).padStart(5)}  ${BYPASS_PENDING[page]}`);
