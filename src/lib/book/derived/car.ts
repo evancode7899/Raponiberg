@@ -1,6 +1,9 @@
 import { LINE_INFO, type CarReport, type CostLine, type GarageReport } from "../../car/report.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
 
+/** Car › Costs lists this many of the latest insurance premiums. */
+export const PREMIUMS_LISTED = 12;
+
 /** Miles driven in each calendar year of a car's months (Costs › Miles), oldest first. */
 export const milesByYear = (car: Pick<CarReport, "months">): [string, number][] => {
   const by = new Map<string, number>();
@@ -39,9 +42,14 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
     add("per-day", "owning it, a day (all-in)", money(tt.perDay), [ln("All-in to date ÷ days owned", money(tt.perDay) ?? t("—"))]);
     add("planned-per-mile", "planned wear a mile", num(d.plannedPerMile), [ln("All-in less the resale you expect, ÷ the miles to the selling odometer", num(d.plannedPerMile) ?? t("—"), undefined, { source: "assumption" })]);
     add("market-per-year", "the market's trend, a year", money(d.marketPerYear), [ln("The trend in your value checks, a year", money(d.marketPerYear) ?? t("—"))]);
-    add("insurance-expected", "the insurance premium expected at renewal", money(car.insurance.expectedCents), [ln("The latest premium, renewed", money(car.insurance.expectedCents) ?? t("—"))]);
-    add("insurance-monthly", "insurance, a month", money(car.insurance.monthlyCents), [ln("The latest premium ÷ its months", money(car.insurance.monthlyCents) ?? t("—"))]);
+    // What renewal will cost, said only beside a renewal date (Overview, Costs).
+    if (car.insurance.renewsOn) {
+      add("insurance-expected", "the insurance premium expected at renewal", money(car.insurance.expectedCents), [ln("The latest premium, renewed", money(car.insurance.expectedCents) ?? t("—"))]);
+      add("insurance-monthly", "insurance, a month", money(car.insurance.monthlyCents), [ln("The latest premium ÷ its months", money(car.insurance.monthlyCents) ?? t("—"))]);
+    }
     car.insurance.premiums.forEach((x, i) => {
+      // Costs lists the latest PREMIUMS_LISTED.
+      if (i < car.insurance.premiums.length - PREMIUMS_LISTED) return;
       const k = `${key}|${i}`;
       out.push({ figure: "premium", key: k, describes: `${car.name}: the premium paid ${x.date}`, value: c(x.cents), lines: [ln("The premium", c(x.cents), undefined, { source: x.source === "STATEMENT" ? "proven" : "assumption" })] });
       out.push({ figure: "premium-monthly", key: k, describes: `${car.name}: the premium paid ${x.date}, a month`, value: c(x.monthlyCents), lines: [ln("The premium", c(x.cents)), ln(`÷ ${x.months} months`, t(String(x.months)), "÷"), ln("A month", c(x.monthlyCents), "=")] });
@@ -112,8 +120,9 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
   // The garage's statements against the log: what the statements say for matched entries, and the car payments (the purchase).
   out.push(
     { figure: "statement-matched", describes: "What the statements say for the log entries matched to them", value: c(a.matchedStatementCents), lines: [ln("Matched statement rows", c(a.matchedStatementCents), undefined, { source: "proven" })] },
-    { figure: "car-payments", describes: "Car payments on statements (the purchase)", value: c(a.paymentCents), lines: [ln("Car payment rows", c(a.paymentCents), undefined, { source: "proven" })] },
   );
+  // From statements mentions the car payments only when there are any.
+  if (a.paymentCents) out.push({ figure: "car-payments", describes: "Car payments on statements (the purchase)", value: c(a.paymentCents), lines: [ln("Car payment rows", c(a.paymentCents), undefined, { source: "proven" })] });
   const gx = (figure: string, describes: string, value: DerivedFigure["value"], lines: DerivedFigure["lines"]) => out.push({ figure, describes, value, lines });
   gx("statement-costs", "car costs from statements", c(a.rowsCents - a.paymentCents), [ln("Car rows on statements", c(a.rowsCents), undefined, { source: "proven" }), ln("Car payments (the purchase)", c(a.paymentCents), "−"), ln("Car costs from statements", c(a.rowsCents - a.paymentCents), "=")]);
   gx("log-matched", "log entries matched to a statement charge", t(`${a.matched + a.installments} of ${a.entries - a.noCost}`), [ln("Matched", t(String(a.matched))), ln("Paid in installments", t(String(a.installments))), ln("Log entries with a cost", t(String(a.entries - a.noCost)))]);

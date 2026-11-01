@@ -64,9 +64,10 @@ export function hsaPageDerived(rep: HsaReport): DerivedFigure[] {
   const yearCells: TableCell[] = rep.years.flatMap((y) => HSA_YEAR_COLUMNS.map((col) => ({ row: String(y.year), col, describes: `Medical bills ${y.year}: ${col.replace(/Cents$/, "")}`, value: c(y[col]) })));
   out.push(...tableFigures("year", "years", yearCells));
   for (const [scope, rows] of [["patient", rep.byPatient], ["kind", rep.byKind]] as const) {
+    // What's still open shows beside a row only when it isn't the whole of it.
     const cells = rows.flatMap((b) => [
       { row: b.key, col: "total", describes: `Medical bills by ${scope}, ${b.key}`, value: c(b.totalCents) },
-      { row: b.key, col: "open", describes: `Medical bills by ${scope}, ${b.key}: still open`, value: c(b.unreimbursedCents) },
+      ...(b.unreimbursedCents !== b.totalCents ? [{ row: b.key, col: "open", describes: `Medical bills by ${scope}, ${b.key}: still open`, value: c(b.unreimbursedCents) }] : []),
     ]);
     out.push(...tableFigures("breakdown", scope, cells));
   }

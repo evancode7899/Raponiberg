@@ -93,6 +93,17 @@ export const employerRow = (p: Pick<PersonReport, "id">, e: Pick<Entry, "employe
 export const lineRow = (p: Pick<PersonReport, "id">, e: Pick<Entry, "employer">, i: number) => `stub-line:${p.id}:${e.employer}:${i}`;
 export const accountRow = (a: Pick<AccountIncome, "accountNumber">, k: string) => `account:${a.accountNumber}:${k}`;
 
+/** The boxes Overview › projected W-2s draws for every employer (year to date, and in the year in progress projected too). */
+export const OVERVIEW_W2_BOXES: readonly W2Row[] = ["box1", "box2", "box3", "box5", "box12d", "box16", "box17"];
+/** Whether Overview › projected W-2s draws New York's boxes: once any employer withholds for it. */
+export const showsNyW2 = (r: Pick<TaxReport, "people">) => r.people.some((p) => p.payroll.some((e) => (e.w2Projected.nyWithheld ?? 0) + (e.w2Projected.nycWithheld ?? 0) > 0));
+/** Whether Income & W-2 draws an employer's projected year-end column: only while it still has paychecks to come. */
+export const showsProjectedW2 = (e: Pick<Entry, "active" | "remainingPayDates">) => e.active && e.remainingPayDates.length > 0;
+/** Whether Income & W-2 draws a person's IRA moves: only once there are any (beside their accounts). */
+export const showsIraMoves = (p: Pick<PersonReport, "retirement" | "accounts">) => p.accounts.length > 0 && (p.retirement.conversions > 0 || p.retirement.rollovers > 0 || p.retirement.otherDistributions > 0);
+/** Whether Income & W-2 draws a person's CHET 529 contributions: only with a CHET account. */
+export const showsChet = (p: Pick<PersonReport, "accounts">) => p.accounts.some((a) => a.isChet);
+
 export function incomeCells(r: TaxReport): IncomeCell[] {
   const out: IncomeCell[] = [];
   const add = (row: string, col: string, describes: string, cents: number) => out.push({ row, col, describes, value: { cents } });
@@ -102,17 +113,19 @@ export function incomeCells(r: TaxReport): IncomeCell[] {
   add("ct-addback", "joint", "Connecticut: 2% rate phase-out add-back", ct.addBack);
   add("ct-recapture", "joint", "Connecticut: benefit recapture", ct.recapture);
   add("ct-personal-credit", "joint", "Connecticut: personal tax credit", -ct.personalCredit);
+  const ny = showsNyW2(r);
   for (const p of r.people) {
     for (const e of p.payroll) {
       if (e.extraBonus) add(employerRow(p, e, "extra-bonus"), "projected", `${p.name}, ${e.employer}: expected bonus`, e.extraBonus);
+      // Projected: on Income & W-2 while the employer still pays; Overview's boxes for every employer in the year in progress.
       for (const [row, label] of W2_ROWS)
-        for (const side of ["ytd", "projected"] as const)
+        for (const side of showsProjectedW2(e) || (r.isCurrentYear && OVERVIEW_W2_BOXES.includes(row)) ? (["ytd", "projected"] as const) : (["ytd"] as const))
           // The year in progress projects gross pay by the forecast's own figure (planning › projected gross).
           if (!(row === "gross" && side === "projected" && r.isCurrentYear && e.active)) add(employerRow(p, e, row), side, `${p.name}, ${e.employer}: ${label}, ${side === "ytd" ? "year to date" : "projected"}`, w2Value(e, row, side));
-      // New York's boxes, where the employer withholds for it (Overview › projected W-2s).
-      for (const side of ["ytd", "projected"] as const) {
+      // New York's boxes, once any employer withholds for it (Overview › projected W-2s; projected in the year in progress).
+      for (const side of r.isCurrentYear ? (["ytd", "projected"] as const) : (["ytd"] as const)) {
         const b = side === "ytd" ? e.w2Ytd : e.w2Projected;
-        if ((e.w2Projected.nyWithheld ?? 0) + (e.w2Projected.nycWithheld ?? 0) > 0)
+        if (ny)
           for (const [row, label, v] of [["box16ny", "Box 16 · NY wages", b.nyStateWages], ["box17ny", "Box 17 · NY tax withheld", b.nyWithheld], ["box19nyc", "Box 19 · NYC tax withheld", b.nycWithheld]] as const)
             add(employerRow(p, e, row), side, `${p.name}, ${e.employer}: ${label}`, v ?? 0);
       }
@@ -125,12 +138,14 @@ export function incomeCells(r: TaxReport): IncomeCell[] {
       for (const [label, k] of ACCOUNT_ROWS)
         for (const side of ["ytd", "projected"] as const) add(accountRow(a, k), side, `${a.label}: ${label}, ${side === "ytd" ? "year to date" : "projected"}`, a[side][k]);
     const ira = p.retirement;
-    add(`ira:${p.id}:rollovers`, "joint", `${p.name}: direct IRA rollovers`, ira.rollovers);
-    add(`ira:${p.id}:conversions`, "joint", `${p.name}: Roth conversions`, ira.conversions);
-    add(`ira:${p.id}:basis`, "joint", `${p.name}: non-deductible IRA basis`, -ira.basis);
-    add(`ira:${p.id}:other`, "joint", `${p.name}: other IRA withdrawals`, ira.otherDistributions);
-    add(`ira:${p.id}:taxable`, "joint", `${p.name}: IRA taxable`, ira.taxable);
-    add(`chet:${p.id}`, "joint", `${p.name}: CHET 529 contributions this year`, p.income.ctChetContributions);
+    if (showsIraMoves(p)) {
+      add(`ira:${p.id}:rollovers`, "joint", `${p.name}: direct IRA rollovers`, ira.rollovers);
+      add(`ira:${p.id}:conversions`, "joint", `${p.name}: Roth conversions`, ira.conversions);
+      add(`ira:${p.id}:basis`, "joint", `${p.name}: non-deductible IRA basis`, -ira.basis);
+      add(`ira:${p.id}:other`, "joint", `${p.name}: other IRA withdrawals`, ira.otherDistributions);
+      add(`ira:${p.id}:taxable`, "joint", `${p.name}: IRA taxable`, ira.taxable);
+    }
+    if (showsChet(p)) add(`chet:${p.id}`, "joint", `${p.name}: CHET 529 contributions this year`, p.income.ctChetContributions);
   }
   for (const c of r.children) {
     add(`child:${c.name}`, "ytd", `${c.name}: custodial unearned income, year to date`, c.ytd);

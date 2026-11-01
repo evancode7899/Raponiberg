@@ -13,7 +13,7 @@ import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, usd0 } from "@/
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx, Drill } from "./CashFlowClient";
-import { categoryCents, KINDS, median, mergeMerchants, sum } from "./model";
+import { categoryCents, KINDS, median, mergeMerchants, monthDrillMerchants, sum } from "./model";
 import { categoryColor, Dot, Eyebrow, TxnList } from "./parts";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { isUnswept } from "@/lib/book/proof/clearance";
@@ -175,7 +175,18 @@ export function MerchantDrill({ ctx, drill }: { ctx: Ctx; drill: Extract<Drill, 
           sub={
             recurring ? (
               <>
-                {recurring.active ? "active" : "stopped"} · <ProofValue proof={ctx.dp("recurring-annual", recurring.key)}>{usd0(recurring.annualCents)}</ProofValue>/yr
+                {/* A year of it while it's still charged: a bill's usual charge as often as it comes, a habit's last twelve months (Recurring's own figures). */}
+                {!recurring.active ? (
+                  "stopped"
+                ) : recurring.kind === "bill" ? (
+                  <>
+                    active · <ProofValue proof={ctx.dp("recurring-annual", recurring.key)}>{usd0(recurring.annualCents)}</ProofValue>/yr
+                  </>
+                ) : (
+                  <>
+                    active · <ProofValue proof={ctx.proof("spending", ctx.report.months, { merchantKey: recurring.key, charges: true, shownCents: recurring.last12Cents })}>{usd0(recurring.last12Cents)}</ProofValue>/yr
+                  </>
+                )}
               </>
             ) : undefined
           }
@@ -204,8 +215,7 @@ export function MerchantDrill({ ctx, drill }: { ctx: Ctx; drill: Extract<Drill, 
 export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }) {
   const { chart } = ctx;
   const one = [m];
-  const credits = m.merchants.filter((x) => x.cents < 0).sort((a, b) => a.cents - b.cents);
-  const top = m.merchants.filter((x) => x.cents > 0).slice(0, 12);
+  const { credits, top } = monthDrillMerchants(m);
   const merchant = (x: MerchantMonth) => (
     <li key={x.key}>
       <button

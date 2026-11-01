@@ -1,5 +1,6 @@
 import { differs, showValue, type SweepProblem } from "./clearance.ts";
 import { clearedValue } from "./composite.ts";
+import { descriptorKey } from "./key.ts";
 import type { ProofValue } from "./types.ts";
 
 /**
@@ -210,73 +211,30 @@ export function figureFamily(key: string): string {
  * undrawn members are listed on every run, not failed; any other family fails on its first
  * undrawn figure, and a family listed here that draws every member fails too, so the list
  * only shrinks. The way off it: drive the view that draws them, or stop sweeping what no page shows.
+ * Empty since F6f: the sweep enumerates what the pages draw, and the audit reaches all of it.
  */
-export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {
-  "tax-estimate": "F6f",
-  "cash-flow › spending": "F6f",
-  "derived › taxes › worksheet": "F6f",
-  "derived › taxes › income": "F6f",
-  "derived › forecast › bonus": "F6f",
-  "cash-flow › income": "F6f",
-  "stub": "F6f",
-  "derived › net-worth › change-typical": "F6f",
-  "derived › forecast › bonus-share": "F6f",
-  "derived › taxes › overview": "F6f",
-  "car › MAINTENANCE": "F6f",
-  "car › REPAIR": "F6f",
-  "car › CARE": "F6f",
-  "car › TOLLS": "F6f",
-  "car › TAX_REG": "F6f",
-  "car › INTEREST": "F6f",
-  "car › EQUIPMENT": "F6f",
-  "car › OTHER": "F6f",
-  "account-limits › projected": "F6f",
-  "annual › rollforward": "F6f",
-  "car › INSURANCE": "F6f",
-  "car › PARKING": "F6f",
-  "car › FUEL": "F6f",
-  "derived › cash-flow › recurring-last12": "F6f",
-  "car › DEPRECIATION": "F6f",
-  "cash-flow › external": "F6f",
-  "car": "F6f",
-  "derived › cash-flow › recurring-last": "F6f",
-  "annual › category": "F6f",
-  "derived › taxes › w4": "F6f",
-  "account-limits › room": "F6f",
-  "derived › net-worth › change-step": "F6f",
-  "derived › cash-flow › recurring-annual": "F6f",
-  "derived › cash-flow › category-typical": "F6f",
-  "derived › cash-flow › category-months": "F6f",
-  "derived › hsa › breakdown": "F6f",
-  "dashboard › saving": "F6f",
-  "dashboard › markets": "F6f",
-  "annual › cash": "F6f",
-  "annual › net-worth": "F6f",
-  "derived › car › premium": "F6f",
-  "derived › car › premium-monthly": "F6f",
-  "derived › car › premium-change": "F6f",
-  "derived › taxes › compare-diff": "F6f",
-  "cash-flow › net": "F6f",
-  "annual › bridge": "F6f",
-  "hsa › contributions": "F6f",
-  "forecast › seed": "F6f",
-  "derived › cash-flow › map-rest": "F6f",
-  "hsa › distributions": "F6f",
-  "car › PAYMENT": "F6f",
-  "derived › cash-flow › pace-spent": "F6f",
-  "planning › goals › to-go": "F6f",
-  "planning › goals › needed": "F6f",
-  "planning › annual-estimate › partner-kept": "F6f",
-  "planning › annual-estimate › bridge:newlyTracked": "F6f",
-  "planning › annual-estimate › bridge:inTransit": "F6f",
-  "planning › annual-estimate › bridge:unexplainedSavings": "F6f",
-  "derived › car › insurance-expected": "F6f",
-  "derived › car › insurance-monthly": "F6f",
-  "derived › car › car-payments": "F6f",
-  "derived › cash-flow › savings-rate": "F6f",
-};
+export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {};
 
-/** The page a view is on: "/cash-flow › Trends · Months shown=6M ▸ Dining" → "/cash-flow". */
+/** A composite figure's parts, nested ones too, by key ([] for any other figure). */
+export function compositeParts(key: string): string[] {
+  const out: string[] = [];
+  const walk = (d: unknown) => {
+    const x = d as { report?: unknown; of?: unknown };
+    if (x?.report === "composite" && Array.isArray(x.of))
+      for (const p of x.of) {
+        out.push(descriptorKey(p));
+        walk(p);
+      }
+  };
+  try {
+    walk(JSON.parse(key));
+  } catch {
+    /* not a descriptor */
+  }
+  return out;
+}
+
+/** The page a view is on:"/cash-flow › Trends · Months shown=6M ▸ Dining" → "/cash-flow". */
 export const pageOf = (view: string) => view.split(/ [›·▸] /)[0]!;
 
 export type RenderAudit = {
@@ -337,6 +295,8 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
     for (const f of v.figures) {
       if (f.clearance === "cleared") {
         drawn.add(f.key);
+        // A composite draws its parts too: it clears only from them, and its proof opens each.
+        for (const k of compositeParts(f.key)) drawn.add(k);
         const cleared = clearedValue(f.key, sweep.cleared);
         const shown = shownValue(f);
         if (!cleared) all.push({ kind: "RENDER_NOT_CLEARED", view: v.view, key: f.key, detail: `Drawn as cleared, but the sweep never cleared it.` });
@@ -369,7 +329,7 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
   if (!opts.partial)
     for (const [family, stage] of Object.entries(undrawnPending))
       if (!byFamily.has(family)) problems.push({ kind: "RENDER_UNDRAWN", view: family, detail: `Every cleared figure of it is drawn now: take it off UNDRAWN_PENDING (it waited for ${stage}), so a new undrawn one fails.` });
-  return { problems, pending, drawn: drawn.size, cleared: Object.keys(sweep.cleared).length, missing, whatIf };
+  return { problems, pending, drawn: Object.keys(sweep.cleared).length - missing.length, cleared: Object.keys(sweep.cleared).length, missing, whatIf };
 }
 
 /** Money and rates in drawn text, one by one: "$1,234", "(6.5%)", "−$4.1k". */

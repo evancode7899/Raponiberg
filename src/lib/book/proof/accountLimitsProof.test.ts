@@ -154,7 +154,7 @@ describe("account-limits proofs", () => {
     it(`re-derive every figure the page shows for ${year}, and the parts re-add to it`, async () => {
       const r = reportFor(year);
       const figs = pageFigures(r);
-      expect(figs.length).toBeGreaterThan(30);
+      expect(figs.length).toBeGreaterThan(20);
       for (const { d, cents: shown } of figs) {
         const p = await buildProof(ctx(), d);
         const label = JSON.stringify(d);

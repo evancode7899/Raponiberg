@@ -10,8 +10,8 @@ import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context
 import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
-import { employerRow } from "@/lib/tax/incomeExtras";
-import { dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
+import { employerRow, showsNyW2 } from "@/lib/tax/incomeExtras";
+import { atFilingReturns, dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
 import { useMemo, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { BalanceBadge, Callout, EstimateValue, formatDate, lawLabel, NumberTable, pct, usd } from "./taxUi";
@@ -312,12 +312,13 @@ function Mini({ label, value }: { label: ReactNode; value: ReactNode }) {
 /** One card per return: refund or balance due, and how much of the tax is already paid. */
 function AtFiling({ r }: { r: TaxResponse }) {
   const mfj = r.scenarios.mfj;
+  const returns = atFilingReturns(r);
   const rows: { name: string; sub: string; tax: number; paid: number; balance: number; prefix: "fed" | "ct" | "ny" }[] = [
     { name: "Federal", sub: "Form 1040", tax: mfj.federal.totalTax, paid: mfj.federal.totalPayments, balance: mfj.federal.balanceDue, prefix: "fed" },
   ];
-  if (mfj.ct.totalTax || mfj.ct.totalPayments || r.residency.ct !== "NONRESIDENT")
+  if (returns.includes("ct"))
     rows.push({ name: "Connecticut", sub: mfj.ct.sourceIncome != null ? "CT-1040NR/PY" : "CT-1040", tax: mfj.ct.totalTax, paid: mfj.ct.totalPayments, balance: mfj.ct.balanceDue, prefix: "ct" });
-  if (mfj.ny)
+  if (mfj.ny && returns.includes("ny"))
     rows.push({ name: mfj.ny.city ? "New York + NYC" : "New York", sub: mfj.ny.filing.state === "RESIDENT" ? "IT-201" : "IT-203", tax: mfj.ny.totalTax, paid: mfj.ny.totalPayments, balance: mfj.ny.balanceDue, prefix: "ny" });
   const net = rows.reduce((s, x) => s + x.balance, 0);
   return (
@@ -759,7 +760,7 @@ function ProjectedW2s({ r }: { r: TaxResponse }) {
         row("Box 12 D · 401(k) deferrals", "box12d", (w) => w.box12.D),
         row("Box 16 · CT wages", "box16", (w) => w.box16StateWages),
         row("Box 17 · CT tax withheld", "box17", (w) => w.stateWithheld),
-        ...(cols.some(({ e }) => (e.w2Projected.nyWithheld ?? 0) + (e.w2Projected.nycWithheld ?? 0) > 0)
+        ...(showsNyW2(r)
           ? [
               row("Box 16 · NY wages", "box16ny", (w) => w.nyStateWages ?? 0),
               row("Box 17 · NY tax withheld", "box17ny", (w) => w.nyWithheld ?? 0),

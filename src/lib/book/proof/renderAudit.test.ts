@@ -164,6 +164,12 @@ describe("composite figures: arithmetic over figures the sweep proved", () => {
     expect(auditRender([share("30%", "0.3")], parts, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_NOT_CLEARED" }]);
     expect(auditRender([share("25%")], { cleared: {}, problems: {} }, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_NOT_CLEARED" }]);
   });
+  it("draws its parts: they clear it, and its proof opens each", () => {
+    const share = view({ figures: [fig({ key, shown: "0.25", shownKind: "ratio", text: "25%" })] });
+    const r = audit([share], parts, {}, { undrawnPending: {} });
+    expect(r.missing).toEqual([]);
+    expect(r.problems).toEqual([]);
+  });
 });
 
 describe("chart labels: a chart only pictures the figures the view draws", () => {

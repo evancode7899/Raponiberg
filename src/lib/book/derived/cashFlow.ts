@@ -1,5 +1,5 @@
 import { savingsRate } from "../definitions.ts";
-import { cashFlowWindows, median, mergeCategories, mergeMerchants, PRESET_RANGES, sliceRange, sum } from "../reports/cashFlowWindows.ts";
+import { byYear, cashFlowWindows, last12At, median, mergeCategories, mergeMerchants, PRESET_RANGES, sliceRange, sum } from "../reports/cashFlowWindows.ts";
 import type { CategoryAmount } from "../reports/cashFlow.ts";
 import { CHARGE_BUCKETS, type MerchantMonth, type SpendingMonth, type SpendingReport } from "../reports/spending.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
@@ -34,7 +34,11 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
   // Each figure only over the runs of months a tab can draw it on (the render audit holds the
   // two together): the savings rate over every run (a month, the run before, a year earlier);
   // the tabs' own headlines, drills and merchant rows over the preset ranges.
-  const presets = new Set(PRESET_RANGES.map((range) => windowKey(sliceRange(rep, range, { from: "", to: "" }).months)));
+  const slices = PRESET_RANGES.map((range) => sliceRange(rep, range, { from: "", to: "" }));
+  const presets = new Set(slices.map((s) => windowKey(s.months)));
+  // The savings rate: each month, each range and the run before it (Overview, Income), each calendar year (Year over year), Trends' twelve months and the twelve before.
+  const hi = rep.months.length - 1;
+  const rated = new Set([...rep.months.map((m) => windowKey([m])), ...presets, ...slices.map((s) => windowKey(s.prior)), ...byYear(rep.months).map(([, ms]) => windowKey(ms)), windowKey(last12At(rep.months, hi)), windowKey(last12At(rep.months, hi - 12))]);
   for (const months of cashFlowWindows(rep)) {
     const key = windowKey(months);
     const preset = presets.has(key);
@@ -44,7 +48,7 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
     const income = sum(months, (m) => m.incomeCents);
     const spending = sum(months, (m) => m.spendingCents);
     const rate = savingsRate(income, income - spending);
-    add("savings-rate", "Savings rate from take-home", rate == null ? null : r(rate), [ln("Income", c(income), undefined, { source: "proven" }), ln("Spending", c(spending), "−", { source: "proven" }), ln("Saved from take-home", c(income - spending), "="), ln("÷ income", c(income), "÷"), ln("Savings rate", rate == null ? t("—") : r(rate), "=")]);
+    if (rated.has(key)) add("savings-rate", "Savings rate from take-home", rate == null ? null : r(rate), [ln("Income", c(income), undefined, { source: "proven" }), ln("Spending", c(spending), "−", { source: "proven" }), ln("Saved from take-home", c(income - spending), "="), ln("÷ income", c(income), "÷"), ln("Savings rate", rate == null ? t("—") : r(rate), "=")]);
     const employee = sum(months, (m) => m.retirementEmployeeCents);
     const employer = sum(months, (m) => m.retirementEmployerCents);
     // Each month's payroll retirement is a column of Overview's month table; the rest are the ranges'.
@@ -70,7 +74,8 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
     add("avg-charge", "Average charge", c(visits ? sum(all, (m) => m.cents) / visits : 0), [ln("Spending at merchants", c(sum(all, (m) => m.cents))), ln("÷ charges", t(String(visits)), "÷"), ln("Average charge", c(visits ? sum(all, (m) => m.cents) / visits : 0), "=")]);
     const mapped = sum(all.slice(0, MAP_TOP), (m) => m.cents);
     add("map-share", `The ${MAP_TOP} biggest merchants' share of spending`, spending > 0 ? r(mapped / spending) : null, [ln(`The ${Math.min(MAP_TOP, all.length)} biggest merchants`, c(mapped)), ln("÷ spending", c(spending), "÷"), ln("Share", spending > 0 ? r(mapped / spending) : t("—"), "=")]);
-    add("map-rest", `Spending beyond the ${MAP_TOP} biggest merchants`, c(sum(all.slice(MAP_TOP), (m) => m.cents)), [ln(`The ${Math.max(0, all.length - MAP_TOP)} other merchants`, c(sum(all.slice(MAP_TOP), (m) => m.cents)))]);
+    // Merchants' map says what the rest come to only when there is a rest.
+    if (sum(all.slice(MAP_TOP), (m) => m.cents) > 0) add("map-rest", `Spending beyond the ${MAP_TOP} biggest merchants`, c(sum(all.slice(MAP_TOP), (m) => m.cents)), [ln(`The ${Math.max(0, all.length - MAP_TOP)} other merchants`, c(sum(all.slice(MAP_TOP), (m) => m.cents)))]);
     // Patterns over the range: weekdays, charge sizes, bills by day of the month.
     const wk = weekdayStats(months);
     if (wk.weekend != null) {
@@ -94,9 +99,9 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
       add("budget-latest", `Spending in budgeted categories, ${last.label}`, c(latest), Object.keys(targets).map((cat, i) => ln(cat, c(laneCents(last, "EXPENSE", cat)), i ? "+" : undefined, { source: "proven" })).concat(ln("In budgeted categories", c(latest), "=")));
       add("budget-savings-rate", "Planned savings rate (typical income less the budget)", typical > 0 ? r((typical - budgeted) / typical) : null, [ln("Typical month of income", c(typical)), ln("Monthly budget", c(budgeted), "−", { source: "assumption" }), ln("Left of a typical month", c(typical - budgeted), "="), ln("÷ typical income", c(typical), "÷"), ln("Planned savings rate", typical > 0 ? r((typical - budgeted) / typical) : t("—"), "=")]);
     }
-    // Drills: each category in its lane, each merchant and payer.
+    // Drills: each category of spending and of outside money (no tab opens an income category), each merchant and payer.
     const spent = spending;
-    for (const [lane, pick] of LANES)
+    for (const [lane, pick] of LANES.filter(([l]) => l !== "INCOME"))
       for (const cat of mergeCategories(months, pick)) {
         const values = months.map((m) => laneCents(m, lane, cat.category));
         const k = categoryKey(months, lane, cat.category);
@@ -136,14 +141,16 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
   for (const x of rep.recurring) {
     const one = (figure: string, describes: string, cents: number, lines: DerivedFigure["lines"]) => out.push({ figure, key: x.key, describes: `${x.name}: ${describes}`, value: c(cents), lines });
     one("recurring-typical", "the usual charge", x.typicalCents, [ln(`The middle of its ${x.count} charges`, c(x.typicalCents), undefined, { source: "proven" })]);
-    one("recurring-last", `the latest charge, ${x.lastDate}`, x.lastCents, [ln("The latest charge, as the statement prints it", c(x.lastCents), undefined, { source: "proven" })]);
-    one("recurring-last12", "the last twelve months", x.last12Cents, [ln("Its charges over the last twelve months", c(x.last12Cents), undefined, { source: "proven" })]);
-    one(
-      "recurring-annual",
-      x.kind === "bill" ? "a year of it (the usual charge, as often as it comes)" : "a year of it (the last twelve months)",
-      x.annualCents,
-      x.kind === "bill" ? [ln("The usual charge", c(x.typicalCents)), ln(`× charges a year (${x.cadence ?? "monthly"})`, t(x.typicalCents ? String(Math.round(x.annualCents / x.typicalCents)) : "—"), "×"), ln("A year", c(x.annualCents), "=")] : [ln("The last twelve months", c(x.last12Cents), undefined, { source: "proven" })],
-    );
+    // A bill's latest charge (Recurring › bills; a habit lists its last visit's date). A habit's twelve months are the merchant's charges, a cash-flow figure.
+    if (x.kind === "bill") one("recurring-last", `the latest charge, ${x.lastDate}`, x.lastCents, [ln("The latest charge, as the statement prints it", c(x.lastCents), undefined, { source: "proven" })]);
+    // A bill's year of it: on Recurring's bill rows and a merchant's drill, while it's still charged (a habit's is its twelve months of charges).
+    if (x.kind === "bill" && x.active)
+      one(
+        "recurring-annual",
+        x.kind === "bill" ? "a year of it (the usual charge, as often as it comes)" : "a year of it (the last twelve months)",
+        x.annualCents,
+        x.kind === "bill" ? [ln("The usual charge", c(x.typicalCents)), ln(`× charges a year (${x.cadence ?? "monthly"})`, t(x.typicalCents ? String(Math.round(x.annualCents / x.typicalCents)) : "—"), "×"), ln("A year", c(x.annualCents), "=")] : [ln("The last twelve months", c(x.last12Cents), undefined, { source: "proven" })],
+      );
     if (x.changeCents != null) one("recurring-change", "how much the latest charge went up", x.changeCents, [ln("The latest charge", c(x.lastCents)), ln("The one before", c(x.lastCents - x.changeCents), "−"), ln("Change", c(x.changeCents), "=")]);
   }
   const budgeted = sum(Object.values(targets), (v) => v);
@@ -210,6 +217,8 @@ function paceDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<Spending
     const days = paceDays(m, basis);
     const through = Math.min(day, days.length);
     const total = runningTotal(m, basis, day);
+    // A whole month of all spending is the month's spending, a cash-flow figure (Patterns draws that).
+    if (basis === "all" && through === days.length && total === m.spendingCents) return;
     out.set(`pace-spent ${key}`, {
       figure: "pace-spent",
       key,

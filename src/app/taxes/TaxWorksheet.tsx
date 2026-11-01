@@ -9,7 +9,7 @@ import { cellKey, derivedNumber, derivedTarget } from "@/lib/book/derived/types"
 import type { ProofDescriptor } from "@/lib/book/proof";
 import { marginalRate } from "@/lib/tax/worksheetExtras";
 import type { ReturnResult } from "@/lib/tax/computeReturn";
-import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateKey } from "@/lib/tax/estimateLines";
+import { ESTIMATE_LINES, estimateColumns, lineValue, worksheetLines, type EstimateKey } from "@/lib/tax/estimateLines";
 import { FILING_STATUS_LABEL, taxYearParams } from "@/lib/tax/params";
 import { hasWhatIf, NO_WHAT_IF, type WhatIf } from "@/lib/tax/scenarios";
 import { returnSchedules, type BracketRow, type Schedule } from "@/lib/tax/schedules";
@@ -65,14 +65,22 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     ) : (
       text
     );
-  /** A worksheet row for a line: deductions show negative; `show` formats a cell otherwise. */
-  const line = (key: EstimateKey, label: string, o: { neg?: boolean; show?: (v: number, i: number) => string; strong?: boolean; indent?: boolean; help?: string; only?: "joint" } = {}): Row => ({
-    label: lawLabel(label),
-    values: V(key).map((v, i) => (o.only && cols[i]!.id !== o.only ? "" : cell(key, i, v, o.show ? o.show(v, i) : usd(o.neg ? -v : v)))),
-    ...(o.strong ? { strong: true } : {}),
-    ...(o.indent ? { indent: true } : {}),
-    ...(o.help ? { help: o.help } : {}),
-  });
+  // The lines these columns draw (lib/tax/estimateLines worksheetLines): the list the proof sweep enumerates too.
+  const drawsLine = useMemo(() => new Map(worksheetLines(cols).map((l) => [l.key, l])), [cols]);
+  /** A worksheet row for a line, if the columns draw it: deductions show negative; `show` formats a cell otherwise. */
+  const line = (key: EstimateKey, label: string, o: { neg?: boolean; show?: (v: number, i: number) => string; strong?: boolean; indent?: boolean; help?: string } = {}): Row[] => {
+    const l = drawsLine.get(key);
+    if (!l) return [];
+    return [
+      {
+        label: lawLabel(label),
+        values: V(key).map((v, i) => (l.only && cols[i]!.id !== l.only ? "" : cell(key, i, v, o.show ? o.show(v, i) : usd(o.neg ? -v : v)))),
+        ...(o.strong ? { strong: true } : {}),
+        ...(o.indent ? { indent: true } : {}),
+        ...(o.help ? { help: o.help } : {}),
+      },
+    ];
+  };
 
   const fedIncomeTax = V("fed.incomeTax");
   const medicare = V("fica.medicareTotal");
@@ -80,7 +88,6 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
   const ss = V("fica.socialSecurity");
   const ct = V("ct.totalTax");
   const pfml = V("fica.pfml");
-  const other = V("all.otherStateTax");
   const hasNy = cols.some((c) => c.r.ny);
   const nyState = V("ny.incomeTax");
   const nyCity = V("ny.cityTax");
@@ -93,53 +100,49 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
 
   const rows: Row[] = [
     { label: "Annual income and deductions", values: [], heading: true },
-    line("pay.salary", "Gross salary"),
-    line("pay.bonus", "Gross bonus"),
-    line("pay.earned", "Earned income", { strong: true }),
-    line("pay.imputed", "Plus: taxable company-paid benefits", { indent: true, help: "Imputed income such as group-term life over $50k: taxed but never paid out." }),
-    line("pay.withBenefits", "Total income + taxable benefits", { strong: true }),
-    line("pay.pretax", "Less: pre-tax health, dental, vision, HSA, FSA", { neg: true, indent: true }),
-    line("pay.medicareWages", "Social Security / Medicare wages (W-2 box 5)", { strong: true }),
-    line("pay.k401", "Less: pre-tax 401(k)", { neg: true, indent: true }),
-    line("fed.wages", "Wages (W-2 box 1)", { strong: true }),
-    line("fed.investmentIncome", "Investment income (interest, dividends, gains, IRA)", { indent: true, help: "Capital losses count only up to $3,000 ($1,500 filing separately)." }),
-    line("fed.adjustments", "Adjustments", { neg: true, indent: true }),
-    line("fed.agi", "Federal adjusted gross income", { strong: true }),
-    line("fed.deduction", "Federal deduction", { show: (v, i) => `${usd(-v)} ${cols[i]!.r.federal.itemizes ? "itemized" : "std"}`, indent: true }),
-    line("fed.qbiDeduction", "QBI deduction", { neg: true, indent: true }),
-    line("fed.taxableIncome", "Federal taxable income", { strong: true }),
-    line("fed.preferentialIncome", "of which qualified dividends & LT gains (0/15/20%)", { indent: true }),
-    line("ct.stateAgi", "Connecticut AGI", { strong: true, help: "Federal AGI minus CHET 529 contributions and US-obligation interest." }),
-    line("ct.exemption", "Personal exemption", { neg: true, indent: true }),
-    line("ct.taxableIncome", "Connecticut taxable income", { strong: true }),
-    ...(hasNy
-      ? [
-          line("ny.stateAgi", "New York AGI", { strong: true, help: "Federal AGI minus US-government interest." }),
-          line("ny.deductions", "Standard deduction and dependent exemptions", { neg: true, indent: true }),
-          line("ny.taxableIncome", "New York taxable income", { strong: true }),
-          ...(cols.some((c) => c.r.ny?.incomePercentage != null) ? [line("ny.incomePercentage", "New York share of income (part-year)", { show: (v) => pct(v, 2), indent: true })] : []),
-          ...(cols.some((c) => c.r.ny?.city) ? [line("ny.cityTaxableIncome", "New York City taxable income", { indent: true })] : []),
-        ]
-      : []),
+    ...line("pay.salary", "Gross salary"),
+    ...line("pay.bonus", "Gross bonus"),
+    ...line("pay.earned", "Earned income", { strong: true }),
+    ...line("pay.imputed", "Plus: taxable company-paid benefits", { indent: true, help: "Imputed income such as group-term life over $50k: taxed but never paid out." }),
+    ...line("pay.withBenefits", "Total income + taxable benefits", { strong: true }),
+    ...line("pay.pretax", "Less: pre-tax health, dental, vision, HSA, FSA", { neg: true, indent: true }),
+    ...line("pay.medicareWages", "Social Security / Medicare wages (W-2 box 5)", { strong: true }),
+    ...line("pay.k401", "Less: pre-tax 401(k)", { neg: true, indent: true }),
+    ...line("fed.wages", "Wages (W-2 box 1)", { strong: true }),
+    ...line("fed.investmentIncome", "Investment income (interest, dividends, gains, IRA)", { indent: true, help: "Capital losses count only up to $3,000 ($1,500 filing separately)." }),
+    ...line("fed.adjustments", "Adjustments", { neg: true, indent: true }),
+    ...line("fed.agi", "Federal adjusted gross income", { strong: true }),
+    ...line("fed.deduction", "Federal deduction", { show: (v, i) => `${usd(-v)} ${cols[i]!.r.federal.itemizes ? "itemized" : "std"}`, indent: true }),
+    ...line("fed.qbiDeduction", "QBI deduction", { neg: true, indent: true }),
+    ...line("fed.taxableIncome", "Federal taxable income", { strong: true }),
+    ...line("fed.preferentialIncome", "of which qualified dividends & LT gains (0/15/20%)", { indent: true }),
+    ...line("ct.stateAgi", "Connecticut AGI", { strong: true, help: "Federal AGI minus CHET 529 contributions and US-obligation interest." }),
+    ...line("ct.exemption", "Personal exemption", { neg: true, indent: true }),
+    ...line("ct.taxableIncome", "Connecticut taxable income", { strong: true }),
+    ...line("ny.stateAgi", "New York AGI", { strong: true, help: "Federal AGI minus US-government interest." }),
+    ...line("ny.deductions", "Standard deduction and dependent exemptions", { neg: true, indent: true }),
+    ...line("ny.taxableIncome", "New York taxable income", { strong: true }),
+    ...line("ny.incomePercentage", "New York share of income (part-year)", { show: (v) => pct(v, 2), indent: true }),
+    ...line("ny.cityTaxableIncome", "New York City taxable income", { indent: true }),
 
     { label: "Total taxes owed", values: [], heading: true },
-    line("fed.incomeTax", "Federal income tax"),
-    line("fica.medicareTotal", "Medicare (1.45% + 0.9% surtax)"),
-    line("fed.niit", "Net investment income tax (3.8%)"),
-    line("fica.socialSecurity", "Social Security"),
-    line("ct.totalTax", "Connecticut income tax"),
-    line("fica.pfml", "CT Paid Leave (PFML)"),
-    ...(hasNy ? [line("ny.incomeTax", "New York State income tax")] : []),
-    ...(nyCity.some((x) => x) ? [line("ny.cityTax", "New York City income tax")] : []),
-    ...(other.some((x) => x) ? [line("all.otherStateTax", "Other state tax")] : []),
-    line("all.totalTaxes", "Total taxes", { strong: true, help: "The Overview's headline tax (joint, projected)." }),
-    ...(cols.length > 1 ? [line("all.jointValue", "Value of filing jointly", { only: "joint", help: "Both spouses' separate-return taxes minus the joint return's taxes." })] : []),
+    ...line("fed.incomeTax", "Federal income tax"),
+    ...line("fica.medicareTotal", "Medicare (1.45% + 0.9% surtax)"),
+    ...line("fed.niit", "Net investment income tax (3.8%)"),
+    ...line("fica.socialSecurity", "Social Security"),
+    ...line("ct.totalTax", "Connecticut income tax"),
+    ...line("fica.pfml", "CT Paid Leave (PFML)"),
+    ...line("ny.incomeTax", "New York State income tax"),
+    ...line("ny.cityTax", "New York City income tax"),
+    ...line("all.otherStateTax", "Other state tax"),
+    ...line("all.totalTaxes", "Total taxes", { strong: true, help: "The Overview's headline tax (joint, projected)." }),
+    ...line("all.jointValue", "Value of filing jointly", { help: "Both spouses' separate-return taxes minus the joint return's taxes." }),
 
     { label: "Rates and take-home", values: [], heading: true },
-    line("all.earnedPlusInvestment", "Earned + investment income", {
+    ...line("all.earnedPlusInvestment", "Earned + investment income", {
       help: "Gross salary + bonus + taxable benefits + investment income. The Overview's headline income (joint, projected), net of any capital loss deducted.",
     }),
-    line("all.takeHome", "Take-home income (after all taxes)", { strong: true, help: "The Overview's “You keep”." }),
+    ...line("all.takeHome", "Take-home income (after all taxes)", { strong: true, help: "The Overview's “You keep”." }),
     { label: "Effective tax rate", values: ratio(["all.totalTaxes"], totalTaxes, earnedPlusInvestment), strong: true },
     { label: "Federal income tax", values: ratio(["fed.incomeTax", "fed.niit"], fedIncomeTax.map((v, i) => v + niit[i]!), earnedPlusInvestment), indent: true },
     { label: "Medicare", values: ratio(["fica.medicareTotal"], medicare, earnedPlusInvestment), indent: true },
@@ -150,19 +153,20 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     { label: "Federal bracket", values: R((x) => x.federal.marginalBracket).map((b, i) => (cols[i]!.r.federal.taxableIncome > 0 ? wcell("bracket", cols[i]!.id, pct(b, 0)) : "—")) },
 
     { label: "Total taxes paid", values: [], heading: true },
-    line("fed.w2Withholding", "Federal withholding (box 2)"),
-    line("fed.estimatedPayments", "Federal estimated payments"),
-    line("fica.medicareWithheld", "Medicare withheld (box 6)"),
-    line("fica.ssWithheld", "Social Security withheld (box 4)"),
-    line("ct.withheld", "Connecticut withholding (box 17)"),
-    line("ct.estimatedPayments", "Connecticut estimated payments"),
-    line("fica.pfml", "CT Paid Leave (PFML)"),
-    ...(hasNy ? [line("ny.withheldAll", "New York State + City withholding (box 17, 19)"), line("ny.credits", "NYC school credits and NY estimates", { indent: true })] : []),
-    line("all.totalPaid", "Total taxes paid", { strong: true }),
-    line("fed.balance", "Federal owed / (refund)", { show: balanceText }),
-    line("ct.balance", "Connecticut owed / (refund)", { show: balanceText }),
-    ...(hasNy ? [line("ny.balance", "New York owed / (refund)", { show: balanceText })] : []),
-    line("all.balance", "Total owed / (refund)", { show: balanceText, strong: true }),
+    ...line("fed.w2Withholding", "Federal withholding (box 2)"),
+    ...line("fed.estimatedPayments", "Federal estimated payments"),
+    ...line("fica.medicareWithheld", "Medicare withheld (box 6)"),
+    ...line("fica.ssWithheld", "Social Security withheld (box 4)"),
+    ...line("ct.withheld", "Connecticut withholding (box 17)"),
+    ...line("ct.estimatedPayments", "Connecticut estimated payments"),
+    ...line("fica.pfml", "CT Paid Leave (PFML)"),
+    ...line("ny.withheldAll", "New York State + City withholding (box 17, 19)"),
+    ...line("ny.credits", "NYC school credits and NY estimates", { indent: true }),
+    ...line("all.totalPaid", "Total taxes paid", { strong: true }),
+    ...line("fed.balance", "Federal owed / (refund)", { show: balanceText }),
+    ...line("ct.balance", "Connecticut owed / (refund)", { show: balanceText }),
+    ...line("ny.balance", "New York owed / (refund)", { show: balanceText }),
+    ...line("all.balance", "Total owed / (refund)", { show: balanceText, strong: true }),
     ...(showActual
       ? [
           { label: "Actual return", values: [], heading: true },
@@ -224,7 +228,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
         title="Bracket schedules"
         subtitle="How each tax is built, band by band. The bar shows how much of each band your income fills; the highlighted row is where the next dollar lands."
         actions={
-          <Segmented view
+          <Segmented view={{ nested: true }}
             options={[{ value: "all", label: "All" }, ...cols.map((c) => ({ value: c.id, label: c.id === "joint" ? c.name : `${c.name} (sep.)` }))]}
             value={focus}
             onChange={setFocus}
