@@ -367,6 +367,21 @@ export function NotFigure({ why, children }: { why: string; children: ReactNode 
   return <span data-not-figure={why}>{children}</span>;
 }
 
+/**
+ * A calculator's exploratory grid: what-ifs worked out from the inputs as you move them (a
+ * sensitivity table, a stress test, a year-by-year schedule), not figures read from the data.
+ * The render audit skips its numbers but counts the region per page, and fails if real data
+ * hides in it: a ledger figure drawn inside, or a ledger figure's value drawn bare. The
+ * owner's own numbers and a page's headline stay outside, each a ProofValue.
+ */
+export function WhatIf({ why, children, className }: { why: string; children: ReactNode; className?: string }) {
+  return (
+    <div data-what-if={why} className={className}>
+      {children}
+    </div>
+  );
+}
+
 export function Badge({ tone = "neutral", children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
     <span

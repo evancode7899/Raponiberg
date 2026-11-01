@@ -23,9 +23,13 @@ import type { ProofValue } from "./types.ts";
  *  - RENDER_UNDRAWN (F6d): a figure the sweep cleared that no view drew — a recipe nothing
  *    shows, or one only a view the audit can't reach. Families still in UNDRAWN_PENDING are
  *    listed, not failed, and the list only shrinks (a listed family drawn in full fails).
+ *  - RENDER_WHAT_IF (F6f): real data inside a what-if region (kit WhatIf: a calculator's
+ *    exploratory grid, whose numbers are scenarios, not the owner's data, and whose strays
+ *    the audit skips): a ledger figure drawn in it, or the bare value of a ledger figure its
+ *    tab draws. The audit's output counts what-if regions page by page.
  */
 
-export type RenderProblemKind = "RENDER_NOT_CLEARED" | "RENDER_TEXT" | "RENDER_WITHHELD" | "RENDER_BYPASS" | "RENDER_DRAWER" | "RENDER_UNDRAWN" | "RENDER_ERROR";
+export type RenderProblemKind = "RENDER_NOT_CLEARED" | "RENDER_TEXT" | "RENDER_WITHHELD" | "RENDER_BYPASS" | "RENDER_DRAWER" | "RENDER_UNDRAWN" | "RENDER_WHAT_IF" | "RENDER_ERROR";
 export type RenderProblem = { kind: RenderProblemKind; view: string; key?: string; detail: string };
 
 /** One figure as drawn: ProofValue's data attributes and its visible text (marks left out). */
@@ -49,7 +53,62 @@ export type DrawnView = {
   errors: string[];
   /** Proof drawers opened from this view (F6e): the figure, and what the drawer drew that its proof doesn't hold. */
   drawers?: { key: string; strays: string[] }[];
+  /** What-if regions (kit WhatIf, F6f) the view drew. */
+  whatIf?: WhatIfRegion[];
 };
+
+/** One what-if region as drawn: why it is one, the figures inside it, and the money and rates it draws bare. */
+export type WhatIfRegion = { why: string; figures: Pick<DrawnFigure, "key" | "clearance">[]; tokens: string[] };
+
+/**
+ * Whether a figure's recipe reads the owner's data rather than a calculator's scenario: any
+ * proof but a planning one (a statement, a row, net worth, a page's derived figure, a
+ * forecast seed), or a composite with such a part. Planning figures are the calculators' own maths.
+ */
+export function isLedgerKey(key: string): boolean {
+  const ledger = (d: unknown): boolean => {
+    if (!d || typeof d !== "object") return false;
+    const x = d as { report?: unknown; of?: unknown };
+    if (x.report === "planning") return false;
+    if (x.report === "composite") return Array.isArray(x.of) && x.of.some(ledger);
+    return typeof x.report === "string";
+  };
+  try {
+    return ledger(JSON.parse(key));
+  } catch {
+    return false;
+  }
+}
+
+/** A bare what-if token is held to the ledger figures only when drawn to the dollar and at least this big: smaller ones are a scenario's round steps. */
+const WHAT_IF_MIN_DOLLARS = 100;
+
+/**
+ * Real data hiding in a what-if region (F6f): a ledger figure drawn inside one (real data
+ * belongs outside, held to its proof), or a money token drawn to the dollar that is the value
+ * of a ledger figure its tab draws (`figures`), drawn bare. A what-if's numbers are scenarios;
+ * the owner's own numbers never sit among them unproven.
+ */
+export function whatIfProblems(v: Pick<DrawnView, "view" | "whatIf">, figures: readonly DrawnFigure[], sweep: SweepVerdicts): RenderProblem[] {
+  const out: RenderProblem[] = [];
+  const ledger = figures
+    .filter((f) => f.clearance === "cleared" && isLedgerKey(f.key))
+    .flatMap((f) => {
+      const x = clearedValue(f.key, sweep.cleared);
+      return x && "cents" in x ? [{ key: f.key, dollars: Math.abs(x.cents) / 100 }] : [];
+    });
+  for (const r of v.whatIf ?? []) {
+    for (const f of r.figures)
+      if (f.clearance === "cleared" && isLedgerKey(f.key)) out.push({ kind: "RENDER_WHAT_IF", view: v.view, key: f.key, detail: `A ledger figure is drawn inside the what-if "${r.why}": real data goes outside what-if regions.` });
+    for (const tok of new Set(r.tokens)) {
+      const d = readDrawn(tok);
+      if (!d || d.unit !== "usd" || d.tol > 0.5 || Math.abs(d.value) < WHAT_IF_MIN_DOLLARS) continue;
+      const hit = ledger.find((l) => Math.abs(l.dollars - Math.abs(d.value)) <= d.tol + 0.005);
+      if (hit) out.push({ kind: "RENDER_WHAT_IF", view: v.view, key: hit.key, detail: `The what-if "${r.why}" draws "${tok}", a ledger figure's value, with no proof: draw it outside the region, as the figure.` });
+    }
+  }
+  return out;
+}
 
 /** The part of the sweep's report the audit reads. */
 export type SweepVerdicts = { cleared: Record<string, ProofValue>; problems: Record<string, SweepProblem[]> };
@@ -236,6 +295,8 @@ export type RenderAudit = {
   cleared: number;
   /** Cleared figures no view drew: those of families UNDRAWN_PENDING lists are listed, the rest fail (RENDER_UNDRAWN). */
   missing: string[];
+  /** What-if regions by page (F6f): each distinct region's reason, and how many views drew it. */
+  whatIf: Record<string, Record<string, number>>;
 };
 
 /** The tab a view is on: "/cash-flow › Merchants · Category=Dining ▸ Acme" → "/cash-flow › Merchants". */
@@ -266,6 +327,7 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
   const all: RenderProblem[] = [];
   const problems: RenderProblem[] = [];
   const drawn = new Set<string>();
+  const whatIf: Record<string, Record<string, number>> = {};
   const tabFigures = new Map<string, DrawnFigure[]>();
   for (const v of views) tabFigures.set(tabOf(v.view), [...(tabFigures.get(tabOf(v.view)) ?? []), ...v.figures]);
   for (const v of views) {
@@ -273,6 +335,11 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
     for (const d of v.drawers ?? []) if (d.strays.length) all.push({ kind: "RENDER_DRAWER", view: v.view, key: d.key, detail: `Its proof drawer draws ${d.strays.map((x) => `"${x}"`).join(", ")}, which its proof doesn't hold.` });
     for (const s of v.strays) all.push({ kind: "RENDER_BYPASS", view: v.view, detail: `"${s}" is drawn outside any figure: no proof holds it.` });
     for (const s of chartStrays(v, tabFigures.get(tabOf(v.view)) ?? [], sweep)) all.push({ kind: "RENDER_BYPASS", view: v.view, detail: `A chart labels "${s}", which is no figure this view draws.` });
+    all.push(...whatIfProblems(v, tabFigures.get(tabOf(v.view)) ?? [], sweep));
+    for (const r of v.whatIf ?? []) {
+      const page = (whatIf[pageOf(v.view)] ??= {});
+      page[r.why] = (page[r.why] ?? 0) + 1;
+    }
     for (const f of v.figures) {
       if (f.clearance === "cleared") {
         drawn.add(f.key);
@@ -308,7 +375,7 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
   if (!opts.partial)
     for (const [family, stage] of Object.entries(undrawnPending))
       if (!byFamily.has(family)) problems.push({ kind: "RENDER_UNDRAWN", view: family, detail: `Every cleared figure of it is drawn now: take it off UNDRAWN_PENDING (it waited for ${stage}), so a new undrawn one fails.` });
-  return { problems, pending, drawn: drawn.size, cleared: Object.keys(sweep.cleared).length, missing };
+  return { problems, pending, drawn: drawn.size, cleared: Object.keys(sweep.cleared).length, missing, whatIf };
 }
 
 /** Money and rates in drawn text, one by one: "$1,234", "(6.5%)", "−$4.1k". */

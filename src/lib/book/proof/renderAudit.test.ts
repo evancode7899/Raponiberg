@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { descriptorKey } from "./key";
-import { auditRender as audit, drawerStrays, figureFamily, readDrawn, textMatches, type DrawnFigure, type DrawnView } from "./renderAudit";
+import { auditRender as audit, drawerStrays, figureFamily, isLedgerKey, readDrawn, textMatches, type DrawnFigure, type DrawnView, type WhatIfRegion } from "./renderAudit";
 
 const fig = (over: Partial<DrawnFigure> = {}): DrawnFigure => ({ key: "k1", shown: "4125.50", shownKind: "cents", perMonths: null, clearance: "cleared", text: "$4,126", ...over });
 const view = (over: Partial<DrawnView> = {}): DrawnView => ({ view: "/example", figures: [fig()], strays: [], errors: [], ...over });
@@ -170,5 +170,45 @@ describe("chart labels: a chart only pictures the figures the view draws", () =>
   it("passes a label that is a drawn figure's value, and flags one that isn't", () => {
     expect(auditRender([view({ chart: ["$4.1k"] })], sweep, {}, { partial: true }).problems).toEqual([]);
     expect(auditRender([view({ chart: ["$9.9k"] })], sweep, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_BYPASS" }]);
+  });
+});
+
+describe("what-if regions: a calculator's scenarios, kept free of real data", () => {
+  const ledger = descriptorKey({ report: "row", rowId: "a" });
+  const plan = JSON.stringify({ report: "planning", page: "home", figure: "max-price" });
+  const s = { cleared: { [ledger]: { cents: 48_250_00 }, [plan]: { cents: 610_000_00 } }, problems: {} };
+  const proven = fig({ key: ledger, shown: "48250.00", text: "$48,250" });
+  const region = (over: Partial<WhatIfRegion> = {}): WhatIfRegion => ({ why: "Sensitivity grid", figures: [], tokens: ["$612,000", "6.5%", "$300"], ...over });
+
+  it("tells the owner's data from a calculator's maths", () => {
+    expect(isLedgerKey(ledger)).toBe(true);
+    expect(isLedgerKey(plan)).toBe(false);
+    expect(isLedgerKey(descriptorKey({ report: "composite", op: "share", of: [{ report: "row", rowId: "a" }, { report: "row", rowId: "b" }] }))).toBe(true);
+    expect(isLedgerKey(JSON.stringify({ report: "composite", op: "share", of: [JSON.parse(plan), JSON.parse(plan)] }))).toBe(false);
+  });
+
+  it("skips a region's scenario numbers and counts it on its page", () => {
+    const r = auditRender([view({ view: "/example › Sensitivity", figures: [proven], whatIf: [region()] })], s, {}, { partial: true });
+    expect(r.problems).toEqual([]);
+    expect(r.whatIf).toEqual({ "/example": { "Sensitivity grid": 1 } });
+  });
+
+  it("lets a planning figure sit inside a region, but fails a cleared ledger figure drawn there", () => {
+    const inside = (key: string) => auditRender([view({ figures: [], whatIf: [region({ figures: [{ key, clearance: "cleared" }] })] })], s, {}, { partial: true }).problems;
+    expect(inside(plan)).toEqual([]);
+    expect(inside(ledger)).toMatchObject([{ kind: "RENDER_WHAT_IF", key: ledger }]);
+  });
+
+  it("fails a ledger figure's value drawn bare in a region, even on a page still pending its bypasses", () => {
+    const bare = view({ figures: [proven], whatIf: [region({ tokens: ["$48,250", "$612,000"] })] });
+    expect(auditRender([bare], s, { "/example": "F6f" }, { partial: true }).problems).toMatchObject([{ kind: "RENDER_WHAT_IF", key: ledger, detail: expect.stringContaining("$48,250") }]);
+    // Rounded to $k it is no longer the figure's value at the dollar: a scenario's step, not real data.
+    expect(auditRender([view({ figures: [proven], whatIf: [region({ tokens: ["$48k"] })] })], s, {}, { partial: true }).problems).toEqual([]);
+  });
+
+  it("holds a region to the ledger figures drawn on any view of its tab", () => {
+    const other = view({ view: "/example › Plan · Dollars=Today's $", figures: [proven] });
+    const grid = view({ view: "/example › Plan", figures: [], whatIf: [region({ tokens: ["$48,250"] })] });
+    expect(auditRender([other, grid], s, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_WHAT_IF" }]);
   });
 });
