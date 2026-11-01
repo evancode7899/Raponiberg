@@ -1,11 +1,12 @@
 "use client";
 
 import { useChartPalette } from "@/components/shell/chartPalette";
-import { Badge, btn, Callout, Card } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, WhatIf } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { computeBudgetScenario, priceForHousingShare, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import { useMemo, type ReactNode } from "react";
-import type { Patch } from "./HomeBudgetClient";
+import type { HomeProof, Patch } from "./HomeBudgetClient";
 import { spendingFit, StackBar, StressGauge, stressOf } from "./parts";
 
 export function PriceTab({
@@ -15,15 +16,19 @@ export function PriceTab({
   lenderMaxPrice,
   allCashDownPct,
   spendMonthly,
+  proof,
 }: {
   ins: HomeBudgetInputs;
   patch: Patch;
+  /** The linked figures' proofs (cash, salary, tax, your max): the rest of the tab is the price you typed. */
+  proof: HomeProof;
   maxPrice: number;
   lenderMaxPrice: number;
   allCashDownPct: number;
   spendMonthly: number | null;
 }) {
   const chart = useChartPalette();
+  const cash = <ProofValue proof={proof("cash", ins.cashForHome)}>{formatUsd(ins.cashForHome)}</ProofValue>;
   const b = useMemo(() => computeBudgetScenario(ins), [ins]);
   const cap = ins.housingCostMaxOfGross;
   const stress = stressOf(b.housingPctOfGrossIncome, cap);
@@ -72,7 +77,7 @@ export function PriceTab({
           ) : undefined
         }
       >
-        Down payment, closing and renovation need {formatUsd(b.cashNeeded)}; the cash for the home is {formatUsd(ins.cashForHome)}.
+        Down payment, closing and renovation need {formatUsd(b.cashNeeded)}; the cash for the home is {cash}.
       </Callout>,
     );
   if (left < 0)
@@ -89,7 +94,7 @@ export function PriceTab({
     );
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <WhatIf why="a home price you typed" className="flex min-w-0 flex-col gap-4">
       {/* The verdict. */}
       <section className="min-w-0 rounded-lg border border-line bg-surface p-5 shadow-[var(--shadow)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -104,7 +109,7 @@ export function PriceTab({
             </div>
             <p className="mt-2 text-sm text-fg-2">
               <span className="num font-semibold text-fg">{formatPercentRatio(b.housingPctOfGrossIncome, 1)}</span> of gross pay ·{" "}
-              <span className="num font-semibold text-fg">{formatPercentRatio(ofTakeHome, 1)}</span> of take-home ({formatUsd(takeHome)}/mo after {formatPercentRatio(ins.incomeTaxRate, 1)} tax)
+              <span className="num font-semibold text-fg">{formatPercentRatio(ofTakeHome, 1)}</span> of take-home (<ProofValue proof={{ ...proof("take-home", Math.round(ins.annualHouseholdSalary * (1 - ins.incomeTaxRate) * 100) / 100), perMonths: 12 }}>{formatUsd(takeHome)}</ProofValue>/mo after <ProofValue proof={proof("income-tax", null)}>{formatPercentRatio(ins.incomeTaxRate, 1)}</ProofValue> tax)
             </p>
           </div>
           <div className="flex flex-col items-end gap-1.5">
@@ -136,15 +141,27 @@ export function PriceTab({
             sub={
               spendMonthly != null ? (
                 <>
-                  you spend {formatUsd(spendMonthly)}/mo outside housing{fit?.label ? <> · <Badge tone={fit.tone}>{fit.label}</Badge></> : null}
+                  you spend <ProofValue proof={proof("spending", spendMonthly)}>{formatUsd(spendMonthly)}</ProofValue>/mo outside housing{fit?.label ? <> · <Badge tone={fit.tone}>{fit.label}</Badge></> : null}
                 </>
               ) : (
                 `after tax, housing, ${formatUsd(ins.minimumMonthlySavings)} savings`
               )
             }
           />
-          <Tile label={short ? "Cash short" : "Cash to spare"} value={formatUsd(Math.abs(b.cashSurplus))} tone={short ? "neg" : "neutral"} sub={`needs ${formatUsd(b.cashNeeded)} of ${formatUsd(ins.cashForHome)}`} />
-          <Tile label={vsMax > 0 ? "Over your max" : "Under your max"} value={formatUsd(Math.abs(vsMax))} tone={vsMax > 0 ? "neg" : "neutral"} sub={`max ${formatUsd(Math.round(maxPrice / 1000) * 1000)} with all cash in · lender ${formatUsd(Math.floor(lenderMaxPrice / 1000) * 1000)}`} />
+          <Tile label={short ? "Cash short" : "Cash to spare"} value={formatUsd(Math.abs(b.cashSurplus))} tone={short ? "neg" : "neutral"} sub={<>needs {formatUsd(b.cashNeeded)} of {cash}</>} />
+          <Tile label={vsMax > 0 ? "Over your max" : "Under your max"} value={formatUsd(Math.abs(vsMax))} tone={vsMax > 0 ? "neg" : "neutral"} sub={
+              <>
+                max{" "}
+                <ProofValue proof={proof("max-price", maxPrice)} drawn={{ step: 1000 }}>
+                  {formatUsd(Math.round(maxPrice / 1000) * 1000)}
+                </ProofValue>{" "}
+                with all cash in · lender{" "}
+                <ProofValue proof={proof("lender-max", lenderMaxPrice)} drawn={{ step: 1000 }}>
+                  {formatUsd(Math.floor(lenderMaxPrice / 1000) * 1000)}
+                </ProofValue>
+              </>
+            }
+          />
           <Tile label="Loan" value={formatUsd(b.loanAmount)} sub={`${formatPercentRatio(b.downPaymentPct, 1)} down · ${formatUsd(b.monthlyMortgagePayment)}/mo P&I`} />
         </div>
       </section>
@@ -163,14 +180,14 @@ export function PriceTab({
           />
         </Card>
       </div>
-      <Card title="Cash at closing" subtitle={`${formatUsd(b.cashNeeded)} needed of ${formatUsd(ins.cashForHome)} set aside for the home.`}>
+      <Card title="Cash at closing" subtitle={<>{formatUsd(b.cashNeeded)} needed of {cash} set aside for the home.</>}>
         <StackBar
           segments={cashSegments}
           marker={{ value: ins.cashForHome, label: `Cash for the home ${formatUsd(ins.cashForHome)}` }}
           overLabel={(o) => `${formatUsd(o)} more cash than you've set aside — lower the down payment or price, or commit more.`}
         />
       </Card>
-    </div>
+    </WhatIf>
   );
 }
 

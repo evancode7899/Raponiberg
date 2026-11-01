@@ -2,7 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { Callout, Card, StatCell, StatGrid } from "@/components/ui/kit";
+import { Callout, Card, NotFigure, StatCell, StatGrid, WhatIf } from "@/components/ui/kit";
 import { stressTest } from "@/lib/fire/fire";
 import { axisUsd } from "@/lib/formatMoney";
 import { useDeferredValue, useMemo } from "react";
@@ -28,12 +28,15 @@ export function StressTab({ f, dollars, setDollars, volatility, proof }: FirePro
     <>
       <StatGrid cols={4}>
         <StatCell proof={tile("p50")} label="Typical market" value={s.fiYears.p50 ? String(s.fiYears.p50) : "Not in 60 yrs"} sub={`median of ${PATHS.toLocaleString()} market paths`} />
-        <StatCell proof={tile("p10")} label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : "—"} tone="pos" sub="best 10%: 1 path in 10 is FI by then" />
-        <StatCell proof={tile("p90")} label="Bad markets" value={s.fiYears.p90 ? String(s.fiYears.p90) : "Not in 60 yrs"} tone="warn" sub={s.fiYears.p90 ? "worst 10%: 9 paths in 10 are FI by then" : "worst 10% of paths aren't FI within 60 years"} />
+        <StatCell proof={tile("p10")} label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : "—"} tone="pos" sub={<NotFigure why="what the percentile means">best 10%: 1 path in 10 is FI by then</NotFigure>} />
+        <StatCell proof={tile("p90")} label="Bad markets" value={s.fiYears.p90 ? String(s.fiYears.p90) : "Not in 60 yrs"} tone="warn" sub={<NotFigure why="what the percentile means">{s.fiYears.p90 ? "worst 10%: 9 paths in 10 are FI by then" : "worst 10% of paths aren't FI within 60 years"}</NotFigure>} />
         <StatCell proof={tile("by-fi")} label={f.fi ? `FI by ` : "Chance of FI"} value={byPlanFi != null ? pct(byPlanFi, 0) : "—"} sub="chance by the steady-return plan's FI year" />
       </StatGrid>
       {s.coveredThroughout != null && (
-        <Callout tone={s.coveredThroughout >= 0.8 ? "good" : "warn"} title={`Walking away in ${plan.walkAwayYear}: income covers living cost every retired year in ${pct(s.coveredThroughout, 0)} of paths`}>
+        <Callout
+          tone={s.coveredThroughout >= 0.8 ? "good" : "warn"}
+          title={<WhatIf inline why="the stress test's simulated markets">{`Walking away in ${plan.walkAwayYear}: income covers living cost every retired year in ${pct(s.coveredThroughout, 0)} of paths`}</WhatIf>}
+        >
           Drawing a fixed share of net worth never runs the money out, but the income moves with markets. A crash early in retirement cuts the income for years — that&apos;s
           sequence-of-returns risk. A cash buffer, a lower withdrawal rate or flexible spending in bad years all help.
         </Callout>
@@ -41,14 +44,16 @@ export function StressTab({ f, dollars, setDollars, volatility, proof }: FirePro
       <Fan f={f} s={s} dollars={dollars} setDollars={setDollars} />
       <Odds s={s} f={f} />
       <p className="text-[11px] text-muted">
-        Returns are drawn at random each year (lognormal, average {pct(plan.returnRate)}, standard deviation {pct(volatility, 0)} — set under Markets); a stock-heavy portfolio has
-        historically swung about 15–20% a year. Same seed every time, so the figures only change when an assumption does. A model, not a forecast.
+        <NotFigure why="your settings and how the model works">
+          Returns are drawn at random each year (lognormal, average {pct(plan.returnRate)}, standard deviation {pct(volatility, 0)} — set under Markets); a stock-heavy portfolio has
+          historically swung about 15–20% a year. Same seed every time, so the figures only change when an assumption does. A model, not a forecast.
+        </NotFigure>
       </p>
     </>
   );
 }
 
-function Fan({ f, s, dollars, setDollars }: FireProps & { s: ReturnType<typeof stressTest> }) {
+function Fan({ f, s, dollars, setDollars }: Omit<FireProps, "d"> & { s: ReturnType<typeof stressTest> }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const { plan } = f;
@@ -63,7 +68,7 @@ function Fan({ f, s, dollars, setDollars }: FireProps & { s: ReturnType<typeof s
   return (
     <Card
       title="Net worth across 1,000 market paths"
-      subtitle="Jan 1 of each year, the plan as set (walk-away year included). The wide band holds 80% of paths, the narrow band the middle half; the line is the steady-return plan."
+      subtitle={<NotFigure why="what the chart bands mean">Jan 1 of each year, the plan as set (walk-away year included). The wide band holds 80% of paths, the narrow band the middle half; the line is the steady-return plan.</NotFigure>}
       actions={<DollarsToggle value={dollars} onChange={setDollars} />}
     >
       <div className="h-[340px] w-full min-w-0">

@@ -1,7 +1,8 @@
 "use client";
 
 import { useChartPalette } from "@/components/shell/chartPalette";
-import { Callout, Card, PageBody, StatCell, StatGrid, table, useSavedState } from "@/components/ui/kit";
+import { Callout, Card, NotFigure, PageBody, StatCell, StatGrid, table, useSavedState, WhatIf } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { comparePrepayVsInvest, loanMonthToCalendar, type PathSeries } from "@/lib/mortgage/prepayVsInvest";
 import { mortgageFigures, type MortgageFigure } from "@/lib/mortgage/figures";
@@ -43,20 +44,27 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
   const set = (p: Partial<MortgageInputs>) => setIns((x) => ({ ...x, ...p }));
   // The forecast's and the tax engine's figures, used wherever nothing is typed over them.
   const [links, setLinks] = useState<MortgageLinks>({});
+  // The tax year the links read (their proofs name it).
+  const [linkYear, setLinkYear] = useState<number | null>(null);
   // Until the links answer, the tiles would be worked out on the typed values alone: not the figures the sweep proves.
   const [linksIn, setLinksIn] = useState(false);
   // Through useApi, so the page knows which data its figures were built from (x-data-stamp) and the sweep of that data can clear them.
   useEffect(() => {
     if (!api.ready) return;
     api
-      .call<{ links?: MortgageLinks }>("/api/mortgage/links")
-      .then((j) => j?.links && setLinks(j.links))
+      .call<{ year?: number; links?: MortgageLinks }>("/api/mortgage/links")
+      .then((j) => {
+        if (j?.links) setLinks(j.links);
+        if (j?.year) setLinkYear(j.year);
+      })
       .catch(() => {})
       .finally(() => setLinksIn(true));
   }, [api]);
   const saved = ins;
   // What the model and every figure run on: the saved inputs with the links put in.
   const eff = useMemo(() => withLinks(saved, links), [saved, links]);
+  /** The return was typed here rather than linked to the Forecast's. */
+  const typedReturn = !!ins.typed?.investReturn || !links.investReturn;
 
   const plan = useMemo(() => toPlan(eff), [eff]);
   const labels = useMemo(() => Object.fromEntries(ins.lumps.map((r) => [r.id, lumpLabel(r)])), [ins.lumps]);
@@ -134,7 +142,7 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
   return (
     <PageBody>
       <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <MortgageInputsPanel ins={eff} typed={ins.typed ?? {}} links={links} set={set} payment={cmp.monthlyPayment} onReset={() => setIns(defaultInputs())} />
+        <MortgageInputsPanel ins={eff} typed={ins.typed ?? {}} links={links} year={linkYear} set={set} payment={cmp.monthlyPayment} onReset={() => setIns(defaultInputs())} />
 
         <div className="flex min-w-0 flex-col gap-4">
           {!hasChoice ? (
@@ -145,18 +153,30 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
             <Callout
               tone={advantage >= 0 && !tossUp ? "good" : "info"}
               title={
-                tossUp
-                  ? `Too close to call: ${advantage >= 0 ? "investing" : "paying down"} leads by just ${formatUsd(Math.abs(advantage))} after ${ins.horizonYears} years`
-                  : `${winner} comes out ${formatUsd(Math.abs(advantage))} ahead after ${ins.horizonYears} years`
+                <>
+                  {tossUp ? `Too close to call: ${advantage >= 0 ? "investing" : "paying down"} leads by just ` : `${winner} comes out `}
+                  <ProofValue proof={tile("advantage")}>{formatUsd(Math.abs(advantage))}</ProofValue>
+                  {tossUp ? "" : " ahead"} after {ins.horizonYears} years
+                </>
               }
             >
-              {cmp.breakEvenReturn !== null
-                ? `Investing has to earn more than ${formatPercentRatio(cmp.breakEvenReturn, 2)} a year to beat paying down a ${formatPercentRatio(ins.rate, 3)} loan with these taxes; you assumed ${formatPercentRatio(eff.investReturn, 2)}. `
-                : ""}
-              {mcFresh && `In ${Math.round(mc.chanceInvestWins * 100)}% of ${mc.paths} simulated markets investing ended ahead. `}
-              {tossUp
-                ? `Anything from ${formatPercentRatio(TOSS_UP[0], 0)} to ${formatPercentRatio(TOSS_UP[1], 0)} is a coin flip: decide on liquidity and risk, not this gap.`
-                : "Paying down is a guaranteed return; investing is not — weigh the range below, not just the expected line."}
+              {cmp.breakEvenReturn !== null && (
+                <>
+                  Investing has to earn more than <ProofValue proof={tile("break-even")}>{formatPercentRatio(cmp.breakEvenReturn, 2)}</ProofValue> a year to beat paying down a{" "}
+                  <NotFigure why="your input">{formatPercentRatio(ins.rate, 3)}</NotFigure> loan with these taxes; you assumed{" "}
+                  <NotFigure why={typedReturn ? "your input" : "your setting (Forecast)"}>{formatPercentRatio(eff.investReturn, 2)}</NotFigure>.{" "}
+                </>
+              )}
+              {mcFresh && (
+                <>
+                  In <ProofValue proof={tile("chance")}>{`${Math.round(mc.chanceInvestWins * 100)}%`}</ProofValue> of {mc.paths} simulated markets investing ended ahead.{" "}
+                </>
+              )}
+              <NotFigure why="how the page reads the odds">
+                {tossUp
+                  ? `Anything from ${formatPercentRatio(TOSS_UP[0], 0)} to ${formatPercentRatio(TOSS_UP[1], 0)} is a coin flip: decide on liquidity and risk, not this gap.`
+                  : "Paying down is a guaranteed return; investing is not — weigh the range below, not just the expected line."}
+              </NotFigure>
             </Callout>
           )}
 
@@ -176,7 +196,7 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
               label="Chance investing wins"
               value={"ratio" in tileValue.chance && tileValue.chance.ratio != null ? `${Math.round(tileValue.chance.ratio * 100)}%` : "—"}
               tone={tossUp ? "neutral" : mc.chanceInvestWins > 0.5 ? "pos" : "warn"}
-              sub={`${formatPercentRatio(ins.volatility, 0)} volatility · ${mc.paths} markets`}
+              sub={<NotFigure why="your input">{`${formatPercentRatio(ins.volatility, 0)} volatility · ${mc.paths} markets`}</NotFigure>}
             />
             <StatCell proof={tile("interest-saved")}
               label="Paying down saves"
@@ -187,15 +207,17 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
 
           <Card
             title="How far ahead investing is — and how sure"
-            subtitle="The solid line is the gap at your expected return. Shaded: where the gap lands in the middle 50% and 80% of simulated markets. Below zero, paying down would have been better."
+            subtitle={<NotFigure why="what the chart bands mean">The solid line is the gap at your expected return. Shaded: where the gap lands in the middle 50% and 80% of simulated markets. Below zero, paying down would have been better.</NotFigure>}
           >
-            <GapChart rows={rows} chart={chart} label={label} />
-            {mcFresh && hMc && hasChoice && (
-              <p className="mt-2 text-xs text-muted">
-                After {ins.horizonYears} years: a bad market (10th percentile) leaves investing <span className="num font-medium text-fg">{signed(hMc.p10 / defl(H))}</span>, a typical one{" "}
-                <span className="num font-medium text-fg">{signed(hMc.p50 / defl(H))}</span>, a good one (90th) <span className="num font-medium text-fg">{signed(hMc.p90 / defl(H))}</span>.
-              </p>
-            )}
+            <WhatIf why="the gap across simulated markets">
+              <GapChart rows={rows} chart={chart} label={label} />
+              {mcFresh && hMc && hasChoice && (
+                <p className="mt-2 text-xs text-muted">
+                  After {ins.horizonYears} years: a bad market (10th percentile) leaves investing <span className="num font-medium text-fg">{signed(hMc.p10 / defl(H))}</span>, a typical one{" "}
+                  <span className="num font-medium text-fg">{signed(hMc.p50 / defl(H))}</span>, a good one (90th) <span className="num font-medium text-fg">{signed(hMc.p90 / defl(H))}</span>.
+                </p>
+              )}
+            </WhatIf>
           </Card>
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-2">
@@ -221,7 +243,7 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
             >
               <OpportunityChart rows={opp} chart={chart} />
               {hasLumps && plan.extraMonthly > 0 && (
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <WhatIf why="each mix of the extra and the lumps" className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   {(
                     [
                       ["Invest everything", cmp.matrix.investAll],
@@ -240,7 +262,7 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
                       </div>
                     );
                   })}
-                </div>
+                </WhatIf>
               )}
             </Card>
           )}
@@ -287,7 +309,7 @@ function Ledger({
   ];
   return (
     <Card title="The ledger" subtitle={`Totals by the horizon, ${unit} (in today's dollars each month counts at its own date). Cash out of pocket matches on both paths, so the net-worth gap is purely where the dollars went.`}>
-      <div className="overflow-x-auto">
+      <WhatIf why="every dollar on both paths at the horizon" className="overflow-x-auto">
         <table className={`${table.table} min-w-[520px]`}>
           <thead className={table.head}>
             <tr>
@@ -312,8 +334,12 @@ function Ledger({
             })}
           </tbody>
         </table>
-      </div>
-      {deductionLost > 0.5 && <p className="mt-2 text-[11px] text-muted">Paying down forgoes {formatUsd(deductionLost)} of deduction value — part of why its interest saving overstates its real benefit.</p>}
+      </WhatIf>
+      {deductionLost > 0.5 && (
+        <WhatIf why="the deduction on both paths" className="mt-2 text-[11px] text-muted">
+          Paying down forgoes {formatUsd(deductionLost)} of deduction value — part of why its interest saving overstates its real benefit.
+        </WhatIf>
+      )}
       <p className="mt-1 text-[11px] text-faint">Month {H}: figures include everything through that payment.</p>
     </Card>
   );
@@ -325,7 +351,7 @@ function YearTable({ invest, prepay, H, defl, label }: { invest: PathSeries; pre
   months.push(H);
   return (
     <Card title="Year by year">
-      <div className="max-h-[360px] overflow-auto">
+      <WhatIf why="both paths year by year" className="max-h-[360px] overflow-auto">
         <table className={`${table.table} min-w-[720px]`}>
           <thead className={table.head}>
             <tr>
@@ -354,7 +380,7 @@ function YearTable({ invest, prepay, H, defl, label }: { invest: PathSeries; pre
             })}
           </tbody>
         </table>
-      </div>
+      </WhatIf>
     </Card>
   );
 }
@@ -362,7 +388,7 @@ function YearTable({ invest, prepay, H, defl, label }: { invest: PathSeries; pre
 function Method() {
   return (
     <Card title="How the math works">
-      <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-fg-2">
+      <ul data-not-figure="how the model works" className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-fg-2">
         <li>
           <b>Same cash, different destination.</b> Both paths pay the scheduled payment, the extra and every lump sum. Paying down sends the extra and the lumps to the
           principal; investing puts them in a brokerage account. When a loan is gone, its whole payment is invested from then on — so the paths can be compared at any month.

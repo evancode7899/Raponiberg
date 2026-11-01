@@ -1,6 +1,8 @@
 "use client";
 
-import { Badge, type Tone } from "@/components/ui/kit";
+import { Badge, NotFigure, type Tone } from "@/components/ui/kit";
+import type { ProofRef } from "@/components/ui/proof/context";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatUsd } from "@/lib/formatMoney";
 import { useId, useState, type ReactNode } from "react";
 
@@ -74,6 +76,9 @@ export function zoneOf(v: number, spec: SliderSpec): { label: string; tone: Tone
   return { label: "Typical", tone: "pos" };
 }
 
+/** A reference tick on a slider: `proof` when its value is a figure (your max price), `why` when it isn't one (NotFigure). */
+export type Marker = { value: number; label: string; proof?: ProofRef; why?: string };
+
 export function RangeSlider({
   label,
   hint,
@@ -93,8 +98,8 @@ export function RangeSlider({
   spec: SliderSpec;
   /** Shown as a tick on the track; a reset button appears when the value differs. */
   defaultValue?: number;
-  /** Extra reference ticks (e.g. "max" price). */
-  markers?: { value: number; label: string }[];
+  /** Extra reference ticks (e.g. "max" price): a figure from the data opens its proof. */
+  markers?: Marker[];
   extra?: ReactNode;
   disabled?: boolean;
   /** Dense layout for the inputs panel: no scale labels, the hint moves into a tooltip. */
@@ -215,13 +220,13 @@ function ScaleNotes({
   max: number;
   pos: (v: number) => number;
   hint?: ReactNode;
-  markers: { value: number; label: string }[];
+  markers: Marker[];
   extra?: ReactNode;
 }) {
   const digits = spec.digits ?? 1;
   return (
     <>
-      <div className="relative mx-2 mt-0.5 h-3.5 text-[10px] leading-none text-faint">
+      <div data-not-figure="the slider's scale" className="relative mx-2 mt-0.5 h-3.5 text-[10px] leading-none text-faint">
         <span className="absolute left-0 -translate-x-1/2">{tick(min, spec.unit, digits)}</span>
         {spec.band && (
           <>
@@ -243,10 +248,11 @@ function ScaleNotes({
       )}
       {(hint || markers.length > 0 || extra) && (
         <div className="mt-1 text-[11px] leading-snug text-muted">
-          {hint}
+          {hint && <NotFigure why="help text">{hint}</NotFigure>}
           {markers.map((m) => (
             <span key={m.label} className="ml-1 whitespace-nowrap">
-              <span className="inline-block h-2 w-0.5 bg-accent align-middle" /> {m.label} {fmtValue(m.value, spec.unit, digits)}
+              <span className="inline-block h-2 w-0.5 bg-accent align-middle" /> {m.label}{" "}
+              {m.proof ? <ProofValue proof={m.proof}>{fmtValue(m.value, spec.unit, digits)}</ProofValue> : m.why ? <NotFigure why={m.why}>{fmtValue(m.value, spec.unit, digits)}</NotFigure> : fmtValue(m.value, spec.unit, digits)}
             </span>
           ))}
           {extra}

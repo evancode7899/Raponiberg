@@ -2,7 +2,8 @@
 
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { Badge, btn, Callout, Card, Segmented } from "@/components/ui/kit";
+import { compositeOf, unswept } from "@/components/ui/proof/context";
+import { Badge, btn, Callout, Card, NotFigure, Segmented, WhatIf } from "@/components/ui/kit";
 import type { HomeSpending } from "@/lib/book/reports/homeFunds";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { computeBudgetScenario, computeMaxApproval, defaultHomeBudgetInputs, type HomeBudgetInputs, type MaxApprovalResult } from "@/lib/home-budget/homeBudgetModel";
@@ -64,6 +65,13 @@ export function AffordTab({
   const biggest = Math.max(1, ...levers.map((l) => Math.abs(l.delta)));
   const price = round1k(max.impliedMaxHomeValue);
   const takeHome = at.monthlyIncome * (1 - ins.incomeTaxRate);
+  // The headline's shares, as the proof sweep works them out from its cleared parts (cents; salary and take-home a year ÷ 12).
+  const monthlyC = Math.round(at.monthlyTotalHousing * 100);
+  const salaryC = Math.round(ins.annualHouseholdSalary * 100);
+  const takeHomeC = Math.round(ins.annualHouseholdSalary * (1 - ins.incomeTaxRate) * 100);
+  const monthlyProof = proof("max-monthly", at.monthlyTotalHousing);
+  const ofGross = salaryC > 0 ? compositeOf("share", [monthlyProof, proof("salary", ins.annualHouseholdSalary)], { ratio: monthlyC / (salaryC / 12) }, [1, 12]) : null;
+  const ofTakeHome = takeHomeC > 0 ? compositeOf("share", [monthlyProof, proof("take-home", takeHomeC / 100)], { ratio: monthlyC / (takeHomeC / 12) }, [1, 12]) : null;
 
   const issues: { tone: "bad" | "warn"; title: string; body: string }[] = [];
   if (max.impliedDownPayment < 0)
@@ -105,17 +113,25 @@ export function AffordTab({
               <ProofValue proof={proof("max-price", max.impliedMaxHomeValue)} drawn={{ step: 1000 }}>{formatUsd(price)}</ProofValue>
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg-2">
-              <span className="num font-semibold text-fg">{formatUsd(at.monthlyTotalHousing)}</span>/mo all-in — {formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross,{" "}
-              {formatPercentRatio(takeHome > 0 ? at.monthlyTotalHousing / takeHome : 0, 0)} of take-home. Every dollar of the{" "}
-              <span className="num font-semibold text-fg">{formatUsd(ins.cashForHome)}</span> cash goes in:{" "}
-              <span className="num font-semibold text-fg">{formatUsd(Math.max(0, max.impliedDownPayment))}</span> down ({formatPercentRatio(Math.max(0, max.downPaymentPctOfHome), 1)}), loan{" "}
-              <span className="num font-semibold text-fg">{formatUsd(max.impliedMaxLoan)}</span> at {formatPercentRatio(ins.annualMortgageRate, 3)} over {ins.mortgageTermYears} years.
+              <span className="num font-semibold text-fg">
+                <ProofValue proof={monthlyProof}>{formatUsd(at.monthlyTotalHousing)}</ProofValue>
+              </span>
+              /mo all-in — {ofGross ? <ProofValue proof={ofGross}>{formatPercentRatio(ins.housingCostMaxOfGross, 1)}</ProofValue> : formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross,{" "}
+              {ofTakeHome ? <ProofValue proof={ofTakeHome}>{formatPercentRatio(takeHome > 0 ? at.monthlyTotalHousing / takeHome : 0, 0)}</ProofValue> : "—"} of take-home. Every dollar of the{" "}
+              <span className="num font-semibold text-fg">
+                <ProofValue proof={proof("cash", ins.cashForHome)}>{formatUsd(ins.cashForHome)}</ProofValue>
+              </span>{" "}
+              cash goes in:{" "}
+              <WhatIf inline why="the loan and down payment at your max price">
+                <span className="num font-semibold text-fg">{formatUsd(Math.max(0, max.impliedDownPayment))}</span> down ({formatPercentRatio(Math.max(0, max.downPaymentPctOfHome), 1)}), loan{" "}
+                <span className="num font-semibold text-fg">{formatUsd(max.impliedMaxLoan)}</span> at {formatPercentRatio(ins.annualMortgageRate, 3)} over {ins.mortgageTermYears} years.
+              </WhatIf>
             </p>
-            <p className="mt-1 text-sm text-fg-2">
+            <WhatIf why="what your max price leaves to spend" className="mt-1 text-sm text-fg-2">
               Leaves <span className={`num font-semibold ${at.remainingDiscretionaryMonthly < 0 ? "text-neg" : "text-pos"}`}>{formatUsd(at.remainingDiscretionaryMonthly)}</span>/mo to spend after tax and{" "}
               {formatUsd(ins.minimumMonthlySavings)} of savings.
-            </p>
-            {spending && <SpendCheck left={at.remainingDiscretionaryMonthly} spending={spending} />}
+            </WhatIf>
+            {spending && <SpendCheck left={at.remainingDiscretionaryMonthly} spending={spending} proof={proof} />}
           </div>
           <button type="button" className={btn.primary} onClick={() => testPrice(price, Math.max(0.03, max.downPaymentPctOfHome))}>
             Stress-test this price →
@@ -123,7 +139,7 @@ export function AffordTab({
         </div>
 
         {/* Tiers. */}
-        <div className={`mt-5 grid gap-2 ${tiers.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+        <WhatIf why="the most you could afford at other housing limits" className={`mt-5 grid gap-2 ${tiers.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           {tiers.map((t) => (
             <TierCard
               key={t.key}
@@ -137,18 +153,31 @@ export function AffordTab({
               onTest={() => testPrice(round1k(t.max.impliedMaxHomeValue), Math.max(0.03, t.max.downPaymentPctOfHome))}
             />
           ))}
-        </div>
+        </WhatIf>
       </section>
 
       {issues.map((i) => (
-        <Callout key={i.title} tone={i.tone} title={i.title}>
-          {i.body}
+        <Callout key={i.title} tone={i.tone} title={<WhatIf inline why="a warning about your max price">{i.title}</WhatIf>}>
+          <WhatIf inline why="a warning about your max price">
+            {i.body}
+          </WhatIf>
         </Callout>
       ))}
 
       <div className="flex min-w-0 flex-col gap-4">
-        <Card title={`What ${formatUsd(price)} looks like`} subtitle="At your limit, with all of the cash for the home put in.">
-          <div className="flex flex-col gap-5">
+        <Card
+          title={
+            <>
+              What{" "}
+              <ProofValue proof={proof("max-price", max.impliedMaxHomeValue)} drawn={{ step: 1000 }}>
+                {formatUsd(price)}
+              </ProofValue>{" "}
+              looks like
+            </>
+          }
+          subtitle="At your limit, with all of the cash for the home put in."
+        >
+          <WhatIf why="the budget at your max price, cost by cost" className="flex flex-col gap-5">
             <Figure title="Every month" value={`${formatUsd(at.monthlyTotalHousing)}/mo`}>
               <StackBar segments={housingSegments} />
             </Figure>
@@ -158,15 +187,15 @@ export function AffordTab({
             <Figure title="A month of pay" value={`${formatUsd(at.monthlyIncome)} gross`}>
               <StackBar segments={paySegments} scale={Math.max(at.monthlyIncome, at.incomeTaxMonthly + at.monthlyTotalHousing + ins.minimumMonthlySavings)} />
             </Figure>
-          </div>
+          </WhatIf>
         </Card>
 
         <LenderCard ins={ins} patch={patch} proof={proof} lender={lender} max={lenderMax} comfortMax={maxValue} testPrice={testPrice} />
 
         <Card title="What moves the number" subtitle="Change in the most you can afford from one step on each input.">
-          <ul className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
+          <WhatIf why="one step on each input" className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
             {levers.map((l) => (
-              <li key={l.label} className="min-w-0">
+              <div key={l.label} className="min-w-0">
                 <div className="flex items-baseline justify-between gap-2 text-xs">
                   <span className="truncate text-fg-2">{l.label}</span>
                   <span className={`num shrink-0 font-semibold ${l.delta >= 0 ? "text-pos" : "text-neg"}`}>{signed(round1k(l.delta))}</span>
@@ -174,9 +203,9 @@ export function AffordTab({
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-3">
                   <div className={`h-full rounded-full ${l.delta >= 0 ? "bg-pos/70" : "bg-neg/70"}`} style={{ width: `${(Math.abs(l.delta) / biggest) * 100}%` }} />
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </WhatIf>
         </Card>
       </div>
     </div>
@@ -244,13 +273,17 @@ function Figure({ title, value, children }: { title: string; value: string; chil
 }
 
 /** Today's spending outside housing next to what this price leaves, with a verdict. */
-export function SpendCheck({ left, spending }: { left: number; spending: HomeSpending }) {
+export function SpendCheck({ left, spending, proof }: { left: number; spending: HomeSpending; proof: HomeProof }) {
   const spend = spending.monthlyCents / 100;
   const fit = spendingFit(left, spend);
   return (
     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-2">
       <span>
-        You spend <span className="num font-semibold text-fg">{formatUsd(spend)}</span>/mo today outside housing
+        You spend{" "}
+        <span className="num font-semibold text-fg">
+          <ProofValue proof={proof("spending", spend)}>{formatUsd(spend)}</ProofValue>
+        </span>
+        /mo today outside housing
         <span className="text-xs text-faint"> (last {spending.months} months, one-offs out)</span>
       </span>
       {fit.label && <Badge tone={fit.tone}>{fit.label}</Badge>}
@@ -300,12 +333,23 @@ function LenderCard({
             <ProofValue proof={proof("lender-max", max.impliedMaxHomeValue)} drawn={{ step: 1000 }}>{formatUsd(price)}</ProofValue>
           </div>
           <p className="mt-1 text-xs text-fg-2">
-            <span className="num font-semibold text-fg">{formatUsd(counted)}</span>/mo counted against{" "}
+            <WhatIf inline why="the lender's costs at its max price">
+              <span className="num font-semibold text-fg">{formatUsd(counted)}</span>/mo
+            </WhatIf>{" "}
+            counted against{" "}
             <span className="num font-semibold text-fg">
               <ProofValue proof={proof("lender-income", lender.income)}>{formatUsd(lender.income)}</ProofValue>
             </span>
-            /yr of income ({formatPercentRatio(ins.lenderMaxDti, 1)}) ·{" "}
-            <span className="num">{signed(round1k(max.impliedMaxHomeValue - comfortMax))}</span> vs your limit
+            /yr of income (<NotFigure why="your input">{formatPercentRatio(ins.lenderMaxDti, 1)}</NotFigure>) ·{" "}
+            <span className="num">
+              <ProofValue
+                proof={compositeOf("diff", [proof("lender-max", max.impliedMaxHomeValue), proof("max-price", comfortMax)], { cents: Math.round(max.impliedMaxHomeValue * 100) - Math.round(comfortMax * 100) })}
+                drawn={{ step: 1000 }}
+              >
+                {signed(round1k(max.impliedMaxHomeValue - comfortMax))}
+              </ProofValue>
+            </span>{" "}
+            vs your limit
           </p>
         </div>
         {lender.bonus && (
@@ -321,7 +365,18 @@ function LenderCard({
               onChange={(v) => lender.setCountBonus(v === "bonus")}
             />
             <span className="text-[11px] text-faint">
-              Bonus {formatUsd(lender.bonus.annual)}/yr: average of {lender.bonus.years.join(" and ")}
+              Bonus{" "}
+              <ProofValue
+                proof={
+                  // Counted, it is what the lender's income adds to the salary; left out, the income holds none of it.
+                  lender.countBonus
+                    ? compositeOf("diff", [proof("lender-income", lender.income), proof("salary", ins.annualHouseholdSalary)], { cents: Math.round(lender.income * 100) - Math.round(ins.annualHouseholdSalary * 100) })
+                    : unswept("count the bonus (Base + bonus) to see it proven")
+                }
+              >
+                {formatUsd(lender.bonus.annual)}
+              </ProofValue>
+              /yr: average of {lender.bonus.years.join(" and ")}
             </span>
           </div>
         )}

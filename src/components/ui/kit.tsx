@@ -374,8 +374,12 @@ export function NotFigure({ why, children }: { why: string; children: ReactNode 
  * hides in it: a ledger figure drawn inside, or a ledger figure's value drawn bare. The
  * owner's own numbers and a page's headline stay outside, each a ProofValue.
  */
-export function WhatIf({ why, children, className }: { why: string; children: ReactNode; className?: string }) {
-  return (
+export function WhatIf({ why, children, className, inline }: { why: string; children: ReactNode; className?: string; inline?: boolean }) {
+  return inline ? (
+    <span data-what-if={why} className={className}>
+      {children}
+    </span>
+  ) : (
     <div data-what-if={why} className={className}>
       {children}
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { BlockedNote } from "@/components/ledger/Blocked";
-import { btn, Loading, Segmented, usePersistentState } from "@/components/ui/kit";
+import { btn, Loading, NotFigure, Segmented, usePersistentState, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
@@ -80,7 +80,13 @@ export function InputsPanel({
       />
     );
   };
-  const perMonth = (rate: number) => <>= {formatUsd((focus.price * rate) / 12)}/mo at {focus.label}</>;
+  const perMonth = (rate: number) => (
+    <WhatIf inline why="a cost at the price you're looking at">
+      = {formatUsd((focus.price * rate) / 12)}/mo at {focus.label}
+    </WhatIf>
+  );
+  /** A section's one-line summary of inputs you typed. */
+  const typedSummary = (s: string) => <NotFigure why="your inputs">{s}</NotFigure>;
   const savingsSpec = { ...spec("minimumMonthlySavings"), band: [Math.round((ins.annualHouseholdSalary / 12) * 0.05 / 100) * 100, Math.round((ins.annualHouseholdSalary / 12) * 0.15 / 100) * 100] as [number, number] };
   const loan = ins.budgetHomePrice * (1 - ins.budgetDownPaymentPct);
 
@@ -94,7 +100,7 @@ export function InputsPanel({
       </div>
 
       {home && (
-        <Section id="home" title="Target home" open={open.home} onToggle={toggle} summary={`${short(ins.budgetHomePrice)} · ${pct(ins.budgetDownPaymentPct)} down`} highlight>
+        <Section id="home" title="Target home" open={open.home} onToggle={toggle} summary={typedSummary(`${short(ins.budgetHomePrice)} · ${pct(ins.budgetDownPaymentPct)} down`)} highlight>
           <RangeSlider
             compact
             label="Home price"
@@ -109,19 +115,27 @@ export function InputsPanel({
             markers: home.allCashDownPct > 0 ? [{ value: home.allCashDownPct, label: "All your cash" }] : [],
             extra: (
               <>
-                = {formatUsd(ins.budgetHomePrice * ins.budgetDownPaymentPct)} · loan {formatUsd(loan)}
+                <WhatIf inline why="the target home you typed">
+                  = {formatUsd(ins.budgetHomePrice * ins.budgetDownPaymentPct)} · loan {formatUsd(loan)}
                 {home.allCashDownPct > 0 && Math.abs(home.allCashDownPct - ins.budgetDownPaymentPct) > 0.0025 && (
                   <button type="button" className="ml-1.5 text-accent hover:underline" onClick={() => patch("budgetDownPaymentPct", Math.floor(home.allCashDownPct * 200) / 200)}>
                     use all your cash ({pct(Math.floor(home.allCashDownPct * 200) / 200)})
                   </button>
                 )}
+                </WhatIf>
               </>
             ),
           })}
         </Section>
       )}
 
-      <Section id="you" title="You" open={open.you} onToggle={toggle} summary={`${short(ins.annualHouseholdSalary)} · limit ${pct(ins.housingCostMaxOfGross)}`}>
+      <Section id="you" title="You" open={open.you} onToggle={toggle} summary={
+          <>
+            {funds.buy.salaryLinked ? <ProofValue proof={funds.proof("salary", ins.annualHouseholdSalary)}>{short(ins.annualHouseholdSalary)}</ProofValue> : typedSummary(short(ins.annualHouseholdSalary))} · limit{" "}
+            {typedSummary(pct(ins.housingCostMaxOfGross))}
+          </>
+        }
+      >
         {funds.buy.salaryLinked ? (
           <div className="py-1.5">
             <div className="flex items-baseline justify-between gap-2">
@@ -150,7 +164,12 @@ export function InputsPanel({
             label={LABELS.incomeTaxRate!}
             value={ins.incomeTaxRate}
             proof={funds.proof("income-tax", null)}
-            note={`Federal + Connecticut income tax and payroll on ${formatUsd(ins.annualHouseholdSalary)} of wages, ${funds.tax.year} law, from the tax engine.`}
+            note={
+              <>
+                Federal + Connecticut income tax and payroll on <ProofValue proof={funds.proof("salary", ins.annualHouseholdSalary)}>{formatUsd(ins.annualHouseholdSalary)}</ProofValue> of wages,{" "}
+                {funds.tax.year} law, from the tax engine.
+              </>
+            }
             onManual={() => {
               patch("incomeTaxRate", Math.round(ins.incomeTaxRate * 200) / 200);
               funds.setConfig({ ...funds.config, incomeTax: "manual" });
@@ -164,7 +183,7 @@ export function InputsPanel({
 
       <Section id="cash" title="Cash for the home" open={open.cash} onToggle={toggle}         summary={
           <>
-            {kUsd(ins.cashForHome)} ·{" "}
+            {funds.linked ? <ProofValue proof={funds.proof("cash", ins.cashForHome)}>{kUsd(ins.cashForHome)}</ProofValue> : typedSummary(kUsd(ins.cashForHome))} ·{" "}
             {funds.linked ? (
               funds.buy.key ? `forecast, ${monthYear(funds.buy.key)}` : "net worth"
             ) : funds.config.mode === "networth" && funds.loading ? (
@@ -180,7 +199,7 @@ export function InputsPanel({
         <FundsSection ins={ins} patch={patch} funds={funds} />
       </Section>
 
-      <Section id="mortgage" title="Mortgage" open={open.mortgage} onToggle={toggle} summary={`${pct(ins.annualMortgageRate, 3)} · ${ins.mortgageTermYears} yr${ins.annualMortgageInsuranceRateOnLoan > 0 ? " · PMI" : ""}`}>
+      <Section id="mortgage" title="Mortgage" open={open.mortgage} onToggle={toggle} summary={typedSummary(`${pct(ins.annualMortgageRate, 3)} · ${ins.mortgageTermYears} yr${ins.annualMortgageInsuranceRateOnLoan > 0 ? " · PMI" : ""}`)}>
         <div className="flex items-center justify-between py-1.5">
           <span className="text-xs font-medium text-fg-2">Term</span>
           <Segmented size="xs" ariaLabel="Mortgage term" options={[10, 15, 20, 30].map((y) => ({ value: String(y), label: `${y} yr` }))} value={String(ins.mortgageTermYears)} onChange={(v) => patch("mortgageTermYears", Number(v))} />
@@ -194,7 +213,7 @@ export function InputsPanel({
         title="Running costs"
         open={open.running}
         onToggle={toggle}
-        summary={`${pct(ins.annualPropertyTaxRate + ins.annualInsuranceRateOnValue + ins.annualMaintenanceRate, 2)}/yr + ${kUsd(ins.utilitiesMonthly + ins.hoaMonthly)}/mo`}
+        summary={typedSummary(`${pct(ins.annualPropertyTaxRate + ins.annualInsuranceRateOnValue + ins.annualMaintenanceRate, 2)}/yr + ${kUsd(ins.utilitiesMonthly + ins.hoaMonthly)}/mo`)}
       >
         <p className="pb-1 text-[11px] text-faint">Percentages are of the home&apos;s value, per year.</p>
         {S("annualPropertyTaxRate", { extra: perMonth(ins.annualPropertyTaxRate) })}
@@ -204,7 +223,7 @@ export function InputsPanel({
         {S("hoaMonthly")}
       </Section>
 
-      <Section id="oneTime" title="One-time costs" open={open.oneTime} onToggle={toggle} summary={`${pct(ins.closingCostsPctOfHomePrice, 2)} closing · ${pct(ins.renovationPctOfHomePrice)} reno`}>
+      <Section id="oneTime" title="One-time costs" open={open.oneTime} onToggle={toggle} summary={typedSummary(`${pct(ins.closingCostsPctOfHomePrice, 2)} closing · ${pct(ins.renovationPctOfHomePrice)} reno`)}>
         <p className="pb-1 text-[11px] text-faint">Paid in cash at purchase, out of the cash for the home.</p>
         {S("closingCostsPctOfHomePrice", { extra: <>= {formatUsd(focus.price * ins.closingCostsPctOfHomePrice)} at {focus.label}</> })}
         {S("renovationPctOfHomePrice", { extra: <>= {formatUsd(focus.price * ins.renovationPctOfHomePrice)} at {focus.label}</> })}
@@ -231,7 +250,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <div className={`border-b border-line last:border-b-0 ${highlight ? "bg-accent-soft/40" : ""}`}>
+    <div className={`relative border-b border-line last:border-b-0 ${highlight ? "bg-accent-soft/40" : ""}`}>
       <button
         type="button"
         aria-expanded={open}
@@ -240,8 +259,13 @@ function Section({
       >
         <span className={`text-[10px] text-faint transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
         <span className={`text-xs font-semibold ${highlight ? "text-accent" : "text-fg"}`}>{title}</span>
-        {!open && <span className="num ml-auto min-w-0 truncate text-[11px] text-muted">{summary}</span>}
       </button>
+      {/* Beside the toggle, not in it: a summary figure opens its proof, and a button can't hold another. */}
+      {!open && (
+        <span onClick={() => onToggle(id)} className="num absolute right-4 top-2.5 max-w-[55%] cursor-pointer truncate text-right text-[11px] text-muted">
+          {summary}
+        </span>
+      )}
       {open && <div className="px-4 pb-3">{children}</div>}
     </div>
   );
@@ -378,7 +402,7 @@ function FundsSection({ ins, patch, funds }: { ins: HomeBudgetInputs; patch: Pat
 }
 
 /** A rate the tax engine works out, shown read-only with a way to type your own. */
-function EngineRate({ label, value, note, onManual, proof }: { label: string; value: number; note: string; onManual: () => void; proof: ProofRef }) {
+function EngineRate({ label, value, note, onManual, proof }: { label: string; value: number; note: ReactNode; onManual: () => void; proof: ProofRef }) {
   return (
     <div className="py-1.5">
       <div className="flex items-baseline justify-between gap-2">
@@ -414,7 +438,12 @@ export function GainsTaxControl({ ins, patch, funds, full }: { ins: HomeBudgetIn
         label={LABELS.capitalGainsTaxRate!}
         value={ins.capitalGainsTaxRate}
         proof={funds.proof("gains-tax", null)}
-        note={`Federal 15/20% + 3.8% NIIT + Connecticut on ${formatUsd(Math.max(50_000, gains.gain))} of long-term gains on top of the salary, ${year} law.`}
+        note={
+          <>
+            <NotFigure why="set by law">Federal 15/20% + 3.8% NIIT</NotFigure> + Connecticut on{" "}
+            <ProofValue proof={funds.proof("gain", Math.max(50_000, gains.gain))}>{formatUsd(Math.max(50_000, gains.gain))}</ProofValue> of long-term gains on top of the salary, {year} law.
+          </>
+        }
         onManual={() => {
           patch("capitalGainsTaxRate", Math.round(ins.capitalGainsTaxRate * 1000) / 1000);
           funds.setConfig({ ...funds.config, gainsTax: "manual" });

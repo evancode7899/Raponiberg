@@ -1,6 +1,7 @@
 "use client";
 
-import { Field, PercentInput } from "@/components/ui/kit";
+import { Field, NotFigure, PercentInput } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { Forecast } from "@/lib/forecast/forecast";
 import type { OutlookSeeds } from "@/lib/profile/basePay";
 import type { OutlookAssumptions } from "@/lib/profile/settings";
@@ -8,7 +9,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { SetAssumption } from "@/app/forecast/ForecastInputs";
 import { YearInput } from "@/app/forecast/forecastUi";
-import { pct, short, usd } from "./ui";
+import { pct, short, usd, type FireData } from "./ui";
 
 /**
  * FIRE's own settings — how you'd retire on the forecast: walk-away year, withdrawal
@@ -16,7 +17,10 @@ import { pct, short, usd } from "./ui";
  * bonuses, living cost and returns are the forecast's and are only shown here, with a
  * link to change them on the Forecast page.
  */
-export function FireInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: OutlookAssumptions; set: SetAssumption; f: Forecast; header: ReactNode }) {
+export function FireInputs({ s, a, set, f, header, d }: { s: OutlookSeeds; a: OutlookAssumptions; set: SetAssumption; f: Forecast; header: ReactNode; d: FireData }) {
+  const setting = (v: string) => <NotFigure why="your setting (Forecast)">{v}</NotFigure>;
+  /** A seed figure, or what you typed over it on the Forecast page. */
+  const seed = (proof: FireData[keyof FireData], v: string) => (proof ? <ProofValue proof={proof}>{v}</ProofValue> : <NotFigure why="your input (Forecast)">{v}</NotFigure>);
   const est = a.bonus.estimates === "NONE" ? "no estimates" : a.bonus.estimates === "NEXT_PAYOUT" ? "estimated from next payout" : `estimated from ${f.nearTermThrough + 1}`;
   return (
     <aside className="app-scroll order-last min-w-0 rounded-lg border border-line bg-surface shadow-[var(--shadow)] lg:sticky lg:top-14 lg:order-first lg:max-h-[calc(100dvh-4.5rem)] lg:overflow-y-auto">
@@ -32,14 +36,14 @@ export function FireInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: Outlo
           <tbody>
             {(
               [
-                ["Starts from", `${short(s.start.liquid + s.start.illiquid)} on ${s.start.asOf}`],
-                ["Base salary", `${usd(f.pay.salary)} · +${pct(a.salaryGrowth)}/yr`],
-                ["Kept after tax", pct(f.pay.takeHomeRate)],
+                ["Starts from", <>{seed(d.start, short(s.start.liquid + s.start.illiquid))} on {s.start.asOf}</>],
+                ["Base salary", <>{seed(d.salary, usd(f.pay.salary))} · {setting(`+${pct(a.salaryGrowth)}/yr`)}</>],
+                ["Kept after tax", seed(d.keep, pct(f.pay.takeHomeRate))],
                 ["Bonuses", `paid + letters · ${est}`],
-                ["Living cost", `${usd(f.pay.living.cents)} · +${pct(a.livingGrowth)}/yr`],
-                ["Return · inflation", `${pct(a.returnRate)} · ${pct(a.inflation)}`],
+                ["Living cost", <>{seed(d.living, usd(f.pay.living.cents))} · {setting(`+${pct(a.livingGrowth)}/yr`)}</>],
+                ["Return · inflation", setting(`${pct(a.returnRate)} · ${pct(a.inflation)}`)],
                 ["One-offs", a.plannedExpenses.length ? `${a.plannedExpenses.length} planned` : "none"],
-              ] as [string, string][]
+              ] as [string, ReactNode][]
             ).map(([k, v]) => (
               <tr key={k}>
                 <td className="py-0.5 pr-2 text-muted">{k}</td>

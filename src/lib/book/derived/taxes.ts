@@ -4,7 +4,7 @@ import { worksheetCells } from "../../tax/worksheetExtras.ts";
 import { incomeCells } from "../../tax/incomeExtras.ts";
 import { overviewCells } from "../../tax/overviewExtras.ts";
 import { W4_REACHES, w4Cells } from "../../tax/w4Extras.ts";
-import { c, r, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
+import { c, ln, r, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 
 /**
  * Taxes' derived figures for a year: the tables the tabs draw from the year's report beyond
@@ -28,4 +28,9 @@ export function taxesDerived(report: TaxReport): DerivedFigure[] {
     ...tableFigures("income", y, incomeCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...(["projected", "ytd"] as const).flatMap((basis) => tableFigures("worksheet", `${y}:${basis}`, worksheetCells(report, basis).map((x) => ({ ...x, describes: `${y} ${basis === "ytd" ? "to date" : "projected"}: ${x.describes}` })))),
   ];
+}
+
+/** The year's federal marginal rate on the next dollar of joint income (key: the year): what the Mortgage page links for the interest deduction. */
+export function marginalDerived(t: Pick<TaxReport, "year" | "marginal">): DerivedFigure[] {
+  return [{ figure: "marginal-federal", key: String(t.year), describes: `The federal income-tax rate on the next dollar, ${t.year}`, value: r(t.marginal.federal), lines: [ln("The tax estimate's federal bracket on the next dollar", r(t.marginal.federal))] }];
 }

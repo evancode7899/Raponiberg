@@ -17,7 +17,7 @@ import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxA
 import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { integrityDerived } from "./integrity.ts";
-import { taxesDerived } from "./taxes.ts";
+import { marginalDerived, taxesDerived } from "./taxes.ts";
 import { forecastDerived } from "./forecast.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
 import { builtDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived, rollforwardsDerived } from "./netWorth.ts";
@@ -112,7 +112,8 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     return { figures, rederived: declared(LIMITS_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
   taxes: async (ctx) => {
-    const figures = (await taxYears(ctx)).flatMap((y) => (y.tax.blocked ? [] : taxesDerived(y.tax as TaxReport)));
+    const year = Number(ctx.book.today.slice(0, 4));
+    const figures = (await taxYears(ctx)).flatMap((y) => (y.tax.blocked ? [] : [...taxesDerived(y.tax as TaxReport), ...(y.year === year ? marginalDerived(y.tax as TaxReport) : [])]));
     return { figures, rederived: declared(TAXES_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
   forecast: async ({ book, db }) => {

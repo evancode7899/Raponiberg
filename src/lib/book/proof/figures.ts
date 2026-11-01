@@ -1,6 +1,6 @@
 import type { GarageReport } from "../../car/report.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
-import { analyzeFire, firePlans, stressTest } from "../../fire/fire.ts";
+import { analyzeFire, firePlans, firstYearIncome, stressTest } from "../../fire/fire.ts";
 import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type StressFigure } from "../../fire/longTerm.ts";
 import { projectOutlook } from "../../profile/outlook.ts";
 import { ledgerColumns, ledgerDraws, ledgerViews } from "../../forecast/ledger.ts";
@@ -531,6 +531,9 @@ export function forecastFigures(f: Forecast, r: AnnualProfileReport): PageFigure
     seed({ which: "start" }, s.start.liquid + s.start.illiquid);
     seed({ which: "deferrals", paycheck }, f.pay.people.reduce((x, p) => x + p.deferrals, 0));
     seed({ which: "employer", paycheck }, f.pay.people.reduce((x, p) => x + p.employer, 0));
+    // Each person's base salary and the share kept after tax (FIRE's inputs panel draws them too).
+    for (const p of f.pay.people) seed({ which: "pay", personId: p.personId, paycheck: p.basis }, null);
+    seed({ which: "take-home", paycheck }, null);
     const basis = r.settings.outlook.livingBasis;
     if (s.living[basis]) seed({ which: "living", basis }, s.living[basis]!.cents);
   }
@@ -547,7 +550,8 @@ export function fireFigureList(fa: ReturnType<typeof analyzeFire>): { figure: Fi
     { figure: "lean-number", cents: n.leanNumber },
     { figure: "fat-number", cents: n.fatNumber },
     ...(n.coastNumber != null ? [{ figure: "coast-number" as const, cents: n.coastNumber }] : []),
-    ...(["fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "years-saved", "runway", "progress"] as const).map((figure) => ({ figure, cents: null })),
+    { figure: "income", cents: firstYearIncome(fa.plan) },
+    ...(["fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "years-saved", "liquid-share", "runway", "progress"] as const).map((figure) => ({ figure, cents: null })),
   ];
   const named = new Set(["coast", "lean", "fi", "fat"]);
   for (const m of fa.milestones) if (!named.has(m.id)) out.push({ figure: "milestone", cents: null, milestone: m.id });
@@ -576,7 +580,7 @@ export function fireFigures(f: Forecast, r: AnnualProfileReport): PageFigure[] {
 
 // ------------------------------------------------------------------ Home budget
 
-const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "lender-max", "lender-income", ...RENT_VS_BUY_FIGURES];
+const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax", "max-price", "max-monthly", "take-home", "gain", "lender-max", "lender-income", ...RENT_VS_BUY_FIGURES];
 
 /**
  * Each linked Home budget figure on the calculator's saved inputs and funds choices, as the
@@ -584,10 +588,11 @@ const HOME_FIGURES: HomeFigure[] = ["cash", "salary", "income-tax", "gains-tax",
  * works the values out as you type, so none is stated here: the page's own value is held to
  * the one the proof clears. Inputs typed since the last sweep make a recipe no sweep has seen.
  */
-export function homeBudgetFigures(saved: { inputs: Record<string, unknown> | null; funds: Record<string, unknown> | null }): PageFigure[] {
+export function homeBudgetFigures(saved: { inputs: Record<string, unknown> | null; funds: Record<string, unknown> | null }, spending = false): PageFigure[] {
   const inputs: HomeBudgetInputs = { ...defaultHomeBudgetInputs(), ...(saved.inputs ?? {}) };
   const funds: FundsConfig = { ...defaultFunds(), ...(saved.funds ?? {}) };
-  return HOME_FIGURES.map((figure) => ({ page: "Home budget", descriptor: { report: "planning", page: "home", figure, inputs, funds }, shown: null }));
+  // Today's spending outside housing only once a month of it is proven (buildHomeSpending): the page draws none before.
+  return [...HOME_FIGURES, ...(spending ? (["spending"] as const) : [])].map((figure) => ({ page: "Home budget", descriptor: { report: "planning", page: "home", figure, inputs, funds }, shown: null }));
 }
 
 // ------------------------------------------------------------------ Annual estimate

@@ -2,7 +2,8 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { btn, Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { btn, Callout, Card, NotFigure, Segmented, StatCell, StatGrid, table, WhatIf } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import { rentVsBuyFigures, SIM_YEARS, type RentVsBuyFigure } from "@/lib/home-budget/rentVsBuy";
@@ -53,18 +54,27 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
 
   return (
     <>
-      <Callout tone={ahead >= 0 ? "good" : "info"} title={ahead >= 0 ? `Buying comes out ${formatUsd(ahead)} ahead after ${horizon} years` : `Renting comes out ${formatUsd(-ahead)} ahead after ${horizon} years`}>
+      <Callout
+        tone={ahead >= 0 ? "good" : "info"}
+        title={
+          <>
+            {ahead >= 0 ? "Buying" : "Renting"} comes out <ProofValue proof={tile("rvb-ahead")}>{formatUsd(Math.abs(ahead))}</ProofValue> ahead after {horizon} years
+          </>
+        }
+      >
+        <WhatIf inline why="both households, year by year">
         {sim.breakEvenYear
           ? `${sim.breakEvenYear === 1 ? "Buying is ahead from the first year" : `Buying overtakes renting in year ${sim.breakEvenYear}`}${sim.breakEvenYear > horizon ? ` — after you'd sell, so stay ${sim.breakEvenYear}+ years for it to pay` : ""}.`
           : `Buying never catches up within ${SIM_YEARS} years at these assumptions.`}{" "}
         Both households start with the same {formatUsd(sim.upfrontCash)} and spend the same each month; whoever&apos;s housing costs less invests the difference.
         {sim.renterSetup > 0 && ` The renter spends ${formatUsd(sim.renterSetup)} of it on moving and furniture — half the buyer's renovation / furnishing budget.`}
+        </WhatIf>
       </Callout>
 
       <StatGrid cols={4}>
         <StatCell proof={tile("rvb-ahead")} label="Ahead by buying" value={formatUsd(ahead)} tone={ahead >= 0 ? "pos" : "neg"} sub={`net worth if you sell in year ${horizon}`} />
         <StatCell proof={tile("rvb-break-even")} label="Break-even" value={r.values["rvb-break-even"]} tone={sim.breakEvenYear && sim.breakEvenYear <= horizon ? "pos" : "warn"} sub={`within ${SIM_YEARS} years`} />
-        <StatCell proof={tile("rvb-owning")} label="Owning, year one" value={`${formatUsd(r.values["rvb-owning"])}/mo`} sub={`unrecoverable · ${formatPercentRatio(snap.totalCostOfHomeOwnershipAnnualPct, 2)} of value a year`} />
+        <StatCell proof={tile("rvb-owning")} label="Owning, year one" value={`${formatUsd(r.values["rvb-owning"])}/mo`} sub={<WhatIf inline why="owning's cost as a share of the price you typed">{`unrecoverable · ${formatPercentRatio(snap.totalCostOfHomeOwnershipAnnualPct, 2)} of value a year`}</WhatIf>} />
         <StatCell proof={tile("rvb-rent")} label="Renting" value={`${formatUsd(r.values["rvb-rent"])}/mo`} sub={priceToRent ? `price-to-rent ratio ${priceToRent.toFixed(1)}` : undefined} />
       </StatGrid>
 
@@ -79,7 +89,7 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
               </button>
             }
           >
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <WhatIf why="the home you typed on Test a price" className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
               <span className="text-muted">Price</span>
               <span className="num text-right font-medium">{formatUsd(b.homePrice)}</span>
               <span className="text-muted">Down payment</span>
@@ -88,7 +98,7 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
               <span className="num text-right font-medium">{formatPercentRatio(ins.annualMortgageRate, 3)} · {ins.mortgageTermYears} yr</span>
               <span className="text-muted">Cash in on day one</span>
               <span className="num text-right font-medium">{formatUsd(sim.upfrontCash)}</span>
-            </div>
+            </WhatIf>
           </Card>
 
           <Card title="Assumptions">
@@ -105,10 +115,10 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
                 },
                 extra:
                   funds.returns.forecast == null ? undefined : funds.returns.linked ? (
-                    <>Linked: the Forecast&apos;s return ({formatPercentRatio(funds.returns.forecast, 1)}). Moving it types your own.</>
+                    <NotFigure why="your setting (Forecast)">Linked: the Forecast&apos;s return ({formatPercentRatio(funds.returns.forecast, 1)}). Moving it types your own.</NotFigure>
                   ) : (
                     <button type="button" className="text-accent hover:underline" onClick={() => funds.setConfig({ ...funds.config, returns: "forecast" })}>
-                      use the Forecast&apos;s return ({formatPercentRatio(funds.returns.forecast, 1)})
+                      <NotFigure why="your setting (Forecast)">use the Forecast&apos;s return ({formatPercentRatio(funds.returns.forecast, 1)})</NotFigure>
                     </button>
                   ),
               })}
@@ -125,8 +135,8 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
                   size="xs"
                   ariaLabel="Home sale exclusion"
                   options={[
-                    { value: "500000", label: "$500k joint" },
-                    { value: "250000", label: "$250k single" },
+                    { value: "500000", label: <NotFigure why="set by law">$500k joint</NotFigure> },
+                    { value: "250000", label: <NotFigure why="set by law">$250k single</NotFigure> },
                     { value: "0", label: "None" },
                   ]}
                   value={String(ins.homeSaleExclusion)}
@@ -158,16 +168,18 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
           </Card>
 
           <Card title="Year one: the cost of owning vs rent" subtitle="Money that's gone each month, not equity: interest, tax, upkeep, insurance and what the cash in the home would otherwise earn.">
+            <WhatIf why="year one's cost of owning the home you typed">
             <StackBar
               segments={snapSegments}
               marker={{ value: ins.marketRentMonthly, label: `Rent ${formatUsd(ins.marketRentMonthly)}` }}
               overLabel={(o) => `Owning costs ${formatUsd(o)} a month more than renting in year one.`}
             />
             {snap.advantageToBuy > 0 && <p className="mt-2 text-xs font-medium text-pos">Owning costs {formatUsd(snap.advantageToBuy)} a month less than renting in year one.</p>}
+            </WhatIf>
           </Card>
 
           <Card title="Year by year">
-            <div className="max-h-[360px] overflow-auto">
+            <WhatIf why="buying vs renting, year by year" className="max-h-[360px] overflow-auto">
               <table className={`${table.table} min-w-[640px]`}>
                 <thead className={table.head}>
                   <tr>
@@ -196,8 +208,8 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
                   ))}
                 </tbody>
               </table>
-            </div>
-            <p className="mt-2 text-[11px] leading-snug text-faint">
+            </WhatIf>
+            <p data-not-figure="how the table counts" className="mt-2 text-[11px] leading-snug text-faint">
               Owning / mo is the cash cost (mortgage, tax, insurance, upkeep, HOA, and mortgage insurance under 20% down until the loan reaches 78% of the price), excluding utilities, which both pay. The mortgage-interest deduction is ignored.
             </p>
           </Card>

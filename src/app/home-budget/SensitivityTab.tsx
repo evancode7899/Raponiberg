@@ -2,7 +2,9 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { Card } from "@/components/ui/kit";
+import { Card, NotFigure, WhatIf } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { HomeProof } from "./HomeBudgetClient";
 import { axisUsd, formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { computeMaxApproval, computeSensitivityCell, sensitivityAxes, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import { useMemo } from "react";
@@ -11,7 +13,7 @@ import { CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, Tooltip, X
 const RATES = Array.from({ length: 13 }, (_, i) => 0.04 + i * 0.005);
 const k = (v: number) => (v >= 1_000_000 ? `$${+(v / 1_000_000).toFixed(2)}M` : `$${Math.round(v / 1000)}k`);
 
-export function SensitivityTab({ ins }: { ins: HomeBudgetInputs }) {
+export function SensitivityTab({ ins, proof, salaryLinked }: { ins: HomeBudgetInputs; proof: HomeProof; salaryLinked: boolean }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const { homePrices, incomes } = useMemo(() => sensitivityAxes(ins), [ins]);
@@ -27,8 +29,11 @@ export function SensitivityTab({ ins }: { ins: HomeBudgetInputs }) {
 
   return (
     <>
-      <Card title="Left to spend each month" subtitle="By home price and household salary, with 25% down and every other input as on the other tabs. Your row and column are outlined.">
-        <div className="app-scroll overflow-x-auto">
+      <Card
+        title="Left to spend each month"
+        subtitle={<NotFigure why="how the grid is laid out">By home price and household salary, with 25% down and every other input as on the other tabs. Your row and column are outlined.</NotFigure>}
+      >
+        <WhatIf why="left to spend at each price and salary" className="app-scroll overflow-x-auto">
           <table className="w-full min-w-[640px] border-separate border-spacing-0.5 text-xs">
             <thead>
               <tr>
@@ -62,11 +67,20 @@ export function SensitivityTab({ ins }: { ins: HomeBudgetInputs }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </WhatIf>
       </Card>
 
       <div className="grid min-w-0 gap-4 md:grid-cols-2">
-        <Card title="Left to spend vs home price" subtitle={`At your salary of ${formatUsd(ins.annualHouseholdSalary)}, 25% down.`}>
+        <Card
+          title="Left to spend vs home price"
+          subtitle={
+            <>
+              At your salary of{" "}
+              {salaryLinked ? <ProofValue proof={proof("salary", ins.annualHouseholdSalary)}>{formatUsd(ins.annualHouseholdSalary)}</ProofValue> : <NotFigure why="your input">{formatUsd(ins.annualHouseholdSalary)}</NotFigure>},{" "}
+              <NotFigure why="the chart's assumption">25%</NotFigure> down.
+            </>
+          }
+        >
           <div className="h-[260px] w-full min-w-0">
             <RechartsResponsive>
               <LineChart data={byPrice} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -81,7 +95,7 @@ export function SensitivityTab({ ins }: { ins: HomeBudgetInputs }) {
           </div>
         </Card>
 
-        <Card title="Most you can afford vs mortgage rate" subtitle={`Same cap (${formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross) and cash. Dot: today's ${formatPercentRatio(ins.annualMortgageRate, 3)}.`}>
+        <Card title="Most you can afford vs mortgage rate" subtitle={<NotFigure why="your inputs">{`Same cap (${formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross) and cash. Dot: today's ${formatPercentRatio(ins.annualMortgageRate, 3)}.`}</NotFigure>}>
           <div className="h-[260px] w-full min-w-0">
             <RechartsResponsive>
               <LineChart data={byRate} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>

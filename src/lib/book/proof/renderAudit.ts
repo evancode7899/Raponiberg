@@ -190,10 +190,7 @@ export const BYPASS_PENDING: Readonly<Record<string, string>> = {
   "/hsa": "F6f",
   "/net-worth": "F6f",
   "/card-perks": "F6f",
-  "/fire": "F6f",
-  "/home-budget": "F6f",
   "/investments": "F6f",
-  "/mortgage": "F6f",
 };
 
 /** A cleared figure's family: its report, page and figure (or metric, or line): "derived › taxes › worksheet". */
@@ -274,7 +271,6 @@ export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {
   "planning › annual-estimate › bridge:newlyTracked": "F6f",
   "planning › annual-estimate › bridge:inTransit": "F6f",
   "planning › annual-estimate › bridge:unexplainedSavings": "F6f",
-  "planning › home › cash": "F6f",
   "derived › car › insurance-expected": "F6f",
   "derived › car › insurance-monthly": "F6f",
   "derived › car › car-payments": "F6f",
