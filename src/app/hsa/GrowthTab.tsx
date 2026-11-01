@@ -12,8 +12,32 @@ import { Callout, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL, type ExpenseKind } from "@/lib/hsa/qualify";
 import type { Breakdown, HsaReport } from "@/lib/hsa/report";
+import type { StrategyRow } from "@/lib/hsa/strategy";
+import type { ReactNode } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { hsaProof } from "./proof";
+
+/** The strategy table works one bill of a fixed size: a unit for the example, not a figure of yours. */
+const EXAMPLE_BILL = "the worked example's bill: every row of the table is per $1,000 of bills";
+
+/** A strategy row's note (lib/hsa/strategy.ts words it the same), its worth and edge drawn as the row's own cells. */
+function StrategyNote({ s, planYear, covered, exit, bill, dp }: { s: StrategyRow; planYear: number; covered: boolean; exit: ReactNode; bill: ReactNode; dp: HsaDp }) {
+  const cell = (col: string) => dp("strategy", cellKey("per-1000", s.key, col));
+  const worth = <ProofValue proof={cell("worthCents")}>{usd0(s.worthCents)}</ProofValue>;
+  const ahead = s.aheadCents;
+  if (s.key === "NOW")
+    return (
+      <>
+        The HSA pays the {bill} bill. The {bill} of take-home you&apos;d have spent on it goes into a taxable account instead: {worth} by {planYear}, after the tax on its dividends and gain. The baseline.
+      </>
+    );
+  return (
+    <>
+      The bank pays the {bill} bill; keep the receipt. The {bill} stays invested in the HSA, and in {planYear} the receipt takes it out tax-free ({covered ? "growth too, if later bills cover it" : <>growth taxed at {exit}, no receipt behind it</>}): {worth}. Waiting is{" "}
+      <ProofValue proof={cell("aheadCents")}>{`${ahead >= 0 ? "+" : "−"}${usd0(Math.abs(ahead))}`}</ProofValue> vs. paying now.
+    </>
+  );
+}
 
 const RATE_SOURCE = { SETTING: "your setting", MEASURED: "your HSA's measured return", FORECAST: "the forecast's return (Forecast page)", DEFAULT: "a long-run stock-market assumption" };
 
@@ -33,6 +57,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   );
   const rate = <ProofValue proof={dp("growth-rate")}>{formatPercentRatio(g.rate, 1)}</ProofValue>;
   const exit = <NotFigure why={assumed}>{formatPercentRatio(a.exitRate, 0)}</NotFigure>;
+  const bill = <NotFigure why={EXAMPLE_BILL}>{usd0(100_000)}</NotFigure>;
   if (g.withheld)
     return (
       <Callout tone="info" title="Growth and strategy figures withheld">
@@ -78,7 +103,11 @@ export function GrowthTab({ r }: { r: HsaReport }) {
 
       <Card
         title="Pay a medical bill from the HSA, or out of pocket?"
-        subtitle={`Per $1,000 bill, with the HSA maxed out either way, so the contribution, its tax saving and your employer's part are the same in both and left out. Either way the bill costs $1,000 of take-home today; what differs is where that $1,000 sits until ${g.planYear} (${g.years} years): a taxable account (${taxableTerms}) or the HSA. Waiting only works if you can cash-flow the bills and keep the receipts.`}
+        subtitle={
+          <>
+            Per {bill} bill, with the HSA maxed out either way, so the contribution, its tax saving and your employer&apos;s part are the same in both and left out. Either way the bill costs {bill} of take-home today; what differs is where that {bill} sits until {g.planYear} ({g.years} years): a taxable account ({taxableTerms}) or the HSA. Waiting only works if you can cash-flow the bills and keep the receipts.
+          </>
+        }
       >
         <div className={table.wrap}>
           <table className={table.table}>
@@ -109,7 +138,9 @@ export function GrowthTab({ r }: { r: HsaReport }) {
                 <tr key={s.key} className={`${table.tr} ${s.key === "LATER" ? "font-semibold" : ""}`}>
                   <td className={`${table.td} min-w-[18rem]`}>
                     <div className="text-fg">{s.label}</div>
-                    <div className="text-[11px] font-normal text-muted">{s.note}</div>
+                    <div className="text-[11px] font-normal text-muted">
+                      <StrategyNote s={s} planYear={g.planYear} covered={a.growthCovered} exit={exit} bill={bill} dp={dp} />
+                    </div>
                   </td>
                   {HSA_STRATEGY_COLUMNS.map((col) => (
                     <td key={col} className={`${table.tdR} ${col === "aheadCents" ? (s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : "") : ""}`}>

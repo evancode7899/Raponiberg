@@ -9,7 +9,7 @@ import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, groupRank, useChartPalette } from "@/components/shell/chartPalette";
 import { compositeOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { btn, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
+import { btn, Card, EmptyState, ErrorNote, Loading, NotFigure, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { addDays } from "@/lib/dates/isoDate";
@@ -584,7 +584,12 @@ function Returns({ r }: { r: NetWorthReport }) {
       </StatGrid>
       <Card
         title="Monthly portfolio return"
-        subtitle="Time-weighted: each month's Modified Dietz return (market change net of fees over average invested capital, so deposits and transfers don't count as performance), chained together. Months with under $1,000 invested are left out."
+        subtitle={
+          <>
+            Time-weighted: each month&apos;s Modified Dietz return (market change net of fees over average invested capital, so deposits and transfers don&apos;t count as performance), chained together. Months with under{" "}
+            <NotFigure why="the rule's threshold: below it a return is mostly rounding">$1,000</NotFigure> invested are left out.
+          </>
+        }
       >
         <div className="h-[260px] w-full min-w-0">
           <RechartsResponsive>

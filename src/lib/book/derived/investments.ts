@@ -1,12 +1,16 @@
-import type { InvestmentsReport } from "../reports/investments.ts";
+import type { InvestmentsReport, PositionRow } from "../reports/investments.ts";
 import { c, cellKey, ln, r, type DerivedFigure } from "./types.ts";
 
 /** A growth series' key: its account, or the household's ("all"). */
 export const growthKey = (accountId: string | null) => accountId ?? "all";
 
-/** The Investments page's derived figures: the stock share, fund and account fees, taxable gains, and each growth series' latest point. */
-export function investmentsDerived(rep: InvestmentsReport): DerivedFigure[] {
-  const out: DerivedFigure[] = [];
+/**
+ * The Investments page's derived figures: the stock share, fund and account fees, taxable
+ * gains, each growth series' latest point, and every figure beside a position (detailFigures).
+ * returnRate: the forecast's, as the page's route serves it (prices a fee over 20 years).
+ */
+export function investmentsDerived(rep: InvestmentsReport, returnRate: number | null = null): DerivedFigure[] {
+  const out: DerivedFigure[] = [...detailFigures(rep, returnRate)];
   const share = (cls: string) => rep.allocation.find((x) => x.cls === cls)?.share ?? 0;
   const us = share("US_STOCK");
   const intl = share("INTL_STOCK");
@@ -109,5 +113,53 @@ export function investmentsDerived(rep: InvestmentsReport): DerivedFigure[] {
       },
     );
   }
+  return out;
+}
+
+/** A position's figure key: its account, security and lot, and the column (price, cost, gain, ratio, fee, cost-20y). */
+export const positionKey = (p: Pick<PositionRow, "accountId" | "key" | "lot">, col: string) => cellKey(p.accountId, `${p.key}|${p.lot ?? 0}`, col);
+
+/** The years the Fees tab prices a fund's expense ratio over. */
+export const FEE_YEARS = 20;
+
+/** What a fee takes from the ending value over `years`, at return `rate` (the forecast's): value × ((1 + r)ⁿ − (1 + r − ratio)ⁿ). */
+export const costOver = (cents: number, er: number, years: number, rate: number) => Math.round(cents * ((1 + rate) ** years - (1 + rate - er) ** years));
+
+/**
+ * Every number the Investments page draws beside a position's value or an account's: each
+ * asset class's dollars, the largest positions, drift from your target, each position's
+ * price, cost, gain and expense ratio, each fund's fee a year and over 20 years at the
+ * forecast's return, each account's fees, and what's held with a known ratio or cost.
+ */
+function detailFigures(rep: InvestmentsReport, returnRate: number | null): DerivedFigure[] {
+  const out: DerivedFigure[] = [];
+  for (const a of rep.allocation) out.push({ figure: "class", key: a.cls, describes: `Held in ${a.cls}, as of ${rep.asOf}`, value: c(a.cents), lines: [ln("Each position's value × its weight in the class, added up", c(a.cents), undefined, { source: "proven" })] });
+  for (const u of rep.unclassified) out.push({ figure: "unclassified", key: u.key, describes: `${u.symbol ?? u.name}: held without a classification, as of ${rep.asOf}`, value: c(u.cents), lines: [ln("Its positions without a classification, added up", c(u.cents), undefined, { source: "proven" })] });
+  for (const k of rep.concentration)
+    out.push({ figure: "concentration", key: k.key, describes: `${k.symbol ?? k.name} across every account, as of ${rep.asOf}`, value: c(k.cents), lines: rep.positions.filter((p) => p.key === k.key).map((p, i) => ln(p.account, c(p.valueCents), i ? "+" : undefined, { source: "proven", link: { label: "The position", descriptor: { report: "investments", accountId: p.accountId, position: p.key, ...(p.lot ? { lot: p.lot } : {}) } } })) });
+  for (const d of rep.drift ?? [])
+    if (d.deltaCents) out.push({ figure: "drift", key: d.cls, describes: `${d.cls}: to buy (sell, below zero) to reach your target`, value: c(d.deltaCents), lines: [ln("Your target share", r(d.targetShare), undefined, { source: "assumption" }), ln("× everything classified, less what the class holds", c(d.deltaCents), "=")] });
+  for (const p of rep.positions) {
+    const name = `${p.symbol ?? p.name} in ${p.account}`;
+    const add = (col: string, describes: string, value: DerivedFigure["value"], lines: DerivedFigure["lines"]) => out.push({ figure: "position", key: positionKey(p, col), describes: `${name}: ${describes}, as of ${p.asOf}`, value, lines });
+    if (p.price != null) add("price", "price a share", c(Math.round(p.price * 10_000) / 100), [ln("As the statement prints it", c(Math.round(p.price * 10_000) / 100), undefined, { source: "proven" })]);
+    if (p.costBasisCents != null) add("cost", "cost basis", c(p.costBasisCents), [ln("As the statement prints it", c(p.costBasisCents), undefined, { source: "proven" })]);
+    if (p.unrealizedCents != null) add("gain", "unrealized gain", c(p.unrealizedCents), [ln("Value", c(p.valueCents)), ln("Cost basis", c(p.costBasisCents ?? 0), "−"), ln("Gain", c(p.unrealizedCents), "=")]);
+    if (p.expenseRatio != null) add("ratio", "expense ratio", r(p.expenseRatio), [ln(p.source === "OWNER" ? "Yours (Holdings)" : "From the statement where printed, else the fund's published figure", r(p.expenseRatio), undefined, { source: p.source === "OWNER" ? "assumption" : "proven" })]);
+    if ((p.annualFeeCents ?? 0) > 0) {
+      add("fee", "expense a year", c(p.annualFeeCents!), [ln("Value", c(p.valueCents)), ln("× expense ratio", r(p.expenseRatio!), "×"), ln("A year", c(p.annualFeeCents!), "=")]);
+      if (returnRate != null) {
+        const cost = costOver(p.valueCents, p.expenseRatio!, FEE_YEARS, returnRate);
+        add("cost-20y", `ending value lost to the fee over ${FEE_YEARS} years`, c(cost), [ln("Value", c(p.valueCents)), ln("The forecast's return", r(returnRate), undefined, { source: "assumption" }), ln("Expense ratio", r(p.expenseRatio!)), ln(`Value × ((1 + return)^${FEE_YEARS} − (1 + return − ratio)^${FEE_YEARS})`, c(cost), "=")]);
+      }
+    }
+  }
+  if (returnRate != null) out.push({ figure: "fee-return", describes: "The return the Fees tab prices a fee at: the forecast's", value: r(returnRate), lines: [ln("The forecast's return (Forecast page)", r(returnRate), undefined, { source: "assumption" })] });
+  for (const a of rep.accounts) {
+    if (a.feesLast12Cents) out.push({ figure: "account-fee", key: a.accountId, describes: `${a.name}: fees the statements deducted, ${a.feesWindow.from} – ${a.feesWindow.to}`, value: c(a.feesLast12Cents), lines: [ln("The fees each statement takes, over the window", c(a.feesLast12Cents), undefined, { source: "proven" })] });
+    if (a.differenceCents) out.push({ figure: "difference", key: a.accountId, describes: `${a.name}: holdings on file less the balance`, value: c(a.differenceCents), lines: [ln("The positions on file, less the statement balance that day", c(a.differenceCents), undefined, { source: "proven" })] });
+  }
+  out.push({ figure: "ratio-known", describes: "Held in funds with a known expense ratio", value: c(rep.fees.knownCents), lines: [ln("Positions with a known ratio, added up", c(rep.fees.knownCents), undefined, { source: "proven" })] });
+  out.push({ figure: "cost-known", describes: "Taxable positions with a printed cost basis", value: c(rep.gains.taxable.costKnownCents), lines: [ln("Their values, added up", c(rep.gains.taxable.costKnownCents), undefined, { source: "proven" })] });
   return out;
 }

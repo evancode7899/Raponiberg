@@ -1,7 +1,7 @@
 "use client";
 
 import { QualityBadge } from "@/components/ledger/LedgerBits";
-import { Card, StatementTable, type TableRow } from "@/components/ui/kit";
+import { Card, NotFigure, StatementTable, type TableRow } from "@/components/ui/kit";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import { rollTotalValue, rollValue, shownRollLines, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
@@ -40,7 +40,7 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
         subtitle={
           <>
             Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are time-weighted: each month&apos;s
-            Modified Dietz (money moved in or out doesn&apos;t count as performance), chained; a month with under $1,000 invested is left out. Dividends and interest are split out where the
+            Modified Dietz (money moved in or out doesn&apos;t count as performance), chained; a month with under <NotFigure why="the rule's threshold: below it a return is mostly rounding">$1,000</NotFigure> invested is left out. Dividends and interest are split out where the
             statement reports them (Fidelity); elsewhere they&apos;re inside market change.
           </>
         }

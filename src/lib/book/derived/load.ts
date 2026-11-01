@@ -60,9 +60,12 @@ export type DerivedList = { figures: DerivedFigure[]; scope: DerivedScope | null
 
 const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>) | null> = {
   investments: async ({ book, db }) => {
-    const r = buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings));
-    const figures = investmentsDerived(r);
-    return { figures, rederived: rederiveInvestments(book, r, figures), scope: { query: { affects: "NET_WORTH", from: r.asOf, to: r.asOf }, checks: INVESTMENTS_CHECKS }, through: r.asOf };
+    const [settings, profile] = await Promise.all([loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings), loadProfileSettings(db)]);
+    const r = buildInvestments(book, settings);
+    // The forecast's return prices a fee over 20 years, as the page's route serves it.
+    const returnRate = profile.outlook.returnRate;
+    const figures = investmentsDerived(r, returnRate);
+    return { figures, rederived: rederiveInvestments(book, r, figures, returnRate), scope: { query: { affects: "NET_WORTH", from: r.asOf, to: r.asOf }, checks: INVESTMENTS_CHECKS }, through: r.asOf };
   },
   car: async ({ book, db }) => {
     const g = garagePage(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage));

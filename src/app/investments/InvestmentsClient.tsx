@@ -6,8 +6,8 @@ import { BlockedNote } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
-import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Field, Loading, PageBody, PercentInput, selectCls, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Field, Loading, NotFigure, PageBody, PercentInput, selectCls, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
+import { compositeOf, sumOf, type ProofRef, type ProofTarget } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ClassAmount, ClassId, InvestmentsReport, PositionRow } from "@/lib/book/reports/investments";
 import { axisUsd, formatPercentRatio, usd0, usdDelta } from "@/lib/formatMoney";
@@ -18,8 +18,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LpPanel, PrivateFunds } from "./LpView";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
-import { growthKey, investmentsDerived } from "@/lib/book/derived/investments";
-import { cellKey, derivedTarget } from "@/lib/book/derived/types";
+import { costOver, FEE_YEARS, growthKey, investmentsDerived, positionKey } from "@/lib/book/derived/investments";
+import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
+
+/** Your target allocation, as you typed it on the Overview: an input, not a figure. */
+const TYPED_TARGET = "your target allocation, as you typed it";
 
 const TABS = ["overview", "holdings", "fees", "gains", "growth", "funds"] as const;
 type Data = { report: InvestmentsReport; settings: InvestmentSettings; /** The forecast's return. */ returnRate: number };
@@ -30,8 +33,10 @@ export function classColor(p: ChartPalette, c: ClassId) {
   return i < 0 ? p.neutral : p.series[i]!;
 }
 
-const segmentsOf = (p: ChartPalette, xs: ClassAmount[]): ShareSegment[] => xs.map((x) => ({ id: x.cls, label: classLabel(x.cls), cents: x.cents, color: classColor(p, x.cls) }));
+const segmentsOf = (p: ChartPalette, xs: ClassAmount[], proof?: (cls: string) => ProofRef): ShareSegment[] => xs.map((x) => ({ id: x.cls, label: classLabel(x.cls), cents: x.cents, color: classColor(p, x.cls), ...(proof ? { proof: proof(x.cls) } : {}) }));
 const pct = (r: number | null | undefined, d = 1) => (r == null ? "—" : formatPercentRatio(r, d));
+/** A position's figure (price, cost, gain, ratio, fee, cost-20y), from the page's derived list. */
+const posFig = (d: DerivedFigure[], p: PositionRow, col: string) => derivedTarget("investments", d, "position", positionKey(p, col));
 const ratio = (r: number | null) => (r == null ? "—" : `${(r * 100).toFixed(r < 0.001 ? 3 : 2)}%`);
 
 /** The proof behind an account's value, or the household total (no account). */
@@ -113,7 +118,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
             {tab === "overview" && <Overview data={data} save={save} saving={saving} />}
             {tab === "holdings" && <Holdings data={data} save={save} saving={saving} />}
             {tab === "fees" && <Fees r={r!} returnRate={data!.returnRate} />}
-            {tab === "gains" && <Gains r={r!} />}
+            {tab === "gains" && <Gains r={r!} returnRate={data!.returnRate} />}
             {tab === "growth" && <Growth r={r!} funds={funds} />}
             {tab === "funds" && (funds ? <PrivateFunds page={funds} /> : <Loading label="Reading the funds' notices and statements…" />)}
           </>
@@ -130,25 +135,34 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
   const r = data.report;
   const classified = r.allocation.filter((c) => c.cls !== "UNCLASSIFIED");
   const stocks = classified.filter((c) => c.cls === "US_STOCK" || c.cls === "INTL_STOCK").reduce((s, c) => s + c.share, 0);
-  const d = investmentsDerived(r);
+  const d = investmentsDerived(r, data.returnRate);
   const dt = (figure: string) => derivedTarget("investments", d, figure);
+  const cls = (c: string) => derivedTarget("investments", d, "class", c);
   const unclassified = r.allocation.find((c) => c.cls === "UNCLASSIFIED");
+  const allClasses = sumOf(r.allocation.map((a) => cls(a.cls)), r.allocation.reduce((s, a) => s + a.cents, 0));
   return (
     <>
       <StatGrid cols={4}>
         <StatCell label="Invested" value={usd0(r.totalCents)} proof={accountTarget(null, r.totalCents)}sub={`as of ${r.asOf}, as on Net worth`} />
         <StatCell proof={dt("stocks")} label="Stocks" value={pct(stocks)} sub="US + international, of all holdings" />
-        <StatCell proof={dt("fund-costs")} label="Fund costs" value={usd0(r.fees.annualCents)} sub={`a year · ${ratio(r.fees.weightedRatio)} weighted expense ratio`} />
+        <StatCell proof={dt("fund-costs")} label="Fund costs" value={usd0(r.fees.annualCents)} sub={<>a year · <ProofValue proof={dt("weighted-ratio")}>{ratio(r.fees.weightedRatio)}</ProofValue> weighted expense ratio</>} />
         <StatCell proof={dt("unrealized")} label="Unrealized gain (taxable)" value={usdDelta(r.gains.taxable.unrealizedCents)} tone={r.gains.taxable.unrealizedCents < 0 ? "neg" : "pos"} sub="where cost basis is on the statement" />
       </StatGrid>
       {unclassified && (
-        <Callout tone="info" title={`${usd0(unclassified.cents)} isn't classified yet (${pct(unclassified.share)})`}>
+        <Callout
+          tone="info"
+          title={
+            <>
+              <ProofValue proof={cls("UNCLASSIFIED")}>{usd0(unclassified.cents)}</ProofValue> isn&apos;t classified yet (<ProofValue proof={compositeOf("share", [cls("UNCLASSIFIED"), allClasses], { ratio: unclassified.share })}>{pct(unclassified.share)}</ProofValue>)
+            </>
+          }
+        >
           Securities the reference list doesn&apos;t know and accounts without a holdings list. Classify them on the Holdings tab; until then they&apos;re shown as unclassified, never guessed.
         </Callout>
       )}
       <Card title="Asset allocation" subtitle="Look-through: a target-date fund counts toward stocks and bonds by its typical glide path; funds by their reference classification or yours.">
         <ShareBar label="Asset allocation" segments={segmentsOf(p, r.allocation)} height={18} />
-        <ShareLegend segments={segmentsOf(p, r.allocation)} />
+        <ShareLegend segments={segmentsOf(p, r.allocation, cls)} />
       </Card>
       <Card title="By tax treatment" subtitle="Where each dollar sits decides how it's taxed: taxable accounts every year, tax-deferred on withdrawal, Roth and HSA (for medical costs) never.">
         <div className="flex flex-col gap-4">
@@ -172,8 +186,15 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
           ))}
         </div>
       </Card>
-      <TargetCard data={data} save={save} saving={saving} />
-      <Card title="Largest positions" subtitle="The same security across accounts counts once. Above 10% of everything invested is flagged as concentrated.">
+      <TargetCard data={data} save={save} saving={saving} cls={cls} />
+      <Card
+        title="Largest positions"
+        subtitle={
+          <>
+            The same security across accounts counts once. Above <NotFigure why="the page's rule for a concentrated position">10%</NotFigure> of everything invested is flagged as concentrated.
+          </>
+        }
+      >
         <div className={table.wrap}>
           <table className={table.table}>
             <thead className={table.head}>
@@ -192,14 +213,14 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                     {c.symbol && <span className="ml-2 text-xs text-muted">{c.name}</span>}
                   </td>
                   <td className={`${table.td} text-xs text-muted`}>{c.accounts.join(", ")}</td>
-                  <td className={table.tdR}>{usd0(c.cents)}</td>
+                  <td className={table.tdR}><ProofValue proof={derivedTarget("investments", d, "concentration", c.key)}>{usd0(c.cents)}</ProofValue></td>
                   <td className={table.tdR}>
                     {c.share > 0.1 && (
                       <Badge tone="warn" title="Over 10% of everything invested in one security">
                         concentrated
                       </Badge>
                     )}{" "}
-                    {pct(c.share)}
+                    <ProofValue proof={compositeOf("share", [derivedTarget("investments", d, "concentration", c.key), accountTarget(null, r.totalCents)], { ratio: c.share })}>{pct(c.share)}</ProofValue>
                   </td>
                 </tr>
               ))}
@@ -211,7 +232,7 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
   );
 }
 
-function TargetCard({ data, save, saving }: { data: Data; save: (s: InvestmentSettings) => void; saving: boolean }) {
+function TargetCard({ data, save, saving, cls }: { data: Data; save: (s: InvestmentSettings) => void; saving: boolean; cls: (c: string) => ProofRef }) {
   const [draft, setDraft] = useState<Weights>(data.settings.target ?? {});
   // A newly saved target resets the draft (adjusted during render, not in an effect).
   const [seen, setSeen] = useState(data.settings.target);
@@ -221,6 +242,9 @@ function TargetCard({ data, save, saving }: { data: Data; save: (s: InvestmentSe
   }
   const sum = Object.values(draft).reduce((s, v) => s + (v ?? 0), 0);
   const drift = data.report.drift;
+  const d_ = investmentsDerived(data.report, data.returnRate);
+  const classified = data.report.allocation.filter((a) => a.cls !== "UNCLASSIFIED");
+  const allClassified = sumOf(classified.map((a) => cls(a.cls)), classified.reduce((s, a) => s + a.cents, 0));
   return (
     <Card
       title="Target allocation"
@@ -238,7 +262,12 @@ function TargetCard({ data, save, saving }: { data: Data; save: (s: InvestmentSe
           </Field>
         ))}
       </div>
-      <p className={`mt-2 text-xs ${Math.abs(sum - 1) > 0.001 ? "text-warn" : "text-muted"}`}>Total {pct(sum, 1)} {Math.abs(sum - 1) > 0.001 && "— must add up to 100%"}</p>
+      <p className={`mt-2 text-xs ${Math.abs(sum - 1) > 0.001 ? "text-warn" : "text-muted"}`}>Total <NotFigure why={TYPED_TARGET}>{pct(sum, 1)}</NotFigure>{" "}
+        {Math.abs(sum - 1) > 0.001 && (
+          <>
+            — must add up to <NotFigure why={TYPED_TARGET}>100%</NotFigure>
+          </>
+        )}</p>
       {drift && (
         <div className={`${table.wrap} mt-3`}>
           <table className={table.table}>
@@ -254,10 +283,20 @@ function TargetCard({ data, save, saving }: { data: Data; save: (s: InvestmentSe
               {drift.map((d) => (
                 <tr key={d.cls} className={table.tr}>
                   <td className={table.td}>{classLabel(d.cls)}</td>
-                  <td className={table.tdR}>{pct(d.currentShare)}</td>
-                  <td className={table.tdR}>{pct(d.targetShare)}</td>
+                  <td className={table.tdR}>
+                    {classified.some((a) => a.cls === d.cls) ? <ProofValue proof={compositeOf("share", [cls(d.cls), allClassified], { ratio: d.currentShare })}>{pct(d.currentShare)}</ProofValue> : "—"}
+                  </td>
+                  <td className={table.tdR}>
+                    <NotFigure why={TYPED_TARGET}>{pct(d.targetShare)}</NotFigure>
+                  </td>
                   <td className={`${table.tdR} ${Math.abs(d.deltaCents) > 0.05 * data.report.totalCents ? "font-semibold" : ""}`}>
-                    {d.deltaCents === 0 ? "—" : `${d.deltaCents > 0 ? "buy" : "sell"} ${usd0(Math.abs(d.deltaCents))}`}
+                    {d.deltaCents === 0 ? (
+                      "—"
+                    ) : (
+                      <>
+                        {d.deltaCents > 0 ? "buy" : "sell"} <ProofValue proof={derivedTarget("investments", d_, "drift", d.cls)}>{usd0(Math.abs(d.deltaCents))}</ProofValue>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -280,6 +319,7 @@ const STATUS: Record<string, { tone: "pos" | "warn" | "neg" | "neutral"; label: 
 
 function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSettings) => void; saving: boolean }) {
   const r = data.report;
+  const d = useMemo(() => investmentsDerived(r, data.returnRate), [r, data.returnRate]);
   const byAccount = useMemo(() => {
     const m = new Map<string, PositionRow[]>();
     for (const p of r.positions) m.set(p.accountId, [...(m.get(p.accountId) ?? []), p]);
@@ -306,7 +346,13 @@ function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSett
             subtitle={
               <>
                 <ProofValue proof={accountTarget(a.accountId, a.valueCents)}>{usd0(a.valueCents)}</ProofValue>
-                {` as of ${a.asOf}${a.holdingsAsOf && a.holdingsAsOf !== a.asOf ? ` · holdings as of ${a.holdingsAsOf}` : ""}${a.differenceCents ? ` · positions off by ${usdDelta(a.differenceCents)}` : ""}`}
+                {` as of ${a.asOf}${a.holdingsAsOf && a.holdingsAsOf !== a.asOf ? ` · holdings as of ${a.holdingsAsOf}` : ""}`}
+                {a.differenceCents ? (
+                  <>
+                    {" · positions off by "}
+                    <ProofValue proof={derivedTarget("investments", d, "difference", a.accountId)}>{usdDelta(a.differenceCents)}</ProofValue>
+                  </>
+                ) : null}
               </>
             }
           >
@@ -334,18 +380,18 @@ function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                       <td className={`${table.td} text-xs`}>
                         {p.weights ? (
                           <span className="text-fg-2" title={p.source === "NAME_RULE" ? "From the fund's name" : p.source === "OWNER" ? "Your classification" : undefined}>
-                            {weightsLabel(p.weights)}
+                            <NotFigure why="the security's classification: the reference list's, or yours">{weightsLabel(p.weights)}</NotFigure>
                           </span>
                         ) : (
                           <Badge tone="warn">unclassified</Badge>
                         )}
                       </td>
                       <td className={table.tdR}>{p.quantity == null ? "—" : p.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })}</td>
-                      <td className={table.tdR}>{p.price == null ? "—" : `$${p.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}</td>
+                      <td className={table.tdR}>{p.price == null ? "—" : <ProofValue proof={posFig(d, p, "price")}>{`${p.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}</ProofValue>}</td>
                       <td className={`${table.tdR} font-medium`}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
-                      <td className={`${table.tdR} text-muted`}>{p.costBasisCents == null ? "—" : usd0(p.costBasisCents)}</td>
-                      <td className={`${table.tdR} ${p.unrealizedCents == null ? "" : p.unrealizedCents < 0 ? "text-neg" : "text-pos"}`}>{p.unrealizedCents == null ? "—" : usdDelta(p.unrealizedCents)}</td>
-                      <td className={`${table.tdR} text-muted`}>{ratio(p.expenseRatio)}</td>
+                      <td className={`${table.tdR} text-muted`}>{p.costBasisCents == null ? "—" : <ProofValue proof={posFig(d, p, "cost")}>{usd0(p.costBasisCents)}</ProofValue>}</td>
+                      <td className={`${table.tdR} ${p.unrealizedCents == null ? "" : p.unrealizedCents < 0 ? "text-neg" : "text-pos"}`}>{p.unrealizedCents == null ? "—" : <ProofValue proof={posFig(d, p, "gain")}>{usdDelta(p.unrealizedCents)}</ProofValue>}</td>
+                      <td className={`${table.tdR} text-muted`}>{p.expenseRatio == null ? "—" : <ProofValue proof={posFig(d, p, "ratio")}>{ratio(p.expenseRatio)}</ProofValue>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -365,6 +411,7 @@ const weightsLabel = (w: Weights) =>
     .join(" · ");
 
 function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSettings) => void; saving: boolean }) {
+  const d = useMemo(() => investmentsDerived(data.report, data.returnRate), [data.report, data.returnRate]);
   const [picks, setPicks] = useState<Record<string, { cls: AssetClass | ""; er: number | null }>>({});
   const apply = () => {
     const securities = { ...data.settings.securities };
@@ -404,7 +451,9 @@ function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                     <span className="font-medium">{u.symbol ?? u.name}</span>
                     {u.symbol && <span className="ml-2 text-xs text-muted">{u.name}</span>}
                   </td>
-                  <td className={table.tdR}>{usd0(u.cents)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={derivedTarget("investments", d, "unclassified", u.key)}>{usd0(u.cents)}</ProofValue>
+                  </td>
                   <td className={table.td}>
                     <select className={selectCls} value={v.cls} onChange={(e) => setPicks({ ...picks, [u.key]: { ...v, cls: e.target.value as AssetClass | "" } })}>
                       <option value="">—</option>
@@ -433,13 +482,13 @@ function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSett
 function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
   const funds = r.positions.filter((p) => (p.annualFeeCents ?? 0) > 0).sort((a, b) => (b.annualFeeCents ?? 0) - (a.annualFeeCents ?? 0));
   const unknown = r.positions.filter((p) => p.expenseRatio == null && p.valueCents > 0).sort((a, b) => b.valueCents - a.valueCents);
-  const d = investmentsDerived(r);
+  const d = investmentsDerived(r, returnRate);
   const dt = (figure: string) => derivedTarget("investments", d, figure);
   return (
     <>
       <StatGrid cols={4}>
         <StatCell proof={dt("fund-costs")} label="Fund expenses" value={usd0(r.fees.annualCents)} sub="a year, at today's balances" />
-        <StatCell proof={dt("weighted-ratio")} label="Weighted expense ratio" value={ratio(r.fees.weightedRatio)} sub={`over ${usd0(r.fees.knownCents)} with a known ratio`} />
+        <StatCell proof={dt("weighted-ratio")} label="Weighted expense ratio" value={ratio(r.fees.weightedRatio)} sub={<>over <ProofValue proof={dt("ratio-known")}>{usd0(r.fees.knownCents)}</ProofValue> with a known ratio</>} />
         <StatCell proof={dt("account-fees")} label="Account fees, last 12 months" value={usd0(-r.fees.accountFeesLast12Cents)} sub="advisory, admin and plan fees the statements deducted" />
         <StatCell proof={dt("ratio-unknown")} label="Ratio unknown" value={usd0(r.fees.unknownCents)} tone={r.fees.unknownCents ? "warn" : "neutral"} sub="plan funds without a ticker, unlisted securities" />
       </StatGrid>
@@ -462,15 +511,15 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
                   <td className={`${table.td} font-medium`}>{p.symbol ?? p.name}</td>
                   <td className={`${table.td} text-xs text-muted`}>{p.account}</td>
                   <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
-                  <td className={table.tdR}>{ratio(p.expenseRatio)}</td>
-                  <td className={table.tdR}>{usd0(p.annualFeeCents)}</td>
-                  <td className={`${table.tdR} text-muted`}>{usd0(costOver(p.valueCents, p.expenseRatio!, 20, returnRate))}</td>
+                  <td className={table.tdR}><ProofValue proof={posFig(d, p, "ratio")}>{ratio(p.expenseRatio)}</ProofValue></td>
+                  <td className={table.tdR}><ProofValue proof={posFig(d, p, "fee")}>{usd0(p.annualFeeCents)}</ProofValue></td>
+                  <td className={`${table.tdR} text-muted`}><ProofValue proof={posFig(d, p, "cost-20y")}>{usd0(costOver(p.valueCents, p.expenseRatio!, FEE_YEARS, returnRate))}</ProofValue></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-muted">* Ending value lost to the fee over 20 years at the Forecast&apos;s {ratio(returnRate)} return, with no new money: value × ((1 + return)²⁰ − (1 + return − ratio)²⁰).</p>
+        <p className="mt-2 text-[11px] text-muted">* Ending value lost to the fee over 20 years at the Forecast&apos;s <ProofValue proof={dt("fee-return")}>{ratio(returnRate)}</ProofValue> return, with no new money: value × ((1 + return)²⁰ − (1 + return − ratio)²⁰).</p>
       </Card>
       {unknown.length > 0 && (
         <Card title="Expense ratio unknown" subtitle="Add the ratio from the fund's fact sheet or your plan's fee disclosure on the Holdings tab.">
@@ -496,7 +545,7 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
                   <td className={`${table.td} text-xs text-muted`}>
                     {a.feesWindow.from} → {a.feesWindow.to}
                   </td>
-                  <td className={table.tdR}>{a.feesLast12Cents ? usd0(-a.feesLast12Cents) : "—"}</td>
+                  <td className={table.tdR}>{a.feesLast12Cents ? <ProofValue proof={derivedTarget("investments", d, "account-fee", a.accountId)}>{usd0(-a.feesLast12Cents)}</ProofValue> : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -507,26 +556,24 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
   );
 }
 
-/** What a fee takes from the ending value over `years`, at return `rate` (the forecast's). */
-const costOver = (cents: number, er: number, years: number, rate: number) => Math.round(cents * ((1 + rate) ** years - (1 + rate - er) ** years));
 
 // ---------------------------------------------------------------------------- gains
 
-function Gains({ r }: { r: InvestmentsReport }) {
+function Gains({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
   const g = r.gains.taxable;
-  const d = investmentsDerived(r);
+  const d = investmentsDerived(r, returnRate);
   const dt = (figure: string) => derivedTarget("investments", d, figure);
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={dt("unrealized")} label="Taxable unrealized" value={usdDelta(g.unrealizedCents)} tone={g.unrealizedCents < 0 ? "neg" : "pos"} sub={`on ${usd0(g.costKnownCents)} with known cost`} />
+        <StatCell proof={dt("unrealized")} label="Taxable unrealized" value={usdDelta(g.unrealizedCents)} tone={g.unrealizedCents < 0 ? "neg" : "pos"} sub={<>on <ProofValue proof={dt("cost-known")}>{usd0(g.costKnownCents)}</ProofValue> with known cost</>} />
         <StatCell proof={dt("gains")} label="Gains" value={usd0(g.gainCents)} tone="pos" sub="positions above cost" />
         <StatCell proof={dt("losses")} label="Losses" value={usd0(g.lossCents)} tone={g.lossCents < 0 ? "neg" : "neutral"} sub="positions below cost" />
         <StatCell proof={dt("cost-unknown")} label="Cost unknown" value={usd0(g.costUnknownCents)} tone={g.costUnknownCents ? "warn" : "neutral"} sub="taxable positions without a printed basis" />
       </StatGrid>
       <Card
         title="Tax-loss harvesting candidates"
-        subtitle="Taxable positions below cost. Selling realizes the loss: it offsets gains, then up to $3,000 of ordinary income a year, with the rest carried forward. Buying the same or a substantially identical security within 30 days before or after the sale (in any account, including IRAs) is a wash sale and disallows the loss. Holding period (short vs long term) isn't on the statement — check the lot details before selling. Not tax advice."
+        subtitle={<>Taxable positions below cost. Selling realizes the loss: it offsets gains, then up to <NotFigure why="set by tax law">$3,000</NotFigure> of ordinary income a year, with the rest carried forward. Buying the same or a substantially identical security within 30 days before or after the sale (in any account, including IRAs) is a wash sale and disallows the loss. Holding period (short vs long term) isn&apos;t on the statement — check the lot details before selling. Not tax advice.</>}
       >
         {r.gains.harvest.length === 0 ? (
           <p className="text-xs text-muted">No taxable position is below its cost basis.</p>
@@ -552,9 +599,9 @@ function Gains({ r }: { r: InvestmentsReport }) {
                     </td>
                     <td className={`${table.td} text-xs text-muted`}>{p.account}</td>
                     <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
-                    <td className={`${table.tdR} text-muted`}>{usd0(p.costBasisCents)}</td>
-                    <td className={`${table.tdR} text-neg`}>{usdDelta(p.unrealizedCents)}</td>
-                    <td className={table.tdR}>{p.costBasisCents ? pct(p.unrealizedCents! / Math.abs(p.costBasisCents)) : "—"}</td>
+                    <td className={`${table.tdR} text-muted`}><ProofValue proof={posFig(d, p, "cost")}>{usd0(p.costBasisCents)}</ProofValue></td>
+                    <td className={`${table.tdR} text-neg`}><ProofValue proof={posFig(d, p, "gain")}>{usdDelta(p.unrealizedCents)}</ProofValue></td>
+                    <td className={table.tdR}>{p.costBasisCents && p.costBasisCents > 0 ? <ProofValue proof={compositeOf("share", [posFig(d, p, "gain"), posFig(d, p, "cost")], { ratio: p.unrealizedCents! / p.costBasisCents })}>{pct(p.unrealizedCents! / p.costBasisCents)}</ProofValue> : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -584,7 +631,7 @@ function Gains({ r }: { r: InvestmentsReport }) {
                       {p.account} · {p.treatment}
                     </td>
                     <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
-                    <td className={`${table.tdR} ${p.unrealizedCents! < 0 ? "text-neg" : "text-pos"}`}>{usdDelta(p.unrealizedCents)}</td>
+                    <td className={`${table.tdR} ${p.unrealizedCents! < 0 ? "text-neg" : "text-pos"}`}><ProofValue proof={posFig(d, p, "gain")}>{usdDelta(p.unrealizedCents)}</ProofValue></td>
                   </tr>
                 ))}
             </tbody>

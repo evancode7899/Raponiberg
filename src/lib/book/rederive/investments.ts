@@ -1,5 +1,6 @@
 import { decompose, valueAt } from "../../ledger/timeline.ts";
 import type { DerivedFigure } from "../derived/types.ts";
+import { FEE_YEARS } from "../derived/investments.ts";
 import { household } from "../householdView.ts";
 import type { Book } from "../load.ts";
 import { centsRoute, invariant, ratioRoute, rederiveList } from "../proof/independence.ts";
@@ -12,7 +13,7 @@ import type { InvestmentsReport, PositionRow } from "../reports/investments.ts";
  * position, nor its totals), the money held from the ledger's balances summed account by
  * account, and each growth series from the account's timeline itself.
  */
-export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "asOf" | "positions" | "accounts" | "growth">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "asOf" | "positions" | "accounts" | "growth">, figures: readonly DerivedFigure[], returnRate: number | null = null): Record<string, Rederivation> {
   const ledger = household(book).ledger;
   const timeline = new Map(ledger.accounts.map((a) => [a.id, a.timeline]));
   const investment = new Set(ledger.accounts.filter((a) => a.isInvestment).map((a) => a.id));
@@ -85,6 +86,46 @@ export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "as
         const g = grown(acct!, end!);
         return [centsRoute(TL, v, col === "value" ? g.value : col === "money-in" ? g.moneyIn : g.value - g.moneyIn, `through ${end}`, 1)];
       }
+      case "class": {
+        const cls = f.key as keyof NonNullable<PositionRow["weights"]> | "UNCLASSIFIED";
+        const cents = cls === "UNCLASSIFIED" ? sum(P.filter((p) => !p.weights), (p) => p.valueCents) : sum(P, (p) => Math.round(p.valueCents * (p.weights?.[cls] ?? 0)));
+        return [centsRoute(POS, v, cents, "each position's value × its weight in the class", P.length)];
+      }
+      case "concentration":
+        return [centsRoute(POS, v, sum(P.filter((p) => p.key === f.key), (p) => p.valueCents), "the security's positions in every account")];
+      case "unclassified":
+        return [centsRoute(POS, v, sum(P.filter((p) => !p.weights && p.key === f.key), (p) => p.valueCents), "its positions without a classification")];
+      case "ratio-known":
+        return [centsRoute(POS, v, known, "positions with a known expense ratio")];
+      case "cost-known":
+        return [centsRoute(POS, v, sum(withCost, (p) => p.valueCents), "taxable positions with a printed cost")];
+      case "account-fee": {
+        const a = rep.accounts.find((x) => x.accountId === f.key);
+        if (!a) return null;
+        return [centsRoute("the account's timeline fees over its last twelve months", v, decompose(timeline.get(a.accountId)!, a.feesWindow.from, a.feesWindow.to).feesCents, "the fees each statement takes, over the window")];
+      }
+      case "position": {
+        const [acct, key, lot, col] = (f.key ?? "").split("|");
+        const p = P.find((x) => x.accountId === acct && x.key === key && String(x.lot ?? 0) === lot);
+        if (!p) return null;
+        if (col === "gain" && p.costBasisCents != null) return [centsRoute(POS, v, gain(p), "value less printed cost")];
+        if (col === "fee") return [centsRoute(POS, v, fee(p), "value × expense ratio")];
+        if (col === "cost-20y" && returnRate != null) {
+          // Year by year, the fund with and without its fee: what the fee took from the ending value.
+          let gross = p.valueCents;
+          let net = p.valueCents;
+          for (let i = 0; i < FEE_YEARS; i++) {
+            gross *= 1 + returnRate;
+            net *= 1 + returnRate - p.expenseRatio!;
+          }
+          return [centsRoute("the fund grown year by year with and without its fee", v, Math.round(gross - net), `${FEE_YEARS} years at the forecast's return`, 1)];
+        }
+        return { none: "As the statement prints it (price, cost basis), or the fund's published expense ratio where none prints: each is its own source." };
+      }
+      case "drift":
+      case "difference":
+      case "fee-return":
+        return { none: "Your target share of everything classified less what the class holds; holdings on file less the statement balance; the forecast's return on the saved drivers. The class's dollars and the balance are re-derived on their own." };
       case "treatment":
         return [centsRoute(POS, v, sum(rep.positions.filter((p) => p.treatment === f.key), (p) => p.valueCents), "positions held that way")];
       case "treatment-share":

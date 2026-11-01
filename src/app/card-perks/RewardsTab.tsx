@@ -2,13 +2,15 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { Badge, Card, table } from "@/components/ui/kit";
+import { Badge, Card, NotFigure, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { CardPerksPage } from "@/lib/cardPerks/page";
 import type { Reconciliation, RewardsPool } from "@/lib/cardPerks/types";
+import type { ProofRef } from "@/components/ui/proof/context";
+import { poolLast, poolStretches } from "@/lib/book/derived/cardPerks";
 import { usd0 } from "@/lib/formatMoney";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { fmtCpp, fmtDate, fmtMonth, fmtRewards, SectionTitle, shortName, SourceTag } from "./parts";
+import { fmtCpp, fmtDate, fmtMonth, fmtRewards, SectionTitle, shortName, SourceTag, TERMS, useCardFigures, type CardFigures } from "./parts";
 
 const BASIS = {
   PRINTED: { label: "Printed", tone: "pos" as const, hint: "The statement prints what this cycle earned." },
@@ -24,11 +26,12 @@ export function RewardsTab({ r }: { r: CardPerksPage }) {
   const noRewards = r.cards.filter((c) => c.program.kind === "NONE");
 
   const mixMax = Math.max(1, ...r.rewardsMix.map((x) => x.valueCents));
+  const cf = useCardFigures(r);
 
   return (
     <>
       {r.pools.map((p) => (
-        <PoolCard key={p.key} p={p} r={r} ui={ui} color={chart.series[p.program.kind === "CASH" ? 2 : 0]!} />
+        <PoolCard key={p.key} p={p} r={r} cf={cf} ui={ui} color={chart.series[p.program.kind === "CASH" ? 2 : 0]!} />
       ))}
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -43,7 +46,7 @@ export function RewardsTab({ r }: { r: CardPerksPage }) {
                   <span className="h-2 overflow-hidden rounded-full bg-surface-3">
                     <span className="block h-full rounded-full bg-accent" style={{ width: `${(v / mixMax) * 100}%` }} />
                   </span>
-                  <span className="num text-right font-medium">{usd0(v)}</span>
+                  <span className="num text-right font-medium"><ProofValue proof={cf.mix(label)}>{usd0(v)}</ProofValue></span>
                 </li>
               ))}
             </ul>
@@ -56,10 +59,12 @@ export function RewardsTab({ r }: { r: CardPerksPage }) {
                 <li key={c.accountId} className="flex items-center justify-between gap-3 py-2">
                   <span className="min-w-0">
                     <span className="block truncate font-medium text-fg">{shortName(c)}</span>
-                    <span className="block truncate text-[11px] text-muted">{c.program.statementNote}</span>
+                    <span className="block truncate text-[11px] text-muted">
+                      <NotFigure why={TERMS}>{c.program.statementNote}</NotFigure>
+                    </span>
                   </span>
                   <span className="shrink-0 text-right">
-                    <span className="num block font-medium">{fmtRewards(c.rewards.kind, c.rewards.earned, true)}</span>
+                    <span className="num block font-medium">{c.rewards.kind === "CASH" ? <ProofValue proof={cf.card(c.accountId, "earned")}>{fmtRewards(c.rewards.kind, c.rewards.earned, true)}</ProofValue> : fmtRewards(c.rewards.kind, c.rewards.earned, true)}</span>
                     <SourceTag source={c.rewards.source} />
                   </span>
                 </li>
@@ -78,11 +83,15 @@ export function RewardsTab({ r }: { r: CardPerksPage }) {
   );
 }
 
-function PoolCard({ p, r, ui, color }: { p: RewardsPool; r: CardPerksPage; ui: ReturnType<typeof chartChrome>; color: string }) {
+function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; cf: CardFigures; ui: ReturnType<typeof chartChrome>; color: string }) {
   const kind = p.program.kind;
+  const cash = kind === "CASH";
+  const yearFig = (col: string) => cf.pool(p.key, "year", col);
+  /** A pool amount: dollars (cash back) open their figure; points aren't money. */
+  const amount = (col: string, n: number) => (cash ? <ProofValue proof={yearFig(col)}>{fmtRewards(kind, n, false)}</ProofValue> : fmtRewards(kind, n, true));
   const names = p.accountIds.map((id) => r.cards.find((c) => c.accountId === id)).filter((c) => !!c);
-  const stretches = p.stretches.filter((s) => s.to.startsWith(`${r.year}-`)).reverse();
-  const last = p.balances.filter((b) => b.date <= `${r.year}-12-31`).at(-1);
+  const stretches = poolStretches(p, r.year).reverse();
+  const last = poolLast(p, r.year);
   const { posted, expected, redeemed } = p.year;
   const valueOf = (n: number) => (kind === "CASH" ? n : n * p.centsPerPoint);
   const data = p.balances.map((b) => ({ date: b.date, label: fmtMonth(b.date), balance: kind === "CASH" ? b.balance / 100 : b.balance }));
@@ -95,7 +104,7 @@ function PoolCard({ p, r, ui, color }: { p: RewardsPool; r: CardPerksPage; ui: R
           <span className="text-xs font-normal text-muted">{names.length ? names.map((c) => shortName(c)).join(" + ") : "cards not shown this year"}</span>
         </span>
       }
-      subtitle={p.program.statementNote}
+      subtitle={<NotFigure why={TERMS}>{p.program.statementNote}</NotFigure>}
     >
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div className="space-y-3">
@@ -111,21 +120,26 @@ function PoolCard({ p, r, ui, color }: { p: RewardsPool; r: CardPerksPage; ui: R
               </dd>
               {last && kind === "POINTS" && (
                 <dd className="text-[11px] text-muted">
-                  ≈ {usd0(valueOf(last.balance))} at {fmtCpp(p.centsPerPoint)}
+                  ≈ <ProofValue proof={cf.pool(p.key, "balance", "value")}>{usd0(valueOf(last.balance))}</ProofValue> at {fmtCpp(p.centsPerPoint)}
                 </dd>
               )}
             </div>
             <div>
               <dt className="text-muted">Posted in {r.year}</dt>
-              <dd className="num text-lg font-semibold text-accent">{fmtRewards(kind, posted, kind !== "CASH")}</dd>
+              <dd className="num text-lg font-semibold text-accent">{amount("posted", posted)}</dd>
               <dd className="text-[11px] text-muted">
-                expected {fmtRewards(kind, expected, kind !== "CASH")}
-                {expected > 0 && ` · ${posted >= expected ? "+" : ""}${Math.round(((posted - expected) / expected) * 100)}%`}
+                expected {amount("expected", expected)}
+                {expected > 0 && (
+                  <>
+                    {" · "}
+                    <ProofValue proof={yearFig("vs-expected")}>{`${posted >= expected ? "+" : ""}${Math.round(((posted - expected) / expected) * 100)}%`}</ProofValue>
+                  </>
+                )}
               </dd>
             </div>
             <div>
               <dt className="text-muted">Left the balance in {r.year}</dt>
-              <dd className="num font-medium">{redeemed ? fmtRewards(kind, redeemed, kind !== "CASH") : "—"}</dd>
+              <dd className="num font-medium">{redeemed ? amount("redeemed", redeemed) : "—"}</dd>
               <dd className="text-[11px] text-muted">transfers, redemptions, cash-outs</dd>
             </div>
             <div>
@@ -167,7 +181,7 @@ function PoolCard({ p, r, ui, color }: { p: RewardsPool; r: CardPerksPage; ui: R
                 </thead>
                 <tbody>
                   {stretches.map((s) => (
-                    <StretchRow key={`${s.from}|${s.to}`} s={s} kind={kind} />
+                    <StretchRow key={`${s.from}|${s.to}`} s={s} kind={kind} fig={(col) => cf.pool(p.key, `${s.from}|${s.to}`, col)} />
                   ))}
                 </tbody>
               </table>
@@ -185,9 +199,11 @@ function PoolCard({ p, r, ui, color }: { p: RewardsPool; r: CardPerksPage; ui: R
   );
 }
 
-function StretchRow({ s, kind }: { s: Reconciliation; kind: "POINTS" | "CASH" | "NONE" }) {
+function StretchRow({ s, kind, fig }: { s: Reconciliation; kind: "POINTS" | "CASH" | "NONE"; fig: (col: string) => ProofRef }) {
   const b = BASIS[s.basis];
   const whole = kind !== "CASH";
+  /** Cash back opens its figure (derived/cardPerks.ts); points aren't money. */
+  const amt = (col: string, n: number, text = fmtRewards(kind, n, whole)) => (whole ? text : <ProofValue proof={fig(col)}>{text}</ProofValue>);
   const big = Math.abs(s.difference) > Math.max(500, s.expected * 0.1);
   return (
     <tr className={table.tr}>
@@ -197,12 +213,12 @@ function StretchRow({ s, kind }: { s: Reconciliation; kind: "POINTS" | "CASH" | 
           {b.label}
         </Badge>
       </td>
-      <td className={table.tdR}>{fmtRewards(kind, s.expected, whole)}</td>
-      <td className={`${table.tdR} font-medium`}>{fmtRewards(kind, s.posted, whole)}</td>
+      <td className={table.tdR}>{amt("expected", s.expected)}</td>
+      <td className={`${table.tdR} font-medium`}>{amt("posted", s.posted)}</td>
       <td className={`${table.tdR} ${big ? (s.difference > 0 ? "text-pos" : "text-warn") : "text-muted"}`}>
-        {s.difference === 0 ? "—" : `${s.difference > 0 ? "+" : "−"}${fmtRewards(kind, Math.abs(s.difference), whole)}`}
+        {s.difference === 0 ? "—" : amt("difference", s.difference, `${s.difference > 0 ? "+" : "−"}${fmtRewards(kind, Math.abs(s.difference), whole)}`)}
       </td>
-      <td className={`${table.tdR} text-muted`}>{s.redeemed ? fmtRewards(kind, s.redeemed, whole) : "—"}</td>
+      <td className={`${table.tdR} text-muted`}>{s.redeemed ? amt("redeemed", s.redeemed) : "—"}</td>
       <td className={table.tdR}>
         <ProofValue proof={{ descriptor: { report: "statement", statementId: s.closingStatementId }, shownCents: null }}>{fmtRewards(kind, s.closing, whole)}</ProofValue>
       </td>

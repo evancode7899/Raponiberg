@@ -9,6 +9,7 @@ import { EmptyState, ErrorNote, Loading, PageBody, Segmented, StatCell, StatGrid
 import type { CardPerksResponse } from "@/lib/cardPerks/page";
 import type { CardPerksSettings } from "@/lib/cardPerks/settings";
 import { usd0 } from "@/lib/formatMoney";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useCallback, useEffect, useState } from "react";
 import { CreditsTab } from "./CreditsTab";
 import { OptimizerTab } from "./OptimizerTab";
@@ -105,15 +106,15 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
                 label="Net value"
                 value={usd0(t.netCents)}
                 tone={t.netCents >= 0 ? "pos" : "neg"}
-                sub={`rewards + credits + offers − ${usd0(t.feesCents)} in fees`}
+                sub={<>rewards + credits + offers − <ProofValue proof={dp("fees")}>{usd0(t.feesCents)}</ProofValue> in fees</>}
               />
-              <StatCell proof={dp("rewards")} blockers={r.blockers} label="Rewards earned" value={usd0(t.rewardsValueCents)} tone="accent" sub={`on ${usd0(t.spendCents)} of card spending`} />
+              <StatCell proof={dp("rewards")} blockers={r.blockers} label="Rewards earned" value={usd0(t.rewardsValueCents)} tone="accent" sub={<>on <ProofValue proof={dp("spend")}>{usd0(t.spendCents)}</ProofValue> of card spending</>} />
               <StatCell proof={dp("credits")} blockers={r.blockers}
                 label="Credits used"
                 value={usd0(t.perksValueCents + t.offersCents)}
-                sub={`${usd0(t.perksValueCents)} perks · ${usd0(t.offersCents)} offers & bonuses`}
+                sub={<><ProofValue proof={dp("perks")}>{usd0(t.perksValueCents)}</ProofValue> perks · <ProofValue proof={dp("offers")}>{usd0(t.offersCents)}</ProofValue> offers & bonuses</>}
               />
-              <StatCell proof={dp("capture")} blockers={r.blockers} label="Perk capture" value={pct(t.captureRate)} tone={t.captureRate == null ? "neutral" : t.captureRate >= 0.75 ? "pos" : t.captureRate >= 0.4 ? "warn" : "neg"} sub={`${usd0(t.missedCents)} let lapse`} />
+              <StatCell proof={dp("capture")} blockers={r.blockers} label="Perk capture" value={pct(t.captureRate)} tone={t.captureRate == null ? "neutral" : t.captureRate >= 0.75 ? "pos" : t.captureRate >= 0.4 ? "warn" : "neg"} sub={<><ProofValue proof={dp("missed")}>{usd0(t.missedCents)}</ProofValue> let lapse</>} />
               <StatCell proof={dp("remaining")} blockers={r.blockers}
                 label="Still to use"
                 value={usd0(t.remainingCents)}
