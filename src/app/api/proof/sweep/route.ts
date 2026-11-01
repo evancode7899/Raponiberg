@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  *
  * Pages clear their figures from it (lib/book/proof/clearance.ts), so it never keeps them
  * waiting: while the sweep of the data as it is now runs it answers 202 with that data's
- * stamp, and the page shows "verifying…" and asks again. `?wait=1` waits for the report
+ * stamp, and the page shows its figures meanwhile and asks again. `?wait=1` waits for the report
  * instead (Statements → Checks). A sweep that failed answers 503: pages withhold every figure.
  */
 export async function GET(request: NextRequest) {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { dataStamp } from "../cache.ts";
+import { keepSweep, restoreSweep } from "./sweepStore.ts";
 
 /**
  * The proof sweep (sweep.ts) runs in a process of its own (scripts/proof-sweep.ts --child),
@@ -12,7 +13,8 @@ import { dataStamp } from "../cache.ts";
  * One sweep at a time, for the data as it is (dataStamp). When the data changes while one
  * runs, it's stopped at once (its answer would describe data that's gone) and whoever was
  * waiting gets the sweep of the data as it is now. The last finished answer is kept until
- * the data changes.
+ * the data changes, and on disk for the next launch (sweepStore.ts): reopened with nothing
+ * changed, the app answers at once.
  */
 
 /** A sweep under way: its answer (JSON text), and how to stop it. */
@@ -36,8 +38,18 @@ class Superseded extends Error {}
 /** How many times a caller waits out a sweep the data overtook before giving up for now. */
 const MAX_RESTARTS = 5;
 
-export function createSweepRunner(opts: { stamp: () => string; run: (stamp: string) => SweepJob; pollMs?: number }): SweepRunner {
-  const { stamp, run, pollMs = 1000 } = opts;
+export function createSweepRunner(opts: {
+  stamp: () => string;
+  run: (stamp: string) => SweepJob;
+  pollMs?: number;
+  /** A kept answer for this data, from an earlier launch. */
+  restore?: (stamp: string) => string | null;
+  /** Keeps a finished answer for a later launch. */
+  keep?: (stamp: string, body: string) => void;
+}): SweepRunner {
+  const { stamp, run, pollMs = 1000, restore, keep } = opts;
+  // The stamps already looked up on disk, so a page asking again doesn't read it again.
+  const looked = new Set<string>();
   let done: { stamp: string; body: string } | null = null;
   let current: { stamp: string; result: Promise<string> } | null = null;
   // The last sweep that failed outright (not overtaken), so a page hears why rather than waiting forever.
@@ -63,7 +75,9 @@ export function createSweepRunner(opts: { stamp: () => string; run: (stamp: stri
     };
     entry.result.then(
       (body) => {
-        if (stamp() === s) done = { stamp: s, body };
+        if (stamp() !== s) return;
+        done = { stamp: s, body };
+        keep?.(s, body);
       },
       (e) => {
         if (!(e instanceof Superseded) && stamp() === s) failed = { stamp: s, error: e instanceof Error ? e.message : String(e) };
@@ -78,6 +92,14 @@ export function createSweepRunner(opts: { stamp: () => string; run: (stamp: stri
     const s = stamp();
     if (done?.stamp === s) return Promise.resolve(done.body);
     if (current?.stamp === s) return current.result;
+    if (restore && !looked.has(s)) {
+      looked.add(s);
+      const kept = restore(s);
+      if (kept != null) {
+        done = { stamp: s, body: kept };
+        return Promise.resolve(kept);
+      }
+    }
     return start(s);
   };
 
@@ -101,6 +123,8 @@ export function createSweepRunner(opts: { stamp: () => string; run: (stamp: stri
         return { state: "failed", error };
       }
       void forNow().catch(() => {});
+      // A sweep kept from the last launch answers at once.
+      if (done?.stamp === s) return { state: "ready", body: done.body };
       return { state: "pending" };
     },
     warm() {
@@ -131,4 +155,4 @@ function runChild(): SweepJob {
 const g = globalThis as unknown as { __pfSweep?: SweepRunner };
 
 /** The server's one sweep runner. */
-export const proofSweep = (): SweepRunner => (g.__pfSweep ??= createSweepRunner({ stamp: () => dataStamp(), run: () => runChild() }));
+export const proofSweep = (): SweepRunner => (g.__pfSweep ??= createSweepRunner({ stamp: () => dataStamp(), run: () => runChild(), restore: restoreSweep, keep: keepSweep }));

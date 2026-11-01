@@ -113,4 +113,18 @@ describe("the proof sweep runner", () => {
     expect(s.peek()).toEqual({ state: "pending" });
     expect(started).toHaveLength(2);
   });
+
+  it("answers at once with a sweep kept from the last launch for the same data, and keeps each new one", async () => {
+    let stamp = "a";
+    const { started, run } = fakeRuns();
+    const kept: [string, string][] = [];
+    const s = createSweepRunner({ stamp: () => stamp, run, pollMs: 5, restore: (x) => (x === "a" ? '{"kept":1}' : null), keep: (x, b) => kept.push([x, b]) });
+    expect(s.peek()).toEqual({ state: "ready", body: '{"kept":1}' });
+    expect(started).toHaveLength(0);
+    stamp = "b";
+    expect(s.peek()).toEqual({ state: "pending" });
+    started[0]!.finish('{"n":2}');
+    await tick();
+    expect(kept).toEqual([["b", '{"n":2}']]);
+  });
 });

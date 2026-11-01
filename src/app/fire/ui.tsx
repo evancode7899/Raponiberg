@@ -3,7 +3,7 @@
 import { Segmented } from "@/components/ui/kit";
 import type { FireAnalysis } from "@/lib/fire/fire";
 import type { FireFigure, FireSettings } from "@/lib/book/proof/planningProof";
-import { compositeOf, sumOf, unswept, type ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { noFigure } from "@/lib/book/proof/clearance";
 import type { OutlookSeeds, ResolvedBasePay } from "@/lib/profile/basePay";
 import type { OutlookAssumptions } from "@/lib/profile/settings";
@@ -58,14 +58,15 @@ export const yearsFrom = (year: number | null | undefined, plan: OutlookPlan) =>
 
 export type FireProps = { f: FireAnalysis; dollars: Dollars; setDollars: (d: Dollars) => void; d: FireData };
 
-/** Why every FIRE figure is withheld while the settings differ from the saved ones: the sweep proves the saved plan only. */
-const UNSAVED = "the settings have unsaved edits: save them to have these proven";
-
-/** A FIRE figure's proof ("planning" kind), on the saved settings; withheld while they have unsaved edits. */
+/**
+ * A FIRE figure's proof ("planning" kind), on the settings as the page has them. Unsaved
+ * edits are a what-if on the model the sweep proved on the saved settings: they show at
+ * once (clearance.ts whatIfStands), and the drawer proves them on the typed settings.
+ */
 export type FireProof = (figure: FireFigure, shownCents: number | null, milestone?: string) => ProofRef;
 export const fireProof =
-  (fire: FireSettings, dirty = false): FireProof =>
-  (figure, shownCents, milestone) => (dirty ? unswept(UNSAVED) : { descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, shownCents });
+  (fire: FireSettings): FireProof =>
+  (figure, shownCents, milestone) => ({ descriptor: { report: "planning", page: "fire", figure, fire, ...(milestone ? { milestone } : {}) }, shownCents });
 
 /**
  * The owner's own numbers the plan starts from, each its forecast seed proof: starting net
@@ -96,9 +97,8 @@ export type FirePlanFigure = { figure: "plan-cell"; row: string; col: string } |
 /** A FIRE › Plan or Stress test figure's proof, on the settings as the page has them; a dash (no value) is no figure. */
 export type FirePlanProof = (which: FirePlanFigure, v: PlanCellValue) => ProofRef;
 export const firePlanProof =
-  (fire: FireSettings, dirty = false): FirePlanProof =>
+  (fire: FireSettings): FirePlanProof =>
   (which, v) => {
-    if (dirty) return unswept(UNSAVED);
     const value = planValue(v);
     if (!value) return noFigure("nothing that year");
     return { descriptor: { report: "planning", page: "fire", fire, ...which }, shownCents: "cents" in value ? value.cents : null, ...("cents" in value ? {} : { shown: value }) };

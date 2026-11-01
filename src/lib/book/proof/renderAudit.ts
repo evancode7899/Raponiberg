@@ -15,7 +15,7 @@ import type { ProofValue } from "./types.ts";
  *  - RENDER_TEXT: a cleared figure whose visible text isn't the value it says it shows
  *    (the page proves one number and draws another);
  *  - RENDER_WITHHELD: a figure withheld for a reason that is a bug on the demo (a mismatch,
- *    a flag, never swept, no sweep), or still "verifying…" once the page settled;
+ *    a flag, never swept, no sweep), or still verifying once the page settled;
  *  - RENDER_BYPASS: money or a rate drawn outside any figure, or inside words that open a
  *    proof: it reached the page without one (mark text that truly isn't a figure, a form's
  *    own label, with data-not-figure). Pages still in BYPASS_PENDING are listed, not failed;

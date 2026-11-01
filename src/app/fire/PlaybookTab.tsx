@@ -2,11 +2,12 @@
 
 import { btn, Card, NotFigure } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { unswept } from "@/components/ui/proof/context";
 import { FAT_SHARE, LEAN_SHARE, type FireAnalysis } from "@/lib/fire/fire";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Living, Setting } from "./OverviewTab";
-import { fireProof, pct, short, usd, type FireData, type FireProof } from "./ui";
+import { pct, short, usd, type FireData, type FireProof } from "./ui";
 
 type Principle = { id: string; title: string; idea: ReactNode; yours?: ReactNode; link?: { href: string; label: string } };
 
@@ -14,7 +15,7 @@ type Principle = { id: string; title: string; idea: ReactNode; yours?: ReactNode
  * The FIRE movement's core ideas in plain language, each tied to the household's own
  * numbers where the plan is available. Education, not financial advice.
  */
-export function PlaybookTab({ f, pf = fireProof({ walkAwayYear: null, withdrawalRate: 0, stateTaxRate: null, retirementAge: 0 }, true), d }: { f: FireAnalysis | null; pf?: FireProof; d?: FireData }) {
+export function PlaybookTab({ f, pf = () => unswept("no FIRE plan to work it out on"), d }: { f: FireAnalysis | null; pf?: FireProof; d?: FireData }) {
   const p = f?.plan;
   const n = f?.now;
   const share = (x: number) => <NotFigure why="the FIRE community's definition">{pct(x, 0)}</NotFigure>;

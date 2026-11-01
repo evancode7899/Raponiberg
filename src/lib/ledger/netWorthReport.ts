@@ -39,7 +39,10 @@ export type AccountPeriod = {
   feesCents: number;
   unexplainedCents: number;
   closingCents: number;
+  /** The period's change: an estimate when a statement's market change is spread across days inside it. */
   quality: Quality;
+  /** The closing balance on its own, a spot value: exact on a statement's closing day, whatever the period's change. */
+  closingQuality: Quality;
   /** Investment accounts' return: a month's Modified Dietz; a quarter's or year's its months' chained (chainedReturn). */
   returnRatio: number | null;
 };
@@ -67,7 +70,10 @@ export type HouseholdPeriod = {
   growthNetOfFeesCents: number;
   feesCents: number;
   unexplainedCents: number;
+  /** The period's change (see AccountPeriod.quality). */
   quality: Quality;
+  /** The closing balance on its own (see AccountPeriod.closingQuality). */
+  closingQuality: Quality;
   /**
    * Investment portfolio return (all market-valued accounts): a month's Modified Dietz
    * over their combined parts; a quarter's or year's its months' chained (chainedReturn).
@@ -232,9 +238,11 @@ export function buildNetWorthReport(
       feesCents: 0,
       unexplainedCents: 0,
       quality: "EXACT",
+      closingQuality: "EXACT",
       portfolioReturn: null,
     };
     const qualities: Quality[] = [];
+    const closingQualities: Quality[] = [];
     const groupTotals = new Map<AccountGroup, number>();
     // A month's return is its own Modified Dietz; a quarter's or year's chains its months'.
     const spanned = g === "month" ? null : spanReturns(ledger, start, end);
@@ -270,9 +278,11 @@ export function buildNetWorthReport(
         unexplainedCents: d.unexplainedCents,
         closingCents: d.closingCents,
         quality: d.quality,
+        closingQuality: valueAt(t, end).quality,
         returnRatio: ret,
       });
       qualities.push(d.quality);
+      closingQualities.push(valueAt(t, end).quality);
       groupTotals.set(a.group, (groupTotals.get(a.group) ?? 0) + d.closingCents);
       h.openingCents += d.openingCents;
       h.closingCents += d.closingCents;
@@ -289,6 +299,7 @@ export function buildNetWorthReport(
     }
     h.principalCents = h.incomeCents + h.spendingCents + h.externalCents + h.retirementEmployeeCents + h.retirementEmployerCents;
     h.quality = worstQuality(qualities);
+    h.closingQuality = worstQuality(closingQualities);
     h.portfolioReturn = spanned ? spanned.portfolio : monthReturn({ gainCents: pGain, capitalCents: pCapital });
     if (h.portfolioReturn != null) {
       portfolioReturns.push({ r: h.portfolioReturn, days: inclusiveDays(start, end) });

@@ -59,7 +59,7 @@ function Marks({ basis, quality }: { basis: FigureBasis; quality?: Quality }) {
 /**
  * A figure, fail-closed: its number shows only when the proof sweep of the page's own data
  * cleared it at the very value the page shows (clearance.ts). Until the sweep answers it
- * reads "verifying…"; blocked, flagged, a different number, never swept, or no sweep at all,
+ * shows the page's number, plain; blocked, flagged, a different number, never swept, or no sweep at all,
  * it's withheld: a dash that opens the drawer saying why. A cleared figure opens its proof.
  *
  * Every one carries data-proof-key (its descriptor key, or "unswept"), data-shown (the
@@ -79,10 +79,13 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
     ...(props.drawn === "words" ? { "data-drawn": "words" } : props.drawn ? { "data-drawn": `per:${props.drawn.per ?? 1};step:${props.drawn.step ?? 0};zero:${props.drawn.zeroWithin ?? -1}` } : {}),
     "data-clearance": c.state === "withheld" ? `withheld:${c.reason}` : c.state,
   };
+  // While the sweep of fresh data runs, the page's number shows at once (owner's rule,
+  // 2026-11-01: the app is never kept waiting); the sweep withholds it the moment it finds
+  // a problem. Kept apart from a cleared figure: no proof drawer or marks until it answers.
   if (c.state === "verifying")
     return (
-      <span {...data} title="Verifying: the proof sweep of this data is still running." className={`whitespace-nowrap text-[0.75em] font-normal italic text-faint ${className}`}>
-        verifying…
+      <span {...data} title="Checking: the proof sweep of this data is still running." className={className}>
+        {children}
       </span>
     );
   if (c.state === "withheld") {
