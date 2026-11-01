@@ -1,3 +1,4 @@
+import { buildHomeSpending } from "../reports/homeFunds.ts";
 import { garagePage } from "../../car/page.ts";
 import { CAR_KEY, normalizeGarage } from "../../car/settings.ts";
 import { buildHomeSummary } from "../../dashboard/homeSummary.ts";
@@ -171,7 +172,7 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
     await page("Forecast", () => forecastFigures(forecast, data.profile));
     await page("FIRE", () => fireFigures(forecast, data.profile));
     await page("Annual › estimate", () => annualEstimateFigures(data));
-    await page("Home budget", () => homeBudgetFigures({ inputs: readPageInputs("pf-home-budget-inputs"), funds: readPageInputs("pf-home-budget-funds") }));
+    await page("Home budget", () => homeBudgetFigures({ inputs: readPageInputs("pf-home-budget-inputs"), funds: readPageInputs("pf-home-budget-funds") }, buildHomeSpending(book, data.profile.settings) != null));
   }
   else skipped.push(noForecastSkip());
   await page("Mortgage", async () => mortgagePageFigures(normalizeMortgageInputs(readPageInputs("pf-mortgage-v2")), (await perBook(ctx, "mortgage-links", () => buildMortgageLinks(db, book))).links));

@@ -12,6 +12,7 @@ import {
 } from "../dates/isoDate.ts";
 import { GROUP_ORDER, type AccountGroup, type Ledger } from "./loadLedger.ts";
 import {
+  chainedReturn,
   chainReturns,
   decompose,
   dietzParts,
@@ -39,7 +40,7 @@ export type AccountPeriod = {
   unexplainedCents: number;
   closingCents: number;
   quality: Quality;
-  /** Modified Dietz return for investment accounts. */
+  /** Investment accounts' return: a month's Modified Dietz; a quarter's or year's its months' chained (chainedReturn). */
   returnRatio: number | null;
 };
 
@@ -67,7 +68,10 @@ export type HouseholdPeriod = {
   feesCents: number;
   unexplainedCents: number;
   quality: Quality;
-  /** Investment portfolio Modified Dietz return (all market-valued accounts). */
+  /**
+   * Investment portfolio return (all market-valued accounts): a month's Modified Dietz
+   * over their combined parts; a quarter's or year's its months' chained (chainedReturn).
+   */
   portfolioReturn: number | null;
 };
 
@@ -132,6 +136,48 @@ function accountSpan(t: AccountTimeline, start: string, end: string): { d: Decom
   return { d, newlyTracked };
 }
 
+export type MonthDietz = { start: string; end: string; gainCents: number; capitalCents: number };
+
+/**
+ * One account's Modified Dietz parts for each calendar month of [from, to] it counts in
+ * (as a monthly period counts it), the last cut at `to`. A quarter's or year's return is
+ * these months' returns chained, never one Dietz over the whole span.
+ */
+export function monthlyDietz(t: AccountTimeline, from: string, to: string): MonthDietz[] {
+  const out: MonthDietz[] = [];
+  for (const { start, end: rawEnd } of periodsBetween(from, to, "month")) {
+    const end = minIso(rawEnd, to);
+    if (accountSpan(t, start, end)) out.push({ start, end, ...dietzParts(t, start, end) });
+  }
+  return out;
+}
+
+/** A month's return from its parts: none under MIN_RETURN_CAPITAL_CENTS. */
+export const monthReturn = (p: Pick<MonthDietz, "gainCents" | "capitalCents">) => (p.capitalCents >= MIN_RETURN_CAPITAL_CENTS ? p.gainCents / p.capitalCents : null);
+
+/**
+ * A quarter's or year's returns: each month's (the portfolio's from its investment
+ * accounts' parts added, so transfers between them cancel), chained. Investment returns
+ * and What changed chain the same months, so every page shows one return for a span.
+ */
+function spanReturns(ledger: Ledger, start: string, end: string): { portfolio: number | null; byAccount: Map<string, number | null> } {
+  const months = new Map<string, { gainCents: number; capitalCents: number }>();
+  const byAccount = new Map<string, number | null>();
+  for (const a of ledger.accounts) {
+    if (!a.isInvestment) continue;
+    const ms = monthlyDietz(a.timeline, start, end);
+    byAccount.set(a.id, chainedReturn(ms.map(monthReturn)));
+    for (const m of ms) {
+      const sum = months.get(m.start) ?? { gainCents: 0, capitalCents: 0 };
+      sum.gainCents += m.gainCents;
+      sum.capitalCents += m.capitalCents;
+      months.set(m.start, sum);
+    }
+  }
+  const portfolio = [...months].sort(([x], [y]) => (x < y ? -1 : 1)).map(([, p]) => monthReturn(p));
+  return { portfolio: chainedReturn(portfolio), byAccount };
+}
+
 /**
  * How good a span's figures are, judged the way a single period over it is: by the values
  * at its two edges and what moved in between. A quarter whose statements close on its
@@ -190,6 +236,8 @@ export function buildNetWorthReport(
     };
     const qualities: Quality[] = [];
     const groupTotals = new Map<AccountGroup, number>();
+    // A month's return is its own Modified Dietz; a quarter's or year's chains its months'.
+    const spanned = g === "month" ? null : spanReturns(ledger, start, end);
     let pGain = 0;
     let pCapital = 0;
     for (const a of ledger.accounts) {
@@ -199,10 +247,13 @@ export function buildNetWorthReport(
       const { d, newlyTracked } = span;
       let ret: number | null = null;
       if (a.isInvestment) {
-        const parts = dietzParts(t, start, end);
-        pGain += parts.gainCents;
-        pCapital += parts.capitalCents;
-        ret = parts.capitalCents >= MIN_RETURN_CAPITAL_CENTS ? parts.gainCents / parts.capitalCents : null;
+        if (spanned) ret = spanned.byAccount.get(a.id) ?? null;
+        else {
+          const parts = dietzParts(t, start, end);
+          pGain += parts.gainCents;
+          pCapital += parts.capitalCents;
+          ret = monthReturn(parts);
+        }
         if (ret != null) {
           // Only the days the account existed count toward annualizing its return.
           const activeDays = inclusiveDays(maxIso(start, t.firstDay!), minIso(end, a.closed ? t.lastDay! : end));
@@ -238,8 +289,8 @@ export function buildNetWorthReport(
     }
     h.principalCents = h.incomeCents + h.spendingCents + h.externalCents + h.retirementEmployeeCents + h.retirementEmployerCents;
     h.quality = worstQuality(qualities);
-    if (pCapital >= MIN_RETURN_CAPITAL_CENTS) {
-      h.portfolioReturn = pGain / pCapital;
+    h.portfolioReturn = spanned ? spanned.portfolio : monthReturn({ gainCents: pGain, capitalCents: pCapital });
+    if (h.portfolioReturn != null) {
       portfolioReturns.push({ r: h.portfolioReturn, days: inclusiveDays(start, end) });
     }
     periods.push({

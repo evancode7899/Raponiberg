@@ -165,6 +165,27 @@ about $10M net worth and $2M a year of income. A **DEMO** tag sits next to the l
 - From a terminal: `npm run demo` (`-- --dev` for a dev server, `-- --build-only` to just
   rebuild `data/demo`).
 
+## Render audit on your own data
+
+CI checks that every number the demo's pages draw is one the proof sweep cleared
+(`npm run demo -- --render-audit`). `npm run audit:real` runs the same audit on your own
+data, on your computer only:
+
+- It starts a second, read-only copy of the app on the last production build (`npm run
+  build` first: like the demo's audit, it refuses a build older than the code), on a free port (never 3000), reading your `DATA_DIR` and `DATABASE_URL`
+  from `.env`. It doesn't re-read statements, move files or back up, the audit refuses every
+  write, and it stops only the server it started. The running app is left alone.
+- It gets past the lock screen the way the lock screen does: it reads your password from
+  `data/app-password.json` at run time and has the server check it. The password is never
+  printed or saved.
+- The console lists problem kinds, pages and counts, no amounts or names. Everything in full
+  goes to a JSON file in your temp folder (`--json <file>` to move it; never inside the repo
+  except `data/`). `--detail` prints each problem in full, for working through them locally.
+- On a large ledger, `--drills N` caps the drill-downs opened per view (default 10; 0 for
+  none) and `--pages /taxes,/hsa` audits just those pages. It fails a run over 5 minutes
+  (`RENDER_AUDIT_BUDGET_MS` to change).
+- It refuses to run when `CI` is set.
+
 ## HSA receipts
 
 **HSA receipts** (Planning › HSA, or type `HSA`) is the log of medical bills paid out of

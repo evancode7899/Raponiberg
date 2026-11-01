@@ -37,6 +37,7 @@
     "publish:export": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/publish-export.ts",
     "setup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/setup.ts",
     "demo": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/demo.ts",
+    "audit:real": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/render-audit-real.ts",
     "db:seed": "node scripts/seed-categories.mjs",
     "statements:import": "node scripts/importStatements.ts",
     "statements:check": "node scripts/ingestDryRun.ts",

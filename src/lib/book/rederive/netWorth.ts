@@ -49,10 +49,51 @@ export function contributionRows(book: Book, from: string, to: string, investmen
 }
 
 /**
+ * Account roll-forwards' returns since first on file, worked out a second way: each calendar
+ * year's Modified Dietz re-worked from the account's timeline and chained here, not read
+ * off the report's years.
+ */
+export function rederiveRollforwards(book: Book, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const through = book.horizon.netWorth;
+  const accounts = new Map(household(book).ledger.accounts.map((a) => [a.id, a]));
+  return rederiveList(figures, (f) => {
+    if (f.figure !== "rollforward-since") return null;
+    const a = accounts.get(f.key ?? "");
+    const t = a?.timeline;
+    if (!a || !t?.firstDay || !t.lastDay) return null;
+    let growth = 1;
+    let days = 0;
+    let years = 0;
+    for (let y = Number(t.firstDay.slice(0, 4)); y <= Number(through.slice(0, 4)); y++) {
+      const from = maxIso(`${y}-01-01`, t.firstDay);
+      const to = minIso(`${y}-12-31`, a.closed ? minIso(t.lastDay, through) : through);
+      if (from > to) continue;
+      // The year's months, each its own Modified Dietz from the timeline, chained; a month under the minimum capital left out.
+      const yearEnd = minIso(`${y}-12-31`, through);
+      let measured = 0;
+      for (const m of periodsBetween(`${y}-01-01`, yearEnd, "month")) {
+        const p = dietzParts(t, m.start, minIso(m.end, yearEnd));
+        if (p.capitalCents < MIN_RETURN_CAPITAL_CENTS) continue;
+        growth *= 1 + p.gainCents / p.capitalCents;
+        measured++;
+      }
+      if (!measured) continue;
+      days += inclusiveDays(from, to);
+      years++;
+    }
+    const annualized = days >= 365 ? growth ** (365 / days) - 1 : null;
+    return [ratioRoute("each month re-worked from the account's timeline (Modified Dietz), chained", f.value, annualized ?? growth - 1, `${years} years over ${days} days${annualized != null ? ", a year" : ""}`, 1e-9)];
+  });
+}
+
+/**
  * Net worth's derived figures worked out a second way (F5):
  *  - the portfolio return: each month's Modified Dietz worked out again from every
  *    investment account's timeline and chained here, not read off the report's periods or
  *    its run (only the run's first month is taken from the report);
+ *  - each period's return in How it was built (the portfolio's and each account's, month,
+ *    quarter or year; What changed shows the same figure): its months worked out the same
+ *    way and chained, so a quarter's or year's can't drift from its months';
  *  - What changed: every step must close the waterfall against opening and closing
  *    balances summed here, account by account (valueAt), and the steps that are money
  *    (retirement from pay, timing) are re-added from the rows.
@@ -60,26 +101,44 @@ export function contributionRows(book: Book, from: string, to: string, investmen
 export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], portfolioFrom: string | null, changes: Pick<NetWorthChangesReport, "granularity" | "periods">[]): Record<string, Rederivation> {
   const ledger = household(book).ledger;
   const through = book.horizon.netWorth;
-  const chained = (from: string) => {
-    let growth = 1;
-    let days = 0;
-    let months = 0;
-    for (const { start, end: rawEnd } of periodsBetween(from, through, "month")) {
-      const end = minIso(rawEnd, through);
-      let gain = 0;
-      let capital = 0;
+  // Each month's Modified Dietz parts, account by account, worked from the timelines once (keyed by the month's first day).
+  const monthParts = new Map<string, Map<string, { gainCents: number; capitalCents: number }>>();
+  const partsIn = (start: string) => {
+    let m = monthParts.get(start);
+    if (!m) {
+      const end = minIso(endOfPeriod(start, "month"), through);
+      m = new Map();
       for (const a of ledger.accounts) {
         if (!a.isInvestment || !a.timeline.firstDay || a.timeline.firstDay > end || (a.timeline.lastDay ?? end) < start) continue;
-        const p = dietzParts(a.timeline, start, end);
+        m.set(a.id, dietzParts(a.timeline, start, end));
+      }
+      monthParts.set(start, m);
+    }
+    return m;
+  };
+  // A month's return: every investment account's parts added (or one account's), none under the minimum capital.
+  const monthRatio = (start: string, accountId?: string) => {
+    let gain = 0;
+    let capital = 0;
+    for (const [id, p] of partsIn(start))
+      if (!accountId || id === accountId) {
         gain += p.gainCents;
         capital += p.capitalCents;
       }
-      if (capital < MIN_RETURN_CAPITAL_CENTS) continue;
-      growth *= 1 + gain / capital;
-      days += inclusiveDays(start, end);
+    return capital < MIN_RETURN_CAPITAL_CENTS ? null : gain / capital;
+  };
+  const chained = (from: string, to = through, accountId?: string) => {
+    let growth = 1;
+    let days = 0;
+    let months = 0;
+    for (const { start, end: rawEnd } of periodsBetween(from, to, "month")) {
+      const r = monthRatio(start, accountId);
+      if (r == null) continue;
+      growth *= 1 + r;
+      days += inclusiveDays(start, minIso(rawEnd, through));
       months++;
     }
-    return { total: growth - 1, annualized: days >= 365 ? growth ** (365 / days) - 1 : null, months, days };
+    return { total: months ? growth - 1 : null, annualized: days >= 365 ? growth ** (365 / days) - 1 : null, months, days };
   };
   const ROUTE = "each month re-worked from every investment account's timeline (Modified Dietz), chained";
 
@@ -114,8 +173,16 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
       case "account-return":
       case "account-return-annualized":
         return { none: "One account's monthly returns chained over its unbroken proven stretch: each month's return is that account's cell of How it was built (month), re-derived there." };
-      case "change-return":
-        return { none: "Each month's return chained, as Investment returns chains them: every month's return is a figure of How it was built (month), re-derived there." };
+      case "built": {
+        // How it was built's returns (What changed's too): each month of the period re-worked here, chained.
+        const [g, row, col] = (f.key ?? "").split("|");
+        if (!g || !col || !row?.endsWith(":return")) return null;
+        const start = row.slice(0, -":return".length);
+        const end = minIso(endOfPeriod(start, g as Granularity), through);
+        const c = chained(start, end, col === "household" ? undefined : col);
+        const of = col === "household" ? "every investment account's timeline" : "the account's timeline";
+        return [ratioRoute(`each month re-worked from ${of} (Modified Dietz), chained`, v, c.total, `${c.months} of ${periodsBetween(start, end, "month").length} months measured, chained`, 1e-9)];
+      }
       case "change-typical":
         return { none: "The mean of the same figure over the whole proven periods before it: each of those is a figure of its own on this tab (its change, saving, markets, income, spending or category), re-derived by its own proof." };
       case "accounts-measured":

@@ -132,12 +132,12 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
             {tab === "afford" ? (
               <AffordTab ins={ins} patch={patch} proof={proof} testPrice={testPrice} lender={lender} lenderMax={lenderMax} spending={book?.spending ?? null} />
             ) : (
-              <PriceTab ins={ins} patch={patch} maxPrice={max.impliedMaxHomeValue} lenderMaxPrice={lenderMax.impliedMaxHomeValue} allCashDownPct={allCashDownPct} spendMonthly={spendMonthly} />
+              <PriceTab ins={ins} patch={patch} maxPrice={max.impliedMaxHomeValue} lenderMaxPrice={lenderMax.impliedMaxHomeValue} allCashDownPct={allCashDownPct} spendMonthly={spendMonthly} proof={proof} />
             )}
           </div>
         ) : (
           <>
-            {tab === "rent" ? <RentVsBuyTab ins={ins} patch={patch} goToBudget={() => setTab("price")} funds={funds} /> : <SensitivityTab ins={ins} />}
+            {tab === "rent" ? <RentVsBuyTab ins={ins} patch={patch} goToBudget={() => setTab("price")} funds={funds} /> : <SensitivityTab ins={ins} proof={proof} salaryLinked={funds.buy.salaryLinked} />}
             <div className="flex justify-end">
               <button type="button" className={btn.ghost} onClick={reset} title="Every input back to its default, cash linked to net worth again">
                 Reset all inputs

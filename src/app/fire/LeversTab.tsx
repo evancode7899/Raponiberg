@@ -2,11 +2,13 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { Card, table } from "@/components/ui/kit";
+import { Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { firstYearIncome, fiYear, savingsRateCurve, sensitivityGrid, spendingCuts } from "@/lib/fire/fire";
 import { useMemo } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceDot, Tooltip, XAxis, YAxis } from "recharts";
-import { pct, short, usd, yearAge, type FireProps } from "./ui";
+import { Living } from "./OverviewTab";
+import { pct, short, usd, yearAge, type FireProof, type FireProps } from "./ui";
 
 const RATES = Array.from({ length: 17 }, (_, i) => 0.05 + i * 0.05);
 const CUTS = [250, 500, 1_000, 2_000, 3_000, 5_000].map((d) => d * 100);
@@ -14,7 +16,7 @@ const RETURNS = [0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09];
 const WRS = [0.03, 0.035, 0.04, 0.045, 0.05];
 
 /** What moves the FI date. Each figure reruns the same plan with one assumption changed. */
-export function LeversTab({ f }: FireProps) {
+export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
   const { plan } = f;
   const base = f.fi?.year ?? null;
   const delta = (y: number | null) => (y == null || base == null ? (y == null ? (base == null ? "—" : "never") : "reaches FI") : y === base ? "same" : y < base ? `${base - y} yr${base - y === 1 ? "" : "s"} sooner` : `${y - base} yr${y - base === 1 ? "" : "s"} later`);
@@ -44,10 +46,17 @@ export function LeversTab({ f }: FireProps) {
 
   return (
     <>
-      <SavingsRateChart f={f} curve={curve} />
+      <SavingsRateChart f={f} curve={curve} d={d} pf={pf} />
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-        <Card title="Spend less" subtitle={`First-year living cost lower by a monthly amount (today ${short(plan.livingCost)}/yr). Less spending saves more and lowers the FIRE number.`}>
-          <div className={table.wrap}>
+        <Card
+          title="Spend less"
+          subtitle={
+            <>
+              First-year living cost lower by a monthly amount (today <Living d={d}>{short(plan.livingCost)}</Living>/yr). Less spending saves more and lowers the FIRE number.
+            </>
+          }
+        >
+          <WhatIf why="living cost cut by a monthly amount" className={table.wrap}>
             <table className={table.table}>
               <thead className={table.head}>
                 <tr>
@@ -68,11 +77,14 @@ export function LeversTab({ f }: FireProps) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </WhatIf>
         </Card>
         <div className="flex min-w-0 flex-col gap-4">
-          <Card title="Spend $1,000/mo less, or earn $12,000/yr more?" subtitle="Same dollars, different effect: a raise is taxed and only adds savings, while spending less also shrinks the target.">
-            <div className="grid grid-cols-2 gap-3 text-center">
+          <Card
+            title={<NotFigure why="the same round amount both ways">Spend $1,000/mo less, or earn $12,000/yr more?</NotFigure>}
+            subtitle="Same dollars, different effect: a raise is taxed and only adds savings, while spending less also shrinks the target."
+          >
+            <WhatIf why="$12,000 a year less spending vs more pay" className="grid grid-cols-2 gap-3 text-center">
               <div className="rounded-lg border border-line p-3">
                 <div className="text-[11px] uppercase tracking-wide text-muted">Spend $12k/yr less</div>
                 <div className="num text-xl font-semibold text-fg">{compare.spendLess ?? "never"}</div>
@@ -84,10 +96,10 @@ export function LeversTab({ f }: FireProps) {
                 <div className={`text-xs ${deltaTone(compare.earnMore)}`}>{delta(compare.earnMore)}</div>
                 <div className="text-[11px] text-muted">≈ {usd(compare.earnMoreNet)} after tax, growing {pct(plan.salaryGrowth)}/yr</div>
               </div>
-            </div>
+            </WhatIf>
           </Card>
           <Card title="Lifestyle creep" subtitle="How fast living cost grows each year. Spending that rises faster than inflation keeps pushing the finish line away.">
-            <div className={table.wrap}>
+            <WhatIf why="living cost growing faster than inflation" className={table.wrap}>
               <table className={table.table}>
                 <tbody>
                   {creep.map((c) => (
@@ -109,7 +121,7 @@ export function LeversTab({ f }: FireProps) {
                   )}
                 </tbody>
               </table>
-            </div>
+            </WhatIf>
           </Card>
         </div>
       </div>
@@ -117,7 +129,7 @@ export function LeversTab({ f }: FireProps) {
         title="Markets and withdrawal rate"
         subtitle="FI year for each nominal return (rows) and withdrawal rate (columns). Lower withdrawal rates are safer over long early retirements but need a bigger pile. Your plan is outlined."
       >
-        <div className={table.wrap}>
+        <WhatIf why="FI year at each return and withdrawal rate" className={table.wrap}>
           <table className={table.table}>
             <thead className={table.head}>
               <tr>
@@ -147,14 +159,14 @@ export function LeversTab({ f }: FireProps) {
               ))}
             </tbody>
           </table>
-        </div>
+        </WhatIf>
         <p className="mt-2 text-[11px] text-muted">Green: sooner than your plan · amber: later · red: not within 60 years.</p>
       </Card>
     </>
   );
 }
 
-function SavingsRateChart({ f, curve }: { f: FireProps["f"]; curve: ReturnType<typeof savingsRateCurve> }) {
+function SavingsRateChart({ f, curve, d, pf }: { f: FireProps["f"]; curve: ReturnType<typeof savingsRateCurve>; d: FireProps["d"]; pf: FireProof }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const { plan } = f;
@@ -164,7 +176,13 @@ function SavingsRateChart({ f, curve }: { f: FireProps["f"]; curve: ReturnType<t
   return (
     <Card
       title="Savings rate → years to financial independence"
-      subtitle={`The classic FIRE chart, on your numbers: ${short(income)} of take-home + employer money this year, ${short(plan.start.liquid + plan.start.illiquid)} already saved. Each point sets spending so that share is saved, then runs the plan to FI. The dot is you.`}
+      subtitle={
+        <>
+          The classic FIRE chart, on your numbers: <ProofValue proof={pf("income", income)}>{short(income)}</ProofValue> of take-home + employer money this year,{" "}
+          <ProofValue proof={d.start}>{short(plan.start.liquid + plan.start.illiquid)}</ProofValue> already saved. Each point sets spending so that share is saved, then runs the plan
+          to FI. The dot is you.
+        </>
+      }
     >
       <div className="h-[300px] w-full min-w-0">
         <RechartsResponsive>
@@ -180,7 +198,11 @@ function SavingsRateChart({ f, curve }: { f: FireProps["f"]; curve: ReturnType<t
       </div>
       {f.savingsRate != null && (
         <p className="mt-2 text-xs text-muted">
-          You: saving <span className="font-medium text-fg">{pct(f.savingsRate, 0)}</span> this year →{" "}
+          You: saving{" "}
+          <span className="font-medium text-fg">
+            <ProofValue proof={pf("savings-rate", null)}>{pct(f.savingsRate, 0)}</ProofValue>
+          </span>{" "}
+          this year →{" "}
           {f.fi ? `FI in ${f.fi.year - plan.start.year} years` : "not financially independent within 60 years at that rate"}. Missing points: rates that don&apos;t reach FI within 60 years.
         </p>
       )}

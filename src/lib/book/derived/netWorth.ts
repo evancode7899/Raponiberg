@@ -1,6 +1,7 @@
 import type { NetWorthReport } from "../reports/netWorth.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 import type { ProofValue } from "../proof/types.ts";
+import type { RollforwardReport } from "../../profile/rollforwards.ts";
 import { c, ln, r, t, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 
 /** Net worth › Investment returns (monthly periods): the portfolio's chained return since its latest unbroken proven stretch began, annualized, and how many accounts are measured. */
@@ -38,6 +39,28 @@ export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" |
   ];
 }
 
+/**
+ * Net worth › Account roll-forwards: each account's return since its first statement on
+ * file, its years' Modified Dietz returns chained (a year, once they span one; else
+ * cumulative). Key: the account id. Only where no year of it is blocked.
+ */
+export function rollforwardsDerived(rep: Pick<RollforwardReport, "accounts">): DerivedFigure[] {
+  return rep.accounts
+    .filter((a) => a.cumulative != null)
+    .map((a) => {
+      const measured = a.years.filter((x) => x.returnRatio != null);
+      const chain = ln(`Each year's return, chained from ${measured[0]?.year ?? a.firstDay.slice(0, 4)}`, r(a.cumulative!), undefined, { note: "(1 + r₁) × (1 + r₂) × … − 1; each year's return is its months' chained, a month with under $1,000 invested left out" });
+      return {
+        figure: "rollforward-since",
+        key: a.id,
+        describes: `${a.name}: return since first on file (${a.firstDay}), ${a.annualized != null ? "a year" : "cumulative"}`,
+        value: r(a.annualized ?? a.cumulative!),
+        lines: a.annualized != null ? [chain, ln("Over its days, a year", r(a.annualized), undefined, { note: "(1 + cumulative) ^ (365 ÷ days) − 1" })] : [chain],
+        parts: measured.map((x) => ({ label: String(x.year), value: r(x.returnRatio!), link: { label: `${a.name}, ${x.year} return`, descriptor: { report: "annual", figure: "rollforward", year: x.year, accountId: a.id, line: "return" } } })),
+      };
+    });
+}
+
 /** A What-changed step's key: the granularity, the period's first day and the step. */
 export const changeStepKey = (granularity: string, start: string, step: string) => `${granularity}|${start}|${step}`;
 
@@ -72,11 +95,8 @@ export function changeTypicalDerived(rep: Pick<NetWorthChangesReport, "granulari
   const g = rep.granularity;
   return rep.periods.flatMap((p) => {
     const t = p.typical;
-    const ret: DerivedFigure[] =
-      p.portfolioReturn == null
-        ? []
-        : [{ figure: "change-return", key: typicalKey(g, p.start, "return"), describes: `The portfolio's return, ${p.label}: its months' returns chained`, value: r(p.portfolioReturn), lines: [ln("Each month's time-weighted return, chained: (1 + r₁) × (1 + r₂) × … − 1", r(p.portfolioReturn), undefined, { note: "As Investment returns chains them; net of fees." })] }];
-    if (!t) return ret;
+    // Its return is How it was built's figure for the same period (builtDerived), not one of its own.
+    if (!t) return [];
     const over = `the average over ${t.of.join(", ")}`;
     const fig = (what: string, label: string, cents: number): DerivedFigure => ({
       figure: "change-typical",
@@ -94,7 +114,6 @@ export function changeTypicalDerived(rep: Pick<NetWorthChangesReport, "granulari
       ...p.steps.filter((s) => s.typicalCents != null && s.key !== "spending").map((s) => fig(`step:${s.key}`, s.label, s.typicalCents!)),
       ...p.spendingMovers.map((m) => fig(`spending:${m.category}`, `${m.category} spending`, m.typicalCents)),
       ...p.incomeMovers.map((m) => fig(`income:${m.category}`, `${m.category} income`, m.typicalCents)),
-      ...ret,
     ];
   });
 }

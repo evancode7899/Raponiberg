@@ -2,7 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import { Callout, Card, table } from "@/components/ui/kit";
+import { Callout, Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { axisUsd } from "@/lib/formatMoney";
 import type { WalkAwayRow } from "@/lib/profile/outlook";
 import { useMemo } from "react";
@@ -24,9 +24,11 @@ export function WalkAwayTab({ f, dollars, setDollars, walkBase }: FireProps & { 
       <Crossover f={f} rows={rows} dollars={dollars} setDollars={setDollars} />
       <Card
         title="Walk-away income by year"
-        subtitle={`Stop working on Jan 1 of each year: draw ${pct(plan.withdrawalRate)} of net worth, pay federal tax (real brackets, standard deduction, indexed at ${pct(plan.inflation)}) and ${plan.stateTaxRate == null ? "Connecticut income tax (its real brackets)" : `${pct(plan.stateTaxRate)} state tax on the taxable part`}. Every dollar drawn is taxed as ordinary income, which is conservative for Roth and taxable money.`}
+        subtitle={
+          <NotFigure why="your settings">{`Stop working on Jan 1 of each year: draw ${pct(plan.withdrawalRate)} of net worth, pay federal tax (real brackets, standard deduction, indexed at ${pct(plan.inflation)}) and ${plan.stateTaxRate == null ? "Connecticut income tax (its real brackets)" : `${pct(plan.stateTaxRate)} state tax on the taxable part`}. Every dollar drawn is taxed as ordinary income, which is conservative for Roth and taxable money.`}</NotFigure>
+        }
       >
-        <div className={table.wrap}>
+        <WhatIf why="walking away on Jan 1 of each future year, on the plan's projection" className={table.wrap}>
           <table className={`${table.table} min-w-[52rem]`}>
             <thead className={table.head}>
               <tr>
@@ -70,7 +72,7 @@ export function WalkAwayTab({ f, dollars, setDollars, walkBase }: FireProps & { 
               })}
             </tbody>
           </table>
-        </div>
+        </WhatIf>
         {!f.fi && (
           <div className="mt-3">
             <Callout tone="info">No year within 60 years reaches full coverage — see Levers for what moves the date (spending, savings rate, return, withdrawal rate).</Callout>
@@ -81,7 +83,7 @@ export function WalkAwayTab({ f, dollars, setDollars, walkBase }: FireProps & { 
   );
 }
 
-function Crossover({ f, rows, dollars, setDollars }: FireProps & { rows: FireProps["f"]["rows"] }) {
+function Crossover({ f, rows, dollars, setDollars }: Omit<FireProps, "d"> & { rows: FireProps["f"]["rows"] }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const { plan } = f;

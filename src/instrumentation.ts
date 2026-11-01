@@ -13,9 +13,11 @@ export async function register() {
     const [{ prisma }, { keepBookWarm }, { startAutoBackup }] = await Promise.all([import("@/lib/db"), import("@/lib/book/cache"), import("@/lib/backup/auto")]);
     // The desktop app (next start) backs up to OneDrive; dev servers only when asked; the demo never.
     const backs = process.env.NODE_ENV === "production" || process.env.BACKUP_AUTO === "1";
-    if (process.env.BACKUP_AUTO !== "0" && process.env.APP_PROFILE !== "demo" && backs) startAutoBackup(prisma);
+    if (process.env.BACKUP_AUTO !== "0" && process.env.LAUNCH_UPKEEP !== "0" && process.env.APP_PROFILE !== "demo" && backs) startAutoBackup(prisma);
+    // LAUNCH_UPKEEP=0 (a read-only second server: npm run audit:real) leaves the data files and the ledger as they are.
+    const upkeep = process.env.LAUNCH_UPKEEP !== "0";
     // Bonus letter reviews move into the permanent exceptions list (once; the old file is kept, renamed).
-    void import("@/lib/bonuses/migrateReviews")
+    if (upkeep) void import("@/lib/bonuses/migrateReviews")
       .then(({ migrateBonusReviews }) => migrateBonusReviews())
       .then((n) => n > 0 && console.log(`Moved ${n} bonus letter review(s) into the integrity exceptions`))
       .catch((e) => console.error("Moving bonus letter reviews failed:", e instanceof Error ? e.message : e));
@@ -23,7 +25,7 @@ export async function register() {
     // an older extractor (FACTS_VERSION) are re-extracted, so either change reaches the
     // figures on the next launch (the Book rebuilds once they're in). The facts step runs
     // even if the re-read failed; a re-read that imported anything has already done it.
-    void import("@/lib/ingest/importFiles")
+    if (upkeep) void import("@/lib/ingest/importFiles")
       .then(({ rereadOutdatedStatements }) => rereadOutdatedStatements(prisma))
       .then((n) => n > 0 && console.log(`Re-read ${n} statement(s) with updated parsers`))
       .catch((e) => console.error("Re-reading outdated statements failed:", e instanceof Error ? e.message : e))

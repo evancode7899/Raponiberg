@@ -8,6 +8,9 @@ import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { formatPercentRatio, usd0 as usd } from "@/lib/formatMoney";
 import type { AccountRollforward, RollforwardReport, RollYear } from "@/lib/profile/rollforwards";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { rollforwardsDerived } from "@/lib/book/derived/netWorth";
+import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 
 type Cell = Extract<TableRow, { cells: unknown }>["cells"][number];
 const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
@@ -28,6 +31,7 @@ const rollP = (a: AccountRollforward, x: RollYear, line: RollLine): ProofTarget 
 export function AccountsTab({ r }: { r: RollforwardReport }) {
   const open = r.accounts.filter((a) => !a.closed);
   const closed = r.accounts.filter((a) => a.closed);
+  const derived = rollforwardsDerived(r);
   return (
     <div className="flex flex-col gap-4">
       <Card
@@ -35,8 +39,8 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
         title="Every investment account, year by year"
         subtitle={
           <>
-            Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are Modified Dietz (money
-            moved in or out doesn&apos;t count as performance); a year with under $1,000 invested shows no return. Dividends and interest are split out where the
+            Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are time-weighted: each month&apos;s
+            Modified Dietz (money moved in or out doesn&apos;t count as performance), chained; a month with under $1,000 invested is left out. Dividends and interest are split out where the
             statement reports them (Fidelity); elsewhere they&apos;re inside market change.
           </>
         }
@@ -44,14 +48,14 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
         <Summary accounts={r.accounts} years={r.years} currentYear={r.currentYear} />
       </Card>
       {open.map((a) => (
-        <AccountCard key={a.id} a={a} currentYear={r.currentYear} />
+        <AccountCard key={a.id} a={a} currentYear={r.currentYear} derived={derived} />
       ))}
       {closed.length > 0 && (
         <details className="rounded-lg border border-line bg-surface p-4">
           <summary className="cursor-pointer text-sm font-semibold text-fg">Closed accounts ({closed.length})</summary>
           <div className="mt-3 flex flex-col gap-4">
             {closed.map((a) => (
-              <AccountCard key={a.id} a={a} currentYear={r.currentYear} />
+              <AccountCard key={a.id} a={a} currentYear={r.currentYear} derived={derived} />
             ))}
           </div>
         </details>
@@ -91,7 +95,7 @@ function Summary({ accounts, years, currentYear }: { accounts: AccountRollforwar
   return <StatementTable columns={shown.map((y) => yearLabel(y, currentYear))} rows={rows} />;
 }
 
-function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: number }) {
+function AccountCard({ a, currentYear, derived }: { a: AccountRollforward; currentYear: number; derived: DerivedFigure[] }) {
   const ys = a.years;
   const any = (f: (x: RollYear) => number | null) => ys.some((x) => !x.blockers.length && (f(x) ?? 0) !== 0);
   const cell = (x: RollYear, c: Cell): Cell => (x.blockers.length ? blockedCell(x.blockers) : c);
@@ -145,7 +149,13 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
       subtitle={
         <>
           {a.group} · on file {a.firstDay} → {a.closed ? `${a.lastDay} (closed)` : a.lastDay}
-          {a.annualized != null ? ` · ${pct(a.annualized, 1)} a year since first on file` : a.cumulative != null ? ` · ${pct(a.cumulative, 1)} since first on file` : ""}
+          {a.cumulative != null && (
+            <>
+              {" · "}
+              <ProofValue proof={derivedTarget("net-worth", derived, "rollforward-since", a.id)}>{pct(a.annualized ?? a.cumulative, 1)}</ProofValue>
+              {a.annualized != null ? " a year since first on file" : " since first on file"}
+            </>
+          )}
         </>
       }
     >
