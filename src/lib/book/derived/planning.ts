@@ -51,6 +51,14 @@ export function hsaPageDerived(rep: HsaReport): DerivedFigure[] {
       out.push({ figure: "expense-growth", key: e.id, describes: `${e.provider || "An expense"} on ${e.date}: growth from waiting`, value: c(e.growthCents), lines: [ln("Growth on the bill while it waits", c(e.growthCents), undefined, { note: `The bill × ((1 + ${(g.rate * 100).toFixed(1)}%)^(${e.daysWaiting} days ÷ 365.25) − 1)` })] });
   }
   out.push({ figure: "growth-rate", describes: "The growth rate the HSA's money is assumed to earn", value: r(g.rate), lines: [ln(g.rateSource === "MEASURED" ? "Your HSA's measured return" : g.rateSource === "SETTING" ? "Your setting" : g.rateSource === "FORECAST" ? "The forecast's return" : "A built-in default", r(g.rate), undefined, { source: g.rateSource === "MEASURED" ? "proven" : "assumption" })] });
+  // What a blank setting falls back to, where that's a number read off your data (Settings' hints).
+  const defaults: [string, number | null, string][] = [
+    ["growth", rep.hsa.measuredReturn ?? (g.rateSource === "FORECAST" ? g.rate : null), rep.hsa.measuredReturn != null ? "Your HSA's measured return, a year" : "The forecast's return"],
+    ["marginal", g.marginalSource === "TAX_REPORT" ? g.marginalRate : null, "The Taxes page's marginal rate (federal with the Medicare surtax, + state)"],
+    ["dividend", g.dividendSource === "STATEMENTS" ? g.assumptions.dividendYield : null, "The dividend yield your taxable statements show"],
+    ["taxable", g.taxableSource === "TAX_ENGINE" ? g.assumptions.taxableRate : null, "The tax engine's rate on a gain at your forecast salary"],
+  ];
+  for (const [key, v, words] of defaults) if (v != null) out.push({ figure: "default", key, describes: `Settings: what a blank ${key} rate falls back to`, value: r(v), lines: [ln(words, r(v), undefined, { source: "proven" })] });
   const likely = rep.suggestions.filter((x) => x.tier === "LIKELY");
   out.push({ figure: "found-likely", describes: "Statement charges that look like qualified care and aren't in the log", value: c(likely.reduce((s, x) => s + x.amountCents, 0)), lines: likely.map((x) => ln(`${x.date} ${x.payee}`, c(x.amountCents), "+", { ...(x.rowId ? { link: { label: "The charge", descriptor: { report: "row", rowId: x.rowId } } } : {}) })) });
   if (!g.withheld) {

@@ -1,7 +1,10 @@
 "use client";
 
 import { QualityBadge } from "@/components/ledger/LedgerBits";
-import { Card, StatementTable, type TableRow } from "@/components/ui/kit";
+import { Card, NotFigure, StatementTable, type TableRow } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { rollforwardReturnsDerived } from "@/lib/book/derived/netWorth";
+import { derivedTarget } from "@/lib/book/derived/types";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
@@ -36,7 +39,7 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
         subtitle={
           <>
             Every column ties: opening + contributions + deposits − withdrawals + income + market change + fees = closing. Returns are Modified Dietz (money
-            moved in or out doesn&apos;t count as performance); a year with under $1,000 invested shows no return. Dividends and interest are split out where the
+            moved in or out doesn&apos;t count as performance); a year with under <NotFigure why="the rule's threshold: below it a return is mostly rounding">$1,000</NotFigure> invested shows no return. Dividends and interest are split out where the
             statement reports them (Fidelity); elsewhere they&apos;re inside market change.
           </>
         }
@@ -145,7 +148,17 @@ function AccountCard({ a, currentYear }: { a: AccountRollforward; currentYear: n
       subtitle={
         <>
           {a.group} · on file {a.firstDay} → {a.closed ? `${a.lastDay} (closed)` : a.lastDay}
-          {a.annualized != null ? ` · ${pct(a.annualized, 1)} a year since first on file` : a.cumulative != null ? ` · ${pct(a.cumulative, 1)} since first on file` : ""}
+          {a.annualized != null ? (
+            <>
+              {" · "}
+              <ProofValue proof={derivedTarget("net-worth", rollforwardReturnsDerived({ accounts: [a] }), "rollforward-annualized", a.id)}>{pct(a.annualized, 1)}</ProofValue> a year since first on file
+            </>
+          ) : a.cumulative != null ? (
+            <>
+              {" · "}
+              <ProofValue proof={derivedTarget("net-worth", rollforwardReturnsDerived({ accounts: [a] }), "rollforward-return", a.id)}>{pct(a.cumulative, 1)}</ProofValue> since first on file
+            </>
+          ) : null}
         </>
       }
     >

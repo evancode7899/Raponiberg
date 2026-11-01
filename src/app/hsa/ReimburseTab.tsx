@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, btn, Callout, Card, Drawer, EmptyState, Field, inputCls, MoneyInput, selectCls, table } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, Drawer, EmptyState, Field, inputCls, MoneyInput, NotFigure, selectCls, table } from "@/components/ui/kit";
 import { sortRows, SortTh, useSort, type SortGetters } from "@/components/ui/sort";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
@@ -8,7 +8,11 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useMemo, useState } from "react";
 import type { Send } from "./HsaClient";
 import { hsaProof } from "./proof";
+import { expensesSum, useHsaDerived } from "./derived";
 import { waitLabel } from "./ReceiptsTab";
+
+/** The amount you type to take out, and what it leaves over the receipts picked: your input, not a figure. */
+const TYPED = "the amount you typed to take out";
 
 /** Unreimbursed, reimbursable expenses, oldest first: the order to pay them back in. */
 const reimbursable = (r: HsaReport) => r.expenses.filter((e) => !e.reimbursement && !e.flags.includes("BEFORE_OPEN")).sort((a, b) => a.date.localeCompare(b.date));
@@ -35,6 +39,8 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
   const pool = useMemo(() => reimbursable(r).filter((e) => !receiptsOnly || e.hasReceipt), [r, receiptsOnly]);
   const plan = target ? planWithdrawal(pool, target) : [];
   const planCents = plan.reduce((s, e) => s + e.amountCents, 0);
+  const poolCents = pool.reduce((s, e) => s + e.amountCents, 0);
+  const dp = useHsaDerived(r);
   const byId = new Map(r.expenses.map((e) => [e.id, e]));
   const distSort = useSort();
   const directSort = useSort();
@@ -65,19 +71,34 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
             <input type="checkbox" checked={receiptsOnly} onChange={(e) => setReceiptsOnly(e.target.checked)} />
             Only expenses with the receipt saved
           </label>
-          <button type="button" className={`${btn.ghost} mb-0.5`} onClick={() => setTarget(pool.reduce((s, e) => s + e.amountCents, 0))}>
-            Everything ({usd0(pool.reduce((s, e) => s + e.amountCents, 0))})
-          </button>
+          <span className="mb-0.5 inline-flex items-center gap-1 text-xs text-muted">
+            <button type="button" className={btn.ghost} onClick={() => setTarget(poolCents)}>
+              Everything
+            </button>
+            (<ProofValue proof={expensesSum(dp, pool)}>{usd0(poolCents)}</ProofValue>)
+          </span>
         </div>
         {target != null && (
           <div className="mt-4">
             {plan.length === 0 ? (
-              <p className="text-xs text-muted">No {receiptsOnly ? "receipted " : ""}expense fits within {formatUsdCents(target)}.</p>
+              <p className="text-xs text-muted">
+                No {receiptsOnly ? "receipted " : ""}expense fits within <NotFigure why={TYPED}>{formatUsdCents(target)}</NotFigure>.
+              </p>
             ) : (
               <>
                 <p className="mb-2 text-xs text-muted">
-                  {plan.length} expense{plan.length === 1 ? "" : "s"} totalling <span className="num font-semibold text-fg">{formatUsdCents(planCents)}</span>
-                  {planCents < target && ` (${formatUsdCents(target - planCents)} under — withdraw exactly ${formatUsdCents(planCents)} so every dollar has a receipt)`}.
+                  {plan.length} expense{plan.length === 1 ? "" : "s"} totalling{" "}
+                  <span className="num font-semibold text-fg">
+                    <ProofValue proof={expensesSum(dp, plan)}>{formatUsdCents(planCents)}</ProofValue>
+                  </span>
+                  {planCents < target && (
+                    <>
+                      {" "}
+                      (<NotFigure why={TYPED}>{formatUsdCents(target - planCents)}</NotFigure> under the amount you typed — withdraw exactly{" "}
+                      <ProofValue proof={expensesSum(dp, plan)}>{formatUsdCents(planCents)}</ProofValue> so every dollar has a receipt)
+                    </>
+                  )}
+                  .
                 </p>
                 <ul className="mb-3 flex flex-col divide-y divide-line text-xs">
                   {plan.map((e) => (
@@ -85,7 +106,9 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
                       <span>
                         <span className="num text-muted">{e.date}</span> {e.provider} {e.patient && <span className="text-muted">· {e.patient}</span>}
                       </span>
-                      <span className="num text-fg">{formatUsdCents(e.amountCents)}</span>
+                      <span className="num text-fg">
+                        <ProofValue proof={dp("expense", e.id)}>{formatUsdCents(e.amountCents)}</ProofValue>
+                      </span>
                     </li>
                   ))}
                 </ul>

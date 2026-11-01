@@ -1,6 +1,6 @@
 "use client";
 
-import { compositeOf } from "@/components/ui/proof/context";
+import { compositeOf, sumOf } from "@/components/ui/proof/context";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
@@ -397,7 +397,13 @@ function StubOnly({ r }: { r: BonusesReport }) {
                       <td className={table.tdR}>
                         <ProofValue proof={yearPay(r.today, y.personId, y.year, ["base", "bonus"], y.baseCents + y.bonusCents)}>{usd0(y.baseCents + y.bonusCents)}</ProofValue>
                       </td>
-                      <td className={`${table.tdR} text-muted`}>{ratio(y.bonusCents, y.baseCents)}</td>
+                      <td className={`${table.tdR} text-muted`}>
+                        {y.baseCents ? (
+                          <ProofValue proof={compositeOf("share", [yearPay(r.today, y.personId, y.year, ["bonus"], y.bonusCents), yearPay(r.today, y.personId, y.year, ["base"], y.baseCents)], { ratio: y.bonusCents / y.baseCents })}>{ratio(y.bonusCents, y.baseCents)}</ProofValue>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -423,6 +429,29 @@ function NoLetters({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null 
   );
 }
 
+type ExpectedBonus = ReturnType<typeof expectedBonuses>[number];
+
+/**
+ * An expected payment's label. Its share of the award ("70% as cash", the latest letter's
+ * pattern) is the payment over every part of the award, each an estimate with its own
+ * proof; when the list doesn't hold every part, the label names the part without a share.
+ */
+function EstimateLabel({ b, award }: { b: ExpectedBonus; award: ExpectedBonus[] }) {
+  const m = /^(.*· )(\d+%)( .*)$/.exec(b.label);
+  if (!m) return <>{b.label}</>;
+  const whole = award.reduce((s, x) => s + x.gross, 0);
+  const shares = award.reduce((s, x) => s + (x.share ?? 0), 0);
+  if (!whole || Math.abs(shares - 1) > 1e-6) return <>{`${m[1]}${m[3]!.trim()}`}</>;
+  const est = (x: ExpectedBonus) => ({ descriptor: estimateDescriptor(x), shownCents: x.gross });
+  return (
+    <>
+      {m[1]}
+      <ProofValue proof={compositeOf("share", [est(b), sumOf(award.map(est), whole)], { ratio: b.gross / whole })}>{formatPercentRatio(b.gross / whole, 0)}</ProofValue>
+      {m[3]}
+    </>
+  );
+}
+
 /**
  * Each person's next award the forecast expects but no letter or stub shows yet, part by
  * part: the forecast on the saved assumptions (lib/forecast), as the Forecast page runs it.
@@ -440,7 +469,7 @@ function Expected({ fdata }: { fdata: ForecastData | null }) {
         {next.map((b) => (
           <li key={`${b.personId}|${b.key}|${b.label}`} className="flex items-center justify-between gap-3 py-1.5">
             <span>
-              {b.personName} · {b.label} <span className="text-muted">· {b.key}</span>
+              {b.personName} · <EstimateLabel b={b} award={next.filter((x) => x.personId === b.personId && x.awardYear === b.awardYear)} /> <span className="text-muted">· {b.key}</span>
               {!b.counted && b.why && <span className="block text-xs text-faint">Not counted in the forecast: {b.why}</span>}
             </span>
             <span className="num font-medium">
