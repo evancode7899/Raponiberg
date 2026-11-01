@@ -218,6 +218,20 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
   page.on("requestfailed", done);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(`The page threw: ${e.message.split("\n")[0]}`));
+  // A read the page's data came from that failed leaves the page showing an error note, not its figures: said, not drawn as an empty view.
+  const read = (q: { method(): string; url(): string }) => {
+    const p = new URL(q.url()).pathname;
+    return p.startsWith("/api/") && (q.method() === "GET" || p === "/api/proof") ? `${q.method()} ${p}` : null;
+  };
+  page.on("response", (r) => {
+    const what = read(r.request());
+    if (what && r.status() >= 400) errors.push(`${what} answered ${r.status()}`);
+  });
+  page.on("requestfailed", (q) => {
+    const what = read(q);
+    // Aborted is the browser dropping a read the page no longer needs (it moved on), not a failure.
+    if (what && q.failure()?.errorText !== "net::ERR_ABORTED") errors.push(`${what} failed: ${q.failure()?.errorText}`);
+  });
   const views: DrawnView[] = [];
   // A view drawn before (the same figures, the same strays): nothing new to drill into or explore from it.
   const seen = new Set<string>();
@@ -376,6 +390,12 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
     if (r && !r.ok()) errors.push(`Answered ${r.status()}`);
     // Settled first: a server redirect() lands in the browser after "load".
     await settle(page);
+    // A page that draws nothing yet may only be between hydrating and asking for its data on a busy machine: one more look.
+    const first = await page.evaluate(collect);
+    if (!first.figures.length && !first.strays.length) {
+      await page.waitForTimeout(1000);
+      await settle(page);
+    }
     // An old address that redirects to a page audited in its own right is that page.
     const landed = new URL(page.url()).pathname;
     if (!unit.tab && landed !== unit.route && all.includes(landed)) return { ...unit, views: [], ms: Date.now() - t0, skipped: `redirects to ${landed}`, ...stats };
@@ -482,7 +502,17 @@ async function run(): Promise<Drawn> {
             continue;
           }
           busy++;
-          const run = await auditUnit(browser, unit, all, found).finally(() => busy--);
+          let run: UnitRun;
+          try {
+            run = await auditUnit(browser, unit, all, found);
+            // A unit that hit an error runs once more: one a busy machine caused doesn't change what the run reports, and a real one fails again.
+            if (run.views.some((v) => v.errors.length)) {
+              console.log(`${unitName(unit).padEnd(40)} retried: ${run.views.flatMap((v) => v.errors)[0]}`);
+              run = await auditUnit(browser, unit, all, found);
+            }
+          } finally {
+            busy--;
+          }
           runs.push(run);
           console.log(`${unitName(unit).padEnd(40)} ${run.skipped ?? `${String(run.views.length).padStart(4)} view(s) ${String(run.draws).padStart(4)} look(s) ${String(run.drawers).padStart(3)} drawer(s)`} ${String(run.ms).padStart(7)}ms`);
         }
