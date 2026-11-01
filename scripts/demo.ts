@@ -23,9 +23,10 @@
  * DEMO_PORT changes the port (default 3001).
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { latestBuildDir, staleBuild } from "./build-freshness.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEMO_DIR = path.join(ROOT, "data", "demo");
@@ -87,34 +88,8 @@ function buildDemoData() {
   node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", path.join(ROOT, "scripts", "demo-seed.ts")], "Filling the demo data");
 }
 
-/**
- * What a production build is made from: the set the launcher stamps before it rebuilds
- * (scripts/start-local-server.ps1). Scripts under scripts/ run from source, so they're not in it.
- */
-const BUILD_INPUTS = ["src", "prisma", "next.config.ts", "postcss.config.mjs", "tsconfig.json", "package.json", "package-lock.json"];
-
-/** The most recently written build input, and when. */
-function newestInput(): { file: string; at: number } {
-  const newest = { file: "", at: 0 };
-  const walk = (p: string) => {
-    const st = statSync(p, { throwIfNoEntry: false });
-    if (st?.isDirectory()) for (const e of readdirSync(p)) walk(path.join(p, e));
-    else if (st && st.mtimeMs > newest.at) Object.assign(newest, { file: p, at: st.mtimeMs });
-  };
-  for (const p of BUILD_INPUTS) walk(path.join(ROOT, p));
-  return newest;
-}
-
-/** When the build in this folder finished (next build writes BUILD_ID last), or null with no build. */
-function builtAt(dir: string): number | null {
-  return statSync(path.join(ROOT, dir, "BUILD_ID"), { throwIfNoEntry: false })?.mtimeMs ?? null;
-}
-
 function buildDir(): string {
-  if (dev) return ".next-dev-demo";
-  if (process.env.NEXT_BUILD_DIR) return process.env.NEXT_BUILD_DIR;
-  // The newer of the launcher's build and a plain `npm run build`.
-  return (builtAt(".next-app") ?? -1) > (builtAt(".next") ?? -1) ? ".next-app" : ".next";
+  return dev ? ".next-dev-demo" : latestBuildDir(ROOT);
 }
 
 /**
@@ -125,10 +100,8 @@ function buildDir(): string {
  */
 function freshBuildDir(): string {
   const dir = buildDir();
-  const at = builtAt(dir);
-  const newest = newestInput();
-  if (at != null && at >= newest.at) return dir;
-  const why = at == null ? `No production build in ${dir}` : `The build in ${dir} is older than the code (${path.relative(ROOT, newest.file)} changed since)`;
+  const why = staleBuild(ROOT, dir);
+  if (!why) return dir;
   if (!process.argv.includes("--build")) throw new Error(`${why}: run npm run build first, or add --build.`);
   const target = process.env.NEXT_BUILD_DIR || ".next";
   console.log(`${why}: building into ${target}.`);
