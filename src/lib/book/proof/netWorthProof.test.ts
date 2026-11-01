@@ -415,7 +415,7 @@ describe("net-worth balance proof", () => {
     });
   });
 
-  it("lists a derived stretch, an interpolated gap and an idle cycle as estimates", () => {
+  it("lists a derived stretch and an interpolated gap as estimates, never a proven idle cycle", () => {
     const book = makeBook();
     const ret = buildNetWorthProof(book, bal("2025-02-28", { accountIds: ["ret"] }));
     expect(rowsOf(ret)[0]!.statement).toMatchObject({
@@ -440,7 +440,8 @@ describe("net-worth balance proof", () => {
       periodEnd: "2025-04-04",
     });
     expect(rowsOf(card)[0]!.rows.map((r) => r.payee)).toEqual(["Balance carried in", "Paid off from the bank"]);
-    expect(card.estimates.map((e) => e.id)).toContain("idle:card:2025-03-05");
+    // No statement because nothing happened, and the paying bank proves it: not an estimate (owner's rule, 2026-11-01).
+    expect(card.estimates).toEqual([]);
   });
 
   it("splits assets from debts, and leaves an account out until its first statement", () => {

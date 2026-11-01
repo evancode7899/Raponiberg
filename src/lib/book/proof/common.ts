@@ -58,10 +58,15 @@ function workOutChecks(book: Book, q: BlockerQuery | BlockerQuery[], ids: CheckI
 }
 
 /**
- * What stands on an inference rather than a printed line: inferences about the listed
- * rows, rows the classifier wasn't sure of (counted as filed until answered on Review),
- * and card cycles with no statement counted as $0 (proven idle from the paying bank's
- * side) for the accounts and window in scope.
+ * What a past figure genuinely can't read off a printed line: partial inferences about the
+ * listed rows or accounts (money known from one source only), rows the classifier wasn't
+ * sure of (counted as filed until answered on Review), and the provisional days of a card
+ * cycle with no statement (a payment could still turn up on the next bank statement).
+ *
+ * Not estimates (owner's rule, 2026-11-01): an idle card cycle the paying bank's statements
+ * prove empty (no statement because nothing happened is proof), market change that is what a
+ * statement's printed opening and closing leave, an account the owner closed. Each is still
+ * listed among the integrity inferences on Statements › Checks.
  */
 export function estimatesFor(book: Book, opts: { rowIds: Set<string>; from: string; to: string; accountIds?: string[] }): ProofEstimate[] {
   const inScope = (id: string) => !opts.accountIds?.length || opts.accountIds.includes(id);
@@ -69,20 +74,27 @@ export function estimatesFor(book: Book, opts: { rowIds: Set<string>; from: stri
   const unreviewed = [...opts.rowIds].map((id) => book.rowById.get(id)).filter((r) => r?.needsReview);
   return [
     ...book.integrity.inferences
-      .filter((i) => i.rowIds?.some((id) => opts.rowIds.has(id)) || (i.scope?.accountId && inScope(i.scope.accountId) && i.scope.from <= opts.to && i.scope.to >= opts.from))
+      .filter((i) => i.partial && (i.rowIds?.some((id) => opts.rowIds.has(id)) || (i.scope?.accountId && inScope(i.scope.accountId) && i.scope.from <= opts.to && i.scope.to >= opts.from)))
       .map((i) => ({ id: i.id, title: i.title, detail: i.detail })),
     ...(unreviewed.length ? [unreviewedEstimate(unreviewed.map((r) => r!))] : []),
     ...book.idle.proven
-      .filter((w) => inScope(w.accountId) && w.from <= opts.to && w.to >= opts.from)
+      .filter((w) => w.provisionalFrom && inScope(w.accountId) && w.provisionalFrom <= opts.to && w.to >= opts.from)
       .map((w) => ({
         id: `idle:${w.accountId}:${w.from}`,
-        title: `${name(w.accountId) ?? "A card"}: no statement ${w.from} – ${w.to}, counted as $0${w.provisionalFrom ? ` (provisional from ${w.provisionalFrom})` : ""}`,
-        detail: w.provisionalFrom
-          ? "The issuer sends no statement for a cycle without activity; the paying bank's statements show no payment to it, though from the provisional date a payment could still come on the next bank statement."
-          : "The issuer sends no statement for a cycle without activity; the paying bank's statements prove nothing happened.",
+        title: `${name(w.accountId) ?? "A card"}: no statement ${w.from} – ${w.to}, counted as $0 (provisional from ${w.provisionalFrom})`,
+        detail: "The issuer sends no statement for a cycle without activity; the paying bank's statements show no payment to it, though from the provisional date a payment could still come on the next bank statement.",
       })),
   ];
 }
+
+/**
+ * Estimates that only say a figure looks ahead (a forecast, a plan, a projection to year
+ * end, room left this year): everything after the last proven day is an estimate by its
+ * nature, so these never mark a figure "est" (owner's rule, 2026-11-01). The drawer still
+ * lists them.
+ */
+const PROJECTION_IDS = ["forecast.", "planning.", "account-limits:", "hsa.growth-rate", "estimate:", "tax-estimate:projected"];
+export const isProjection = (e: ProofEstimate) => PROJECTION_IDS.some((p) => e.id.startsWith(p));
 
 /** Rows counted as the classifier filed them, though it asked for a person's answer. */
 export function unreviewedEstimate(rows: { amountCents: number; category: string }[]): ProofEstimate {

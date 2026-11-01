@@ -140,9 +140,9 @@ function Fire({
   };
 
   const fireSettings = { walkAwayYear: a.walkAwayYear, withdrawalRate: a.withdrawalRate, stateTaxRate: a.stateTaxRate, retirementAge: a.retirementAge };
-  // On the saved settings only: unsaved edits make figures no sweep has seen, so they wait for Save.
-  const pf = fireProof(fireSettings, dirty);
-  const pp = firePlanProof(fireSettings, dirty);
+  // On the settings as typed: unsaved edits run the model the sweep proved on the saved ones.
+  const pf = fireProof(fireSettings);
+  const pp = firePlanProof(fireSettings);
   const d = fireData(s, a, pay);
   if (tab === "playbook") return <PlaybookTab f={f} pf={pf} d={d} />;
   const props = { f, dollars, setDollars, d };

@@ -28,6 +28,7 @@ function months(lanes: Lanes[], opts: { through?: string } = {}): NetWorthPeriod
       feesCents: 0,
       unexplainedCents: 0,
       quality: "EXACT",
+      closingQuality: "EXACT",
       portfolioReturn: 0.01,
     };
     h.principalCents = h.incomeCents + h.spendingCents + h.externalCents + h.retirementEmployeeCents + h.retirementEmployerCents;

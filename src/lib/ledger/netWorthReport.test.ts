@@ -85,3 +85,19 @@ describe("span returns chain their months", () => {
     expect(chainedReturn([])).toBeNull();
   });
 });
+
+describe("a closing balance on a statement's last day is exact, whatever the month's change", () => {
+  // One quarterly statement: its market change is spread over the quarter's days.
+  const q = account("q", [["2025-04-01", "2025-06-30", 10_000_000, 10_300_000, 300_000]]);
+  const r = buildNetWorthReport({ accounts: [q], mergeDate: "2025-01-01", completeThrough: "2025-06-30", firstDay: "2025-04-01" }, { granularity: "month", from: "2025-04-01", to: "2025-06-30" });
+
+  it("estimates April's and May's month-end values and the split of the quarter's change, but not the June 30 balance", () => {
+    const [apr, may, jun] = r.periods;
+    expect(apr!.household.closingQuality).toBe("ESTIMATED");
+    expect(may!.household.closingQuality).toBe("ESTIMATED");
+    expect(jun!.household.quality).toBe("ESTIMATED");
+    expect(jun!.household.closingQuality).toBe("EXACT");
+    expect(jun!.byAccount[0]!.closingQuality).toBe("EXACT");
+    expect(jun!.household.closingCents).toBe(10_300_000);
+  });
+});

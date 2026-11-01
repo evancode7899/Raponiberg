@@ -98,4 +98,19 @@ describe("composite clearance: a share, change or sum clears from its parts' cle
     const diff = { descriptor: { report: "composite", op: "diff", of: [b, a] } as const, shownCents: 750_00 };
     expect(clearanceOf(diff, ready({ cleared }), "abc123")).toMatchObject({ state: "cleared", cleared: { cents: 750_00 } });
   });
+
+  it("shows a calculator figure on typed inputs when the sweep cleared its model on the saved ones", () => {
+    const saved = { report: "planning", page: "home", figure: "max-price", inputs: { annualMortgageRate: 0.06 } } as const;
+    const typed = { ...saved, inputs: { annualMortgageRate: 0.05 } };
+    const model = '{"figure":"max-price","page":"home","report":"planning"}';
+    const s = ready({ cleared: { [descriptorKey(saved)]: { cents: 500_000_00 } }, models: { [model]: true } });
+    expect(clearanceOf({ descriptor: typed as never, shownCents: 560_000_00 }, s, "abc123")).toMatchObject({ state: "cleared", cleared: { cents: 560_000_00 } });
+    // A share of two typed-input figures stands on them too.
+    const share = { descriptor: { report: "composite", op: "share", of: [typed, { ...typed, figure: "salary" }] } as never, shownCents: null, shown: { ratio: 0.3 } };
+    expect(clearanceOf(share, ready({ models: { [model]: true, [model.replace("max-price", "salary")]: true } }), "abc123").state).toBe("cleared");
+    // A model the sweep found broken withholds every figure of it.
+    expect(clearanceOf({ descriptor: typed as never, shownCents: 560_000_00 }, ready({ models: { [model]: false } }), "abc123")).toMatchObject({ state: "withheld", reason: "not-cleared" });
+    // Ledger figures never stand on a model: only the sweep's own verdict clears them.
+    expect(clearanceOf(shown(1_00), ready({ cleared: {}, models: { [model]: true } }), "abc123")).toMatchObject({ state: "withheld", reason: "not-cleared" });
+  });
 });

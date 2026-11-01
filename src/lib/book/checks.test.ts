@@ -679,13 +679,13 @@ describe("single-source audit: what a committed statement and a row can't hide",
     expect(rerun(b).integrity.findings.filter((x) => x.check === "statement.held")).toEqual([]);
   });
 
-  it("lists a statement whose market change is what the balances leave as an inference on its account", () => {
+  it("lists a statement whose market change is what the balances leave as an inference on its account, never an estimate", () => {
     const b = makeBook({ accounts: [checking([])] });
     b.statements = [statement({ growthDerived: true })];
     const inf = rerun(b).integrity.inferences.find((i) => i.id.startsWith("statement.growth:"));
     expect(inf?.scope).toMatchObject({ accountId: "chk", from: "2025-01-01", to: "2025-01-31" });
-    expect(estimatesFor(b, { rowIds: new Set(), from: "2025-01-10", to: "2025-01-20", accountIds: ["chk"] }).map((e) => e.id)).toContain(inf!.id);
-    expect(estimatesFor(b, { rowIds: new Set(), from: "2025-03-01", to: "2025-03-31", accountIds: ["chk"] }).map((e) => e.id)).not.toContain(inf!.id);
+    // Opening and closing are printed: the change between them is arithmetic, not a guess (owner's rule, 2026-11-01).
+    expect(estimatesFor(b, { rowIds: new Set(), from: "2025-01-10", to: "2025-01-20", accountIds: ["chk"] }).map((e) => e.id)).not.toContain(inf!.id);
   });
 
   it("counts a row awaiting review as filed, and says so on the period and in its proof", () => {

@@ -83,7 +83,7 @@ function ClearanceNote({ c }: { c: Clearance }) {
           Cleared: the proof sweep of this data held it to its proof{c.basis === "estimate" ? ", and it rests on an estimate (listed below)" : c.basis === "accepted" ? ", resting on an exception you accepted (listed below)" : ""}.
         </Callout>
       ) : c.state === "verifying" ? (
-        <Callout tone="info">Verifying: the proof sweep of this data is still running. The page shows the figure once the sweep clears it.</Callout>
+        <Callout tone="info">Checking: the proof sweep of this data is still running. The figure shows meanwhile, and is withheld the moment the sweep finds a problem with it.</Callout>
       ) : (
         <Callout tone={c.reason === "mismatch" || c.reason === "flagged" ? "bad" : "warn"} title={WITHHELD_TITLE[c.reason]}>
           {c.reason === "mismatch" && c.shown && c.cleared ? (

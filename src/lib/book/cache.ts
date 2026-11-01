@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import { resolveSqliteDatabaseFilePath } from "../sqliteDbPath.ts";
@@ -70,13 +70,49 @@ function stat(file: string): string {
   }
 }
 
-/** Fingerprint of everything the Book and its reports read, plus the date (the Book is built "as of today"). */
-export function dataStamp(): string {
-  const parts = [today()];
+/** Every file the Book and its reports read: the database, its write-ahead log, and the data files. */
+function stampedFiles(): string[] {
   const db = databaseFile();
   // No database file to watch would serve one Book forever: refuse instead.
   if (!db) throw new Error("DATABASE_URL isn't a SQLite file: the Book can't tell when the data changes.");
-  parts.push(stat(db), stat(`${db}-wal`));
+  return [db, `${db}-wal`, ...dataFiles()];
+}
+
+/** Fingerprint of everything the Book and its reports read, plus the date (the Book is built "as of today"). */
+export function dataStamp(): string {
+  const [db, wal, ...files] = stampedFiles();
+  const parts = [today(), stat(db!), stat(wal!)];
+  for (const f of files) parts.push(`${path.basename(f)}=${stat(f)}`);
+  return parts.join("|");
+}
+
+let contentMemo: { stamp: string; hash: string } | null = null;
+
+/**
+ * What the files hold, not when they were last touched: the same as dataStamp, but read off
+ * their bytes. SQLite touches its write-ahead log each time the app opens the database, so
+ * the stamp moves on every launch even when nothing changed; a proof sweep kept from the
+ * last launch (sweepStore.ts) is reused when this matches. An empty log is no log at all.
+ * Read once per stamp.
+ */
+export function dataContent(stamp = dataStamp()): string {
+  if (contentMemo?.stamp === stamp) return contentMemo.hash;
+  const h = createHash("sha256").update(today());
+  for (const f of stampedFiles()) {
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(f);
+    } catch {
+      bytes = Buffer.alloc(0);
+    }
+    h.update(`\n${path.basename(f)}:${bytes.length}\n`).update(bytes);
+  }
+  contentMemo = { stamp, hash: h.digest("hex") };
+  return contentMemo.hash;
+}
+
+/** The JSON data files the stamp covers (the data folder's, and those env variables point at). */
+function dataFiles(): string[] {
   const dir = dataDir();
   let json: string[] = [];
   try {
@@ -92,8 +128,7 @@ export function dataStamp(): string {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
   for (const k of ENV_FILES) if (process.env[k]) json.push(process.env[k]!);
-  for (const f of json) parts.push(`${path.basename(f)}=${stat(f)}`);
-  return parts.join("|");
+  return json;
 }
 
 export { deepFreeze };

@@ -120,7 +120,7 @@ export function buildHomeSummary(book: Book) {
           },
       driversBlockers: t12Blockers,
       groups: known ? groups : [],
-      series: periods.slice(-24).map((p) => ({ end: p.end, label: p.label, cents: p.blockers.length ? null : p.household.closingCents, quality: p.household.quality })),
+      series: periods.slice(-24).map((p) => ({ end: p.end, label: p.label, cents: p.blockers.length ? null : p.household.closingCents, quality: p.household.closingQuality })),
       mergeDate: nw.mergeDate,
     },
     cashFlow: {

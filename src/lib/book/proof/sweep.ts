@@ -56,7 +56,8 @@ import {
 } from "./figures.ts";
 import { derivedList, sweptDerivedPages } from "../derived/load.ts";
 import { buildProof, parseDescriptor, type ProofDescriptor } from "./index.ts";
-import { descriptorKey } from "./key.ts";
+import { descriptorKey, whatIfModelKey } from "./key.ts";
+import { isProjection } from "./common.ts";
 import type { Proof, ProofContext, ProofLink, ProofValue } from "./types.ts";
 
 /**
@@ -103,6 +104,8 @@ export type SweepReport = {
   basis: Record<string, ClearedBasis>;
   /** Every problem, by descriptor key (a page that couldn't be built at all: `page:<name>`). */
   problems: Record<string, SweepProblem[]>;
+  /** Each calculator model (key.ts whatIfModelKey): true when every figure of it swept on the saved inputs cleared. */
+  models: Record<string, boolean>;
   /** How many problems in all. */
   problemCount: number;
   /** The problems for people to read, the first LISTED of them. */
@@ -271,7 +274,8 @@ export async function judgeFigures(
     // An open finding withholds the figure wherever it's shown, whether or not this page states a value for it.
     if (!(p.withheld && !f.asPrinted)) {
       cleared[descriptorKey(f.descriptor)] = p.figure;
-      const how: ClearedBasis | null = p.estimates.length ? "estimate" : p.checks.some((c) => c.state === "accepted") ? "accepted" : null;
+      // Anything after the last proven day is an estimate by its nature: only a figure resting on an estimate about the past is marked.
+      const how: ClearedBasis | null = p.estimates.some((e) => !isProjection(e)) ? "estimate" : p.checks.some((c) => c.state === "accepted") ? "accepted" : null;
       if (how) basis[descriptorKey(f.descriptor)] = how;
     }
     if (opts.followLinks !== false) for (const l of linksOf(p)) links.set(descriptorKey(l.descriptor), { from: p.describes, page: f.page, link: l });
@@ -282,6 +286,11 @@ export async function judgeFigures(
       delete cleared[k];
       delete basis[k];
     }
+  const models: Record<string, boolean> = {};
+  for (const f of figures) {
+    const m = whatIfModelKey(f.descriptor);
+    if (m) models[m] = (models[m] ?? true) && descriptorKey(f.descriptor) in cleared;
+  }
   for (const { from, page, link } of links.values()) {
     const parsed = parseDescriptor(JSON.parse(JSON.stringify(link.descriptor)));
     if ("error" in parsed) {
@@ -308,6 +317,7 @@ export async function judgeFigures(
     cleared,
     basis,
     problems,
+    models,
     problemCount: all.length,
     listing: all.slice(0, LISTED),
     skipped: opts.skipped ?? [],

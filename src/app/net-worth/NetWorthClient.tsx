@@ -478,7 +478,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                       <td className={`${table.td} whitespace-nowrap font-medium`}>
                         <span className="text-faint" data-audit-drill={p.label}>{isOpen ? "▾" : "▸"}</span>{" "}
                         <ProofValue proof={changeProof(granularity, p.start, p.end, h.closingCents - h.openingCents)} drawn="words">{p.label}</ProofValue>
-                        <QualityBadge quality={h.quality} />
+                        <QualityBadge quality={h.closingQuality} />
                       </td>
                       <td className={table.tdR}>
                         <ProofValue proof={balanceProof(addDays(p.start, -1), h.openingCents)}>{usd0(h.openingCents)}</ProofValue>
@@ -524,7 +524,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                                 <tr key={a.accountId} className={table.tr}>
                                   <td className={table.td}>
                                     {names.get(a.accountId)}
-                                    <QualityBadge quality={a.quality} />
+                                    <QualityBadge quality={a.closingQuality} />
                                   </td>
                                   <td className={table.tdR}>
                                     {a.newlyTrackedCents ? <span title="Balance already in the account when its first statement on file begins">{cell(`${p.start}:first-on-file`, a.accountId, usd0(a.newlyTrackedCents))} (first on file)</span> : <ProofValue proof={balanceProof(addDays(p.start, -1), a.openingCents, { accountIds: [a.accountId] })}>{usd0(a.openingCents)}</ProofValue>}

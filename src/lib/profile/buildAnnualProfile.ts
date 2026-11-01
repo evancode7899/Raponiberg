@@ -347,7 +347,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
       for (const b of BUCKETS) signed[b.id] += transit[b.id];
       const allTransit = Object.values(transit).reduce((s, v) => s + v, 0);
       const liquidTransit = BUCKETS.filter((b) => b.liquid).reduce((s, b) => s + transit[b.id], 0);
-      return { ...summarizeBuckets(signed), quality: period!.household.quality, inTransit: allTransit, inTransitSplit: { liquid: liquidTransit, illiquid: allTransit - liquidTransit } };
+      return { ...summarizeBuckets(signed), quality: period!.household.closingQuality, inTransit: allTransit, inTransitSplit: { liquid: liquidTransit, illiquid: allTransit - liquidTransit } };
     };
     const netWorth = period && nwBlockers.length === 0 ? netWorthAt(nwAsOf) : null;
     if (isCurrent && record && period)

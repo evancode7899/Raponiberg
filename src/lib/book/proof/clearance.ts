@@ -2,18 +2,22 @@ import type { FigureBasis } from "../figure.ts";
 import type { BlockerRef } from "../reports/blockerRef.ts";
 import type { ProofDescriptor } from "./index.ts";
 import { composeCleared, isComposite } from "./composite.ts";
-import { descriptorKey } from "./key.ts";
+import { descriptorKey, whatIfModelKey } from "./key.ts";
 import type { ProofValue } from "./types.ts";
 
 /**
  * Fail-closed clearance: whether a page may show a figure's number. Pure; runs on the
  * server and in the browser alike.
  *
- * A figure shows only when the proof sweep (sweep.ts) of the very data the page was built
- * from (its stamp, cache.ts stampTag) cleared its recipe, and the page shows the value the
- * sweep cleared. Anything else withholds it: the sweep still running ("verifying…"), the
- * sweep failing or never answering, a finding blocking it, a flag, a different number, a
- * recipe the sweep never held to its proof. Nothing shows just because nobody objected.
+ * A figure shows when the proof sweep (sweep.ts) of the very data the page was built from
+ * (its stamp, cache.ts stampTag) cleared its recipe, and the page shows the value the sweep
+ * cleared. Anything else withholds it: the sweep failing or never answering, a finding
+ * blocking it, a flag, a different number, a recipe the sweep never held to its proof.
+ *
+ * Two exceptions keep the app quick (owner's rule, 2026-11-01). While the sweep of fresh
+ * data runs ("verifying"), the page's number shows plain, and is withheld the moment the
+ * sweep answers with a problem. A calculator figure on inputs the owner typed stands on the
+ * model the sweep cleared on the saved inputs (whatIfStands).
  */
 
 export type SweepProblemKind = "DIFFERS" | "SELF_CHECK" | "CHAIN" | "REDERIVE" | "WITHHELD" | "LINK" | "ERROR" | "SKIPPED";
@@ -35,11 +39,13 @@ export type SweepState = {
   /** Cleared figures that rest on an estimate or an accepted exception. */
   basis: Readonly<Record<string, ClearedBasis>>;
   problems: Readonly<Record<string, SweepProblem[]>>;
+  /** Calculator models the sweep held to their proofs on the saved inputs (key.ts whatIfModelKey): true when every figure of one cleared. */
+  models?: Readonly<Record<string, boolean>>;
   /** Why the sweep failed, when it did. */
   error?: string;
 };
 
-export const NO_SWEEP: SweepState = { stamp: null, status: "failed", cleared: {}, basis: {}, problems: {}, error: "No proof sweep here: figures can't be checked outside the app." };
+export const NO_SWEEP: SweepState = { stamp: null, status: "failed", cleared: {}, basis: {}, problems: {}, models: {}, error: "No proof sweep here: figures can't be checked outside the app." };
 
 /** A figure the page shows: its recipe and the value shown (cents before any per-month split; `shown` for a rate or words). */
 export type ShownFigure = { descriptor: ProofDescriptor; shownCents: number | null; shown?: ProofValue; perMonths?: number };
@@ -112,6 +118,8 @@ export function clearanceOf(f: ShownFigure | Unswept, s: SweepState, pageStamp: 
     const flagged = parts.flatMap((k) => s.problems[k] ?? []);
     if (flagged.length) return withheld("flagged", flagged.map((p) => p.detail).join(" "), { problems: flagged });
     const r = composeCleared(f.descriptor, s.cleared);
+    // Parts worked out on inputs the owner typed: the composite is the page's arithmetic on its own model figures.
+    if ("missing" in r && r.missing.every((k) => whatIfStands(k, s))) return { state: "cleared", key, shown, cleared: shown ?? ON_TYPED_INPUTS, basis: "proven" };
     if ("missing" in r) return withheld("not-cleared", `${r.missing.length} of its ${parts.length} parts haven't cleared, so it can't be worked out.`);
     if (!r.value) return withheld("not-cleared", "It has no value: a share or growth of nothing.");
     if (shown && differs(shown, r.value)) return withheld("mismatch", `The page shows ${showValue(shown)}; its parts work out to ${showValue(r.value)}.`, { cleared: r.value });
@@ -121,9 +129,34 @@ export function clearanceOf(f: ShownFigure | Unswept, s: SweepState, pageStamp: 
   const problems = s.problems[key];
   if (problems?.length) return withheld("flagged", problems.map((p) => p.detail).join(" "), { problems });
   const cleared = s.cleared[key];
+  // A calculator figure on inputs the owner typed: the same model, on the same Book, the sweep cleared on the saved inputs.
+  if (!cleared && whatIfStands(key, s)) return { state: "cleared", key, shown, cleared: shown ?? ON_TYPED_INPUTS, basis: "proven" };
   if (!cleared) return withheld("not-cleared", "The proof sweep doesn't hold this figure to its proof (never swept).");
   if (shown && differs(shown, cleared)) return withheld("mismatch", `The page shows ${showValue(shown)}; its proof cleared ${showValue(cleared)}.`, { cleared });
   return { state: "cleared", key, shown, cleared, basis: s.basis[key] ?? "proven" };
+}
+
+/** What a calculator figure on typed inputs clears at when the page states no value of its own (a rate it draws in words). */
+const ON_TYPED_INPUTS: ProofValue = { text: "worked out on the inputs typed" };
+
+/**
+ * Whether a figure the sweep never saw stands on a model it did: a calculator figure (or a
+ * composite of them) on inputs the owner typed, whose model cleared on the saved inputs.
+ * Sensitivities and what-ifs update the moment an input changes, with no sweep to wait for.
+ */
+function whatIfStands(key: string, s: SweepState): boolean {
+  // Its drawer builds the proof on the typed inputs themselves, so it can still be opened and checked.
+  if (s.cleared[key]) return true;
+  if (s.problems[key]?.some((p) => BLOCKING_KINDS.includes(p.kind))) return false;
+  let d: Record<string, unknown>;
+  try {
+    d = JSON.parse(key) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  if (d.report === "composite") return Array.isArray(d.of) && d.of.length > 0 && d.of.every((p) => whatIfStands(descriptorKey(p), s));
+  const model = whatIfModelKey(d);
+  return model != null && s.models?.[model] === true;
 }
 
 /**
@@ -132,11 +165,11 @@ export function clearanceOf(f: ShownFigure | Unswept, s: SweepState, pageStamp: 
  * failure is never "nothing flagged": every figure is withheld until a sweep answers.
  */
 export function sweepAnswer(status: number | null, body: unknown, why?: string): SweepState {
-  const b = (body ?? {}) as Partial<{ stamp: string; status: string; cleared: Record<string, ProofValue>; basis: Record<string, ClearedBasis>; problems: Record<string, SweepProblem[]>; error: string }>;
+  const b = (body ?? {}) as Partial<{ stamp: string; status: string; cleared: Record<string, ProofValue>; basis: Record<string, ClearedBasis>; problems: Record<string, SweepProblem[]>; models: Record<string, boolean>; error: string }>;
   const failed = (error: string): SweepState => ({ stamp: typeof b.stamp === "string" ? b.stamp : null, status: "failed", cleared: {}, basis: {}, problems: {}, error });
   if (status == null) return failed(why ?? "The server didn't answer.");
   if (status === 202 && typeof b.stamp === "string") return { stamp: b.stamp, status: "pending", cleared: {}, basis: {}, problems: {} };
   if (status !== 200) return failed(b.error ?? `The server answered ${status}.`);
   if (typeof b.stamp !== "string" || !b.cleared || !b.problems) return failed("The sweep's answer has no stamp or verdicts.");
-  return { stamp: b.stamp, status: "ready", cleared: b.cleared, basis: b.basis ?? {}, problems: b.problems };
+  return { stamp: b.stamp, status: "ready", cleared: b.cleared, basis: b.basis ?? {}, problems: b.problems, models: b.models ?? {} };
 }
