@@ -432,6 +432,16 @@ export function chainReturns(periodReturns: { r: number; days: number }[]): { to
 }
 
 /**
+ * A span's time-weighted return: its months' returns chained, a month with no return
+ * (under MIN_RETURN_CAPITAL_CENTS) left out; null when no month has one. Every quarter's
+ * and year's return is this, so it matches its months on every page.
+ */
+export function chainedReturn(monthReturns: readonly (number | null)[]): number | null {
+  const measured = monthReturns.filter((r): r is number => r != null);
+  return measured.length ? chainReturns(measured.map((r) => ({ r, days: 0 }))).total : null;
+}
+
+/**
  * Below this average invested capital a period's return is dominated by rounding,
  * bonuses and timing rather than performance, so it's left out of chained returns.
  */

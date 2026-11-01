@@ -3,6 +3,7 @@ import { formatPercentRatio, formatUsdFromCents } from "../../formatMoney.ts";
 import { buildAnnualProfile, transfersInTransit, type AnnualProfileReport, type PersonYear, type YearCash, type YearProfile } from "../../profile/buildAnnualProfile.ts";
 import { bucketForGroup } from "../../profile/annualMath.ts";
 import { rollTotalValue, rollValue, type RollLine, type RollTotalLine } from "../../profile/rollLines.ts";
+import { monthReturn } from "../../ledger/netWorthReport.ts";
 import { buildAccountRollforwards, type AccountRollforward, type RollYear } from "../../profile/rollforwards.ts";
 import { BUCKETS, loadProfileSettings, type NetWorthBucket } from "../../profile/settings.ts";
 import type { BlockerQuery } from "../blockers.ts";
@@ -851,19 +852,31 @@ function rollforwardProof(c: Ctx, a: AccountRollforward, x: RollYear, ln: RollLi
     },
   ];
   if (ln === "return") {
-    const { gainCents, capitalCents } = x.dietz;
-    const r = ratioProof(
-      describes,
-      x.returnRatio,
-      [line(undefined, "Gain: closing − opening − money moved in or out", gainCents, estimated ? "estimate" : "proven")],
-      line(undefined, "Capital: opening + money moved, each weighted by the share of the year it was invested", capitalCents, "derived"),
-      base,
-      "under $1,000 invested the page shows no return (too little to measure)",
-    );
+    // Each month's gain ÷ time-weighted capital, chained (as How it was built's year return): re-chained here from the parts.
+    const rs = x.months.map(monthReturn);
+    const measured = rs.filter((m): m is number => m != null);
+    const recomputed = measured.length ? measured.reduce((g, m) => g * (1 + m), 1) - 1 : null;
+    const ok = recomputed === x.returnRatio || (recomputed != null && x.returnRatio != null && Math.abs(recomputed - x.returnRatio) < 1e-12);
+    const worked = recomputed == null ? "No month had $1,000 invested: no return" : `${measured.length} months chained: (1 + r₁) × (1 + r₂) × … − 1 = ${pct(recomputed)}`;
     return {
-      ...r,
-      blocks: [...r.blocks, { kind: "chain", title: "The year", lines }, ...blocks],
-      ...(x.returnRatio == null ? { describes: `${describes} (under $1,000 invested: no return)` } : {}),
+      describes: x.returnRatio == null ? `${describes} (under $1,000 invested: no return)` : describes,
+      figure: x.returnRatio == null ? { text: "—" } : { ratio: x.returnRatio },
+      selfCheck: { ok, deltaCents: 0, explain: worked },
+      blocks: [
+        {
+          kind: "breakdown",
+          title: "Each month's return, chained",
+          items: x.months.map((m, i) => ({
+            label: m.start.slice(0, 7),
+            sub: `gain ${money(m.gainCents)} ÷ capital ${money(m.capitalCents)} (opening + money moved, weighted by the share of the month invested)`,
+            value: rs[i] == null ? { text: "—" } : { ratio: rs[i]! },
+          })),
+          note: "A month under $1,000 invested has no return and is left out of the chain.",
+        },
+        { kind: "chain", title: "The year", lines },
+        ...blocks,
+      ],
+      ...base,
     };
   }
   const figure = rollValue(x, ln);
