@@ -50,3 +50,6 @@ next-env.d.ts
 
 # Claude Code's local state (worktrees, machine-specific settings)
 /.claude/
+
+# The render audit's shard results (RENDER_AUDIT_OUT in CI)
+/render-audit-*.json
