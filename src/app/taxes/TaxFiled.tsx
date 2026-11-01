@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, btn, EmptyState, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -11,7 +12,7 @@ import { TAX_DOC_KIND_LABEL } from "@/lib/taxdocs/types";
 import Link from "next/link";
 import { useState } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
-import { Callout, usd } from "./taxUi";
+import { Callout, usd, useOverviewCell } from "./taxUi";
 
 const STATUS: Record<CheckStatus, { label: string; tone: "pos" | "neutral" | "neg" | "warn" | "info" }> = {
   MATCH: { label: "matches", tone: "pos" },
@@ -26,6 +27,7 @@ const STATUS: Record<CheckStatus, { label: string; tone: "pos" | "neutral" | "ne
  * payments against the ledger; and the inputs that would close any gap, one click each.
  */
 export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) => Promise<void> }) {
+  const cell = useOverviewCell(r);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const docs = r.documents;
@@ -107,8 +109,8 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
 
       {check?.amendment && (
         <Callout tone="info" title="Amendment">
-          {check.amendment.reason} It would change federal tax by {signed(check.amendment.federal)}, Connecticut tax by {signed(check.amendment.ct)}
-          {check.amendment.ny ? ` and New York tax by ${signed(check.amendment.ny)}` : ""}.
+          {check.amendment.reason} It would change federal tax by {cell("amendment", "federal", signed(check.amendment.federal))}, Connecticut tax by {cell("amendment", "ct", signed(check.amendment.ct))}
+          {check.amendment.ny ? <> and New York tax by {cell("amendment", "ny", signed(check.amendment.ny))}</> : ""}.
         </Callout>
       )}
 
@@ -128,7 +130,7 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
           }
         />
       )}
-      {check && check.sources.length > 0 && <SourceTable sources={check.sources} />}
+      {check && check.sources.length > 0 && <SourceTable sources={check.sources} cell={cell} />}
 
       <Card title={`Documents for ${r.year}`} subtitle="Everything in the year's folder, as read. Superseded copies (rejected e-files, previews) are listed but not used.">
         <div className={table.wrap}>
@@ -218,7 +220,7 @@ function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year:
   );
 }
 
-function SourceTable({ sources }: { sources: SourceCheck[] }) {
+function SourceTable({ sources, cell }: { sources: SourceCheck[]; cell: (row: string, col: string, text: ReactNode) => ReactNode }) {
   const tone = { MATCH: "pos", DIFFERENT: "neg", LEDGER_MISSING: "info" } as const;
   const label = { MATCH: "matches", DIFFERENT: "differs", LEDGER_MISSING: "form only" };
   return (
@@ -240,8 +242,8 @@ function SourceTable({ sources }: { sources: SourceCheck[] }) {
                   <div>{s.label}</div>
                   {s.note && <div className="mt-0.5 text-xs text-muted">{s.note}</div>}
                 </td>
-                <td className={table.tdR}>{usd(s.documentValue)}</td>
-                <td className={table.tdR}>{usd(s.ledgerValue)}</td>
+                <td className={table.tdR}>{cell(`source:${i}`, "document", usd(s.documentValue))}</td>
+                <td className={table.tdR}>{s.ledgerValue == null ? usd(null) : cell(`source:${i}`, "ledger", usd(s.ledgerValue))}</td>
                 <td className={table.td}>
                   <Badge tone={tone[s.status]}>{label[s.status]}</Badge>
                 </td>

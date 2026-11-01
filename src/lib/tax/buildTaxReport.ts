@@ -274,6 +274,8 @@ export type TaxReport = {
   };
   warnings: string[];
   assumptions: string[];
+  /** The rules the estimate follows (tax law, and the choices under Inputs): words, never a figure read from the data. */
+  rules: string[];
 };
 
 export type TruePlan = {
@@ -792,13 +794,13 @@ export function buildTaxReport(
     rules: fp.safeHarborRules,
   });
   if (filedCt != null && priorCt === filedCt && lastYearDocs.ct?.form === "CT-1040NR/PY") {
-    assumptions.push(`Connecticut's prior-year safe harbor uses ${year - 1}'s part-year return (${usd(priorCt)}). It covered all twelve months, but only part of the income; check CT-2210 before leaning on it.`);
+    assumptions.push(`Connecticut's prior-year safe harbor uses ${year - 1}'s part-year return (under Inputs). It covered all twelve months, but only part of the income; check CT-2210 before leaning on it.`);
   }
   if (priorYearSource === "NONE") {
-    warnings.push(`No ${year - 1} return is in the tax documents folder, so the prior-year safe harbor isn't used (the 90%-of-this-year test is). Add the filed return to the folder, or type its figures under Inputs.`);
+    warnings.push(`No ${year - 1} return is in the tax documents folder, so the prior-year safe harbor isn't used (only the this-year test is). Add the filed return to the folder, or type its figures under Inputs.`);
   } else if (priorYearSource === "ESTIMATED") {
     warnings.push(
-      `The prior-year safe harbor uses this app's estimate of ${year - 1} federal tax (${usd(priorFederal.tax!)}): no filed ${year - 1} return is in the tax documents folder yet. Add it (or type Form 1040 line 24 under Inputs) before relying on it.`,
+      `The prior-year safe harbor uses this app's estimate of ${year - 1} federal tax (under Inputs): no filed ${year - 1} return is in the tax documents folder yet. Add it (or type Form 1040 line 24 under Inputs) before relying on it.`,
     );
   }
   // A W-4 change only reaches paychecks still to come.
@@ -825,7 +827,8 @@ export function buildTaxReport(
     filingDate: `${year + 1}-04-15`,
   };
 
-  assumptions.push(
+  // The rules the estimate follows: tax law and the choices under Inputs, never a figure read from the data.
+  const rules = [
     "Paychecks after the latest stub repeat the latest regular (non-bonus) paycheck, or the typical recent one where chosen under Inputs; 401(k) deferrals stop at the annual limit and Social Security at the wage base.",
     "Expected bonuses are withheld at the 22% federal supplemental rate and 6.99% CT.",
     "Dividends and interest are projected to year end from last year's month-by-month pattern in the same account (or a straight-line run rate); realized gains are not projected — add expected sales under Inputs.",
@@ -835,7 +838,7 @@ export function buildTaxReport(
       : "Married filing separately: each spouse reports their own wages and accounts; joint accounts, joint estimated payments, and household deductions are split evenly; both spouses itemize or both take the standard deduction, whichever costs less in total.",
     `Additional Medicare tax and the 3.8% net investment income tax are included in federal tax. The 0.9% employers withhold above $200k is credited back against the ${filingStatus === "SINGLE" ? "return's" : "joint"} liability.`,
     "Connecticut: 2025 CT-1040 schedule (Connecticut does not index its brackets); CHET 529 contributions are subtracted up to the per-return cap; the CT property-tax credit is not modeled.",
-  );
+  ];
   if (isCurrentYear && through < today)
     assumptions.push(`Pay and bank figures run through ${through}, the latest date every account's statements reach; later pay stubs count once the bank statements showing their deposits are on file.`);
   if (!isCurrentYear && Number(today.slice(0, 4)) > year) {
@@ -900,6 +903,7 @@ export function buildTaxReport(
     plan,
     warnings,
     assumptions,
+    rules,
   };
   if (docs.all.length) {
     const ownerOfDoc = new Map<string, string | null>();
@@ -1045,7 +1049,7 @@ function applyBrokerage1099s(accounts: AccountIncome[], docs: YearDocs | null, l
   }
   // No 1099 from last year to read the split from: the qualified share is the one typed under Inputs.
   for (const a of accounts.filter((x) => x.kind === "TAXABLE" && x.source === "STATEMENTS" && x.calibratedFrom == null && x.ytd.ordinaryDividends > 0))
-    warnings.push(`${a.label}: no ${lastYear.year} 1099 to read the qualified share of its dividends from, so ${Math.round(profile.qualifiedDividendShare * 100)}% of its fund and stock dividends (as set under Inputs) count as qualified. The year's 1099 will settle it.`);
+    warnings.push(`${a.label}: no ${lastYear.year} 1099 to read the qualified share of its dividends from, so the qualified share set under Inputs counts for its fund and stock dividends. The year's 1099 will settle it.`);
 }
 
 /** The share of the year before `d` (a move out), or null without a date. */

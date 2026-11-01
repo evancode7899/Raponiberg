@@ -1,14 +1,14 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { changeStepKey, changeStepsDerived } from "@/lib/book/derived/netWorth";
+import { changeStepKey, changeStepsDerived, changeTypicalDerived, typicalKey } from "@/lib/book/derived/netWorth";
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
-import type { ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, Loading, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { ProofDescriptor } from "@/lib/book/proof";
-import type { ChangeMover, NetWorthChange, NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
+import type { ChangeMover, HighlightSeg, NetWorthChange, NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
 import { axisUsd, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
@@ -20,16 +20,33 @@ const proofOf = (descriptor: ProofDescriptor | null, shownCents: number): ProofR
 
 const UNIT: Record<Granularity, string> = { month: "month", quarter: "quarter", year: "year" };
 
-/** A difference from typical, coloured by whether it helped net worth. */
-function Delta({ cents }: { cents: number | null }) {
+/** A difference from typical, coloured by whether it helped net worth: the figure less its average, both proven. */
+function Delta({ cents, of, ofCents = cents }: { cents: number | null; of?: [ProofRef, ProofRef]; ofCents?: number | null }) {
   if (cents == null) return <span className="text-faint">—</span>;
-  return <span className={Math.round(cents / 100) === 0 ? "text-muted" : cents > 0 ? "text-pos" : "text-neg"}>{usdDelta(cents)}</span>;
+  return (
+    <span className={Math.round(cents / 100) === 0 ? "text-muted" : cents > 0 ? "text-pos" : "text-neg"}>
+      {of && ofCents != null ? <ProofValue proof={compositeOf("diff", of, { cents: ofCents })}>{usdDelta(cents)}</ProofValue> : usdDelta(cents)}
+    </span>
+  );
+}
+
+/** A sentence's words, each number in it a figure that opens its proof. */
+function Highlight({ segs }: { segs: HighlightSeg[] }) {
+  return segs.map((x, i) =>
+    typeof x === "string" ? (
+      x
+    ) : (
+      <ProofValue key={i} proof={{ descriptor: x.descriptor, shownCents: x.cents ?? null, ...(x.ratio != null ? { shown: { ratio: x.ratio } } : {}) }}>
+        {x.text}
+      </ProofValue>
+    ),
+  );
 }
 
 export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChangesReport | null; granularity: Granularity; setGranularity: (g: Granularity) => void }) {
   const [picked, setPicked] = useState<string | null>(null);
   const control = (
-    <Segmented
+    <Segmented view
       options={[
         { value: "month", label: "Month" },
         { value: "quarter", label: "Quarter" },
@@ -47,14 +64,14 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
   if (!r.periods.length) return <EmptyState title={`No ${UNIT[granularity]} that both net worth and cash flow can prove yet`} />;
   const i = picked ? Math.max(0, r.periods.findIndex((p) => p.start === picked)) : r.periods.length - 1;
   const p = r.periods[i]!;
-  const steps = changeStepsDerived(r);
+  const steps = [...changeStepsDerived(r), ...changeTypicalDerived(r)];
   const go = (j: number) => setPicked(r.periods[j]!.start);
   const picker = (
     <div className="flex flex-wrap items-center gap-1.5">
       <button type="button" className={btn.secondary} disabled={i === 0} onClick={() => go(i - 1)} aria-label={`Previous ${UNIT[granularity]}`}>
         ‹
       </button>
-      <select className={selectCls} value={p.start} onChange={(e) => setPicked(e.target.value)} aria-label={`Pick a ${UNIT[granularity]}`}>
+      <select data-audit-view="" className={selectCls} value={p.start} onChange={(e) => setPicked(e.target.value)} aria-label={`Pick a ${UNIT[granularity]}`}>
         {[...r.periods].reverse().map((x) => (
           <option key={x.start} value={x.start}>
             {x.label}
@@ -74,7 +91,14 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
 function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthChange; granularity: Granularity; compareWith: number; picker: ReactNode; steps: DerivedFigure[] }) {
   const unit = UNIT[granularity];
   const t = p.typical;
-  const typicalSub = (cents: number | undefined) => (t && cents != null ? `average ${usd0(cents)}` : undefined);
+  // An average over the periods before (derived/netWorth.ts changeTypicalDerived).
+  const typical = (what: string): ProofRef => derivedTarget("net-worth", steps, "change-typical", typicalKey(granularity, p.start, what));
+  const typicalSub = (what: string, cents: number | undefined) =>
+    t && cents != null ? (
+      <>
+        average <ProofValue proof={typical(what)}>{usd0(cents)}</ProofValue>
+      </>
+    ) : undefined;
   const compared = t
     ? `against the average of the ${t.periods === 1 ? `${unit} before` : `${t.periods} ${unit}s before`}${t.periods < compareWith ? ` (all that are proven, of up to ${compareWith})` : ""}`
     : p.through
@@ -95,12 +119,14 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
         {/* In the body, not the header's actions, so it wraps on a phone. */}
         <div className="mb-3">{picker}</div>
         <ul className="space-y-1.5 text-sm leading-relaxed text-fg-2">
-          {p.highlights.map((h) => (
-            <li key={h} className="flex gap-2">
+          {p.highlights.map((h, k) => (
+            <li key={k} className="flex gap-2">
               <span className="text-faint" aria-hidden>
                 •
               </span>
-              <span>{h}</span>
+              <span>
+                <Highlight segs={h} />
+              </span>
             </li>
           ))}
         </ul>
@@ -108,9 +134,9 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
 
       <StatGrid cols={5}>
         <StatCell label="Opening" value={usd0(p.openingCents)} proof={proofOf(p.proofs.opening, p.openingCents)} sub={`end of the day before ${p.start}`} />
-        <StatCell label="Change" value={usdDelta(p.changeCents)} proof={proofOf(p.proofs.change, p.changeCents)} tone={p.changeCents >= 0 ? "pos" : "neg"} sub={typicalSub(t?.changeCents)} />
-        <StatCell label="…from saving" value={usdDelta(p.savedCents)} proof={proofOf(p.proofs.saved, p.savedCents)} sub={typicalSub(t?.savedCents) ?? "saved & contributed"} />
-        <StatCell label="…from markets" value={usdDelta(p.marketsCents)} proof={proofOf(p.proofs.markets, p.marketsCents)} sub={typicalSub(t?.marketsCents) ?? "growth, net of fees"} />
+        <StatCell label="Change" value={usdDelta(p.changeCents)} proof={proofOf(p.proofs.change, p.changeCents)} tone={p.changeCents >= 0 ? "pos" : "neg"} sub={typicalSub("change", t?.changeCents)} />
+        <StatCell label="…from saving" value={usdDelta(p.savedCents)} proof={proofOf(p.proofs.saved, p.savedCents)} sub={typicalSub("saved", t?.savedCents) ?? "saved & contributed"} />
+        <StatCell label="…from markets" value={usdDelta(p.marketsCents)} proof={proofOf(p.proofs.markets, p.marketsCents)} sub={typicalSub("markets", t?.marketsCents) ?? "growth, net of fees"} />
         <StatCell label="Closing" value={usd0(p.closingCents)} proof={proofOf(p.proofs.closing, p.closingCents)} sub={`end of ${p.through ?? p.end}`} />
       </StatGrid>
 
@@ -130,7 +156,10 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
               </tr>
             </thead>
             <tbody>
-              {p.steps.map((s) => (
+              {p.steps.map((s) => {
+                const own = s.proof ? proofOf(s.proof, s.key === "spending" ? p.spendingCents : s.cents) : derivedTarget("net-worth", steps, "change-step", changeStepKey(granularity, p.start, s.key));
+                const avg = typical(s.key === "spending" ? "spending" : `step:${s.key}`);
+                return (
                 <tr key={s.key} className={table.trHover}>
                   <td className={table.td}>
                     <span title={s.note} className="cursor-help">
@@ -138,25 +167,30 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
                     </span>
                   </td>
                   <td className={table.tdR}>
-                    <ProofValue proof={s.proof ? proofOf(s.proof, s.key === "spending" ? p.spendingCents : s.cents) : derivedTarget("net-worth", steps, "change-step", changeStepKey(granularity, p.start, s.key))}>{s.key === "spending" ? usd0(p.spendingCents) : usd0(s.cents)}</ProofValue>
+                    <ProofValue proof={own}>{s.key === "spending" ? usd0(p.spendingCents) : usd0(s.cents)}</ProofValue>
                   </td>
-                  {t && <td className={`${table.tdR} text-muted`}>{s.typicalCents == null ? "—" : s.key === "spending" ? usd0(-s.typicalCents) : usd0(s.typicalCents)}</td>}
+                  {t && <td className={`${table.tdR} text-muted`}>{s.typicalCents == null ? "—" : <ProofValue proof={avg}>{s.key === "spending" ? usd0(-s.typicalCents) : usd0(s.typicalCents)}</ProofValue>}</td>}
                   {t && (
                     <td className={table.tdR}>
-                      <Delta cents={s.typicalCents == null ? null : s.cents - s.typicalCents} />
+                      <Delta cents={s.typicalCents == null ? null : s.cents - s.typicalCents} of={[own, avg]} ofCents={s.typicalCents == null ? null : s.key === "spending" ? p.spendingCents - (t?.spendingCents ?? 0) : s.cents - s.typicalCents} />
                     </td>
                   )}
                 </tr>
-              ))}
+                );
+              })}
               <tr className="border-t border-line-strong font-semibold">
                 <td className={table.td}>Change</td>
                 <td className={table.tdR}>
                   <ProofValue proof={proofOf(p.proofs.change, p.changeCents)}>{usd0(p.changeCents)}</ProofValue>
                 </td>
-                {t && <td className={`${table.tdR} text-muted`}>{usd0(t.changeCents)}</td>}
+                {t && (
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={typical("change")}>{usd0(t.changeCents)}</ProofValue>
+                  </td>
+                )}
                 {t && (
                   <td className={table.tdR}>
-                    <Delta cents={p.changeCents - t.changeCents} />
+                    <Delta cents={p.changeCents - t.changeCents} of={[proofOf(p.proofs.change, p.changeCents), typical("change")]} />
                   </td>
                 )}
               </tr>
@@ -167,15 +201,15 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
 
       {t && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Movers title="Spending that moved most" empty={`No spending category moved much against its average ${unit}.`} rows={p.spendingMovers} spending />
-          <Movers title="Income that moved most" empty={`No income category moved much against its average ${unit}.`} rows={p.incomeMovers} />
+          <Movers title="Spending that moved most" empty={`No spending category moved much against its average ${unit}.`} rows={p.spendingMovers} typical={(m) => typical(`spending:${m.category}`)} spending />
+          <Movers title="Income that moved most" empty={`No income category moved much against its average ${unit}.`} rows={p.incomeMovers} typical={(m) => typical(`income:${m.category}`)} />
         </div>
       )}
     </>
   );
 }
 
-function Movers({ title, empty, rows, spending = false }: { title: string; empty: string; rows: ChangeMover[]; spending?: boolean }) {
+function Movers({ title, empty, rows, typical, spending = false }: { title: string; empty: string; rows: ChangeMover[]; typical: (m: ChangeMover) => ProofRef; spending?: boolean }) {
   return (
     <Card title={title}>
       {rows.length === 0 ? (
@@ -198,10 +232,12 @@ function Movers({ title, empty, rows, spending = false }: { title: string; empty
                   <td className={table.tdR}>
                     <ProofValue proof={proofOf(m.proof, m.cents)}>{usd0(m.cents)}</ProofValue>
                   </td>
-                  <td className={`${table.tdR} text-muted`}>{usd0(m.typicalCents)}</td>
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={typical(m)}>{usd0(m.typicalCents)}</ProofValue>
+                  </td>
                   <td className={table.tdR}>
                     {/* More spending is worse for net worth; more income better. */}
-                    <Delta cents={spending ? -m.deltaCents : m.deltaCents} />
+                    <Delta cents={spending ? -m.deltaCents : m.deltaCents} of={[proofOf(m.proof, m.cents), typical(m)]} ofCents={m.deltaCents} />
                   </td>
                 </tr>
               ))}

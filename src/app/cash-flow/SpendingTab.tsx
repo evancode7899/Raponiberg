@@ -12,7 +12,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
 import { categoryCents, categorySlot, median, mergeCategories, SPEND_CATEGORIES, totals } from "./model";
-import { categoryColor, Delta, Dot, openMonthOnClick, Sparkline } from "./parts";
+import { categoryColor, Delta, Dot, OneOffLine, openMonthOnClick, Sparkline } from "./parts";
+import { categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
+import { sumOf, type ProofRef } from "@/components/ui/proof/context";
+
+/** A big one-off as the ledger row it is: its own proof. */
+const oneOffRow = (o: OneOffExpense): ProofRef => ({ descriptor: { report: "row", rowId: o.rowId }, shownCents: -o.cents });
 
 export function SpendingTab({ ctx }: { ctx: Ctx }) {
   const { slice, chart, focus, setFocus, open } = ctx;
@@ -80,12 +85,23 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
                     <td className={`${table.tdR} font-medium`}>
                       <ProofValue proof={ctx.proof("spending", slice.months, { category: c.category, perMonth: true, shownCents: c.cents })}>{usd0(c.cents / t.n)}</ProofValue>
                     </td>
-                    <td className={`${table.tdR} text-muted`}>{usd0(median(series))}</td>
+                    <td className={`${table.tdR} text-muted`}>
+                      <ProofValue proof={ctx.dp("category-typical", categoryKey(slice.months, "EXPENSE", c.category))}>{usd0(median(series))}</ProofValue>
+                    </td>
                     <td className={table.tdR}>
                       <ProofValue proof={ctx.proof("spending", slice.months, { category: c.category, shownCents: c.cents })}>{usd0(c.cents)}</ProofValue>
                     </td>
-                    <td className={`${table.tdR} text-muted`}>{c.cents > 0 && t.spending > 0 ? formatPercentRatio(c.cents / t.spending, 0) : "—"}</td>
-                    <td className={table.tdR}>{p && <Delta now={c.cents / t.n} before={(before?.cents ?? 0) / p.n} goodWhenDown />}</td>
+                    <td className={`${table.tdR} text-muted`}>
+                      {c.cents > 0 && t.spending > 0 ? <ProofValue proof={ctx.dp("category-share", categoryKey(slice.months, "EXPENSE", c.category))}>{formatPercentRatio(c.cents / t.spending, 0)}</ProofValue> : "—"}
+                    </td>
+                    <td className={table.tdR}>
+                      {p &&
+                        (before ? (
+                          <Delta now={c.cents / t.n} before={before.cents / p.n} goodWhenDown of={[ctx.proof("spending", slice.months, { category: c.category, shownCents: c.cents }), ctx.proof("spending", slice.prior, { category: c.category, shownCents: before.cents })]} per={[t.n, p.n]} />
+                        ) : (
+                          <span className="text-xs text-muted">new</span>
+                        ))}
+                    </td>
                   </tr>
                 );
               })}
@@ -97,12 +113,16 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
                 <td className={table.tdR}>
                   <ProofValue proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })}>{usd0(t.avgSpending)}</ProofValue>
                 </td>
-                <td className={`${table.tdR} text-muted`}>{usd0(t.typicalSpending)}</td>
+                <td className={`${table.tdR} text-muted`}>
+                  <ProofValue proof={ctx.dp("typical-spending", windowKey(slice.months))}>{usd0(t.typicalSpending)}</ProofValue>
+                </td>
                 <td className={table.tdR}>
                   <ProofValue proof={ctx.proof("spending", slice.months, { shownCents: t.spending })}>{usd0(t.spending)}</ProofValue>
                 </td>
                 <td className={table.tdR} />
-                <td className={table.tdR}>{p && <Delta now={t.avgSpending} before={p.avgSpending} goodWhenDown />}</td>
+                <td className={table.tdR}>
+                  {p && <Delta now={t.avgSpending} before={p.avgSpending} goodWhenDown of={[ctx.proof("spending", slice.months, { shownCents: t.spending }), ctx.proof("spending", slice.prior, { shownCents: p.spending })]} per={[t.n, p.n]} />}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -147,7 +167,7 @@ function Heatmap({ ctx, categories }: { ctx: Ctx; categories: string[] }) {
       title="Heatmap"
       subtitle={`Darker = more spent. ${scale === "row" ? "Each row is shaded against its own busiest month, so you can see when each category spikes." : "One scale for every cell, so big categories stand out."}${slice.months.length > 18 ? " Showing the latest 18 months." : ""}`}
       actions={
-        <Segmented
+        <Segmented view
           size="xs"
           ariaLabel="Shading"
           options={[
@@ -166,8 +186,10 @@ function Heatmap({ ctx, categories }: { ctx: Ctx; categories: string[] }) {
               <th className="sticky left-0 bg-surface px-1 text-left font-medium text-muted" />
               {months.map((m) => (
                 <th key={m.start} className="whitespace-nowrap px-1 text-center font-medium text-muted">
-                  {m.label.slice(0, 3)}
-                  <div className="text-[10px] font-normal text-faint">{m.label.slice(-2)}</div>
+                  <button type="button" className="hover:text-accent" title={`${m.label}: every figure, audited`} onClick={() => ctx.open({ kind: "month", start: m.start })} data-audit-drill={m.label}>
+                    {m.label.slice(0, 3)}
+                    <div className="text-[10px] font-normal text-faint">{m.label.slice(-2)}</div>
+                  </button>
                 </th>
               ))}
             </tr>
@@ -189,7 +211,7 @@ function Heatmap({ ctx, categories }: { ctx: Ctx; categories: string[] }) {
                         style={{ background: `color-mix(in oklab, ${chart.spending} ${Math.round(8 + a * 82)}%, transparent)`, color: a > 0.55 ? "#fff" : undefined }}
                         onClick={() => ctx.open({ kind: "category", category: c })}
                       >
-                        {v ? usdCompact(v).replace(".0k", "k") : "—"}
+                        {v ? <ProofValue proof={ctx.proof("spending", [m], { category: c, shownCents: v })}>{usdCompact(v).replace(".0k", "k")}</ProofValue> : "—"}
                       </td>
                     );
                   })}
@@ -241,13 +263,23 @@ function OneOffs({ ctx }: { ctx: Ctx }) {
   return (
     <Card
       title="Big one-off expenses"
-      subtitle={`Single charges of $1,500 or more that aren't a regular bill. Marking one as one-off keeps it in your totals but out of "excluding one-offs" — and out of the living cost your FIRE plan starts from.${
-        tagged.length ? ` ${tagged.length} marked: ${usd0(tagged.reduce((s, o) => s + o.cents, 0))}.` : ""
-      }`}
+      subtitle={
+        <>
+          Single charges of <OneOffLine /> or more that aren&apos;t a regular bill. Marking one as one-off keeps it in your totals but out of &quot;excluding one-offs&quot; — and out of the living cost your FIRE plan starts from.
+          {tagged.length ? (
+            <>
+              {" "}
+              {tagged.length} marked: <ProofValue proof={sumOf(tagged.map(oneOffRow), tagged.reduce((s, o) => s + o.cents, 0))}>{usd0(tagged.reduce((s, o) => s + o.cents, 0))}</ProofValue>.
+            </>
+          ) : null}
+        </>
+      }
     >
       {error && <ErrorNote>{error}</ErrorNote>}
       {list.length === 0 ? (
-        <p className="text-sm text-muted">No single charge over $1,500 in this range.</p>
+        <p className="text-sm text-muted">
+          No single charge over <OneOffLine /> in this range.
+        </p>
       ) : (
         <div className={table.wrap}>
           <table className={`${table.table} min-w-[44rem]`}>
@@ -270,7 +302,9 @@ function OneOffs({ ctx }: { ctx: Ctx }) {
                   </td>
                   <td className={`${table.td} text-fg-2`}>{o.category}</td>
                   <td className={`${table.td} text-xs text-muted`}>{o.account}</td>
-                  <td className={`${table.tdR} font-medium`}>{usd0(o.cents)}</td>
+                  <td className={`${table.tdR} font-medium`}>
+                    <ProofValue proof={oneOffRow(o)}>{usd0(o.cents)}</ProofValue>
+                  </td>
                   <td className={table.tdR}>
                     {o.viaCategory ? (
                       <Badge title="Its whole category counts as non-recurring (Profile settings)">category</Badge>

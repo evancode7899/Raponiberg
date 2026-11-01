@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { LpPanel, PrivateFunds } from "./LpView";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { growthKey, investmentsDerived } from "@/lib/book/derived/investments";
-import { derivedTarget } from "@/lib/book/derived/types";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 
 const TABS = ["overview", "holdings", "fees", "gains", "growth", "funds"] as const;
 type Data = { report: InvestmentsReport; settings: InvestmentSettings; /** The forecast's return. */ returnRate: number };
@@ -157,14 +157,14 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
               <div className="mb-1.5 flex items-baseline justify-between text-xs">
                 <span className="font-medium text-fg">{t.treatment}</span>
                 <span className="num text-muted">
-                  {usd0(t.cents)} · {pct(t.cents / r.totalCents)}
+                  <ProofValue proof={derivedTarget("investments", d, "treatment", t.treatment)}>{usd0(t.cents)}</ProofValue> · <ProofValue proof={derivedTarget("investments", d, "treatment-share", t.treatment)}>{pct(t.cents / r.totalCents)}</ProofValue>
                 </span>
               </div>
               <ShareBar label={`${t.treatment} allocation`} segments={segmentsOf(p, t.allocation)} />
               <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted">
                 {t.allocation.map((a) => (
                   <span key={a.cls}>
-                    {classLabel(a.cls)} {pct(a.share, 0)}
+                    {classLabel(a.cls)} <ProofValue proof={derivedTarget("investments", d, "treatment-class", `${t.treatment}|${a.cls}`)}>{pct(a.share, 0)}</ProofValue>
                   </span>
                 ))}
               </div>
@@ -610,7 +610,7 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
   const d = investmentsDerived(r);
   const picker = (
     <div className="flex flex-wrap items-center gap-2">
-      <select className={selectCls} value={which} onChange={(e) => setWhich(e.target.value)} aria-label="Account">
+      <select data-audit-view="" className={selectCls} value={which} onChange={(e) => setWhich(e.target.value)} aria-label="Account">
         {r.growth.map((g) => (
           <option key={g.accountId ?? "all"} value={g.accountId ?? "all"}>
             {g.name}
@@ -685,9 +685,15 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
                   <td className={table.td}>
                     {x.label} {x.blocked && <Badge tone="warn">unproven</Badge>}
                   </td>
-                  <td className={table.tdR}>{usd0(x.investedCents)}</td>
-                  <td className={table.tdR}>{usd0(x.valueCents)}</td>
-                  <td className={`${table.tdR} ${x.valueCents < x.investedCents ? "text-neg" : ""}`}>{usdDelta(x.valueCents - x.investedCents)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={derivedTarget("investments", d, "growth-point", cellKey(growthKey(s.accountId), x.end, "money-in"))}>{usd0(x.investedCents)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={derivedTarget("investments", d, "growth-point", cellKey(growthKey(s.accountId), x.end, "value"))}>{usd0(x.valueCents)}</ProofValue>
+                  </td>
+                  <td className={`${table.tdR} ${x.valueCents < x.investedCents ? "text-neg" : ""}`}>
+                    <ProofValue proof={derivedTarget("investments", d, "growth-point", cellKey(growthKey(s.accountId), x.end, "growth"))}>{usdDelta(x.valueCents - x.investedCents)}</ProofValue>
+                  </td>
                 </tr>
               ))}
             </tbody>

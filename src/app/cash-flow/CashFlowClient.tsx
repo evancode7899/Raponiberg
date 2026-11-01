@@ -2,7 +2,7 @@
 
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cashFlowDerived } from "@/lib/book/derived/cashFlow";
-import { derivedTarget } from "@/lib/book/derived/types";
+import { derivedTarget, derivedText } from "@/lib/book/derived/types";
 import { unswept } from "@/lib/book/proof/clearance";
 import { cachedResponse, useApi, type Api } from "@/components/ledger/useApi";
 import { useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
@@ -50,6 +50,8 @@ export type Ctx = {
   proof: (metric: CashFlowMetric, months: SpendingMonth[], o: ProofOptions) => ProofRef;
   /** A derived figure's proof (derived/cashFlow.ts): swept on every account, so withheld under an account filter. */
   dp: (figure: string, key?: string) => ProofRef;
+  /** A derived figure's words as the list states them (a merchant's pattern), for the page to draw. */
+  words: (figure: string, key?: string) => string;
 };
 
 type View = { range: RangeId; from: string; to: string };
@@ -102,7 +104,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
   const derived = useMemo(() => (data ? cashFlowDerived(data) : []), [data]);
   const ctx: Ctx | null =
     data && slice && slice.months.length
-      ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o), dp: (figure, key) => (accountIds ? unswept("an account filter: derived figures are swept on every account") : derivedTarget("cash-flow", derived, figure, key)) }
+      ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o), dp: (figure, key) => (accountIds ? unswept("an account filter: derived figures are swept on every account") : derivedTarget("cash-flow", derived, figure, key)), words: (figure, key) => derivedText(derived, figure, key) }
       : null;
 
   return (
@@ -126,6 +128,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
         <ApiSecretField api={api} />
         <div className="flex flex-wrap items-center gap-2">
           <Segmented
+            view={{ skip: ["custom"], why: "a custom range is any months you pick: the sweep holds the preset ranges, not every pair of months" }}
             ariaLabel="Months shown"
             options={[
               { value: "3m", label: "3M" },

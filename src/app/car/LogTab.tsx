@@ -1,5 +1,7 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
+import { sumOf } from "@/components/ui/proof/context";
 import { Badge, btn, Card, EmptyState, inputCls, selectCls, table, type Tone } from "@/components/ui/kit";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { LogRow } from "@/lib/car/report";
@@ -74,13 +76,13 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
     <>
       <div className="flex flex-wrap items-center gap-2">
         {many && (
-          <select className={selectCls} value={carFilter} onChange={(e) => setCarFilter(e.target.value as CarFilter)} aria-label="Car">
+          <select data-audit-view="" className={selectCls} value={carFilter} onChange={(e) => setCarFilter(e.target.value as CarFilter)} aria-label="Car">
             <option value="THIS">{carName(car)} (with shared)</option>
             <option value="ALL">All cars</option>
             <option value={SHARED}>Shared only</option>
           </select>
         )}
-        <select className={selectCls} value={kind} onChange={(e) => setKind(e.target.value as CarKind | "ALL")} aria-label="Kind">
+        <select data-audit-view="" className={selectCls} value={kind} onChange={(e) => setKind(e.target.value as CarKind | "ALL")} aria-label="Kind">
           <option value="ALL">All kinds</option>
           {CAR_KINDS.map((k) => (
             <option key={k} value={k}>
@@ -88,14 +90,14 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
             </option>
           ))}
         </select>
-        <select className={selectCls} value={show} onChange={(e) => setShow(e.target.value as Show)} aria-label="Show">
+        <select data-audit-view="" className={selectCls} value={show} onChange={(e) => setShow(e.target.value as Show)} aria-label="Show">
           <option value="ALL">Counted and not</option>
           <option value="COUNTED">Counted only</option>
           <option value="NOT_COUNTED">Not counted only</option>
         </select>
         <input className={`${inputCls} w-48`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search charge, item or note" aria-label="Search" />
         <span className="text-xs text-muted">
-          {items.length} rows · {usd2(total)} counted
+          {items.length} rows · <ProofValue proof={sumOf(items.filter((i) => i.counted).map((i) => logProof(i.id, i.cents)), total)}>{usd2(total)}</ProofValue> counted
         </span>
       </div>
 
@@ -125,7 +127,7 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
                   const st = logStatus(i);
                   const sub = [
                     i.label && i.label !== i.item ? `Logged as “${i.label}”` : "",
-                    i.loggedCents != null ? `you logged ${usd2(i.loggedCents)}` : "",
+                    i.loggedCents != null ? "" : "",
                     i.note,
                     i.months > 1 ? `covers ${i.months} months` : "",
                     !i.counted && i.match?.status === "NOT_FOUND" ? "counts nothing" : "",
@@ -143,10 +145,16 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
                         <div className={`max-w-[26rem] truncate ${i.counted && i.source === "STATEMENT" ? "font-mono text-xs" : ""}`} title={i.item}>
                           {i.item}
                         </div>
-                        {sub.length > 0 && <div className="max-w-[26rem] truncate text-[11px] text-muted">{sub.join(" · ")}</div>}
+                        {(sub.length > 0 || i.loggedCents != null) && (
+                          <div className="max-w-[26rem] truncate text-[11px] text-muted">
+                            {i.loggedCents != null && <NotFigure why="your log entry">you logged {usd2(i.loggedCents)}</NotFigure>}
+                            {i.loggedCents != null && sub.length > 0 ? " · " : ""}
+                            {sub.join(" · ")}
+                          </div>
+                        )}
                       </td>
                       <td className={`${table.td} text-xs text-fg-2`}>{reading ? "Odometer reading" : KIND_INFO[i.kind].label}</td>
-                      <td className={`${table.tdR} ${i.counted ? "" : "line-through decoration-muted"}`}>{reading ? "" : i.counted ? <ProofValue proof={logProof(i.id, i.cents)}>{usd2(i.cents)}</ProofValue> : usd2(i.cents)}</td>
+                      <td className={`${table.tdR} ${i.counted ? "" : "line-through decoration-muted"}`}>{reading ? "" : i.counted ? <ProofValue proof={logProof(i.id, i.cents)}>{usd2(i.cents)}</ProofValue> : <NotFigure why="your log entry: it counts nothing">{usd2(i.cents)}</NotFigure>}</td>
                       <td className={table.tdR}>{i.gallons != null ? i.gallons.toFixed(3) : ""}</td>
                       <td className={table.tdR}>{i.odometer != null ? miles(i.odometer) : ""}</td>
                       <td className={table.td}>

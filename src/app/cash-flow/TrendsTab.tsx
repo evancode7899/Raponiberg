@@ -2,8 +2,10 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { last12At, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
+import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { Card, NotFigure, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
@@ -55,6 +57,11 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
   const endLabel = slice.months.at(-1)!.label;
   // The twelve months the trailing totals at the end of the range sum (none until twelve exist).
   const last12 = last12At(all, hi);
+  // The twelve before them, and the last three: the runs the tiles compare with.
+  const prev12 = hi >= 12 ? last12At(all, hi - 12) : [];
+  const last3 = all.slice(Math.max(0, hi - 2), hi + 1);
+  const vs12 = (metric: "income" | "spending", xs: (number | null)[]) =>
+    prevAt(xs) != null && xs[hi] != null ? { of: [ctx.proof(metric, last12, { shownCents: xs[hi]! }), ctx.proof(metric, prev12, { shownCents: prevAt(xs)! })] as [ProofRef, ProofRef] } : {};
 
   const kinds = slice.months.map((m) => {
     const total = Math.max(1, m.spendingCents);
@@ -89,20 +96,46 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
           label="Spending, last 12 months"
           value={spend12[hi] == null ? "—" : usd0(spend12[hi])}
           proof={spend12[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("spending", last12, { shownCents: spend12[hi]! })}
-          sub={<><Delta now={spend12[hi] ?? 0} before={prevAt(spend12)} goodWhenDown /> vs the 12 before{prevAt(spend12) != null ? ` (${usd0(prevAt(spend12))})` : ""}</>}
+          sub={
+            <>
+              <Delta now={spend12[hi] ?? 0} before={prevAt(spend12)} goodWhenDown {...vs12("spending", spend12)} /> vs the 12 before
+              {prevAt(spend12) != null ? (
+                <>
+                  {" "}(<ProofValue proof={ctx.proof("spending", prev12, { shownCents: prevAt(spend12)! })}>{usd0(prevAt(spend12))}</ProofValue>)
+                </>
+              ) : null}
+            </>
+          }
         />
         <StatCell
           label="Income, last 12 months"
           value={inc12[hi] == null ? "—" : usd0(inc12[hi])}
           proof={inc12[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("income", last12, { shownCents: inc12[hi]! })}
-          sub={<><Delta now={inc12[hi] ?? 0} before={prevAt(inc12)} /> vs the 12 before{prevAt(inc12) != null ? ` (${usd0(prevAt(inc12))})` : ""}</>}
+          sub={
+            <>
+              <Delta now={inc12[hi] ?? 0} before={prevAt(inc12)} {...vs12("income", inc12)} /> vs the 12 before
+              {prevAt(inc12) != null ? (
+                <>
+                  {" "}(<ProofValue proof={ctx.proof("income", prev12, { shownCents: prevAt(inc12)! })}>{usd0(prevAt(inc12))}</ProofValue>)
+                </>
+              ) : null}
+            </>
+          }
         />
         <StatCell
           label="Savings rate, last 12 months"
-          proof={rateNow == null ? noFigure("not twelve proven months yet") : ctx.proof("net", last12, { shownCents: inc12[hi]! - spend12[hi]! })}
+          proof={rateNow == null ? noFigure("not twelve proven months yet") : ctx.dp("savings-rate", windowKey(last12))}
           value={rateNow == null ? "—" : formatPercentRatio(rateNow, 0)}
           tone={rateNow == null ? "neutral" : rateNow >= 0.2 ? "pos" : rateNow < 0 ? "neg" : "neutral"}
-          sub={rateBefore == null ? `through ${endLabel}` : `${formatPercentRatio(rateBefore, 0)} the 12 months before`}
+          sub={
+            rateBefore == null ? (
+              `through ${endLabel}`
+            ) : (
+              <>
+                <ProofValue proof={ctx.dp("savings-rate", windowKey(prev12))}>{formatPercentRatio(rateBefore, 0)}</ProofValue> the 12 months before
+              </>
+            )
+          }
         />
         <StatCell
           label="Everyday spending, last 3 months"
@@ -113,7 +146,14 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
               "bills and big one-offs left out"
             ) : (
               <>
-                <Delta now={every3[hi]! / 3} before={every12[hi]! / 12} goodWhenDown /> vs the 12-month pace ({usd0(every12[hi]! / 12)}/mo)
+                <Delta
+                  now={every3[hi]! / 3}
+                  before={every12[hi]! / 12}
+                  goodWhenDown
+                  of={[ctx.proof("spending", last3, { spendingKind: "everyday", shownCents: every3[hi]! }), ctx.proof("spending", last12, { spendingKind: "everyday", shownCents: every12[hi]! })]}
+                  per={[3, 12]}
+                />{" "}
+                vs the 12-month pace (<ProofValue proof={ctx.proof("spending", last12, { spendingKind: "everyday", perMonth: true, shownCents: every12[hi]! })}>{usd0(every12[hi]! / 12)}</ProofValue>/mo)
               </>
             )
           }
@@ -123,10 +163,10 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       <Card
         title="Spending, smoothed"
         subtitle={`Bars are single months; the lines are trailing 3- and 12-month averages, which show the direction once lumpy months (tax payments, a big purchase) wash out. ${
-          metric === "everyday" ? "Everyday leaves out rent and recurring bills, charges of $1,500+, taxes, and big merchant refunds." : ""
+          metric === "everyday" ? <NotFigure why="what everyday counts: the app's one-off rule">Everyday leaves out rent and recurring bills, charges of $1,500+, taxes, and big merchant refunds.</NotFigure> : ""
         } Click a month to audit it.`}
         actions={
-          <Segmented
+          <Segmented view
             size="xs"
             ariaLabel="Which spending"
             options={[
@@ -166,7 +206,13 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
                   {k.label}
                 </span>{" "}
                 <ProofValue proof={ctx.proof("spending", slice.months, { spendingKind: k.kind, perMonth: true, shownCents: k.cents })}>{usd0(k.cents / Math.max(1, slice.months.length))}</ProofValue>/mo
-                {spent > 0 ? ` (${formatPercentRatio(k.cents / spent, 0)})` : ""}
+                {spent > 0 ? (
+                  <>
+                    {" "}(<ProofValue proof={compositeOf("share", [ctx.proof("spending", slice.months, { spendingKind: k.kind, shownCents: k.cents }), ctx.proof("spending", slice.months, { shownCents: spent })], { ratio: k.cents / spent })}>{formatPercentRatio(k.cents / spent, 0)}</ProofValue>)
+                  </>
+                ) : (
+                  ""
+                )}
               </span>
             ))}
             . Bills are rent and the merchants on the Recurring tab. A refund counts in the band of what it pays back, so a big refund shows below zero in big & one-off,
@@ -174,7 +220,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
           </>
         }
         actions={
-          <Segmented
+          <Segmented view
             size="xs"
             ariaLabel="Scale"
             options={[
@@ -246,7 +292,12 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
                 <YAxis {...ui.yAxis} width={44} tickFormatter={pctAxis} />
                 <Tooltip {...ui.tooltip} formatter={(v) => [v == null ? "—" : formatPercentRatio(Number(v), 1), "Savings rate"]} />
                 <ReferenceLine y={0} stroke={chart.axisLine} />
-                <ReferenceLine y={0.2} stroke={chart.axis} strokeDasharray="4 4" label={{ value: "20%", fill: chart.axis, fontSize: 10, position: "insideTopLeft" }} />
+                <ReferenceLine y={0.2} stroke={chart.axis} strokeDasharray="4 4" label={(p: { viewBox?: { x?: number; y?: number } }) => (
+                    // A guide, not a figure: the savings rate many plans aim for.
+                    <text x={(p.viewBox?.x ?? 0) + 4} y={(p.viewBox?.y ?? 0) + 12} fill={chart.axis} fontSize={10} data-not-figure="a guide line: a 20% savings rate">
+                      20%
+                    </text>
+                  )} />
                 <Area type="linear" dataKey="rate" stroke={chart.growth} fill={chart.growth} fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </RechartsResponsive>
@@ -340,7 +391,19 @@ function Momentum({ ctx, hi }: { ctx: Ctx; hi: number }) {
                   <td className={table.td}>
                     <DivergingBar value={r.d} max={max} />
                   </td>
-                  <td className={`${table.tdR} ${r.d > 0 ? "text-neg" : r.d < 0 ? "text-pos" : ""}`}>{usdDelta(r.d)}</td>
+                  <td className={`${table.tdR} ${r.d > 0 ? "text-neg" : r.d < 0 ? "text-pos" : ""}`}>
+                    <ProofValue
+                      proof={
+                        !r.thenCents
+                          ? ctx.proof("spending", recent, { category: r.c, perMonth: true, shownCents: r.nowCents })
+                          : !r.nowCents
+                            ? ctx.proof("spending", before, { category: r.c, perMonth: true, shownCents: r.thenCents })
+                            : compositeOf("diff", [ctx.proof("spending", recent, { category: r.c, shownCents: r.nowCents }), ctx.proof("spending", before, { category: r.c, shownCents: r.thenCents })], { cents: r.d }, [recent.length, before.length])
+                      }
+                    >
+                      {usdDelta(r.d)}
+                    </ProofValue>
+                  </td>
                 </tr>
               ))}
             </tbody>

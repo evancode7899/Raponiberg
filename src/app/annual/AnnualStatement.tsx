@@ -3,7 +3,7 @@
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { Card, QualityBadge } from "@/components/ledger/LedgerBits";
 import { Badge, Segmented, StatCell, StatGrid } from "@/components/ui/kit";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import type { ProofRef, ProofTarget } from "@/components/ui/proof/context";
 import type { AnnualBridgeLine, AnnualCashLine, AnnualDescriptor, AnnualNetWorthLine } from "@/lib/book/proof/annualProof";
 import type { PayLine } from "@/lib/book/proof/payProof";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
@@ -14,7 +14,9 @@ import { useMemo, useState, type ReactNode } from "react";
 import { estimateFigures, type EstimateValue, type YearEstimate } from "./estimate";
 import { NetWorthWaterfall } from "./NetWorthWaterfall";
 import { blockedCell, pct, usd, YearTable, type Cell, type TableRow } from "./profileUi";
-import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { isUnswept, noFigure, unswept } from "@/lib/book/proof/clearance";
+import { compositeOf } from "@/components/ui/proof/context";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { annualPayDescriptor } from "@/lib/profile/annualPay";
 
 /** A figure that opens its annual proof (shown: the proof's own figure, for the drawer's stale-data warning). */
@@ -36,6 +38,11 @@ function estV(e: YearEstimate, line: string, extra: { title?: string } = {}): V 
   const proof: ProofTarget = { descriptor: { report: "planning", page: "annual-estimate", line }, shownCents: "cents" in v ? v.cents : null, ...("cents" in v ? {} : { shown: v }) };
   return { v: "cents" in v ? v.cents : "ratio" in v ? v.ratio : Number(v.text), proof, ...extra };
 }
+/** An estimate line's proof, or nothing to show where the estimate doesn't model it. */
+const estProof = (e: YearEstimate, line: string): ProofRef => {
+  const v = estV(e, line);
+  return v && "proof" in v && v.proof ? v.proof : noFigure("the estimate doesn't model it");
+};
 const bridgeP = (y: YearProfile, line: AnnualBridgeLine, shown: number) => proofOf({ report: "annual", figure: "bridge", year: y.year, line }, shown);
 // A partner's merge year: the checks paid from the merge on, not the stub's year to date.
 const payP = (y: YearProfile, p: PersonYear, line: PayLine, shown: number): ProofTarget => ({ descriptor: annualPayDescriptor(y, p, line), shownCents: shown });
@@ -141,13 +148,27 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
           label={`Change ${cur ? `${cur.year} YTD` : ""}`}
           value={value(cur?.change?.cents, cur?.blockers.change)}
           proof={cur?.change ? nwP(cur, "change", cur.change.cents) : noFigure("no proven change this year")}
-          sub={cur?.change?.pct != null ? `${pct(cur.change.pct)} since Dec 31` : undefined}
+          sub={
+            cur?.change?.pct != null ? (
+              <>
+                <ProofValue proof={nwP(cur, "change-pct", null)}>{pct(cur.change.pct)}</ProofValue> since Dec 31
+              </>
+            ) : undefined
+          }
         />
         <StatCell
           proof={estChangeV && "proof" in estChangeV && estChangeV.proof ? estChangeV.proof : noFigure("needs a proven starting point")}
           label={est ? `Change ${est.year} est.` : "Change, full year est."}
           value={estChangeV && "v" in estChangeV ? usd(estChangeV.v) : "—"}
-          sub={est?.flows.close ? `≈ ${usd(est.flows.close.netWorth)} on Dec 31` : "needs a proven starting point"}
+          sub={
+            est?.flows.close ? (
+              <>
+                ≈ <ProofValue proof={estProof(est, "net-worth")}>{usd(est.flows.close.netWorth)}</ProofValue> on Dec 31
+              </>
+            ) : (
+              "needs a proven starting point"
+            )
+          }
         />
         <StatCell
           label={`Saved incl. ret. ${full?.year ?? ""}`}
@@ -155,7 +176,17 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
           proof={full?.cash ? cashP(full, "saved", full.cash.waterfall.saved) : noFigure("no year with proven cash")}
           sub={
             full?.cash
-              ? `${pct(full.cash.waterfall.savingsOfGross)} of gross${est?.flows.saved != null ? ` · ${est.year} est. ${usd(est.flows.saved)}` : ""}`
+              ? (
+                  <>
+                    <ProofValue proof={cashP(full, "savings-of-gross", null)}>{pct(full.cash.waterfall.savingsOfGross)}</ProofValue> of gross
+                    {est?.flows.saved != null && (
+                      <>
+                        {` · ${est.year} est. `}
+                        <ProofValue proof={estProof(est, "saved")}>{usd(est.flows.saved)}</ProofValue>
+                      </>
+                    )}
+                  </>
+                )
               : undefined
           }
         />
@@ -163,7 +194,18 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
           label={`Living cost ${full?.year ?? ""}`}
           value={value(full?.cash?.waterfall.living, full?.blockers.cash)}
           proof={full?.cash ? cashP(full, "living", full.cash.waterfall.living) : noFigure("no year with proven cash")}
-          sub={est?.flows.living != null ? `${est.year} est. ${usd(est.flows.living + (est.flows.bonusSpent ?? 0))}` : cur?.cash ? `${usd(cur.cash.waterfall.living)} so far in ${cur.year}` : undefined}
+          sub={
+            est?.flows.living != null ? (
+              <>
+                {`${est.year} est. `}
+                <ProofValue proof={estProof(est, "living")}>{usd(est.flows.living + (est.flows.bonusSpent ?? 0))}</ProofValue>
+              </>
+            ) : cur?.cash ? (
+              <>
+                <ProofValue proof={cashP(cur, "living", cur.cash.waterfall.living)}>{usd(cur.cash.waterfall.living)}</ProofValue> so far in {cur.year}
+              </>
+            ) : undefined
+          }
         />
         <StatCell
           label={`Cash tax rate ${full?.year ?? ""}`}
@@ -177,7 +219,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
         title="Year by year"
         subtitle="Cash paid and kept → net worth at year end → what moved it. From pay stubs and statements that pass every check; click a figure for its proof."
         actions={
-          <Segmented
+          <Segmented view
             ariaLabel="Show"
             size="xs"
             value={mode}
@@ -506,7 +548,20 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
     const tone = good == null ? "" : (d > 0) === (good === "up") ? "text-pos" : "text-neg";
     const rel = l.fmt !== "pct" && p.v !== 0 ? ` (${d > 0 ? "+" : "−"}${pct(Math.abs(d / p.v), 0)})` : "";
     const text = l.fmt === "pct" ? `${d > 0 ? "+" : "−"}${(Math.abs(d) * 100).toFixed(1)} pts` : `${d > 0 ? "+" : "−"}${usd(Math.abs(d))}`;
-    return { text: <span className={tone}>{text}</span>, proof: unswept("change mode: the difference of two proven figures has no recipe of its own yet"), title: `${cols[c.prev!]!.head}: ${fmtV(p.v, l.fmt)} → ${fmtV(x.v, l.fmt)}${rel}` };
+    // The change is the difference of the two years' figures: a composite that clears from theirs (rates drawn in points).
+    const both = x.proof && p.proof && !isUnswept(x.proof) && !isUnswept(p.proof);
+    // A proof may hold the figure in the other sign (spending as a positive sum, drawn as an outflow): the difference follows its sign.
+    // Each year's proof may differ (an estimate's line holds the outflow signed, a statement's as a positive sum): a sum where they differ.
+    const flip = (v: number, r: ProofRef) => "shownCents" in r && r.shownCents != null && v !== 0 && Math.sign(r.shownCents) === -Math.sign(v);
+    const [fx, fp] = both ? [flip(x.v, x.proof!), flip(p.v, p.proof!)] : [false, false];
+    const shownD = l.fmt === "pct" ? { ratio: d } : { cents: d };
+    const proof = !both
+      ? unswept("change mode: one of the two years has no proof")
+      : fx === fp
+        ? compositeOf("diff", fx ? [p.proof!, x.proof!] : [x.proof!, p.proof!], shownD)
+        : // x − (−p) or −x − p: the two added, the difference's size (its sign is the drawn one).
+          compositeOf("sum", [x.proof!, p.proof!], fx ? (l.fmt === "pct" ? { ratio: -d } : { cents: -d }) : shownD);
+    return { text: <span className={tone}>{text}</span>, proof, ...(l.fmt === "pct" ? { drawn: { per: 0.01 } } : {}), title: `${cols[c.prev!]!.head}: ${fmtV(p.v, l.fmt)} → ${fmtV(x.v, l.fmt)}${rel}` };
   });
   return { label: l.label, help: l.help, total: l.total, strong: l.strong, indent: l.indent, muted: l.muted, cells };
 }

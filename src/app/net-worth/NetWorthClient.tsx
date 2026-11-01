@@ -1,13 +1,13 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { netWorthDerived } from "@/lib/book/derived/netWorth";
-import { derivedTarget } from "@/lib/book/derived/types";
+import { builtDerived, netWorthDerived } from "@/lib/book/derived/netWorth";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, groupRank, useChartPalette } from "@/components/shell/chartPalette";
-import type { ProofTarget, ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
@@ -17,7 +17,7 @@ import type { NetWorthPeriodWithBlockers as NetWorthPeriod, NetWorthReport } fro
 import type { NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
 import type { RollforwardReport } from "@/lib/profile/rollforwards";
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AccountsTab } from "./AccountsTab";
 import { ChangesTab } from "./ChangesTab";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
@@ -238,7 +238,7 @@ function Overview({ r }: { r: NetWorthReport }) {
         title="Net worth by month-end"
         subtitle={`Stacked by account type, debts below zero. Every account is valued on the same calendar month-ends: exact for bank and card accounts, spread evenly inside investment statements. Proven through ${r.provenThrough}; month-ends that can't be proven are left blank (see Integrity).`}
         actions={
-          <Segmented
+          <Segmented view
             size="xs"
             options={[
               { value: "24", label: "24 months" },
@@ -301,7 +301,9 @@ function Overview({ r }: { r: NetWorthReport }) {
                       {g}
                     </td>
                     <td className={`${table.tdR} font-semibold ${sub < 0 ? "text-neg" : ""}`}>{subBlockers.length ? shown(usd0(sub), subBlockers) : <ProofValue proof={balanceProof(r.current.asOf, sub, { accountIds: group?.accountIds ?? list.map((a) => a.id) })}>{usd0(sub)}</ProofValue>}</td>
-                    <td className={`${table.tdR} text-muted`}>{!cur.length && sub > 0 ? formatPercentRatio(sub / assets, 0) : ""}</td>
+                    <td className={`${table.tdR} text-muted`}>
+                      {!cur.length && sub > 0 ? <ProofValue proof={compositeOf("share", [balanceProof(r.current.asOf, sub, { accountIds: group?.accountIds ?? list.map((a) => a.id) }), balanceProof(r.current.asOf, assets, { side: "assets" })], { ratio: sub / assets })}>{formatPercentRatio(sub / assets, 0)}</ProofValue> : ""}
+                    </td>
                   </tr>
                   {list.map((a) => (
                     <tr key={a.id} className={`${table.trHover} ${a.closed ? "opacity-55" : ""}`}>
@@ -327,7 +329,9 @@ function Overview({ r }: { r: NetWorthReport }) {
                           </>
                         )}
                       </td>
-                      <td className={`${table.tdR} text-xs text-faint`}>{!cur.length && a.currentCents > 0 ? formatPercentRatio(a.currentCents / assets, 1) : ""}</td>
+                      <td className={`${table.tdR} text-xs text-faint`}>
+                        {!cur.length && a.currentCents > 0 ? <ProofValue proof={compositeOf("share", [balanceProof(r.current.asOf, a.currentCents, { accountIds: [a.id] }), balanceProof(r.current.asOf, assets, { side: "assets" })], { ratio: a.currentCents / assets })}>{formatPercentRatio(a.currentCents / assets, 1)}</ProofValue> : ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -367,7 +371,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
   }, [run]);
 
   const control = (
-    <Segmented
+    <Segmented view
       options={[
         { value: "month", label: "Month" },
         { value: "quarter", label: "Quarter" },
@@ -378,6 +382,9 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
     />
   );
   if (!r) return <Loading />;
+  // Every cell beyond the balances is the period's own figure (derived/netWorth.ts builtDerived).
+  const built = builtDerived(r);
+  const cell = (row: string, col: string, text: ReactNode) => <ProofValue proof={derivedTarget("net-worth", built, "built", cellKey(r.granularity, row, col))}>{text}</ProofValue>;
   const cols = ["Opening", "Income", "Spending", "Other money in/out", "401(k) via payroll", "Net principal", "Growth (net of fees)", "In transit", "Closing", "Return"];
   const last = cumulative.at(-1);
   const since = run[0]?.label;
@@ -399,13 +406,13 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
         {last && (
           <div className="mb-3 flex flex-wrap gap-6 text-xs">
             <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: chart.neutral }} /> {seriesName("start")} <span className="num font-semibold text-fg">{formatUsd(Math.round(last.start))}</span>
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: chart.neutral }} /> {seriesName("start")} <span className="num font-semibold text-fg">{cell("since:start", "household", formatUsd(Math.round(last.start)))}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: chart.principal }} /> Saved since <span className="num font-semibold text-fg">{formatUsd(Math.round(last.principal))}</span>
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: chart.principal }} /> Saved since <span className="num font-semibold text-fg">{cell("since:principal", "household", formatUsd(Math.round(last.principal)))}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: chart.growth }} /> Growth since <span className="num font-semibold text-fg">{formatUsd(Math.round(last.growth))}</span>
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: chart.growth }} /> Growth since <span className="num font-semibold text-fg">{cell("since:growth", "household", formatUsd(Math.round(last.growth)))}</span>
             </span>
           </div>
         )}
@@ -469,32 +476,32 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                   <Fragment key={p.start}>
                     <tr className={`${table.trHover} cursor-pointer ${isOpen ? "bg-surface-2" : ""}`} onClick={() => setOpenRow(isOpen ? null : p.start)}>
                       <td className={`${table.td} whitespace-nowrap font-medium`}>
-                        <span className="text-faint">{isOpen ? "▾" : "▸"}</span>{" "}
-                        <ProofValue proof={changeProof(granularity, p.start, p.end, h.closingCents - h.openingCents)}>{p.label}</ProofValue>
+                        <span className="text-faint" data-audit-drill={p.label}>{isOpen ? "▾" : "▸"}</span>{" "}
+                        <ProofValue proof={changeProof(granularity, p.start, p.end, h.closingCents - h.openingCents)} drawn="words">{p.label}</ProofValue>
                         <QualityBadge quality={h.quality} />
                       </td>
                       <td className={table.tdR}>
                         <ProofValue proof={balanceProof(addDays(p.start, -1), h.openingCents)}>{usd0(h.openingCents)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{usd0(h.incomeCents)}</td>
-                      <td className={table.tdR}>{usd0(h.spendingCents)}</td>
+                      <td className={table.tdR}>{cell(`${p.start}:income`, "household", usd0(h.incomeCents))}</td>
+                      <td className={table.tdR}>{cell(`${p.start}:spending`, "household", usd0(h.spendingCents))}</td>
                       <td className={table.tdR} title={h.newlyTrackedCents ? `Includes ${usd0(h.newlyTrackedCents)} already in accounts first on file this period` : undefined}>
-                        {usd0(h.externalCents + h.newlyTrackedCents)}
+                        {cell(`${p.start}:other`, "household", usd0(h.externalCents + h.newlyTrackedCents))}
                       </td>
                       <td className={table.tdR} title={`Employee ${usd0(h.retirementEmployeeCents)} · employer ${usd0(h.retirementEmployerCents)}`}>
-                        {usd0(h.retirementEmployeeCents + h.retirementEmployerCents)}
+                        {cell(`${p.start}:retirement`, "household", usd0(h.retirementEmployeeCents + h.retirementEmployerCents))}
                       </td>
                       <td className={`${table.tdR} font-medium`}>
-                        <ProofValue proof={changeProof(granularity, p.start, p.end, null)}>{usd0(h.principalCents + h.newlyTrackedCents)}</ProofValue>
+                        {cell(`${p.start}:principal`, "household", usd0(h.principalCents + h.newlyTrackedCents))}
                       </td>
                       <td className={`${table.tdR} font-medium ${h.growthNetOfFeesCents < 0 ? "text-neg" : ""}`} title={`Fees ${usd0(h.feesCents)}`}>
-                        <ProofValue proof={changeProof(granularity, p.start, p.end, null)}>{usd0(h.growthNetOfFeesCents)}</ProofValue>
+                        {cell(`${p.start}:growth`, "household", usd0(h.growthNetOfFeesCents))}
                       </td>
-                      <td className={`${table.tdR} text-muted`}>{usd0(h.transferResidualCents + h.unexplainedCents)}</td>
+                      <td className={`${table.tdR} text-muted`}>{cell(`${p.start}:transit`, "household", usd0(h.transferResidualCents + h.unexplainedCents))}</td>
                       <td className={`${table.tdR} font-semibold`}>
                         <ProofValue proof={balanceProof(p.end, h.closingCents)}>{usd0(h.closingCents)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{h.portfolioReturn == null ? "—" : formatPercentRatio(h.portfolioReturn, 1)}</td>
+                      <td className={table.tdR}>{h.portfolioReturn == null ? "—" : cell(`${p.start}:return`, "household", formatPercentRatio(h.portfolioReturn, 1))}</td>
                     </tr>
                     {isOpen && (
                       <tr>
@@ -520,20 +527,20 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                                     <QualityBadge quality={a.quality} />
                                   </td>
                                   <td className={table.tdR}>
-                                    {a.newlyTrackedCents ? <span title="Balance already in the account when its first statement on file begins">{usd0(a.newlyTrackedCents)} (first on file)</span> : <ProofValue proof={balanceProof(addDays(p.start, -1), a.openingCents, { accountIds: [a.accountId] })}>{usd0(a.openingCents)}</ProofValue>}
+                                    {a.newlyTrackedCents ? <span title="Balance already in the account when its first statement on file begins">{cell(`${p.start}:first-on-file`, a.accountId, usd0(a.newlyTrackedCents))} (first on file)</span> : <ProofValue proof={balanceProof(addDays(p.start, -1), a.openingCents, { accountIds: [a.accountId] })}>{usd0(a.openingCents)}</ProofValue>}
                                   </td>
                                   <td className={table.tdR}>
-                                    <ProofValue proof={changeProof(granularity, p.start, p.end, null, [a.accountId])}>{usd0(a.contributionsCents)}</ProofValue>
+                                    {cell(`${p.start}:contributions`, a.accountId, usd0(a.contributionsCents))}
                                   </td>
                                   <td className={table.tdR}>
-                                    <ProofValue proof={changeProof(granularity, p.start, p.end, null, [a.accountId])}>{usd0(a.growthNetOfFeesCents)}</ProofValue>
+                                    {cell(`${p.start}:growth`, a.accountId, usd0(a.growthNetOfFeesCents))}
                                   </td>
-                                  <td className={`${table.tdR} text-muted`}>{usd0(a.feesCents)}</td>
-                                  <td className={`${table.tdR} text-muted`}>{usd0(a.unexplainedCents)}</td>
+                                  <td className={`${table.tdR} text-muted`}>{cell(`${p.start}:fees`, a.accountId, usd0(a.feesCents))}</td>
+                                  <td className={`${table.tdR} text-muted`}>{cell(`${p.start}:unexplained`, a.accountId, usd0(a.unexplainedCents))}</td>
                                   <td className={`${table.tdR} font-medium`}>
                                     <ProofValue proof={balanceProof(p.end, a.closingCents, { accountIds: [a.accountId] })}>{usd0(a.closingCents)}</ProofValue>
                                   </td>
-                                  <td className={table.tdR}>{a.returnRatio == null ? "—" : formatPercentRatio(a.returnRatio, 1)}</td>
+                                  <td className={table.tdR}>{a.returnRatio == null ? "—" : cell(`${p.start}:return`, a.accountId, formatPercentRatio(a.returnRatio, 1))}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -630,8 +637,10 @@ function Returns({ r }: { r: NetWorthReport }) {
                         {x.from} → {a?.lastDay}
                         {x.limited && <span className="ml-1 text-warn">(earlier history unproven)</span>}
                       </td>
-                      <td className={`${table.tdR} ${x.total < 0 ? "text-neg" : ""}`}>{formatPercentRatio(x.total, 1)}</td>
-                      <td className={table.tdR}>{x.annualized == null ? "—" : formatPercentRatio(x.annualized, 2)}</td>
+                      <td className={`${table.tdR} ${x.total < 0 ? "text-neg" : ""}`}>
+                        <ProofValue proof={derivedTarget("net-worth", derived, "account-return", x.accountId)}>{formatPercentRatio(x.total, 1)}</ProofValue>
+                      </td>
+                      <td className={table.tdR}>{x.annualized == null ? "—" : <ProofValue proof={derivedTarget("net-worth", derived, "account-return-annualized", x.accountId)}>{formatPercentRatio(x.annualized, 2)}</ProofValue>}</td>
                     </tr>
                   );
                 })}

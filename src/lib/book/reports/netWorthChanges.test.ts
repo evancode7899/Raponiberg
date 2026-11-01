@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { endOfMonth, periodLabel } from "../../dates/isoDate";
 import type { HouseholdPeriod, NetWorthPeriod } from "../../ledger/netWorthReport";
 import type { CashFlowPeriod, CategoryAmount } from "./cashFlow";
-import { netWorthChangesOf } from "./netWorthChanges";
+import { highlightText, netWorthChangesOf } from "./netWorthChanges";
 
 // An invented household, Jan – Jun 2025: every amount is made up.
 
@@ -97,7 +97,7 @@ describe("netWorthChangesOf", () => {
     expect(apr.typical).toMatchObject({ periods: 3, spendingCents: 310_000, incomeCents: PAY });
     expect(apr.steps.find((s) => s.key === "spending")!.typicalCents).toBe(-310_000);
     expect(apr.spendingMovers).toEqual([expect.objectContaining({ category: "Travel", cents: 180_000, typicalCents: 0, deltaCents: 180_000 })]);
-    expect(apr.highlights.join(" ")).toContain("mostly Travel (+⁠$1,800)");
+    expect(apr.highlights.map(highlightText).join(" ")).toContain("mostly Travel (+⁠$1,800)");
     expect(apr.proofs.spending).toEqual({ report: "cash-flow", metric: "spending", granularity: "month", start: "2025-04-01", end: "2025-04-30" });
   });
 

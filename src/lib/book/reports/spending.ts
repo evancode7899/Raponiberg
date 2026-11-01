@@ -84,6 +84,8 @@ export type OneOffExpense = {
   account: string;
   category: string;
   cents: number;
+  /** The ledger row it is: its own proof (the row as its statement prints it). */
+  rowId: string;
   /** Counted as one-off (tagged by hand, or its category always is). */
   tagged: boolean;
   viaCategory: boolean;
@@ -438,6 +440,7 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
       account: accountName.get(r.accountId) ?? "",
       category: r.category,
       cents: -r.amountCents,
+      rowId: r.id,
       tagged,
       viaCategory,
       label: settings.oneOffs[fp] ?? "",

@@ -158,7 +158,8 @@ describe("swept = rendered: Cash flow", () => {
       return s.length % 2 ? s[h]! : (s[h - 1]! + s[h]!) / 2;
     };
     let checked = 0;
-    for (const [i, m, partial] of [...ms.map((m, i) => [i, m, false] as const), [ms.length, current, true] as const])
+    // The tab draws the pace of the latest whole month and the month under way (derived/cashFlow.ts paceDerived).
+    for (const [i, m, partial] of [[ms.length - 1, ms.at(-1)!, false] as const, [ms.length, current, true] as const])
       for (const basis of ["all", "everyday"] as const) {
         const days = (x: SpendingMonth) => (basis === "all" ? x.daily.allCents : x.daily.everydayCents);
         const cur = cumulative(days(m));
@@ -173,7 +174,7 @@ describe("swept = rendered: Cash flow", () => {
         if (hist.length) expect(value("pace-typical", paceKey(m, basis))).toBe(median(hist.map((c) => c[Math.min(30, c.length - 1)]!)));
         checked++;
       }
-    expect(checked).toBe(2 * (ms.length + 1));
+    expect(checked).toBe(4);
     // And the sweep enumerates them all.
     const swept = new Set(derivedFigures("cash-flow", list).map((f) => descriptorKey(f.descriptor)));
     for (const f of list.filter((x) => x.figure.startsWith("pace-"))) expect(swept.has(descriptorKey({ report: "derived", page: "cash-flow", figure: f.figure, key: f.key }))).toBe(true);

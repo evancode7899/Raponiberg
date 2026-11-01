@@ -7,7 +7,7 @@ import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Card, ErrorNote, Loading, PageBody, StatCell, StatGrid } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofTarget, ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, sumOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
 import type { ProofDescriptor } from "@/lib/book/proof";
 import type { HomeSummary } from "@/lib/dashboard/homeSummary";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
@@ -24,6 +24,9 @@ type Change = Summary["netWorth"]["change"]["month"];
 /** A figure's proof, as the page shows it (cents before any per-month split). */
 const proofOf = (descriptor: ProofDescriptor | null | undefined, shownCents: number | null | undefined): ProofRef =>
   descriptor && shownCents != null ? { descriptor, shownCents } : unswept("Home has no recipe for this figure");
+
+/** A total drawn as its monthly average. */
+const perMonth = (descriptor: ProofDescriptor, cents: number, months: number): ProofRef => ({ descriptor, shownCents: cents, perMonths: months });
 
 const date = (iso: string | null | undefined) => (iso ? formatDisplayDateFromYmd(iso) : "—");
 const deltaTone = (c: number | null) => (c == null || c === 0 ? "text-muted" : c > 0 ? "text-pos" : "text-neg");
@@ -90,14 +93,20 @@ function Dashboard({ d }: { d: Summary }) {
       </div>
 
       <StatGrid cols={5}>
-        <StatCell label="Income · 12 mo" proof={proofOf(cf.last12?.proofs.income, cf.last12?.incomeCents)} value={cf.last12 ? usdCompact(cf.last12.incomeCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.incomeCents / cf.last12.months)} a month` : undefined} />
-        <StatCell label="Spending · 12 mo" proof={proofOf(cf.last12?.proofs.spending, cf.last12?.spendingCents)} value={cf.last12 ? usdCompact(cf.last12.spendingCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? `${usdCompact(cf.last12.spendingCents / cf.last12.months)} a month` : undefined} />
+        <StatCell label="Income · 12 mo" proof={proofOf(cf.last12?.proofs.income, cf.last12?.incomeCents)} value={cf.last12 ? usdCompact(cf.last12.incomeCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? <><ProofValue proof={perMonth(cf.last12.proofs.income, cf.last12.incomeCents, cf.last12.months)}>{usdCompact(cf.last12.incomeCents / cf.last12.months)}</ProofValue> a month</> : undefined} />
+        <StatCell label="Spending · 12 mo" proof={proofOf(cf.last12?.proofs.spending, cf.last12?.spendingCents)} value={cf.last12 ? usdCompact(cf.last12.spendingCents) : <BlockedValue blockers={cf.blockers} />} sub={cf.last12 ? <><ProofValue proof={perMonth(cf.last12.proofs.spending, cf.last12.spendingCents, cf.last12.months)}>{usdCompact(cf.last12.spendingCents / cf.last12.months)}</ProofValue> a month</> : undefined} />
         <StatCell
           label="Saved from take-home"
           proof={proofOf(cf.last12?.proofs.net, cf.last12?.netCents)}
           value={cf.last12 ? usdCompact(cf.last12.netCents) : <BlockedValue blockers={cf.blockers} />}
           tone={cf.last12 ? (cf.last12.netCents >= 0 ? "pos" : "neg") : undefined}
-          sub={cf.last12?.savingsRate == null ? undefined : `${formatPercentRatio(cf.last12.savingsRate, 0)} savings rate`}
+          sub={
+            cf.last12?.savingsRate == null ? undefined : (
+              <>
+                <ProofValue proof={compositeOf("share", [proofOf(cf.last12.proofs.net, cf.last12.netCents), proofOf(cf.last12.proofs.income, cf.last12.incomeCents)], { ratio: cf.last12.savingsRate })}>{formatPercentRatio(cf.last12.savingsRate, 0)}</ProofValue> savings rate
+              </>
+            )
+          }
         />
         <StatCell
           label="From saving · 12 mo"
@@ -211,7 +220,9 @@ function Composition({ nw }: { nw: Summary["netWorth"] }) {
           <li key={g.group} className="flex items-center gap-2 text-[13px]">
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color(g.group) }} aria-hidden />
             <span className="min-w-0 flex-1 truncate text-fg-2">{g.group}</span>
-            <span className="num text-muted">{formatPercentRatio(g.cents / total, 0)}</span>
+            <span className="num text-muted">
+              <ProofValue proof={compositeOf("share", [proofOf(g.proof, g.cents), sumOf(assets.map((x) => proofOf(x.proof, x.cents)), total)], { ratio: g.cents / total })}>{formatPercentRatio(g.cents / total, 0)}</ProofValue>
+            </span>
             <span className="num w-24 text-right font-medium">
               <ProofValue proof={proofOf(g.proof, g.cents)}>{usd0(g.cents)}</ProofValue>
             </span>
@@ -338,7 +349,10 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
       subtitle={
         <>
           <ProofValue proof={proofOf(lm.proof, lm.spendingCents)}>{usd0(lm.spendingCents)}</ProofValue> spent, {diff >= 0 ? "above" : "below"} the <ProofValue proof={avgProof}>{usd0(avgTotal)}</ProofValue> monthly average by{" "}
-          <span className={diff > 0 ? "text-neg" : "text-pos"}>{usd0(Math.abs(diff))}</span>. Click a category for its transactions.
+          <span className={diff > 0 ? "text-neg" : "text-pos"}>
+            <ProofValue proof={compositeOf("diff", [proofOf(lm.proof, lm.spendingCents), avgProof], { cents: lm.spendingCents - cf.last12.spendingCents / cf.last12.months }, [1, cf.last12.months])}>{usd0(Math.abs(diff))}</ProofValue>
+          </span>
+          . Click a category for its transactions.
         </>
       }
       actions={
@@ -375,7 +389,7 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
                 <ProofValue proof={proofOf(c.proof, c.lastMonthCents)}>{usd0(c.lastMonthCents)}</ProofValue>
               </span>
               <span className={`num text-right text-xs ${Math.abs(over) < 2500 ? "text-muted" : over > 0 ? "text-neg" : "text-pos"}`}>
-                {Math.abs(over) < 100 ? "—" : usdDelta(over)}
+                {Math.abs(over) < 100 ? "—" : <ProofValue proof={compositeOf("diff", [proofOf(c.proof, c.lastMonthCents), proofOf(c.totalProof, c.totalCents)], { cents: c.lastMonthCents - c.totalCents / c.months }, [1, c.months])}>{usdDelta(over)}</ProofValue>}
               </span>
             </li>
           );

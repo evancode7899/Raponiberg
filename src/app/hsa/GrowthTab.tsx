@@ -1,7 +1,11 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { hsaDerived } from "@/lib/book/derived/planning";
+import { HSA_STRATEGY_COLUMNS, HSA_YEAR_COLUMNS, hsaDerived } from "@/lib/book/derived/planning";
+import { cellKey } from "@/lib/book/derived/types";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { NotFigure } from "@/components/ui/kit";
+import { useHsaDerived, type HsaDp } from "./derived";
 import { derivedTarget } from "@/lib/book/derived/types";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
@@ -20,7 +24,15 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   const a = g.assumptions;
   const edge = g.futureValueCents - g.taxableValueCents;
   const scale = r.totals.unreimbursedCents / 100_000;
-  const taxableTerms = `${formatPercentRatio(a.dividendYield, 1)} dividends taxed yearly and ${formatPercentRatio(a.taxableRate, 0)} on the gain when sold`;
+  const dp = useHsaDerived(r);
+  const assumed = "an assumption the comparison runs on (Settings)";
+  const taxableTerms = (
+    <>
+      <NotFigure why={assumed}>{formatPercentRatio(a.dividendYield, 1)}</NotFigure> dividends taxed yearly and <NotFigure why={assumed}>{formatPercentRatio(a.taxableRate, 0)}</NotFigure> on the gain when sold
+    </>
+  );
+  const rate = <ProofValue proof={dp("growth-rate")}>{formatPercentRatio(g.rate, 1)}</ProofValue>;
+  const exit = <NotFigure why={assumed}>{formatPercentRatio(a.exitRate, 0)}</NotFigure>;
   if (g.withheld)
     return (
       <Callout tone="info" title="Growth and strategy figures withheld">
@@ -30,20 +42,20 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   return (
     <>
       <StatGrid cols={3}>
-        <StatCell label={`Worth in ${g.planYear}`} value={usd0(g.futureValueCents)} tone="accent" proof={hsaProof("future", g.futureValueCents)} sub={`today's ${usd0(r.totals.unreimbursedCents)} of receipts left invested ${g.years} years at ${formatPercentRatio(g.rate, 1)}, after any tax`} />
+        <StatCell label={`Worth in ${g.planYear}`} value={usd0(g.futureValueCents)} tone="accent" proof={hsaProof("future", g.futureValueCents)} sub={<>today&apos;s <ProofValue proof={hsaProof("reimbursable", r.totals.unreimbursedCents)}>{usd0(r.totals.unreimbursedCents)}</ProofValue> of receipts left invested {g.years} years at {rate}, after any tax</>} />
         <StatCell
           label={a.growthCovered ? "Tax-free growth by then" : "Growth by then, after tax"}
           value={usd0(g.futureValueCents - r.totals.unreimbursedCents)}
           tone="pos"
           proof={hsaProof("future-growth", g.futureValueCents - r.totals.unreimbursedCents)}
-          sub={a.growthCovered ? "on top of the receipts; tax-free as long as later medical bills cover it" : `on top of the receipts, taxed at ${formatPercentRatio(a.exitRate, 0)} with no receipt behind it`}
+          sub={a.growthCovered ? "on top of the receipts; tax-free as long as later medical bills cover it" : <>on top of the receipts, taxed at {exit} with no receipt behind it</>}
         />
-        <StatCell proof={derivedTarget("hsa", hsaDerived(r), "edge")} label="Edge over reimbursing now" value={usd0(edge)} tone={edge > 0 ? "pos" : "neutral"} sub={`vs. ${usd0(g.taxableValueCents)} if reimbursed today and invested in a taxable account (${taxableTerms})`} />
+        <StatCell proof={derivedTarget("hsa", hsaDerived(r), "edge")} label="Edge over reimbursing now" value={usd0(edge)} tone={edge > 0 ? "pos" : "neutral"} sub={<>vs. <ProofValue proof={dp("taxable-value")}>{usd0(g.taxableValueCents)}</ProofValue> if reimbursed today and invested in a taxable account ({taxableTerms})</>} />
       </StatGrid>
 
       <Card
         title={`Letting the receipts ride until ${g.planYear}`}
-        subtitle={`Today's unreimbursed total left in the HSA vs. reimbursed today and invested in a taxable account (${taxableTerms}). Both lines are after every tax, as if taken out that year. Growth: ${formatPercentRatio(g.rate, 1)} from ${RATE_SOURCE[g.rateSource]}. All set on Settings.`}
+        subtitle={<>Today&apos;s unreimbursed total left in the HSA vs. reimbursed today and invested in a taxable account ({taxableTerms}). Both lines are after every tax, as if taken out that year. Growth: {rate} from {RATE_SOURCE[g.rateSource]}. All set on Settings.</>}
       >
         {r.totals.unreimbursedCents === 0 ? (
           <p className="text-xs text-muted">Nothing unreimbursed to project.</p>
@@ -89,7 +101,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
                   Worth in {g.planYear}
                 </th>
                 <th className={table.thR}>Ahead in {g.planYear}</th>
-                {scale > 0 && <th className={table.thR}>On your {usd0(r.totals.unreimbursedCents)}</th>}
+                {scale > 0 && <th className={table.thR}>On your <ProofValue proof={hsaProof("reimbursable", r.totals.unreimbursedCents)}>{usd0(r.totals.unreimbursedCents)}</ProofValue></th>}
               </tr>
             </thead>
             <tbody>
@@ -99,13 +111,16 @@ export function GrowthTab({ r }: { r: HsaReport }) {
                     <div className="text-fg">{s.label}</div>
                     <div className="text-[11px] font-normal text-muted">{s.note}</div>
                   </td>
-                  <td className={table.tdR}>{usd0(s.fromHsaCents)}</td>
-                  <td className={table.tdR}>{usd0(s.fromBankCents)}</td>
-                  <td className={table.tdR}>{usd0(s.taxableNowCents)}</td>
-                  <td className={table.tdR}>{usd0(s.hsaNowCents)}</td>
-                  <td className={table.tdR}>{usd0(s.worthCents)}</td>
-                  <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>{usd0(s.aheadCents)}</td>
-                  {scale > 0 && <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>{usd0(Math.round(s.aheadCents * scale))}</td>}
+                  {HSA_STRATEGY_COLUMNS.map((col) => (
+                    <td key={col} className={`${table.tdR} ${col === "aheadCents" ? (s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : "") : ""}`}>
+                      <ProofValue proof={dp("strategy", cellKey("per-1000", s.key, col))}>{usd0(s[col])}</ProofValue>
+                    </td>
+                  ))}
+                  {scale > 0 && (
+                    <td className={`${table.tdR} ${s.aheadCents > 0 ? "text-pos" : s.aheadCents < 0 ? "text-neg" : ""}`}>
+                      <ProofValue proof={dp("strategy", cellKey("per-1000", s.key, "aheadOnYours"))}>{usd0(Math.round((s.aheadCents * r.totals.unreimbursedCents) / 100_000))}</ProofValue>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -115,7 +130,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
           Ahead is against paying from the HSA now.{" "}
           {a.growthCovered
             ? "The HSA's growth is assumed to come out tax-free, backed by later medical bills."
-            : `The HSA's growth comes out taxed at ${formatPercentRatio(a.exitRate, 0)}, with no receipt behind it.`}{" "}
+            : <>The HSA&apos;s growth comes out taxed at {exit}, with no receipt behind it.</>}{" "}
           Not counted, because it&apos;s the same in both: the plan&apos;s premium and deductible, and account fees.
         </p>
       </Card>
@@ -138,9 +153,11 @@ export function GrowthTab({ r }: { r: HsaReport }) {
                   <tr key={y.year} className={table.tr}>
                     <td className={`${table.td} num`}>{y.year}</td>
                     <td className={table.tdR}>{y.count}</td>
-                    <td className={table.tdR}>{formatUsdCents(y.totalCents)}</td>
-                    <td className={table.tdR}>{formatUsdCents(y.unreimbursedCents)}</td>
-                    <td className={table.tdR}>{formatUsdCents(y.reimbursedInYearCents)}</td>
+                    {HSA_YEAR_COLUMNS.map((col) => (
+                      <td key={col} className={table.tdR}>
+                        <ProofValue proof={dp("year", cellKey("years", String(y.year), col))}>{formatUsdCents(y[col])}</ProofValue>
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -148,8 +165,8 @@ export function GrowthTab({ r }: { r: HsaReport }) {
           </div>
         </Card>
         <div className="flex flex-col gap-4">
-          <BreakdownCard title="By patient" rows={r.byPatient} label={(k) => k} />
-          <BreakdownCard title="By kind of care" rows={r.byKind} label={(k) => KIND_LABEL[k as ExpenseKind] ?? k} />
+          <BreakdownCard title="By patient" scope="patient" dp={dp} rows={r.byPatient} label={(k) => k} />
+          <BreakdownCard title="By kind of care" scope="kind" dp={dp} rows={r.byKind} label={(k) => KIND_LABEL[k as ExpenseKind] ?? k} />
         </div>
       </div>
 
@@ -167,7 +184,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
   );
 }
 
-function BreakdownCard({ title, rows, label }: { title: string; rows: Breakdown[]; label: (key: string) => string }) {
+function BreakdownCard({ title, scope, dp, rows, label }: { title: string; scope: string; dp: HsaDp; rows: Breakdown[]; label: (key: string) => string }) {
   const max = Math.max(1, ...rows.map((x) => x.totalCents));
   return (
     <Card title={title}>
@@ -179,8 +196,13 @@ function BreakdownCard({ title, rows, label }: { title: string; rows: Breakdown[
                 {label(b.key)} <span className="text-muted">· {b.count}</span>
               </span>
               <span className="num text-fg">
-                {formatUsdCents(b.totalCents)}
-                {b.unreimbursedCents !== b.totalCents && <span className="text-muted"> · {formatUsdCents(b.unreimbursedCents)} open</span>}
+                <ProofValue proof={dp("breakdown", cellKey(scope, b.key, "total"))}>{formatUsdCents(b.totalCents)}</ProofValue>
+                {b.unreimbursedCents !== b.totalCents && (
+                  <span className="text-muted">
+                    {" "}
+                    · <ProofValue proof={dp("breakdown", cellKey(scope, b.key, "open"))}>{formatUsdCents(b.unreimbursedCents)}</ProofValue> open
+                  </span>
+                )}
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-surface-3">

@@ -45,7 +45,7 @@ export function rederiveCardPerks(reports: Pick<CardPerksReport, "year" | "cards
 }
 
 /** HSA › Growth: both accounts' worth in the plan year by the closed form (a geometric series for the taxable account), not the year-by-year loop. */
-export function rederiveHsa(r: Pick<HsaReport, "growth">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+export function rederiveHsa(r: Pick<HsaReport, "growth"> & Partial<Pick<HsaReport, "expenses">>, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
   const g = r.growth;
   const a = g.assumptions;
   const open = g.path[0]?.hsaCents ?? 0;
@@ -56,9 +56,37 @@ export function rederiveHsa(r: Pick<HsaReport, "growth">, figures: readonly Deri
   const value = Math.pow(k, n);
   const basis = 1 + d * (1 - a.taxableRate) * (Math.abs(k - 1) < 1e-12 ? n : (value - 1) / (k - 1));
   const taxable = value - a.taxableRate * Math.max(0, value - basis);
-  return rederiveList(figures, (f) =>
-    f.figure === "edge" ? [centsRoute("both accounts in closed form", f.value, Math.round(open * hsa) - Math.round(open * taxable), "(1 + r)ⁿ in the HSA; the taxable account grows (1 + r − dividend tax) a year, its basis a geometric series", 2)] : null,
-  );
+  const expenses = r.expenses ?? [];
+  // Bills re-added from the log, by the year (or patient, kind) each is dated.
+  const billSum = (keep: (e: (typeof expenses)[number]) => boolean, open = false) => expenses.filter((e) => keep(e) && (!open || !e.reimbursement)).reduce((s, e) => s + e.amountCents, 0);
+  return rederiveList(figures, (f) => {
+    switch (f.figure) {
+      case "edge":
+        return [centsRoute("both accounts in closed form", f.value, Math.round(open * hsa) - Math.round(open * taxable), "(1 + r)ⁿ in the HSA; the taxable account grows (1 + r − dividend tax) a year, its basis a geometric series", 2)];
+      case "taxable-value":
+        return [centsRoute("the taxable account in closed form", f.value, Math.round(open * taxable), "(1 + r − dividend tax)ⁿ, its basis a geometric series, the gain taxed at sale", 2)];
+      case "year": {
+        const [, year, col] = (f.key ?? "").split("|");
+        if (col === "reimbursedInYearCents") return [centsRoute("reimbursements re-added from the log", f.value, expenses.filter((e) => e.reimbursement?.date?.startsWith(year!)).reduce((s, e) => s + e.amountCents, 0), "bills whose reimbursement is dated that year")];
+        return [centsRoute("bills re-added from the log", f.value, billSum((e) => e.date.startsWith(year!), col === "unreimbursedCents"), "bills dated that year")];
+      }
+      case "breakdown": {
+        const [scope, key, col] = (f.key ?? "").split("|");
+        const of = (e: (typeof expenses)[number]) => (scope === "patient" ? (e.patient || "Unassigned") === key : e.kind === key);
+        return [centsRoute("bills re-added from the log", f.value, billSum(of, col === "open"), `bills by ${scope}`)];
+      }
+      case "expense":
+        return { none: "An expense as you logged it: the log is its own source (its paying row, where tied, opens its own proof)." };
+      case "expense-growth":
+      case "growth-rate":
+      case "strategy":
+        return { none: "The HSA growth model on your settings and the rate it states: the growth total and the edge are re-derived in closed form; these are its per-bill and per-$1,000 parts." };
+      case "found-likely":
+        return { none: "Statement rows the qualifier flags as care, each a row with its own proof (listed in the chain)." };
+      default:
+        return null;
+    }
+  });
 }
 
 /** Insurance: premiums paid re-added from the Book's own rows; the rest is the policy as it prints. */
@@ -79,4 +107,7 @@ export const declared = (why: string) => (figures: readonly DerivedFigure[]) => 
 export const INTEGRITY_WHY = "A count over the integrity report's own lists (the proof lists every one it counts): the checks behind it are the independent source.";
 export const LIMITS_WHY = "The tax plan's verdict per yearly limit, or wages as the year's pay stubs print them: the limit's own proof and the pay proof re-add those from the Book.";
 export const CALENDAR_WHY = "The tax plan's amount (W-4 extra per paycheck, a Q4 safe-harbor shortfall): Taxes › W-4 and the estimate's own proofs re-derive the plan.";
+export const FORECAST_WHY = "The forecast's own schedule and balances on the saved drivers: a projection, not a sum of statements. Its ledger cells and seeds are proven as forecast figures, and the pay and letters behind each bonus by their own proofs.";
+export const BUILT_WHY = "A part of the period's roll-forward as the report splits it: the change proof re-adds opening + those flows = closing from each account's timeline, and the closing balance is proven from its statements.";
+export const TAXES_WHY = "The tax engine's own lines for each return (joint, each spouse separately), as the Worksheet states them: the tax estimate's proofs re-derive the engine's inputs from the Book.";
 export const FUNDS_WHY = "As the manager's notices and capital statements print it: each notice is its own source, and the chain re-adds what's worked from them.";

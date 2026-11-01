@@ -1,5 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { getBook } from "@/lib/book/cache";
+import { dataStamp, getBook, stampTag } from "@/lib/book/cache";
 import { bookTotalsFor } from "@/lib/book/rowTotals";
 import { LANES, type Lane } from "@/lib/classifier/taxonomy";
 import { isIsoDate } from "@/lib/dates/isoDate";
@@ -112,9 +112,11 @@ export async function GET(request: NextRequest) {
     return ids.flatMap((id) => byId.get(id) ?? []);
   };
 
+  // The stamp of the data read, taken before reading it: the row figures clear only against the sweep of this data.
+  const stamp = dataStamp();
   const [rows, matching, book] = await Promise.all([page(), prisma.transaction.findMany({ where, select: { id: true } }), getBook(prisma)]);
-  return NextResponse.json({
-    transactions: rows,
-    total: bookTotalsFor(book, matching.map((r) => r.id)),
-  });
+  return NextResponse.json(
+    { transactions: rows, total: bookTotalsFor(book, matching.map((r) => r.id)) },
+    { headers: { "x-data-stamp": stampTag(stamp) } },
+  );
 }

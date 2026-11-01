@@ -156,7 +156,7 @@ export function Timeline({ t }: { t: BlockerTimeline }) {
           <h3 className="text-[13px] font-semibold text-fg">What&apos;s gating what ({gating.length})</h3>
           <p className="text-xs text-muted">Each open finding and every period it withholds. Clear the top ones first: they unlock the most.</p>
         </div>
-        <Segmented
+        <Segmented view
           ariaLabel="Figure"
           size="xs"
           value={laneFilter}

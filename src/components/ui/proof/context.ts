@@ -2,7 +2,8 @@
 
 import type { Figure } from "@/lib/book/figure";
 import type { ProofDescriptor } from "@/lib/book/proof";
-import { clearanceOf, NO_SWEEP, type Clearance, type SweepState, type Unswept } from "@/lib/book/proof/clearance";
+import { clearanceOf, isUnswept, NO_SWEEP, noFigure, type Clearance, type SweepState, type Unswept } from "@/lib/book/proof/clearance";
+import type { CompositeDescriptor, CompositeOp } from "@/lib/book/proof/composite";
 import type { ProofValue } from "@/lib/book/proof/types";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { createContext, useContext } from "react";
@@ -64,4 +65,24 @@ export function useClearance(ref: ProofRef | Figure, blockers: readonly BlockerR
 /** Opens the proof drawer for a figure; null outside the app shell. */
 export function useProof() {
   return useContext(ProofContext);
+}
+
+/**
+ * A share, change, sum or growth of figures that have proofs (lib/book/proof/composite.ts):
+ * it shows only once every part has cleared, at the value worked out from their cleared
+ * values, and its drawer shows the arithmetic. A part with no proof (or nothing to show)
+ * leaves the composite without one too. `shown` is the value the page works out and draws.
+ */
+export function compositeOf(op: CompositeOp, parts: readonly (ProofRef | Figure)[], shown: ProofValue, per?: readonly number[], n?: number): ProofRef {
+  const refs = parts.map((p) => ("class" in p ? targetOf(p) : p));
+  const none = refs.find((p): p is Unswept => isUnswept(p));
+  if (none) return none;
+  const of = (refs as ProofTarget[]).map((p) => p.descriptor) as CompositeDescriptor["of"];
+  return { descriptor: { report: "composite", op, of, ...(per && per.some((k) => k !== 1) ? { per } : {}), ...(n != null ? { n } : {}) }, shownCents: "cents" in shown ? shown.cents : null, ...("cents" in shown ? {} : { shown }) };
+}
+
+/** The sum of a few figures that have proofs: the one figure itself, a composite sum of several, or nothing to show. */
+export function sumOf(parts: readonly ProofRef[], cents: number): ProofRef {
+  if (!parts.length) return noFigure("nothing to add up");
+  return parts.length === 1 ? parts[0]! : compositeOf("sum", parts, { cents });
 }

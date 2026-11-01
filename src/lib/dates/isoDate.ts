@@ -61,10 +61,20 @@ export function maxIso(a: string, b: string): string {
 /**
  * Today on this computer's calendar. The Book, its cache and every "as of today" figure
  * use it, so they agree on the date (an ISO timestamp's date is UTC's, a day ahead on a US
- * evening).
+ * evening). APP_TODAY (YYYY-MM-DD) pins it on the server: the demo sets it, so its made-up
+ * household reads the same, figure for figure, every day it runs (the render audit, CI).
  */
-export function localToday(now = new Date()): string {
-  return ymd(now.getFullYear(), now.getMonth() + 1, now.getDate());
+export function localToday(now?: Date): string {
+  const pinned = now ? undefined : pinnedToday();
+  if (pinned) return pinned;
+  const d = now ?? new Date();
+  return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+/** APP_TODAY, when the server pins the date (never in the browser, where process.env holds no such key). */
+function pinnedToday(): string | null {
+  const v = typeof process === "undefined" ? undefined : process.env?.APP_TODAY?.trim();
+  return v && isIsoDate(v) ? v : null;
 }
 
 export function toIsoDate(d: Date): string {

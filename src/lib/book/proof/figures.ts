@@ -3,7 +3,7 @@ import type { Forecast } from "../../forecast/forecast.ts";
 import { analyzeFire, firePlans, stressTest } from "../../fire/fire.ts";
 import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type StressFigure } from "../../fire/longTerm.ts";
 import { projectOutlook } from "../../profile/outlook.ts";
-import { monthPeriods, yearPeriods } from "../../forecast/periods.ts";
+import { ledgerColumns, ledgerDraws, ledgerViews } from "../../forecast/ledger.ts";
 import { COST_LINES } from "../../car/report.ts";
 import { CAR_KINDS } from "../../car/settings.ts";
 import type { HsaReport } from "../../hsa/report.ts";
@@ -138,6 +138,12 @@ export function netWorthFigures(r: NetWorthReport): PageFigure[] {
     if (p.blockers.length) continue;
     out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: p.end }, shown: cents(p.household.closingCents) });
     out.push({ page, descriptor: { report: "net-worth", metric: "change", granularity: r.granularity, start: p.start, end: p.end }, shown: cents(p.household.closingCents - p.household.openingCents) });
+    // How it was built › a period opened: each account's opening (unless it first appears in the period) and closing balance.
+    const before = new Date(Date.parse(`${p.start}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    for (const a of p.byAccount) {
+      if (!a.newlyTrackedCents) out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: before, accountIds: [a.accountId] }, shown: cents(a.openingCents) });
+      out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: p.end, accountIds: [a.accountId] }, shown: cents(a.closingCents) });
+    }
   }
   return out;
 }
@@ -191,7 +197,10 @@ export function homeFigures(s: ReturnType<typeof buildHomeSummary>): PageFigure[
     add(cf.last12.proofs.net, cf.last12.netCents);
   }
   if (cf.lastMonth) add(cf.lastMonth.proof, cf.lastMonth.spendingCents);
-  for (const c of cf.categories) if (c.lastMonthCents) add(c.proof, c.lastMonthCents);
+  for (const c of cf.categories) {
+    if (c.lastMonthCents) add(c.proof, c.lastMonthCents);
+    if (c.totalCents) add(c.totalProof, c.totalCents);
+  }
   return out;
 }
 
@@ -306,6 +315,9 @@ export function bonusesFigures(r: BonusesReport, forecast?: Forecast | null): Pa
     aw("paid", a.paidCents);
     aw("forfeited", a.forfeitedCents);
     aw("outstanding", a.outstandingCents);
+    if (a.base?.from === "LETTER") aw("base", a.base.cents);
+    if (a.oneOffCents) aw("oneOff", a.oneOffCents);
+    if (a.planDeferredCents) aw("planDeferred", a.planDeferredCents);
     for (const tr of a.tranches) out.push([bon({ figure: "tranche", letterId: a.letterId, year: a.year, window: tr.window, kind: tr.kind }), tr.amountCents]);
   }
   for (const w of r.windows) {
@@ -490,21 +502,27 @@ export function goalsFigures(r: GoalsReport): PageFigure[] {
 const LINES = Object.keys(LEDGER_LINES) as LedgerLine[];
 
 /**
- * Every cell the Forecast ledger draws on the saved drivers: the year view (the proven
- * year, the year in progress and five years on) and each of those years month by month,
- * two years out.
+ * Every cell the Forecast ledger can draw on the saved drivers: every view it offers (each
+ * span of years, each year month by month) and the lines it draws over each, as the page
+ * reads them (forecast/ledger.ts). A cell two views share is one figure.
  */
 export function forecastFigures(f: Forecast, r: AnnualProfileReport): PageFigure[] {
-  const years = [...new Set(f.months.slice(0, 24).map((m) => m.year))];
-  const cols = [...yearPeriods(f, r, { actualYears: 1, throughYear: r.currentYear + 5 }), ...years.flatMap((y) => monthPeriods(f, r, y))];
   const out: PageFigure[] = [];
-  for (const p of cols)
-    for (const line of LINES) {
-      const v = ledgerValue(p.flows, line);
-      if (v == null) continue;
-      const through = p.through.slice(0, 7);
-      out.push({ page: "Forecast", descriptor: { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line }, shown: { cents: v } });
-    }
+  const seen = new Set<string>();
+  for (const view of ledgerViews(f)) {
+    const cols = ledgerColumns(f, r, view);
+    for (const line of LINES.filter((l) => ledgerDraws(l, cols)))
+      for (const p of cols) {
+        const v = ledgerValue(p.flows, line);
+        if (v == null) continue;
+        const through = p.through.slice(0, 7);
+        const descriptor = { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line } as const;
+        const k = `${p.from}|${through}|${line}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push({ page: "Forecast", descriptor, shown: { cents: v } });
+      }
+  }
   // The inputs panel's seeds, as ForecastInputs shows them on the saved drivers.
   const s = r.seeds;
   if (s) {
@@ -607,6 +625,8 @@ const DERIVED_PAGE_NAME: Record<DerivedPage, string> = {
   calendar: "Calendar",
   "lp-funds": "Investments › Private funds",
   insurance: "Insurance",
+  taxes: "Taxes",
+  forecast: "Forecast",
 };
 
 /** A page's derived figures (derived/types.ts), each at the value its list states. */
@@ -624,7 +644,13 @@ export function derivedFigures(page: DerivedPage, list: DerivedFigure[]): PageFi
 export function sourceFigures(book: Book): PageFigure[] {
   const out: PageFigure[] = [];
   for (const s of book.statements.filter((x) => x.status === "COMMITTED"))
+  {
     out.push({ page: "Statements", descriptor: { report: "statement", statementId: s.id }, shown: s.printed ? { cents: s.printed.closingCents } : null, asPrinted: true });
+    // The other lines Statements › Documents draws beside it: the opening, and an investment statement's market change and fees.
+    if (s.printed)
+      for (const line of ["opening", ...(s.printed.growthCents || s.printed.feesCents ? (["growth", "fees"] as const) : [])] as const)
+        out.push({ page: "Statements", descriptor: { report: "statement", statementId: s.id, line }, shown: { cents: s.printed[`${line}Cents`] }, asPrinted: true });
+  }
   const printed = new Map(book.rows.map((r) => [r.id, r.amountCents]));
   for (const r of book.rows) if (r.partOf) printed.set(r.partOf, (printed.get(r.partOf) ?? 0) + r.amountCents);
   for (const r of book.rows) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });

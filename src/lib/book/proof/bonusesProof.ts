@@ -34,7 +34,10 @@ import type { ChainLine, Proof, ProofBlock, ProofEstimate, ProofKind, ProofLink 
  * stubs and has no statements, so it's shown as a line naming the plan and saying so.
  */
 
-export type AwardMeasure = "scheduled" | "headline" | "totalComp" | "upfront" | "deferred" | "paid" | "deferredPaid" | "forfeited" | "outstanding";
+export type AwardMeasure = "scheduled" | "headline" | "totalComp" | "upfront" | "deferred" | "paid" | "deferredPaid" | "forfeited" | "outstanding" | LetterMeasure;
+/** Lines the letter prints outright: the base salary, sign-on and make-whole payments, and what goes to a deferred compensation plan. */
+type LetterMeasure = "base" | "oneOff" | "planDeferred";
+const LETTER_MEASURES: Record<LetterMeasure, string> = { base: "base salary", oneOff: "sign-on / make-whole", planDeferred: "deferred into the compensation plan" };
 export type TotalsMeasure = "headline" | "upfront" | "deferred" | "deferredPaid" | "forfeited" | "outstanding";
 
 export type BonusesDescriptor = { report: "bonuses" } & (
@@ -48,7 +51,7 @@ export type BonusesDescriptor = { report: "bonuses" } & (
   | { figure: "estimate"; personId: string; awardYear: number; month: string; part: string }
 );
 
-const AWARD_MEASURES: AwardMeasure[] = ["scheduled", "headline", "totalComp", "upfront", "deferred", "paid", "deferredPaid", "forfeited", "outstanding"];
+const AWARD_MEASURES: AwardMeasure[] = ["scheduled", "headline", "totalComp", "upfront", "deferred", "paid", "deferredPaid", "forfeited", "outstanding", "base", "oneOff", "planDeferred"];
 const TOTALS_MEASURES: TotalsMeasure[] = ["headline", "upfront", "deferred", "deferredPaid", "forfeited", "outstanding"];
 const KINDS: PaymentKind[] = ["UPFRONT", "DEFERRED", "SIGNING", "MAKEWHOLE"];
 
@@ -342,6 +345,13 @@ function awardProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "award" }>
   const title = `${letter.title}: ${a.year} award${a.partial ? " (part)" : ""}`;
   const describes = (what: string) => `${letter.title} · ${a.year} award, ${what}`;
 
+  if (d.measure in LETTER_MEASURES) {
+    const what = LETTER_MEASURES[d.measure as LetterMeasure];
+    const figure = d.measure === "base" ? (a.base?.from === "LETTER" ? a.base.cents : 0) : d.measure === "oneOff" ? a.oneOffCents : a.planDeferredCents;
+    const lines: ChainLine[] = [letterLine(letter), { label: what[0]!.toUpperCase() + what.slice(1), value: { cents: figure }, source: "proven", note: "As the letter prints it." }];
+    return base(ctx, d, describes(what), figure, figure, `The letter prints ${money(figure)}`, [{ kind: "chain", title, lines }, ...warn], dates);
+  }
+
   if (d.measure === "headline" || d.measure === "totalComp") {
     const lines: ChainLine[] = [letterLine(letter)];
     let figure: number;
@@ -389,7 +399,7 @@ function awardProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "award" }>
     return base(ctx, d, describes(d.measure === "headline" ? "headline bonus" : "total compensation"), figure, parts, `The lines below come to ${money(parts)}`, blocks, dates);
   }
 
-  const pick: Record<Exclude<AwardMeasure, "headline" | "totalComp">, { what: string; take: (t: Tranche) => boolean; value: "amount" | "paid" }> = {
+  const pick: Record<Exclude<AwardMeasure, "headline" | "totalComp" | LetterMeasure>, { what: string; take: (t: Tranche) => boolean; value: "amount" | "paid" }> = {
     scheduled: { what: "everything scheduled", take: () => true, value: "amount" },
     upfront: { what: "paid up front", take: (t) => t.kind === "UPFRONT", value: "amount" },
     deferred: { what: "deferred", take: (t) => t.kind === "DEFERRED", value: "amount" },
@@ -398,7 +408,7 @@ function awardProof(ctx: Ctx, d: Extract<BonusesDescriptor, { figure: "award" }>
     forfeited: { what: "forfeited", take: (t) => t.status === "FORFEITED", value: "amount" },
     outstanding: { what: "still to vest", take: (t) => OUTSTANDING.includes(t.status), value: "amount" },
   };
-  const m = pick[d.measure];
+  const m = pick[d.measure as keyof typeof pick];
   const ts = a.tranches.filter(m.take);
   const lines: ChainLine[] = [letterLine(letter), ...ts.map((t, i) => trancheLine(r, a, t, m.value, i ? "+" : undefined))];
   let parts = ts.reduce((t, x) => t + (m.value === "paid" ? x.paidCents : x.amountCents), 0);

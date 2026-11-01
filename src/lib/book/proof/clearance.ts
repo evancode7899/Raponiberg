@@ -1,6 +1,7 @@
 import type { FigureBasis } from "../figure.ts";
 import type { BlockerRef } from "../reports/blockerRef.ts";
 import type { ProofDescriptor } from "./index.ts";
+import { composeCleared, isComposite } from "./composite.ts";
 import { descriptorKey } from "./key.ts";
 import type { ProofValue } from "./types.ts";
 
@@ -105,6 +106,18 @@ export function clearanceOf(f: ShownFigure | Unswept, s: SweepState, pageStamp: 
     return withheld("stale", pageStamp == null ? "The page's data carries no stamp, so no sweep can vouch for it." : "The proof sweep ran on other data than this page shows.");
   }
   if (s.status === "pending") return { state: "verifying", key, shown };
+  // A composite (a share, a change, a sum of proven figures) clears from its parts' cleared values, never the page's.
+  if (isComposite(f.descriptor)) {
+    const parts = f.descriptor.of.map(descriptorKey);
+    const flagged = parts.flatMap((k) => s.problems[k] ?? []);
+    if (flagged.length) return withheld("flagged", flagged.map((p) => p.detail).join(" "), { problems: flagged });
+    const r = composeCleared(f.descriptor, s.cleared);
+    if ("missing" in r) return withheld("not-cleared", `${r.missing.length} of its ${parts.length} parts haven't cleared, so it can't be worked out.`);
+    if (!r.value) return withheld("not-cleared", "It has no value: a share or growth of nothing.");
+    if (shown && differs(shown, r.value)) return withheld("mismatch", `The page shows ${showValue(shown)}; its parts work out to ${showValue(r.value)}.`, { cleared: r.value });
+    const basis = parts.map((k) => s.basis[k]).find((b) => b === "estimate") ?? parts.map((k) => s.basis[k]).find(Boolean) ?? "proven";
+    return { state: "cleared", key, shown, cleared: r.value, basis };
+  }
   const problems = s.problems[key];
   if (problems?.length) return withheld("flagged", problems.map((p) => p.detail).join(" "), { problems });
   const cleared = s.cleared[key];

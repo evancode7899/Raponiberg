@@ -7,13 +7,23 @@ import type { ChildIncome, PersonReport } from "@/lib/tax/buildTaxReport";
 import type { W2Boxes } from "@/lib/tax/facts/payroll";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import type { EstimateKey } from "@/lib/tax/estimateLines";
-import { EstimateValue, formatDate, NumberTable, pct, usd, type Row } from "./taxUi";
-import { unswept } from "@/lib/book/proof/clearance";
+import { EstimateValue, formatDate, lawLabel, NumberTable, pct, usd, type Row } from "./taxUi";
+import { NotFigure } from "@/components/ui/kit";
+import { taxesDerived } from "@/lib/book/derived/taxes";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
+import { ACCOUNT_ROWS, accountRow, employerRow, lineRow, W2_ROWS, w2Value, type W2Row } from "@/lib/tax/incomeExtras";
+
+/** A cell of the year's income figures (lib/tax/incomeExtras), drawn as its figure. */
+type Cell = (row: string, col: string, cents: number) => ReactNode;
+import { isUnswept, unswept } from "@/lib/book/proof/clearance";
+import { useMemo, type ReactNode } from "react";
 
 const FREQ: Record<string, string> = { WEEKLY: "weekly", BIWEEKLY: "every two weeks", SEMIMONTHLY: "twice a month", MONTHLY: "monthly" };
 
 /** Per person: gross pay → W-2 boxes, investment accounts, IRA moves; then the joint AGI build-up. */
 export function TaxIncome({ r }: { r: TaxResponse }) {
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const cell: Cell = (row, col, cents) => <ProofValue proof={derivedTarget("taxes", derived, "income", cellKey(r.year, row, col))}>{usd(cents)}</ProofValue>;
   const f = r.scenarios.mfj.federal;
   const ct = r.scenarios.mfj.ct;
   // The joint return projected to Dec 31 (a finished year: the full year), each figure opening its proof.
@@ -25,10 +35,10 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
   return (
     <div className="flex flex-col gap-4">
       {r.people.map((p) => (
-        <PersonIncome key={p.id} p={p} year={r.year} isCurrentYear={r.isCurrentYear} />
+        <PersonIncome key={p.id} p={p} year={r.year} isCurrentYear={r.isCurrentYear} cell={cell} />
       ))}
       {r.children.map((c) => (
-        <ChildIncomeCard key={c.name} c={c} showProjected={r.isCurrentYear} />
+        <ChildIncomeCard key={c.name} c={c} showProjected={r.isCurrentYear} cell={cell} />
       ))}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title={`Federal: income to taxable income (${r.filingStatus === "SINGLE" ? "single" : "joint"})`}>
@@ -50,7 +60,7 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
               },
               { label: "QBI deduction", values: [est("fed.qbiDeduction", f.qbiDeduction, true)] },
               { label: "Taxable income", values: [est("fed.taxableIncome", f.taxableIncome)], strong: true },
-              { label: "of which taxed at 0/15/20% (qualified dividends, LT gains)", values: [est("fed.preferentialIncome", f.preferentialIncome)], indent: true },
+              { label: lawLabel("of which taxed at 0/15/20% (qualified dividends, LT gains)"), values: [est("fed.preferentialIncome", f.preferentialIncome)], indent: true },
             ]}
           />
         </Card>
@@ -61,14 +71,14 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
               { label: "Federal AGI", values: [est("ct.federalAgi", ct.federalAgi)] },
               { label: "CHET 529 contributions", values: [est("ct.chet", ct.chetDeduction, true)], help: "Deductible up to $10,000 joint / $5,000 separate per year." },
               { label: "US-obligation interest/dividends", values: [est("ct.usObligationSubtraction", ct.usObligationSubtraction, true)] },
-              { label: "Other modifications", values: [usd(ct.additions - (ct.subtractions - ct.chetDeduction - ct.usObligationSubtraction))] },
+              { label: "Other modifications", values: [cell("ct-other", "joint", ct.additions - (ct.subtractions - ct.chetDeduction - ct.usObligationSubtraction))] },
               { label: "Connecticut AGI", values: [est("ct.stateAgi", ct.ctAgi)], strong: true },
               { label: "Personal exemption", values: [est("ct.exemption", ct.exemption, true)] },
               { label: "Connecticut taxable income", values: [est("ct.taxableIncome", ct.taxableIncome)], strong: true },
-              { label: "Tax from brackets (2%–6.99%)", values: [usd(ct.initialTax)] },
-              { label: "2% rate phase-out add-back", values: [usd(ct.addBack)] },
-              { label: "Benefit recapture", values: [usd(ct.recapture)] },
-              { label: `Personal tax credit (${pct(ct.personalCreditRate, 0)})`, values: [usd(-ct.personalCredit)] },
+              { label: lawLabel("Tax from brackets (2%–6.99%)"), values: [cell("ct-brackets", "joint", ct.initialTax)] },
+              { label: lawLabel("2% rate phase-out add-back"), values: [cell("ct-addback", "joint", ct.addBack)] },
+              { label: "Benefit recapture", values: [cell("ct-recapture", "joint", ct.recapture)] },
+              { label: lawLabel(`Personal tax credit (${pct(ct.personalCreditRate, 0)})`), values: [cell("ct-personal-credit", "joint", -ct.personalCredit)] },
               { label: "Child tax credit", values: [est("ct.childTaxCredit", ct.childTaxCredit, true)] },
               { label: "Connecticut income tax", values: [est("ct.totalTax", ct.totalTax)], strong: true },
             ]}
@@ -87,22 +97,22 @@ const CHILD_RULE: Record<ChildIncome["rule"], (c: ChildIncome) => string> = {
 };
 
 /** A child's custodial (UTMA/UGMA) income: theirs, so not on the parents' return. */
-function ChildIncomeCard({ c, showProjected }: { c: ChildIncome; showProjected: boolean }) {
+function ChildIncomeCard({ c, showProjected, cell }: { c: ChildIncome; showProjected: boolean; cell: Cell }) {
   return (
     <Card title={`${c.name} (custodial accounts)`} subtitle={`${c.accounts.join(", ")} — the income is ${c.name}'s, so it's not on your return.`}>
       <NumberTable
         columns={showProjected ? ["Year to date", "Projected year end"] : ["Year total"]}
-        rows={[{ label: "Unearned income (dividends, interest, gains)", values: showProjected ? [usd(c.ytd), usd(c.projected)] : [usd(c.projected)], strong: true }]}
+        rows={[{ label: "Unearned income (dividends, interest, gains)", values: showProjected ? [cell(`child:${c.name}`, "ytd", c.ytd), cell(`child:${c.name}`, "projected", c.projected)] : [cell(`child:${c.name}`, "projected", c.projected)], strong: true }]}
       />
       <p className="mt-2 text-xs text-fg-2">
-        {CHILD_RULE[c.rule](c)}
+        <NotFigure why="kiddie-tax thresholds set by tax law">{CHILD_RULE[c.rule](c)}</NotFigure>
         {c.rule !== "UNDER_EXEMPT" && (c.parentElectionAllowed ? " You could report it on your return with Form 8814 instead; this estimate leaves it off." : " Form 8814 (reporting it on your return) isn't available.")}
       </p>
     </Card>
   );
 }
 
-function PersonIncome({ p, year, isCurrentYear }: { p: PersonReport; year: number; isCurrentYear: boolean }) {
+function PersonIncome({ p, year, isCurrentYear, cell }: { p: PersonReport; year: number; isCurrentYear: boolean; cell: Cell }) {
   return (
     <Card
       title={p.name}
@@ -116,23 +126,24 @@ function PersonIncome({ p, year, isCurrentYear }: { p: PersonReport; year: numbe
               <span className="text-xs text-muted">
                 Latest stub {formatDate(e.latestPayDate)} · paid {FREQ[e.frequency]}
                 {e.active && isCurrentYear ? ` · ${e.remainingPayDates.length} paychecks left this year` : e.active ? "" : " · no longer paying"}
-                {e.extraBonus ? ` · plus ${usd(e.extraBonus)} expected bonus` : ""}
+                {e.extraBonus ? <> · plus {cell(employerRow(p, e, "extra-bonus"), "projected", e.extraBonus)} expected bonus</> : ""}
                 {e.federalFilingStatus ? ` · W-4: ${e.federalFilingStatus}` : ""}
               </span>
             </div>
             <W2Table
+              cell={(row, side) => cell(employerRow(p, e, row), side, w2Value(e, row, side))}
               grossProof={isCurrentYear && e.active ? { descriptor: { report: "planning", page: "taxes", figure: "projected-gross", year, personId: p.id }, shownCents: e.projected.gross } : unswept("projected only for the year in progress")}
               ytd={e.w2Ytd} projected={e.w2Projected} gross={{ ytd: e.ytd.gross, projected: e.projected.gross }} nonTaxable={{ ytd: e.ytd.nonTaxable, projected: e.projected.nonTaxable }} pretax={{ ytd: e.ytd.section125 + e.ytd.hsa + e.ytd.dependentCareFsa, projected: e.projected.section125 + e.projected.hsa + e.projected.dependentCareFsa }} showProjected={e.active && e.remainingPayDates.length > 0} />
             <details className="mt-2">
               <summary className="cursor-pointer text-xs font-medium text-fg-2">Pay stub lines and how each is treated</summary>
               <NumberTable
                 columns={["Treatment", "Latest check", "Year to date"]}
-                rows={e.lines.map((l) => ({ label: l.name, values: [KIND_LABEL[l.kind] ?? l.kind, usd(l.current ?? 0), usd(l.ytd ?? 0)] }))}
+                rows={e.lines.map((l, i) => ({ label: l.name, values: [KIND_LABEL[l.kind] ?? l.kind, cell(lineRow(p, e, i), "current", l.current ?? 0), cell(lineRow(p, e, i), "ytd", l.ytd ?? 0)] }))}
               />
             </details>
           </div>
         ))}
-        {p.accounts.length > 0 && <Accounts p={p} />}
+        {p.accounts.length > 0 && <Accounts p={p} cell={cell} />}
       </div>
     </Card>
   );
@@ -165,11 +176,8 @@ const KIND_LABEL: Record<string, string> = {
 
 function W2Table({
   grossProof,
-  ytd,
-  projected,
   gross,
-  nonTaxable,
-  pretax,
+  cell,
   showProjected,
 }: {
   ytd: W2Boxes;
@@ -178,33 +186,22 @@ function W2Table({
   nonTaxable: { ytd: number; projected: number };
   pretax: { ytd: number; projected: number };
   showProjected: boolean;
+  /** A box as its figure (lib/tax/incomeExtras). */
+  cell: (row: W2Row, side: "ytd" | "projected") => ReactNode;
   /** The projected gross pay's proof (the year in progress: the stubs plus the forecast's paychecks and bonuses). */
   grossProof: ProofRef;
 }) {
-  const both = (a: number, b: number) => (showProjected ? [usd(a), usd(b)] : [usd(a)]);
-  const rows: Row[] = [
-    { label: "Gross pay (incl. imputed income)", values: showProjected ? [usd(gross.ytd), <ProofValue key="p" proof={grossProof}>{usd(gross.projected)}</ProofValue>] : [usd(gross.ytd)] },
-    { label: "Non-taxable reimbursements", values: both(-nonTaxable.ytd, -nonTaxable.projected), indent: true },
-    { label: "Pre-tax health, HSA, FSA (§125)", values: both(-pretax.ytd, -pretax.projected), indent: true },
-    { label: "Box 5 · Medicare wages", values: both(ytd.box5MedicareWages, projected.box5MedicareWages), strong: true },
-    { label: "Pre-tax 401(k)", values: both(-ytd.box12.D, -projected.box12.D), indent: true },
-    { label: "Box 1 · Wages (federal taxable)", values: both(ytd.box1Wages, projected.box1Wages), strong: true },
-    { label: "Box 3 · Social Security wages (capped)", values: both(ytd.box3SsWages, projected.box3SsWages) },
-    { label: "Box 16 · CT wages", values: both(ytd.box16StateWages, projected.box16StateWages) },
-    { label: "Box 2 · Federal withheld", values: both(ytd.federalWithheld, projected.federalWithheld) },
-    { label: "Box 4 · Social Security withheld", values: both(ytd.ssWithheld, projected.ssWithheld) },
-    { label: "Box 6 · Medicare withheld", values: both(ytd.medicareWithheld, projected.medicareWithheld) },
-    { label: "Box 17 · CT withheld", values: both(ytd.stateWithheld, projected.stateWithheld) },
-    { label: "Box 12 D · 401(k) deferrals", values: both(ytd.box12.D, projected.box12.D) },
-    { label: "Box 12 W · HSA (you + employer)", values: both(ytd.box12.W, projected.box12.W) },
-    { label: "Box 12 C · Group-term life over $50k", values: both(ytd.box12.C, projected.box12.C) },
-    { label: "Box 12 DD · Health coverage cost (info only)", values: both(ytd.box12.DD, projected.box12.DD) },
-    { label: "Employer 401(k) contributions (not taxed)", values: both(ytd.employerRetirement, projected.employerRetirement) },
-  ];
+  // The projected gross pay is the forecast's own figure (planning › projected gross); every other box, the year's income cell.
+  const rows: Row[] = W2_ROWS.map(([row, label]) => ({
+    label: lawLabel(label),
+    values: showProjected ? [cell(row, "ytd"), row === "gross" && !isUnswept(grossProof) ? <ProofValue key="p" proof={grossProof}>{usd(gross.projected)}</ProofValue> : cell(row, "projected")] : [cell(row, "ytd")],
+    ...(row === "box5" || row === "box1" ? { strong: true } : {}),
+    ...(row === "non-taxable" || row === "pretax" || row === "pretax-401k" ? { indent: true } : {}),
+  }));
   return <NumberTable columns={showProjected ? ["Year to date", "Projected year end"] : ["Year total"]} rows={rows} />;
 }
 
-function Accounts({ p }: { p: PersonReport }) {
+function Accounts({ p, cell }: { p: PersonReport; cell: Cell }) {
   const taxable = p.accounts.filter((a) => a.kind === "TAXABLE");
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -213,18 +210,7 @@ function Accounts({ p }: { p: PersonReport }) {
           <h3 className="mb-1 text-sm font-semibold text-fg">Taxable investment income</h3>
           <NumberTable
             columns={[...taxable.flatMap((a) => [`${a.label} YTD`, "Projected"])]}
-            rows={(
-              [
-                ["Ordinary dividends", "ordinaryDividends"],
-                ["of which qualified", "qualifiedDividends"],
-                ["of which money market", "moneyMarketDividends"],
-                ["Interest", "interest"],
-                ["Capital gain distributions", "capGainDistLong"],
-                ["Realized short-term gain/loss", "shortTermGain"],
-                ["Realized long-term gain/loss", "longTermGain"],
-                ["Foreign tax paid", "foreignTax"],
-              ] as const
-            ).map(([label, k]) => ({ label, values: taxable.flatMap((a) => [usd(a.ytd[k]), usd(a.projected[k])]) }))}
+            rows={ACCOUNT_ROWS.map(([label, k]) => ({ label, values: taxable.flatMap((a) => [cell(accountRow(a, k), "ytd", a.ytd[k]), cell(accountRow(a, k), "projected", a.projected[k])]) }))}
           />
           <p className="mt-1 text-xs text-muted">
             {taxable
@@ -248,18 +234,18 @@ function Accounts({ p }: { p: PersonReport }) {
           <NumberTable
             columns={[""]}
             rows={[
-              { label: "Direct rollovers to an employer plan (not taxable)", values: [usd(p.retirement.rollovers)] },
-              { label: "Roth conversions", values: [usd(p.retirement.conversions)] },
-              { label: "Non-deductible basis (contributions)", values: [usd(-p.retirement.basis)], indent: true },
-              { label: "Other IRA withdrawals", values: [usd(p.retirement.otherDistributions)] },
-              { label: "Taxable", values: [usd(p.retirement.taxable)], strong: true },
+              { label: "Direct rollovers to an employer plan (not taxable)", values: [cell(`ira:${p.id}:rollovers`, "joint", p.retirement.rollovers)] },
+              { label: "Roth conversions", values: [cell(`ira:${p.id}:conversions`, "joint", p.retirement.conversions)] },
+              { label: "Non-deductible basis (contributions)", values: [cell(`ira:${p.id}:basis`, "joint", -p.retirement.basis)], indent: true },
+              { label: "Other IRA withdrawals", values: [cell(`ira:${p.id}:other`, "joint", p.retirement.otherDistributions)] },
+              { label: "Taxable", values: [cell(`ira:${p.id}:taxable`, "joint", p.retirement.taxable)], strong: true },
             ]}
           />
         </div>
       )}
       {p.accounts.some((a) => a.isChet) && (
         <p className="text-xs text-muted">
-          CHET 529 contributions this year: {usd(p.income.ctChetContributions)} (deductible on the CT
+          CHET 529 contributions this year: {cell(`chet:${p.id}`, "joint", p.income.ctChetContributions)} (deductible on the CT
           return).
         </p>
       )}

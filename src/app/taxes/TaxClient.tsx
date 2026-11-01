@@ -96,7 +96,7 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
           <p className="text-xs text-muted">
             From your pay stubs, investment statements and bank ledger; a finished year uses its W-2s, 1099s and K-1s from the tax documents folder and is checked against the filed return.
           </p>
-          <Segmented
+          <Segmented view
             ariaLabel="Tax year"
             options={(data?.supportedYears ?? [year]).map((y) => ({ value: String(y), label: String(y) }))}
             value={String(year)}

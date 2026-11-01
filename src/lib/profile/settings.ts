@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { localToday } from "../dates/isoDate.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -112,7 +113,7 @@ export const DEFAULT_PERSON_OUTLOOK: PersonOutlook = { paycheck: "TYPICAL", sala
 export const DEFAULT_BONUS_LAYER: BonusLayer = { estimates: "AFTER_NEAR_TERM", keepRate: null, savedShare: 1 };
 
 export const DEFAULT_OUTLOOK: OutlookAssumptions = {
-  horizonYear: new Date().getFullYear() + 20,
+  horizonYear: Number(localToday().slice(0, 4)) + 20,
   nearTermThrough: null,
   people: {},
   employerMatch: null,

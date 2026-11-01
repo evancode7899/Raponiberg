@@ -1,15 +1,21 @@
 "use client";
 
 import { buttonSecondary, Card, Segmented } from "@/components/ledger/LedgerBits";
+import { NotFigure } from "@/components/ui/kit";
+import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { allTaxes, computeReturn, type PersonIncome, type ReturnResult } from "@/lib/tax/computeReturn";
-import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateColumn, type EstimateKey } from "@/lib/tax/estimateLines";
+import { taxesDerived } from "@/lib/book/derived/taxes";
+import { cellKey, derivedNumber, derivedTarget } from "@/lib/book/derived/types";
+import type { ProofDescriptor } from "@/lib/book/proof";
+import { marginalRate } from "@/lib/tax/worksheetExtras";
+import type { ReturnResult } from "@/lib/tax/computeReturn";
+import { ESTIMATE_LINES, estimateColumns, lineValue, type EstimateKey } from "@/lib/tax/estimateLines";
 import { FILING_STATUS_LABEL, taxYearParams } from "@/lib/tax/params";
-import { applyWhatIf, hasWhatIf, NO_WHAT_IF, type WhatIf } from "@/lib/tax/scenarios";
+import { hasWhatIf, NO_WHAT_IF, type WhatIf } from "@/lib/tax/scenarios";
 import { returnSchedules, type BracketRow, type Schedule } from "@/lib/tax/schedules";
 import { useMemo, useState, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
-import { balanceText, Callout, MoneyField, NumberTable, pct, usd, type Row } from "./taxUi";
+import { balanceText, Callout, lawLabel, MoneyField, NumberTable, pct, usd, type Row } from "./taxUi";
 
 type Basis = "projected" | "ytd";
 
@@ -29,34 +35,39 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
   const people = r.people;
   const calc = useMemo(() => {
     const { joint, mfs, cols: base } = estimateColumns(r, basis, whatIf);
-    const ny = r.ny?.filing ?? null;
-    // Marginal rate: $1,000 more wages for that column's highest earner.
-    const marginal = (c: EstimateColumn, fs: ReturnResult["filingStatus"]) => {
-      const top = [...c.incomes].sort((a, b) => wages(b) - wages(a))[0];
-      if (!top || !top.w2s.length) return null;
-      const bumped = applyWhatIf(c.incomes, { ...NO_WHAT_IF, people: { [top.id]: { extraWages: 100_000, extraPretax401k: 0 } } }, params);
-      const b = computeReturn({ params, filingStatus: fs, people: bumped, dependents: c.dependents, ny, itemizeMode: c.r.federal.itemizes ? "ITEMIZE" : "STANDARD" });
-      return (allTaxes(b) - allTaxes(c.r)) / 100_000;
-    };
-    const cols = base.map((c) => ({ ...c, marginal: marginal(c, c.id === "joint" ? c.r.filingStatus : "MFS") }));
+    // Marginal rate: $1,000 more wages for that column's highest earner (lib/tax/worksheetExtras, as its proof works it out).
+    const cols = base.map((c) => ({ ...c, marginal: marginalRate(c, c.id === "joint" ? c.r.filingStatus : "MFS", r) }));
     return { joint, mfs, cols };
-  }, [r, basis, whatIf, params]);
+  }, [r, basis, whatIf]);
 
   const cols = calc.cols;
-  const R = (f: (x: ReturnResult, i: number) => number) => cols.map((c, i) => f(c.r, i));
-  const ratio = (num: number[], den: number[]) => num.map((n, i) => (den[i]! > 0 ? pct(n / den[i]!) : "—"));
-  // Every figure comes from the estimate's line catalog (lib/tax/estimateLines), the one its proof re-derives; a what-if figure has no proof.
   const proofs = !hasWhatIf(whatIf);
+  const R = (f: (x: ReturnResult, i: number) => number) => cols.map((c, i) => f(c.r, i));
+  // Every other number: the year's derived figures (book/derived/taxes.ts), by row and column; a what-if one has no proof.
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const wcell = (row: string, col: string, text: ReactNode): ReactNode =>
+    proofs ? <ProofValue proof={derivedTarget("taxes", derived, "worksheet", cellKey(`${r.year}:${basis}`, row, col))}>{text}</ProofValue> : text;
+  const est = (key: EstimateKey, i: number) => ({ report: "tax-estimate", year: r.year, basis, ...(cols[i]!.id === "joint" ? {} : { filer: cols[i]!.id }), key }) as const;
+  // A rate over earned + investment income: a share of two estimate lines (the first a sum of two where a row adds them).
+  const ratio = (keys: EstimateKey[], num: number[], den: number[]) =>
+    num.map((n, i) => {
+      if (!(den[i]! > 0)) return "—";
+      const top = keys.length === 1 ? est(keys[0]!, i) : ({ report: "composite", op: "sum", of: keys.map((k) => est(k, i)) } as const);
+      return proofs ? <ProofValue proof={compositeOf("share", [{ descriptor: top as ProofDescriptor, shownCents: n }, { descriptor: est("all.earnedPlusInvestment", i), shownCents: den[i]! }], { ratio: n / den[i]! })}>{pct(n / den[i]!)}</ProofValue> : pct(n / den[i]!);
+    });
+  // Every figure comes from the estimate's line catalog (lib/tax/estimateLines), the one its proof re-derives; a what-if figure has no proof.
   const V = (key: EstimateKey) => cols.map((c) => lineValue(key, c, cols) ?? 0);
   const cell = (key: EstimateKey, i: number, v: number, text: ReactNode): ReactNode =>
     proofs ? (
-      <ProofValue proof={{ descriptor: { report: "tax-estimate", year: r.year, basis, ...(cols[i]!.id === "joint" ? {} : { filer: cols[i]!.id }), key }, shownCents: ESTIMATE_LINES[key].ratio ? null : v }}>{text}</ProofValue>
+      <ProofValue proof={{ descriptor: { report: "tax-estimate", year: r.year, basis, ...(cols[i]!.id === "joint" ? {} : { filer: cols[i]!.id }), key }, shownCents: ESTIMATE_LINES[key].ratio ? null : v }} drawn={{ zeroWithin: 1 }}>
+        {text}
+      </ProofValue>
     ) : (
       text
     );
   /** A worksheet row for a line: deductions show negative; `show` formats a cell otherwise. */
   const line = (key: EstimateKey, label: string, o: { neg?: boolean; show?: (v: number, i: number) => string; strong?: boolean; indent?: boolean; help?: string; only?: "joint" } = {}): Row => ({
-    label,
+    label: lawLabel(label),
     values: V(key).map((v, i) => (o.only && cols[i]!.id !== o.only ? "" : cell(key, i, v, o.show ? o.show(v, i) : usd(o.neg ? -v : v)))),
     ...(o.strong ? { strong: true } : {}),
     ...(o.indent ? { indent: true } : {}),
@@ -129,14 +140,14 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
       help: "Gross salary + bonus + taxable benefits + investment income. The Overview's headline income (joint, projected), net of any capital loss deducted.",
     }),
     line("all.takeHome", "Take-home income (after all taxes)", { strong: true, help: "The Overview's “You keep”." }),
-    { label: "Effective tax rate", values: ratio(totalTaxes, earnedPlusInvestment), strong: true },
-    { label: "Federal income tax", values: ratio(fedIncomeTax.map((v, i) => v + niit[i]!), earnedPlusInvestment), indent: true },
-    { label: "Medicare", values: ratio(medicare, earnedPlusInvestment), indent: true },
-    { label: "Social Security", values: ratio(ss, earnedPlusInvestment), indent: true },
-    { label: "Connecticut (incl. PFML)", values: ratio(ct.map((v, i) => v + pfml[i]!), earnedPlusInvestment), indent: true },
-    ...(hasNy ? [{ label: "New York State + City", values: ratio(nyState.map((v, i) => v + nyCity[i]!), earnedPlusInvestment), indent: true }] : []),
-    { label: "Marginal rate on the next $1,000 of pay", values: cols.map((c) => (c.marginal == null ? "—" : pct(c.marginal))) },
-    { label: "Federal bracket", values: R((x) => x.federal.marginalBracket).map((b, i) => (cols[i]!.r.federal.taxableIncome > 0 ? pct(b, 0) : "—")) },
+    { label: "Effective tax rate", values: ratio(["all.totalTaxes"], totalTaxes, earnedPlusInvestment), strong: true },
+    { label: "Federal income tax", values: ratio(["fed.incomeTax", "fed.niit"], fedIncomeTax.map((v, i) => v + niit[i]!), earnedPlusInvestment), indent: true },
+    { label: "Medicare", values: ratio(["fica.medicareTotal"], medicare, earnedPlusInvestment), indent: true },
+    { label: "Social Security", values: ratio(["fica.socialSecurity"], ss, earnedPlusInvestment), indent: true },
+    { label: "Connecticut (incl. PFML)", values: ratio(["ct.totalTax", "fica.pfml"], ct.map((v, i) => v + pfml[i]!), earnedPlusInvestment), indent: true },
+    ...(hasNy ? [{ label: "New York State + City", values: ratio(["ny.incomeTax", "ny.cityTax"], nyState.map((v, i) => v + nyCity[i]!), earnedPlusInvestment), indent: true }] : []),
+    { label: <NotFigure why="the probe the rate is worked out on">Marginal rate on the next $1,000 of pay</NotFigure>, values: cols.map((c) => (c.marginal == null ? "—" : wcell("marginal", c.id, pct(c.marginal)))) },
+    { label: "Federal bracket", values: R((x) => x.federal.marginalBracket).map((b, i) => (cols[i]!.r.federal.taxableIncome > 0 ? wcell("bracket", cols[i]!.id, pct(b, 0)) : "—")) },
 
     { label: "Total taxes paid", values: [], heading: true },
     line("fed.w2Withholding", "Federal withholding (box 2)"),
@@ -155,11 +166,11 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     ...(showActual
       ? [
           { label: "Actual return", values: [], heading: true },
-          { label: "Federal actual owed / (refund)", values: [...people.map(() => ""), actual.federalBalance == null ? "—" : balanceText(actual.federalBalance)] },
-          { label: "Connecticut actual owed / (refund)", values: [...people.map(() => ""), actual.ctBalance == null ? "—" : balanceText(actual.ctBalance)] },
+          { label: "Federal actual owed / (refund)", values: [...people.map(() => ""), actual.federalBalance == null ? "—" : <NotFigure why="your input: the return as filed (Inputs)">{balanceText(actual.federalBalance)}</NotFigure>] },
+          { label: "Connecticut actual owed / (refund)", values: [...people.map(() => ""), actual.ctBalance == null ? "—" : <NotFigure why="your input: the return as filed (Inputs)">{balanceText(actual.ctBalance)}</NotFigure>] },
           {
             label: "Model minus actual",
-            values: [...people.map(() => ""), usd(fedBal.at(-1)! + ctBal.at(-1)! - (actual.federalBalance ?? 0) - (actual.ctBalance ?? 0))],
+            values: [...people.map(() => ""), <NotFigure key="d" why="the model against the return you typed (Inputs)">{usd(fedBal.at(-1)! + ctBal.at(-1)! - (actual.federalBalance ?? 0) - (actual.ctBalance ?? 0))}</NotFigure>],
             strong: true,
           },
         ]
@@ -181,7 +192,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="flex items-center gap-2 text-xs text-fg-2">
             <span className="font-medium">Basis</span>
-            <Segmented
+            <Segmented view
               options={[
                 { value: "projected", label: r.isCurrentYear ? "Projected Dec 31" : "Full year" },
                 { value: "ytd", label: "Year to date" },
@@ -206,14 +217,14 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
         <Card title={`${r.year} tax worksheet`} subtitle={r.filingStatus === "SINGLE" ? `${FILING_STATUS_LABEL.SINGLE}, as filed.` : `${FILING_STATUS_LABEL.MFJ} vs each spouse ${FILING_STATUS_LABEL.MFS.toLowerCase()}.`}>
           <NumberTable columns={header} rows={rows} />
         </Card>
-        <Supporting r={r} basis={basis} cols={cols} />
+        <Supporting r={r} cell={wcell} num={(row) => derivedNumber(derived, "worksheet", cellKey(`${r.year}:${basis}`, row, "joint")) ?? 0} />
       </div>
 
       <Card
         title="Bracket schedules"
         subtitle="How each tax is built, band by band. The bar shows how much of each band your income fills; the highlighted row is where the next dollar lands."
         actions={
-          <Segmented
+          <Segmented view
             options={[{ value: "all", label: "All" }, ...cols.map((c) => ({ value: c.id, label: c.id === "joint" ? c.name : `${c.name} (sep.)` }))]}
             value={focus}
             onChange={setFocus}
@@ -226,15 +237,13 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
             title: c.id === "joint" ? FILING_STATUS_LABEL[c.r.filingStatus] : `${c.name} ${FILING_STATUS_LABEL.MFS.toLowerCase()}`,
             schedules: returnSchedules(c.r, c.incomes, params),
           }))}
+          cell={wcell}
         />
       </Card>
     </div>
   );
 }
 
-function wages(p: PersonIncome): number {
-  return p.w2s.reduce((s, w) => s + w.box5MedicareWages, 0);
-}
 
 function WhatIfPanel({ r, whatIf, onChange, basis }: { r: TaxResponse; whatIf: WhatIf; onChange: (w: WhatIf) => void; basis: Basis }) {
   const [open, setOpen] = useState(false);
@@ -285,15 +294,9 @@ function WhatIfPanel({ r, whatIf, onChange, basis }: { r: TaxResponse; whatIf: W
   );
 }
 
-function Supporting({ r, basis, cols }: { r: TaxResponse; basis: Basis; cols: { id: string; name: string; r: ReturnResult }[] }) {
-  const accounts = r.people.flatMap((p) => p.accounts);
-  const pick = basis === "ytd" ? "ytd" : "projected";
-  const mm = accounts.filter((a) => a.kind === "TAXABLE").reduce((s, a) => s + a[pick].moneyMarketDividends, 0);
-  const joint = cols.at(-1)!.r;
-  const chet = r.chet.total;
-  const conversions = r.people.reduce((s, p) => s + p.retirement.conversions, 0);
-  const rollovers = r.people.reduce((s, p) => s + p.retirement.rollovers, 0);
-  const basisIra = r.people.reduce((s, p) => s + p.retirement.basis, 0);
+/** The cards beside the worksheet; every number is the year's derived figure (lib/tax/worksheetExtras), drawn by `cell`. */
+function Supporting({ r, cell, num }: { r: TaxResponse; cell: (row: string, col: string, text: ReactNode) => ReactNode; num: (row: string) => number }) {
+  const v = (row: string) => cell(row, "joint", usd(num(row)));
   return (
     <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
       <Card title="CT-exempt US-obligation income">
@@ -301,9 +304,9 @@ function Supporting({ r, basis, cols }: { r: TaxResponse; basis: Basis; cols: { 
           compact
           columns={[""]}
           rows={[
-            { label: "Money-market dividends", values: [usd(mm)] },
-            { label: "Share from US obligations", values: [pct(r.profile.moneyMarketUsGovShare, 1)], help: "Set on the Inputs tab from Fidelity's annual percentage." },
-            { label: "Subtracted from CT AGI", values: [usd(joint.ct.usObligationSubtraction)], strong: true },
+            { label: "Money-market dividends", values: [v("mm")] },
+            { label: "Share from US obligations", values: [<NotFigure key="s" why="your input (Inputs)">{pct(r.profile.moneyMarketUsGovShare, 1)}</NotFigure>], help: "Set on the Inputs tab from Fidelity's annual percentage." },
+            { label: "Subtracted from CT AGI", values: [v("us-obligations")], strong: true },
           ]}
         />
       </Card>
@@ -312,9 +315,9 @@ function Supporting({ r, basis, cols }: { r: TaxResponse; basis: Basis; cols: { 
           compact
           columns={[""]}
           rows={[
-            { label: "Contributions this year", values: [usd(chet)] },
-            { label: "Cap (joint / separate)", values: [`${usd(taxYearParams(r.year).ct.chetDeduction.MFJ)} / ${usd(taxYearParams(r.year).ct.chetDeduction.MFS)}`] },
-            { label: "Deducted on joint CT return", values: [usd(joint.ct.chetDeduction)], strong: true },
+            { label: "Contributions this year", values: [v("chet")] },
+            { label: "Cap (joint / separate)", values: [<NotFigure key="c" why="set by Connecticut law">{`${usd(taxYearParams(r.year).ct.chetDeduction.MFJ)} / ${usd(taxYearParams(r.year).ct.chetDeduction.MFS)}`}</NotFigure>] },
+            { label: "Deducted on joint CT return", values: [v("chet-deducted")], strong: true },
           ]}
         />
       </Card>
@@ -323,9 +326,9 @@ function Supporting({ r, basis, cols }: { r: TaxResponse; basis: Basis; cols: { 
           compact
           columns={[""]}
           rows={[
-            { label: "Net gain / (loss)", values: [usd(joint.federal.capitalGainNet)] },
-            { label: "Counted this year (joint)", values: [usd(joint.federal.capitalGainAllowed)], strong: true },
-            { label: "Carries to next year", values: [usd(-joint.federal.capitalLossCarryover)] },
+            { label: "Net gain / (loss)", values: [v("gain-net")] },
+            { label: "Counted this year (joint)", values: [v("gain-counted")], strong: true },
+            { label: "Carries to next year", values: [v("loss-carry")] },
           ]}
         />
       </Card>
@@ -334,10 +337,10 @@ function Supporting({ r, basis, cols }: { r: TaxResponse; basis: Basis; cols: { 
           compact
           columns={[""]}
           rows={[
-            { label: "Direct rollovers (not taxable)", values: [usd(rollovers)] },
-            { label: "Roth conversions", values: [usd(conversions)] },
-            { label: "Non-deductible basis", values: [usd(-basisIra)] },
-            { label: "Taxable", values: [usd(joint.federal.retirementTaxable)], strong: true },
+            { label: "Direct rollovers (not taxable)", values: [v("rollovers")] },
+            { label: "Roth conversions", values: [v("conversions")] },
+            { label: "Non-deductible basis", values: [v("ira-basis")] },
+            { label: "Taxable", values: [v("ira-taxable")], strong: true },
           ]}
         />
       </Card>
@@ -351,7 +354,7 @@ function Supporting({ r, basis, cols }: { r: TaxResponse; basis: Basis; cols: { 
  * none), and every box is the same width with the same column widths, so band against
  * band reads straight across.
  */
-function ScheduleGrid({ columns }: { columns: { id: string; title: string; schedules: Schedule[] }[] }) {
+function ScheduleGrid({ columns, cell }: { columns: { id: string; title: string; schedules: Schedule[] }[]; cell: Cell }) {
   // Per-person schedules (Social Security, PFML) share a row: "ss-a" and "ss-b" are both "ss".
   const slotOf = (s: Schedule) => s.key.replace(/-.*$/, "");
   const slots: string[] = [];
@@ -368,7 +371,7 @@ function ScheduleGrid({ columns }: { columns: { id: string; title: string; sched
     return (
       <div className={`grid items-start gap-3 ${grid}`}>
         {columns[0]!.schedules.map((s) => (
-          <ScheduleView key={s.key} s={s} />
+          <ScheduleView key={s.key} s={s} col={columns[0]!.id} cell={cell} />
         ))}
       </div>
     );
@@ -390,7 +393,7 @@ function ScheduleGrid({ columns }: { columns: { id: string; title: string; sched
               <div key={c.id} className="flex min-w-0 flex-col gap-3">
                 <span className={`text-[10px] font-semibold uppercase tracking-wide text-muted ${layout.title}`}>{c.title}</span>
                 {mine.length ? (
-                  mine.map((s) => <ScheduleView key={s.key} s={s} />)
+                  mine.map((s) => <ScheduleView key={s.key} s={s} col={c.id} cell={cell} />)
                 ) : (
                   <div className={`hidden flex-1 rounded-md border border-dashed border-line ${layout.gap}`} aria-hidden />
                 )}
@@ -403,7 +406,11 @@ function ScheduleGrid({ columns }: { columns: { id: string; title: string; sched
   );
 }
 
-function ScheduleView({ s }: { s: Schedule }) {
+/** Draws a schedule cell (a row of the schedule, in a return's column) as its figure. */
+type Cell = (row: string, col: string, text: ReactNode) => ReactNode;
+
+/** A schedule: its bands and rates are tax law; what fills them and what it owes are the return's figures. */
+function ScheduleView({ s, col, cell }: { s: Schedule; col: string; cell: Cell }) {
   if (s.kind === "lines") {
     return (
       <div className="flex min-w-0 flex-1 flex-col rounded-md border border-line p-2">
@@ -416,8 +423,10 @@ function ScheduleView({ s }: { s: Schedule }) {
           <tbody>
             {s.lines.map((l, i) => (
               <tr key={i} className={l.strong ? "border-t border-line-strong font-semibold" : ""} title={l.help}>
-                <td className="py-0.5 pr-2 text-left leading-snug text-fg-2">{l.label}</td>
-                <td className="py-0.5 text-right tabular-nums text-fg">{l.kind === "rate" ? pct(l.value, 2) : usd(l.value)}</td>
+                <td className="py-0.5 pr-2 text-left leading-snug text-fg-2">
+                  <NotFigure why="set by tax law">{l.label}</NotFigure>
+                </td>
+                <td className="py-0.5 text-right tabular-nums text-fg">{cell(`sched:${s.key}:line:${i}`, col, l.kind === "rate" ? pct(l.value, 2) : usd(l.value))}</td>
               </tr>
             ))}
           </tbody>
@@ -459,26 +468,32 @@ function ScheduleView({ s }: { s: Schedule }) {
           {s.rows.map((row, i) => (
             <tr key={i} className={i === topFilled ? "bg-warn-soft font-semibold text-warn" : row.included > 0 ? "text-fg" : "text-faint"}>
               <td className="truncate py-0.5 pl-1 text-left" title={exactBand(row)}>
-                {band(row)}
+                <NotFigure why="a bracket set by tax law">{band(row)}</NotFigure>
               </td>
-              <td className="py-0.5 text-right tabular-nums">{pct(row.rate, 2) === "—" ? "0%" : pct(row.rate, 2)}</td>
+              <td className="py-0.5 text-right tabular-nums">
+                <NotFigure why="a rate set by tax law">{pct(row.rate, 2) === "—" ? "0%" : pct(row.rate, 2)}</NotFigure>
+              </td>
               <td className="py-0.5 px-2">
                 <FillBar row={row} />
               </td>
-              <td className="py-0.5 text-right tabular-nums">{usd(row.included)}</td>
-              <td className="py-0.5 pr-1 text-right tabular-nums">{usd(row.owed)}</td>
+              <td className="py-0.5 text-right tabular-nums">{cell(`sched:${s.key}:band:${i}:included`, col, usd(row.included))}</td>
+              <td className="py-0.5 pr-1 text-right tabular-nums">{cell(`sched:${s.key}:band:${i}:owed`, col, usd(row.owed))}</td>
             </tr>
           ))}
           <tr className="border-t border-line-strong font-semibold">
             <td className="py-0.5 pl-1 text-left">Total</td>
-            <td className="py-0.5 text-right tabular-nums">{s.included > 0 ? pct(s.owed / s.included, 1) : "—"}</td>
+            <td className="py-0.5 text-right tabular-nums">{s.included > 0 ? cell(`sched:${s.key}:total:rate`, col, pct(s.owed / s.included, 1)) : "—"}</td>
             <td />
-            <td className="py-0.5 text-right tabular-nums">{usd(s.included)}</td>
-            <td className="py-0.5 pr-1 text-right tabular-nums">{usd(s.owed)}</td>
+            <td className="py-0.5 text-right tabular-nums">{cell(`sched:${s.key}:total:included`, col, usd(s.included))}</td>
+            <td className="py-0.5 pr-1 text-right tabular-nums">{cell(`sched:${s.key}:total:owed`, col, usd(s.owed))}</td>
           </tr>
         </tbody>
       </table>
-      {s.note && <p className="mt-auto pt-1 text-left text-[10px] text-muted">{s.note}</p>}
+      {s.note && (
+        <p className="mt-auto pt-1 text-left text-[10px] text-muted">
+          <NotFigure why="set by tax law">{s.note}</NotFigure>
+        </p>
+      )}
     </div>
   );
 }

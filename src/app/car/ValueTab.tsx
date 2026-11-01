@@ -1,5 +1,8 @@
 "use client";
 
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { NotFigure } from "@/components/ui/kit";
+import { compositeOf } from "@/components/ui/proof/context";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { btn, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
@@ -38,11 +41,11 @@ export function ValueTab({ ctx }: { ctx: CarCtx }) {
   return (
     <>
       <StatGrid cols={5}>
-        <StatCell proof={ctx.dp("acquisition")} label="All-in purchase" value={usd0(r.acquisition.cents)} sub={`vehicle ${usd0(s.purchase.priceCents)}`} />
+        <StatCell proof={ctx.dp("acquisition")} label="All-in purchase" value={usd0(r.acquisition.cents)} sub={<>vehicle <NotFigure why="your entry: the purchase">{usd0(s.purchase.priceCents)}</NotFigure></>} />
         <StatCell proof={ctx.dp("market-value-now")} label={r.sold ? "Sold for" : "Worth now (market)"} value={usd0(valueNow)} sub={r.sold ? fmtDate(r.through) : r.values.latest ? `last checked ${fmtDate(r.values.latest.date)}` : "add a value check below"} />
-        <StatCell proof={ctx.dp("market-to-date")} label="Lost to date (market)" value={usd0(d.marketToDate)} tone="neg" sub={d.marketPerYear != null ? `trend ${usdDelta(d.marketPerYear)} a year` : undefined} />
-        <StatCell proof={ctx.dp("planned-to-date")} label="Lost to date (planned)" value={usd0(d.plannedToDate)} sub={`${perMile(d.plannedPerMile)} a mile to ${s.plan.sellAtMiles.toLocaleString("en-US")} mi`} />
-        <StatCell proof={ctx.dp("planned-value-now")} label="Planned value now" value={usd0(d.plannedValueNow)} sub={valueNow != null && d.plannedValueNow != null ? `market is ${usdDelta(valueNow - d.plannedValueNow)} vs plan` : undefined} />
+        <StatCell proof={ctx.dp("market-to-date")} label="Lost to date (market)" value={usd0(d.marketToDate)} tone="neg" sub={d.marketPerYear != null ? <>trend <ProofValue proof={ctx.dp("market-per-year")}>{usdDelta(d.marketPerYear)}</ProofValue> a year</> : undefined} />
+        <StatCell proof={ctx.dp("planned-to-date")} label="Lost to date (planned)" value={usd0(d.plannedToDate)} sub={<><ProofValue proof={ctx.dp("planned-per-mile")} drawn={{ per: 100 }}>{perMile(d.plannedPerMile)}</ProofValue> a mile to {s.plan.sellAtMiles.toLocaleString("en-US")} mi</>} />
+        <StatCell proof={ctx.dp("planned-value-now")} label="Planned value now" value={usd0(d.plannedValueNow)} sub={valueNow != null && d.plannedValueNow != null ? <>market is <ProofValue proof={compositeOf("diff", [ctx.dp("market-value-now"), ctx.dp("planned-value-now")], { cents: valueNow - d.plannedValueNow })}>{usdDelta(valueNow - d.plannedValueNow)}</ProofValue> vs plan</> : undefined} />
       </StatGrid>
 
       <Card
@@ -123,10 +126,14 @@ export function ValueTab({ ctx }: { ctx: CarCtx }) {
                   {[...s.values].reverse().map((v) => (
                     <tr key={v.id} className={table.tr}>
                       <td className={table.td}>{fmtDate(v.date)}</td>
-                      <td className={table.tdR}>{usd0(v.privateCents)}</td>
-                      <td className={table.tdR}>{usd0(v.tradeInCents)}</td>
+                      <td className={table.tdR}>
+                        <NotFigure why="your value check">{usd0(v.privateCents)}</NotFigure>
+                      </td>
+                      <td className={table.tdR}>
+                        <NotFigure why="your value check">{usd0(v.tradeInCents)}</NotFigure>
+                      </td>
                       <td className={`${table.tdR} text-muted`} title="What selling it yourself is worth over trading it in">
-                        {v.privateCents != null && v.tradeInCents != null ? usd0(v.privateCents - v.tradeInCents) : "—"}
+                        {v.privateCents != null && v.tradeInCents != null ? <NotFigure why="your value check">{usd0(v.privateCents - v.tradeInCents)}</NotFigure> : "—"}
                       </td>
                       <td className={`${table.td} text-muted`}>{v.source}</td>
                       <td className={`${table.td} text-right`}>

@@ -1,5 +1,7 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Callout, Drawer, Field, inputCls, selectCls } from "@/components/ui/kit";
 import type { HintMatch } from "@/lib/car/detect";
 import { CAR_KINDS, carName, KIND_INFO, newId, ownedOn, SHARED, type Car, type CarEntry, type CarKind } from "@/lib/car/settings";
@@ -176,7 +178,7 @@ function StatementMatch({ match: m, entry: e, onChange }: { match: HintMatch | n
     <label className="mt-2 flex items-start gap-2 text-xs text-fg">
       <input type="checkbox" className="mt-0.5" checked={e.offStatement} onChange={(x) => onChange({ ...e, offStatement: x.target.checked })} />
       <span>
-        Paid outside my statements (cash, or an account the app doesn&apos;t have) — count the {usd2(e.cents)} I logged.
+        Paid outside my statements (cash, or an account the app doesn&apos;t have) — count the <NotFigure why="your log entry">{usd2(e.cents)}</NotFigure> I logged.
         <span className="block text-muted">Only for money that will never show up on a statement; otherwise it would count twice once it does.</span>
       </span>
     </label>
@@ -192,7 +194,7 @@ function StatementMatch({ match: m, entry: e, onChange }: { match: HintMatch | n
               <span className="truncate font-mono text-[11px]" title={r.payee}>
                 {fmtDate(r.date)} · {r.payee}
               </span>
-              <span className="num shrink-0">{usd2(r.cents)}</span>
+              <span className="num shrink-0"><ProofValue proof={{ descriptor: { report: "row", rowId: r.rowId }, shownCents: null }}>{usd2(r.cents)}</ProofValue></span>
             </li>
           ))}
         </ul>

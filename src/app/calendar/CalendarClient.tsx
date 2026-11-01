@@ -67,7 +67,7 @@ function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" |
           <p className="text-sm text-fg-2">Nothing open: every room is filled and no payment is due.</p>
         )}
         <div className="mt-3">
-          <Segmented
+          <Segmented view
             options={[
               { value: "open", label: `Open (${open.length})` },
               { value: "all", label: `All (${r.items.length})` },
@@ -132,7 +132,7 @@ function Item({ i, showYear }: { i: CalendarItem; showYear: boolean }) {
       <div className="ml-8 flex shrink-0 flex-col items-end gap-0.5 sm:ml-0">
         {amount != null && (
           <span className={`num text-sm font-semibold ${refund ? "text-pos" : "text-fg"}`}>
-            <ProofValue proof={i.proof ? { descriptor: i.proof, shownCents: i.cents! } : derivedTarget("calendar", calendarDerived({ items: [i] }), "item", i.id)}>{amount}</ProofValue>
+            <ProofValue proof={i.proof ? { descriptor: i.proof, shownCents: i.cents! } : derivedTarget("calendar", calendarDerived({ items: [i] }), "item", i.id)} drawn={{ zeroWithin: 0 }}>{amount}</ProofValue>
             {i.perPaycheck ? <span className="font-normal text-muted"> /paycheck</span> : refund ? <span className="font-normal text-muted"> back</span> : null}
           </span>
         )}

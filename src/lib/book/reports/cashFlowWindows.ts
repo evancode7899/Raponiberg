@@ -230,6 +230,8 @@ export function windowFigures(months: SpendingMonth[]): CashFlowFigure[] {
   for (const c of mergeCategories(months, (m) => m.incomeByCategory)) add("income", { category: c.category }, c.cents);
   for (const c of mergeCategories(months, (m) => m.externalByCategory)) add("external", { category: c.category }, c.cents);
   for (const x of mergeMerchants(months)) add("spending", { merchantKey: x.key }, x.cents);
+  // A month's drill also lists its credits (a merchant that paid back more than it charged).
+  if (months.length === 1) for (const x of months[0]!.merchants.filter((m) => m.cents < 0)) add("spending", { merchantKey: x.key }, x.cents);
   for (const x of mergeMerchants(months, (m) => m.payers)) add("income", { merchantKey: x.key }, x.cents);
   return out;
 }

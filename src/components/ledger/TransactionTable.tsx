@@ -2,7 +2,9 @@
 
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { Badge, btn, selectCls, table, type Tone } from "@/components/ui/kit";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { noFigure } from "@/lib/book/proof/clearance";
 import { sortRows, SortTh, useSort, type Sort, type SortKey } from "@/components/ui/sort";
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import { CATEGORIES, LANE_LABELS, type Lane } from "@/lib/classifier/taxonomy";
@@ -243,4 +245,18 @@ function Row({
       </td>
     </tr>
   );
+}
+
+/**
+ * Money in, out, or net over the rows a list shows, as a figure: the sum of those rows'
+ * own figures (each row as its statement prints it), cleared once every row has. Only for a
+ * list that holds every row its filter matches: a list cut short has no total of its own.
+ */
+export function rowsTotal(rows: readonly TxnRow[], side: "in" | "out" | "net", complete: boolean): { cents: number; proof: ProofRef } {
+  const parts = rows.filter((r) => (side === "in" ? r.amountCents > 0 : side === "out" ? r.amountCents < 0 : true));
+  const cents = parts.reduce((s, r) => s + r.amountCents, 0);
+  if (!complete) return { cents, proof: noFigure("the list isn't all loaded: show more to total every row") };
+  if (!parts.length) return { cents, proof: noFigure(`no money ${side === "net" ? "moved" : side}`) };
+  const row = (r: TxnRow): ProofRef => ({ descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents });
+  return { cents, proof: parts.length === 1 ? row(parts[0]!) : compositeOf("sum", parts.map(row), { cents }) };
 }

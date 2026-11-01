@@ -217,6 +217,8 @@ export type CarReport = {
     latest: { date: string; cents: number } | null;
   };
   warranty: {
+    /** The in-service date the warranty runs from. */
+    startsOn: string | null;
     expiresOn: string | null;
     milesLimit: number;
     milesLeft: number | null;
@@ -1115,6 +1117,7 @@ export function buildCarReport(car: Car, ownItems: CostItem[], facts: CarFacts, 
     },
     values: { points: car.values, series: valueSeries, latest: lastValue },
     warranty: {
+      startsOn: v.inServiceDate ?? null,
       expiresOn,
       milesLimit: w.warrantyMiles,
       milesLeft,

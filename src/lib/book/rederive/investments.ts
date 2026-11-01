@@ -79,6 +79,17 @@ export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "as
             rep.accounts.length,
           ),
         ];
+      case "growth-point": {
+        const [acct, end, col] = (f.key ?? "").split("|");
+        if (!series.get(acct!)?.points.some((x) => x.end === end)) return null;
+        const g = grown(acct!, end!);
+        return [centsRoute(TL, v, col === "value" ? g.value : col === "money-in" ? g.moneyIn : g.value - g.moneyIn, `through ${end}`, 1)];
+      }
+      case "treatment":
+        return [centsRoute(POS, v, sum(rep.positions.filter((p) => p.treatment === f.key), (p) => p.valueCents), "positions held that way")];
+      case "treatment-share":
+      case "treatment-class":
+        return { none: "A share of positions this page lists, each a holding with its own statement; the treatment's value is re-added from the positions." };
       case "growth-value":
       case "growth-money-in":
       case "growth-growth": {

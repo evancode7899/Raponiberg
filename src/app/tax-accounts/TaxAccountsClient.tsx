@@ -1,5 +1,6 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
 import { BlockedNote } from "@/components/ledger/Blocked";
 import { accountLimitsDerived } from "@/lib/book/derived/planning";
 import { derivedTarget } from "@/lib/book/derived/types";
@@ -75,7 +76,7 @@ export function TaxAccountsClient({ requiresApiSecret }: { requiresApiSecret: bo
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <Segmented
+              <Segmented view
                 ariaLabel="Tax year"
                 options={data.years.map((y) => ({ value: String(y), label: String(y) }))}
                 value={String(r.year)}
@@ -122,7 +123,16 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
           label="Tax it would save"
           value={saved == null ? "Unknown" : usd0(saved)}
           proof={saved == null ? { descriptor: { report: "account-limits", year: r.year, account: "steps", figure: "tax-saved" }, shownCents: null } : lim(r, { account: "steps", figure: "tax-saved" }, saved)}
-          sub={r.marginalRate.rate == null ? "set a marginal rate on Inputs" : `at ${formatPercentRatio(r.marginalRate.rate, 1)} income tax (federal + state + city)${r.marginalRate.source === "PRIOR_YEAR" ? ` (${r.year - 1}'s rate)` : ""}`}
+          sub={
+            r.marginalRate.rate == null ? (
+              "set a marginal rate on Inputs"
+            ) : (
+              <>
+                at <ProofValue proof={derivedTarget("account-limits", accountLimitsDerived(r), "marginal-rate", String(r.year))}>{formatPercentRatio(r.marginalRate.rate, 1)}</ProofValue> income tax (federal + state + city)
+                {r.marginalRate.source === "PRIOR_YEAR" ? ` (${r.year - 1}'s rate)` : ""}
+              </>
+            )
+          }
         />
         <StatCell
           label="Household MAGI"
@@ -375,10 +385,10 @@ function Inputs({ data, save }: { data: Data; save: (s: RetirementSettings) => v
                   <option value="NONE">No HSA-eligible plan</option>
                 </select>
               </Field>
-              <Field label="Employer match rate" hint="Cents per dollar deferred (100% = dollar for dollar).">
+              <Field label="Employer match rate" hint={<NotFigure why="help text">Cents per dollar deferred (100% = dollar for dollar).</NotFigure>}>
                 <PercentInput value={v.matchRate ?? 0} onChange={(x) => set(p.id, { matchRate: x || null })} />
               </Field>
-              <Field label="…on deferrals up to" hint="Share of pay the match applies to (e.g. 4%).">
+              <Field label="…on deferrals up to" hint={<NotFigure why="help text">Share of pay the match applies to (e.g. 4%).</NotFigure>}>
                 <PercentInput value={v.matchUpTo ?? 0} onChange={(x) => set(p.id, { matchUpTo: x || null })} />
               </Field>
             </div>

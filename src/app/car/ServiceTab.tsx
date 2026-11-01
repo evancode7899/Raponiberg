@@ -1,5 +1,6 @@
 "use client";
 
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, btn, Callout, Card, Drawer, Field, inputCls, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
 import type { CarReport, Milestone } from "@/lib/car/report";
 import { newId, type ServiceRule } from "@/lib/car/settings";
@@ -91,8 +92,8 @@ export function ServiceTab({ ctx }: { ctx: CarCtx }) {
       {!r.sold && (
         <Card title="Warranty" subtitle={w.expiresOn ? `${car.plan.warrantyYears} years from ${fmtDate(car.vehicle.inServiceDate)} or ${miles(w.milesLimit)} miles, whichever comes first.` : "Set the in-service date and warranty terms under Car details."}>
           <StatGrid cols={4}>
-            <StatCell proof={ctx.dp("warranty-miles-left")} label="Miles left" value={miles(w.milesLeft)} sub={usedShare != null ? `${formatPercentRatio(usedShare, 0)} of the miles used` : undefined} />
-            <StatCell proof={ctx.dp("warranty-days-left")} label="Time left" value={w.daysLeft != null ? `${(w.daysLeft / 30.44).toFixed(1)} mo` : "—"} sub={w.expiresOn ? `to ${fmtDate(w.expiresOn)}${timeShare != null ? ` · ${formatPercentRatio(timeShare, 0)} used` : ""}` : undefined} />
+            <StatCell proof={ctx.dp("warranty-miles-left")} label="Miles left" value={miles(w.milesLeft)} sub={usedShare != null ? <><ProofValue proof={ctx.dp("warranty-miles-used")}>{formatPercentRatio(usedShare, 0)}</ProofValue> of the miles used</> : undefined} />
+            <StatCell proof={ctx.dp("warranty-days-left")} drawn={{ per: 30.44 }} label="Time left" value={w.daysLeft != null ? `${(w.daysLeft / 30.44).toFixed(1)} mo` : "—"} sub={w.expiresOn ? <>to {fmtDate(w.expiresOn)}{timeShare != null ? <> · <ProofValue proof={ctx.dp("warranty-time-used")}>{formatPercentRatio(timeShare, 0)}</ProofValue> used</> : ""}</> : undefined} />
             <StatCell proof={ctx.dp("warranty-break-even")}
               label="Break-even pace"
               value={w.breakEvenPerDay != null ? `${w.breakEvenPerDay.toFixed(1)} mi/day` : "—"}
@@ -118,7 +119,9 @@ export function ServiceTab({ ctx }: { ctx: CarCtx }) {
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-3">
                     <div className="h-full rounded-full bg-accent" style={{ width: `${v * 100}%` }} />
                   </div>
-                  <span className="num w-10 text-right text-muted">{formatPercentRatio(v, 0)}</span>
+                  <span className="num w-10 text-right text-muted">
+                    <ProofValue proof={ctx.dp(l === "Miles" ? "warranty-miles-used" : "warranty-time-used")}>{formatPercentRatio(v, 0)}</ProofValue>
+                  </span>
                 </div>
               ))}
             </div>

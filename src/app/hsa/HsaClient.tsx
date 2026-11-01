@@ -13,6 +13,8 @@ import { ExpenseDrawer, type DraftExpense } from "./ExpenseDrawer";
 import { FoundTab } from "./FoundTab";
 import { GrowthTab } from "./GrowthTab";
 import { hsaProof } from "./proof";
+import { useHsaDerived } from "./derived";
+import { compositeOf } from "@/components/ui/proof/context";
 import { ReceiptsTab } from "./ReceiptsTab";
 import { ReimburseDrawer, ReimburseTab } from "./ReimburseTab";
 import { SettingsTab } from "./SettingsTab";
@@ -71,6 +73,7 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
   };
 
   const t = r?.totals;
+  const dp = useHsaDerived(r);
   return (
     <>
       <Tabs
@@ -123,7 +126,12 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
                 value={usd0(t.growthCents)}
                 tone={t.growthCents > 0 ? "pos" : "neutral"}
                 proof={hsaProof("growth", t.growthCents)}
-                sub={`Est. at ${formatPercentRatio(r.growth.rate, 1)} a year${r.growth.rateSource === "MEASURED" ? " (your HSA's return)" : ""}${t.avgDaysWaiting ? ` · average wait ${Math.round(t.avgDaysWaiting / 30.4)} months` : ""}`}
+                sub={
+                  <>
+                    Est. at <ProofValue proof={dp("growth-rate")}>{formatPercentRatio(r.growth.rate, 1)}</ProofValue> a year{r.growth.rateSource === "MEASURED" ? " (your HSA's return)" : ""}
+                    {t.avgDaysWaiting ? ` · average wait ${Math.round(t.avgDaysWaiting / 30.4)} months` : ""}
+                  </>
+                }
               />
               <StatCell
                 label="Reimbursed so far"
@@ -145,7 +153,11 @@ export function HsaClient({ requiresApiSecret }: { requiresApiSecret: boolean })
                     : r.hsa.balanceCents == null
                     ? "No HSA statements imported"
                     : t.unreimbursedCents > r.hsa.balanceCents
-                      ? `${usd0(t.unreimbursedCents - r.hsa.balanceCents)} short of covering every receipt`
+                      ? (
+                          <>
+                            <ProofValue proof={compositeOf("diff", [hsaProof("reimbursable", t.unreimbursedCents), hsaProof("balance", r.hsa.balanceCents)], { cents: t.unreimbursedCents - r.hsa.balanceCents })}>{usd0(t.unreimbursedCents - r.hsa.balanceCents)}</ProofValue> short of covering every receipt
+                          </>
+                        )
                       : `Covers every receipt${t.unreimbursedCents ? ` ${(r.hsa.balanceCents / t.unreimbursedCents).toFixed(1)}×` : ""}${r.hsa.asOf ? ` · as of ${r.hsa.asOf}` : ""}`
                 }
               />

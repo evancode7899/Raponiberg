@@ -1,6 +1,7 @@
 "use client";
 
-import { TransactionTable, type TxnRow } from "@/components/ledger/TransactionTable";
+import { rowsTotal, TransactionTable, type TxnRow } from "@/components/ledger/TransactionTable";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { useApi } from "@/components/ledger/useApi";
 import { useChanged } from "@/components/useChanged";
@@ -283,7 +284,17 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
           }
           subtitle={
             <span className="num">
-              In <span className="text-pos">{usd0(data.total.inCents)}</span> · out {usd0(-data.total.outCents)} · net {usd0(data.total.inCents + data.total.outCents)}
+              {(() => {
+                // Totals over the rows listed, each row's own figure: shown once the list holds every match.
+                const complete = data.transactions.length === data.total.count;
+                const [inT, outT, netT] = (["in", "out", "net"] as const).map((side) => rowsTotal(data.transactions, side, complete));
+                return (
+                  <>
+                    In <span className="text-pos"><ProofValue proof={inT!.proof}>{usd0(complete ? inT!.cents : data.total.inCents)}</ProofValue></span> · out <ProofValue proof={outT!.proof}>{usd0(complete ? -outT!.cents : -data.total.outCents)}</ProofValue> · net{" "}
+                    <ProofValue proof={netT!.proof}>{usd0(complete ? netT!.cents : data.total.inCents + data.total.outCents)}</ProofValue>
+                  </>
+                );
+              })()}
               {!!data.total.pending && <span className="text-muted" title="A landlord's charge dated after the last bill on file is in no figure until a bill covers its day."> · {data.total.pending} not in the ledger yet</span>}
             </span>
           }
@@ -305,7 +316,7 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
                   Showing the {newestFirst ? "latest" : "first"} {data.transactions.length.toLocaleString()} of {data.total.count.toLocaleString()}
                   {newestFirst ? "" : " in this order"}.
                   {limit < 2000 && (
-                    <button type="button" className={btn.secondary} onClick={() => setLimit(Math.min(2000, limit * 3))}>
+                    <button type="button" className={btn.secondary} onClick={() => setLimit(Math.min(2000, limit * 3))} data-audit-more="">
                       Show more
                     </button>
                   )}

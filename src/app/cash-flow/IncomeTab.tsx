@@ -1,9 +1,10 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { windowKey } from "@/lib/book/derived/cashFlow";
+import { merchantKeyOf, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
@@ -37,11 +38,11 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={5}>
-        <StatCell label="Income" value={usd0(t.income)} proof={ctx.proof("income", slice.months, { shownCents: t.income })} sub={`${usd0(t.avgIncome)}/mo average`} />
+        <StatCell label="Income" value={usd0(t.income)} proof={ctx.proof("income", slice.months, { shownCents: t.income })} sub={<><ProofValue proof={ctx.proof("income", slice.months, { perMonth: true, shownCents: t.income })}>{usd0(t.avgIncome)}</ProofValue>/mo average</>} />
         <StatCell proof={ctx.dp("typical-income", windowKey(slice.months))} label="Typical month" value={usd0(t.typicalIncome)} sub="median — what to budget against" />
         <StatCell proof={ctx.dp("above-typical", windowKey(slice.months))} label="Above typical" value={usd0(Math.max(0, bonus))} sub="bonuses and one-time deposits" />
-        <StatCell label="Saved from take-home" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={t.savingsRate == null ? undefined : `${formatPercentRatio(t.savingsRate, 1)} of income`} />
-        <StatCell proof={ctx.dp("retirement", windowKey(slice.months))} label="Retirement via payroll" value={usd0(t.employee + t.employer)} sub={`you ${usd0(t.employee)} · employers ${usd0(t.employer)}`} />
+        <StatCell label="Saved from take-home" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={t.savingsRate == null ? undefined : <><ProofValue proof={ctx.dp("savings-rate", windowKey(slice.months))}>{formatPercentRatio(t.savingsRate, 1)}</ProofValue> of income</>} />
+        <StatCell proof={ctx.dp("retirement", windowKey(slice.months))} label="Retirement via payroll" value={usd0(t.employee + t.employer)} sub={<>you <ProofValue proof={ctx.dp("retirement-employee", windowKey(slice.months))}>{usd0(t.employee)}</ProofValue> · employers <ProofValue proof={ctx.dp("retirement-employer", windowKey(slice.months))}>{usd0(t.employer)}</ProofValue></>} />
       </StatGrid>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
@@ -92,16 +93,28 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
               <tbody>
                 {payers.slice(0, 15).map((p) => (
                   <tr key={p.key} className={`${table.trHover} cursor-pointer`} onClick={() => ctx.open({ kind: "merchant", key: p.key, name: p.name, lane: "INCOME" })}>
-                    <td className={`${table.td} max-w-[14rem] truncate font-medium`} title={p.key}>
+                    <td className={`${table.td} max-w-[14rem] truncate font-medium`} title={p.key} data-audit-drill={p.name}>
                       {p.name}
                       <div className="text-[11px] font-normal text-muted">{p.category}</div>
                     </td>
                     <td className={table.td}>
                       <Sparkline values={p.series} color={chart.income} width={72} height={18} />
                     </td>
-                    <td className={`${table.tdR} text-muted`}>{p.count}</td>
-                    <td className={`${table.tdR} font-medium`}>{usd0(p.cents)}</td>
-                    <td className={`${table.tdR} text-muted`}>{t.income > 0 ? formatPercentRatio(p.cents / t.income, 0) : "—"}</td>
+                    <td className={`${table.tdR} text-muted`}>
+                      <ProofValue proof={ctx.dp("merchant-count", merchantKeyOf(slice.months, "INCOME", p.key))}>{p.count}</ProofValue>
+                    </td>
+                    <td className={`${table.tdR} font-medium`}>
+                      <ProofValue proof={ctx.proof("income", slice.months, { merchantKey: p.key, shownCents: p.cents })}>{usd0(p.cents)}</ProofValue>
+                    </td>
+                    <td className={`${table.tdR} text-muted`}>
+                      {t.income > 0 ? (
+                        <ProofValue proof={compositeOf("share", [ctx.proof("income", slice.months, { merchantKey: p.key, shownCents: p.cents }), ctx.proof("income", slice.months, { shownCents: t.income })], { ratio: p.cents / t.income })}>
+                          {formatPercentRatio(p.cents / t.income, 0)}
+                        </ProofValue>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

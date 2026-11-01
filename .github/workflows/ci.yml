@@ -79,5 +79,5 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-      - name: Demo data builds, and every figure ties to its proof
-        run: npm run demo -- --sweep
+      - name: Demo data builds, every figure ties to its proof, and every page draws what its proof cleared
+        run: npm run demo -- --sweep --render-audit

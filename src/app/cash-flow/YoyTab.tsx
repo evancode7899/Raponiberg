@@ -5,7 +5,7 @@ import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
@@ -38,7 +38,7 @@ export function YoyTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        <Segmented
+        <Segmented view
           ariaLabel="Comparison"
           options={[
             { value: "month", label: "Latest month" },
@@ -100,20 +100,28 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
           label="Spending"
           value={usd0(a.spending)}
           proof={ctx.proof("spending", now, { shownCents: a.spending })}
-          sub={<Change now={a.spending} then={b.spending} proof={ctx.proof("spending", then, { shownCents: b.spending })} goodWhenDown />}
+          sub={<Change now={a.spending} then={b.spending} nowProof={ctx.proof("spending", now, { shownCents: a.spending })} proof={ctx.proof("spending", then, { shownCents: b.spending })} goodWhenDown />}
         />
-        <StatCell label="Income" value={usd0(a.income)} proof={ctx.proof("income", now, { shownCents: a.income })} sub={<Change now={a.income} then={b.income} proof={ctx.proof("income", then, { shownCents: b.income })} />} />
+        <StatCell label="Income" value={usd0(a.income)} proof={ctx.proof("income", now, { shownCents: a.income })} sub={<Change now={a.income} then={b.income} nowProof={ctx.proof("income", now, { shownCents: a.income })} proof={ctx.proof("income", then, { shownCents: b.income })} />} />
         <StatCell
           label="Saved from take-home"
           value={usd0(a.net)}
           proof={ctx.proof("net", now, { shownCents: a.net })}
           tone={a.net < 0 ? "neg" : "neutral"}
-          sub={<Change now={a.net} then={b.net} proof={ctx.proof("net", then, { shownCents: b.net })} />}
+          sub={<Change now={a.net} then={b.net} nowProof={ctx.proof("net", now, { shownCents: a.net })} proof={ctx.proof("net", then, { shownCents: b.net })} />}
         />
         <StatCell proof={ctx.dp("savings-rate", windowKey(now))}
           label="Savings rate (take-home)"
           value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
-          sub={b.savingsRate == null ? "—" : `${formatPercentRatio(b.savingsRate, 0)} a year earlier`}
+          sub={
+            b.savingsRate == null ? (
+              "—"
+            ) : (
+              <>
+                <ProofValue proof={ctx.dp("savings-rate", windowKey(then))}>{formatPercentRatio(b.savingsRate, 0)}</ProofValue> a year earlier
+              </>
+            )
+          }
         />
       </StatGrid>
       <Card title="By category" subtitle="Largest changes first. Click a category for its rows.">
@@ -147,8 +155,20 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
                   <td className={table.td}>
                     <DivergingBar value={c.now - c.then} max={maxChange} />
                   </td>
-                  <td className={`${table.tdR} ${c.now > c.then ? "text-neg" : c.now < c.then ? "text-pos" : ""}`}>{usdDelta(c.now - c.then)}</td>
-                  <td className={table.tdR}>{c.then ? <Delta now={c.now} before={c.then} goodWhenDown /> : <span className="text-xs text-muted">new</span>}</td>
+                  <td className={`${table.tdR} ${c.now > c.then ? "text-neg" : c.now < c.then ? "text-pos" : ""}`}>
+                    <ProofValue
+                      proof={
+                        !c.then
+                          ? ctx.proof("spending", now, { category: c.category, shownCents: c.now })
+                          : !c.now
+                            ? ctx.proof("spending", then, { category: c.category, shownCents: c.then })
+                            : compositeOf("diff", [ctx.proof("spending", now, { category: c.category, shownCents: c.now }), ctx.proof("spending", then, { category: c.category, shownCents: c.then })], { cents: c.now - c.then })
+                      }
+                    >
+                      {usdDelta(c.now - c.then)}
+                    </ProofValue>
+                  </td>
+                  <td className={table.tdR}>{c.then ? <Delta now={c.now} before={c.then} goodWhenDown of={[ctx.proof("spending", now, { category: c.category, shownCents: c.now }), ctx.proof("spending", then, { category: c.category, shownCents: c.then })]} /> : <span className="text-xs text-muted">new</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -163,10 +183,10 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
   );
 }
 
-function Change({ now, then, proof, goodWhenDown = false }: { now: number; then: number; proof: ProofRef; goodWhenDown?: boolean }) {
+function Change({ now, then, nowProof, proof, goodWhenDown = false }: { now: number; then: number; nowProof: ProofRef; proof: ProofRef; goodWhenDown?: boolean }) {
   return (
     <span className="flex items-center gap-1.5">
-      <Delta now={now} before={then} goodWhenDown={goodWhenDown} />
+      <Delta now={now} before={then} goodWhenDown={goodWhenDown} of={[nowProof, proof]} />
       <span>
         from <ProofValue proof={proof}>{usd0(then)}</ProofValue>
       </span>
@@ -203,11 +223,11 @@ function MoverCard({ title, rows, ctx, now, then }: { title: string; rows: { key
 }
 
 type YearMetric = "spending" | "everyday" | "income" | "saved";
-const METRIC: Record<YearMetric, { label: string; f: (m: SpendingMonth) => number; goodWhenDown: boolean }> = {
-  spending: { label: "Spending", f: (m) => m.spendingCents, goodWhenDown: true },
-  everyday: { label: "Everyday spending", f: (m) => m.kinds.everydayCents, goodWhenDown: true },
-  income: { label: "Income", f: (m) => m.incomeCents, goodWhenDown: false },
-  saved: { label: "Saved from take-home", f: (m) => m.netCents, goodWhenDown: false },
+const METRIC: Record<YearMetric, { label: string; f: (m: SpendingMonth) => number; goodWhenDown: boolean; proof: { metric: CashFlowMetric; spendingKind?: SpendingKind } }> = {
+  spending: { label: "Spending", f: (m) => m.spendingCents, goodWhenDown: true, proof: { metric: "spending" } },
+  everyday: { label: "Everyday spending", f: (m) => m.kinds.everydayCents, goodWhenDown: true, proof: { metric: "spending", spendingKind: "everyday" } },
+  income: { label: "Income", f: (m) => m.incomeCents, goodWhenDown: false, proof: { metric: "income" } },
+  saved: { label: "Saved from take-home", f: (m) => m.netCents, goodWhenDown: false, proof: { metric: "net" } },
 };
 
 /** Proven months grouped by calendar year, oldest first; each year's months indexed by month (0 = Jan). */
@@ -266,6 +286,12 @@ function AllYears({ ctx }: { ctx: Ctx }) {
       pace = { m, now, then, full, projected: full != null && then > 0 && m < 11 ? (now * full) / then : null, prevYear: prev.y };
     }
   }
+  // A pace figure: the year's month m (Monthly), or its months from January through m (Running total).
+  const yearMonths = new Map(byYear(report.months));
+  const paceProof = (y: number, m: number, cents: number): ProofRef => {
+    const ms = (yearMonths.get(y) ?? []).slice(view === "monthly" ? m : 0, m + 1);
+    return ms.length && ms.every(Boolean) ? ctx.proof(METRIC[metric].proof.metric, ms as SpendingMonth[], { spendingKind: METRIC[metric].proof.spendingKind, shownCents: cents }) : noFigure("a month isn't proven");
+  };
 
   return (
     <Card
@@ -277,7 +303,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
       }
       actions={
         <>
-          <Segmented
+          <Segmented view
             size="xs"
             ariaLabel="Figure"
             options={[
@@ -289,7 +315,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
             value={metric}
             onChange={setMetric}
           />
-          <Segmented
+          <Segmented view
             size="xs"
             ariaLabel="View"
             options={[
@@ -308,18 +334,30 @@ function AllYears({ ctx }: { ctx: Ctx }) {
             <span className="text-muted">
               {latest.y} through {MONTH_NAMES[pace.m]}:
             </span>{" "}
-            <span className="num font-semibold">{usd0(pace.now)}</span> <Delta now={pace.now} before={pace.then} goodWhenDown={METRIC[metric].goodWhenDown} />
+            <span className="num font-semibold">
+              <ProofValue proof={paceProof(latest.y, pace.m, pace.now)}>{usd0(pace.now)}</ProofValue>
+            </span>{" "}
+            <Delta now={pace.now} before={pace.then} goodWhenDown={METRIC[metric].goodWhenDown} of={[paceProof(latest.y, pace.m, pace.now), paceProof(pace.prevYear, pace.m, pace.then)]} />
           </span>
           <span>
-            <span className="text-muted">{pace.prevYear} at that point:</span> <span className="num font-medium">{usd0(pace.then)}</span>
-            {pace.full != null && <span className="text-muted"> · finished at {usd0(pace.full)}</span>}
+            <span className="text-muted">{pace.prevYear} at that point:</span>{" "}
+            <span className="num font-medium">
+              <ProofValue proof={paceProof(pace.prevYear, pace.m, pace.then)}>{usd0(pace.then)}</ProofValue>
+            </span>
+            {pace.full != null && (
+              <span className="text-muted">
+                {" "}· finished at <ProofValue proof={view === "monthly" ? paceProof(pace.prevYear, 11, pace.full) : paceProof(pace.prevYear, 11, pace.full)}>{usd0(pace.full)}</ProofValue>
+              </span>
+            )}
           </span>
           {pace.projected != null && (
             <span title={`This year's total so far, scaled by how ${pace.prevYear}'s grew from ${MONTH_NAMES[pace.m]} to December.`} className="cursor-help">
               <span className="text-muted">
                 On {pace.prevYear}&apos;s curve, {latest.y} lands near
               </span>{" "}
-              <span className="num font-medium">{usdCompact(pace.projected)}</span>
+              <span className="num font-medium">
+                <ProofValue proof={compositeOf("scale", [paceProof(latest.y, pace.m, pace.now), paceProof(pace.prevYear, 11, pace.full!), paceProof(pace.prevYear, pace.m, pace.then)], { cents: pace.projected })}>{usdCompact(pace.projected)}</ProofValue>
+              </span>
             </span>
           )}
         </div>
@@ -403,7 +441,19 @@ function YearTable({ ctx }: { ctx: Ctx }) {
         return (
           <td key={y.y} className={`${table.tdR} ${r.strong ? "font-semibold" : ""}`}>
             <ProofValue proof={proof}>{usd0(v)}</ProofValue>
-            <div className="leading-none">{comparable(i) ? <YearDelta now={v} before={val(years[i - 1]!.months, r.f)} goodWhenDown={r.goodWhenDown} /> : <span className="text-xs">&nbsp;</span>}</div>
+            <div className="leading-none">
+              {comparable(i) ? (
+                <YearDelta
+                  now={v}
+                  before={val(years[i - 1]!.months, r.f)}
+                  goodWhenDown={r.goodWhenDown}
+                  of={r.proof ? [proof, ctx.proof(r.proof.metric, years[i - 1]!.months, { category: r.proof.category, spendingKind: r.proof.spendingKind, shownCents: sum(years[i - 1]!.months, r.f) })] : undefined}
+                  per={as === "avg" ? [y.months.length, years[i - 1]!.months.length] : undefined}
+                />
+              ) : (
+                <span className="text-xs">&nbsp;</span>
+              )}
+            </div>
           </td>
         );
       })}
@@ -416,7 +466,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
         as === "avg" ? "An average month, so a partial year compares fairly with a full one." : "Totals; changes show only between two full years."
       } Under each figure, its change from the year before.`}
       actions={
-        <Segmented
+        <Segmented view
           size="xs"
           ariaLabel="Figures"
           options={[
@@ -451,7 +501,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
                 const p = i ? rate(years[i - 1]!.months) : null;
                 return (
                   <td key={y.y} className={`${table.tdR} font-semibold`}>
-                    {r == null ? "—" : formatPercentRatio(r, 0)}
+                    {r == null ? "—" : <ProofValue proof={ctx.dp("savings-rate", windowKey(y.months))}>{formatPercentRatio(r, 0)}</ProofValue>}
                     <div className="text-xs font-normal leading-none text-muted">{r != null && p != null ? `${r >= p ? "+" : "−"}${Math.abs(Math.round((r - p) * 100))} pts` : " "}</div>
                   </td>
                 );
@@ -467,7 +517,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
 }
 
 /** A percent change, or dollars when the base is too small (or the swing too wild) for a percent to mean much. */
-function YearDelta({ now, before, goodWhenDown }: { now: number; before: number; goodWhenDown?: boolean }) {
+function YearDelta({ now, before, goodWhenDown, of, per }: { now: number; before: number; goodWhenDown?: boolean; of?: [ProofRef, ProofRef]; per?: [number, number] }) {
   const meaningful = before >= 10_000 && Math.abs(now / before - 1) <= 3;
-  return <Delta now={now} before={before} goodWhenDown={goodWhenDown} asPercent={meaningful} />;
+  return <Delta now={now} before={before} goodWhenDown={goodWhenDown} asPercent={meaningful} of={of} per={per} />;
 }

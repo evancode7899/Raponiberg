@@ -4,10 +4,17 @@ import { buttonSecondary, Card } from "@/components/ledger/LedgerBits";
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
 import type { SafeHarbor } from "@/lib/tax/computeReturn";
 import type { TruePlan } from "@/lib/tax/buildTaxReport";
-import { estimateColumns, lineValue, type EstimateColumn } from "@/lib/tax/estimateLines";
+import { estimateColumns, lineValue, type EstimateKey } from "@/lib/tax/estimateLines";
+import { NotFigure } from "@/components/ui/kit";
+import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
+import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
+import { taxesDerived } from "@/lib/book/derived/taxes";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
+import { employerRow } from "@/lib/tax/incomeExtras";
+import { dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
 import { useMemo, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
-import { BalanceBadge, Callout, EstimateValue, formatDate, NumberTable, pct, usd } from "./taxUi";
+import { BalanceBadge, Callout, EstimateValue, formatDate, lawLabel, NumberTable, pct, usd } from "./taxUi";
 
 type Tab = "compare" | "inputs" | "income" | "payments" | "filed" | "worksheet";
 
@@ -17,15 +24,22 @@ type Tab = "compare" | "inputs" | "income" | "payments" | "filed" | "worksheet";
  * (Earned + investment income, Total taxes, Take-home), so the Overview's headline reconciles
  * to the Worksheet and opens the same proofs; the buckets split that total.
  */
-export function taxBuckets(c: EstimateColumn) {
-  const x = c.r;
-  const federal = x.federal.totalTax - x.federal.refundableChildCredit;
-  const payroll = x.fica.socialSecurity + x.fica.medicare + x.fica.ctPfml;
-  const ny = x.ny?.totalTax ?? 0;
-  const gross = lineValue("all.earnedPlusInvestment", c) ?? 0;
-  const total = lineValue("all.totalTaxes", c) ?? 0;
-  return { federal, ct: x.ct.totalTax, ny, other: x.otherStateTax, payroll, total, gross, kept: lineValue("all.takeHome", c) ?? 0 };
+export { taxBuckets };
+
+/** The year's derived figures (book/derived/taxes.ts), drawn by table, row and column. */
+function useCells(r: TaxResponse) {
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  return function cell(figure: "overview" | "income" | "compare", row: string, col: string, text: ReactNode, drawn?: FigureProps["drawn"]) {
+    return (
+      <ProofValue proof={derivedTarget("taxes", derived, figure, cellKey(r.year, row, col))} drawn={drawn}>
+        {text}
+      </ProofValue>
+    );
+  };
 }
+
+/** An estimate line of the projected return (joint unless a filer is named), as a part of a composite. */
+const estOf = (r: TaxResponse, key: EstimateKey, cents: number, filer?: string): ProofRef => ({ descriptor: { report: "tax-estimate", year: r.year, basis: "projected", ...(filer ? { filer } : {}), key }, shownCents: cents });
 
 /** The joint return as the Worksheet's projected column has it: the column the Overview's figures and their proofs read. */
 const useJointColumn = (r: TaxResponse) => useMemo(() => estimateColumns(r, "projected").cols.find((c) => c.id === "joint")!, [r]);
@@ -39,9 +53,17 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
   const cols = useMemo(() => estimateColumns(r, "projected").cols, [r]);
   const separate = cols.filter((c) => c.id !== "joint").reduce((s, c) => s + (lineValue("all.totalTaxes", c, cols) ?? 0), 0);
   const joint = b.total;
-  const depFed = r.scenarios.mfjNoDependents.federal.totalTax - r.scenarios.mfjNoDependents.federal.refundableChildCredit - b.federal;
-  const depCt = r.scenarios.mfjNoDependents.ct.totalTax - mfj.ct.totalTax;
-  const depNy = (r.scenarios.mfjNoDependents.ny?.totalTax ?? 0) - b.ny;
+  const dep = dependentEffect(r, b);
+  const depFed = dep.fed;
+  const depCt = dep.ct;
+  const depNy = dep.ny;
+  const cell = useCells(r);
+  // Joint and separate totals: the Worksheet's own lines (all.totalTaxes), the separate one their sum.
+  const filers = cols.filter((c) => c.id !== "joint");
+  const jointRef = estOf(r, "all.totalTaxes", joint);
+  const separateRef = sumOf(filers.map((c) => estOf(r, "all.totalTaxes", lineValue("all.totalTaxes", c, cols) ?? 0, c.id)), separate);
+  const fig = (ref: ProofRef, text: string) => <ProofValue proof={ref}>{text}</ProofValue>;
+  const savings = (cents: number) => fig(compositeOf("diff", cents >= 0 ? [separateRef, jointRef] : [jointRef, separateRef], { cents: Math.abs(cents) }), usd(Math.abs(cents)));
   const past = !r.isCurrentYear && Number(r.today.slice(0, 4)) > r.year;
 
   return (
@@ -72,10 +94,13 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
 
       <Card
         title={r.isCurrentYear ? "Do we need a true-up payment this year?" : "Underpayment check"}
-        subtitle={`Penalty-free if withholding plus estimated payments reach the safe harbor: the smaller of 90% of ${r.year} tax or 100%/110% of ${r.year - 1} tax. Withholding counts as paid evenly through the year, so extra withholding in the last paychecks still fixes a shortfall; an estimated payment is due ${formatDate(r.plan.q4DueDate)}.`}
+        subtitle={
+          <NotFigure why="the safe-harbor rule, set by tax law">{`Penalty-free if withholding plus estimated payments reach the safe harbor: the smaller of 90% of ${r.year} tax or 100%/110% of ${r.year - 1} tax. Withholding counts as paid evenly through the year, so extra withholding in the last paychecks still fixes a shortfall; an estimated payment is due ${formatDate(r.plan.q4DueDate)}.`}</NotFigure>
+        }
       >
         <div className="grid gap-4 lg:grid-cols-2">
           <TrueUp
+            r={r}
             name="Federal"
             sh={r.safeHarbor.federal}
             plan={r.plan.federal}
@@ -85,7 +110,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
             dueDate={r.plan.q4DueDate}
             priorEstimated={r.priorYearSource === "ESTIMATED"}
           />
-          <TrueUp name="Connecticut" sh={r.safeHarbor.ct} plan={r.plan.ct} remaining={r.plan.remainingPaychecks} who={r.plan.paycheckPerson} form="CT-W4 line 3" dueDate={r.plan.q4DueDate} />
+          <TrueUp r={r} name="Connecticut" sh={r.safeHarbor.ct} plan={r.plan.ct} remaining={r.plan.remainingPaychecks} who={r.plan.paycheckPerson} form="CT-W4 line 3" dueDate={r.plan.q4DueDate} />
         </div>
       </Card>
 
@@ -104,16 +129,16 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
               <>Filing jointly and separately come out about the same.</>
             ) : separate > joint ? (
               <>
-                Filing <b>jointly</b> saves about <b>{usd(separate - joint)}</b> compared with filing separately ({usd(joint)} vs {usd(separate)} in total
+                Filing <b>jointly</b> saves about <b>{savings(separate - joint)}</b> compared with filing separately ({fig(jointRef, usd(joint))} vs {fig(separateRef, usd(separate))} in total
                 tax).
               </>
             ) : (
               <>
-                Filing <b>separately</b> saves about <b>{usd(joint - separate)}</b> ({usd(separate)} vs {usd(joint)} jointly).
+                Filing <b>separately</b> saves about <b>{savings(separate - joint)}</b> ({fig(separateRef, usd(separate))} vs {fig(jointRef, usd(joint))} jointly).
               </>
             )}
           </p>
-          <VersusBar a={{ label: "Joint", cents: joint }} b={{ label: "Separate", cents: separate }} />
+          <VersusBar a={{ label: "Joint", cents: joint, proof: jointRef }} b={{ label: "Separate", cents: separate, proof: separateRef }} />
           <p className="mt-2 text-xs text-muted">
             Married couples can only file jointly or separately (not single). Separate figures assume{" "}
             {r.dependents.length ? `${r.profile.persons.find((p) => p.id === r.scenarios.mfs.claimant)?.name ?? "one spouse"} claims ${r.dependents.map((d) => d.name).join(", ")} and ` : ""}
@@ -132,7 +157,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
                   </>
                 ) : (
                   <>
-                    Claiming {r.dependents.map((d) => d.name).join(", ")} lowers your joint tax by <b>{usd(depFed + depCt + depNy)}</b>.
+                    Claiming {r.dependents.map((d) => d.name).join(", ")} lowers your joint tax by <b>{cell("overview", "dependent", "total", usd(depFed + depCt + depNy))}</b>.
                   </>
                 )}
               </p>
@@ -140,11 +165,11 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
                 className="mt-2"
                 columns={["Joint return"]}
                 rows={[
-                  { label: "Federal child tax credit", values: [usd(mfj.federal.childTaxCredit + mfj.federal.refundableChildCredit)], help: "$2,200 per child under 17, reduced $50 per $1,000 of AGI over $400,000 (joint)." },
-                  { label: "Other dependent / care credits", values: [usd(mfj.federal.otherDependentCredit + mfj.federal.dependentCareCredit)] },
-                  { label: "CT child tax credit", values: [usd(mfj.ct.childTaxCredit)], help: "$600 per child 16 or under; phases out between $200k and $209k federal AGI (joint)." },
-                  ...(mfj.ny ? [{ label: "New York dependent exemption", values: [usd(depNy)], help: "$1,000 of income per dependent, at your New York (and City) rate." }] : []),
-                  { label: "Total savings", values: [usd(depFed + depCt + depNy)], strong: true },
+                  { label: "Federal child tax credit", values: [cell("overview", "dependent", "fedChild", usd(dep.fedChild))], help: "$2,200 per child under 17, reduced $50 per $1,000 of AGI over $400,000 (joint)." },
+                  { label: "Other dependent / care credits", values: [cell("overview", "dependent", "otherCredits", usd(dep.otherCredits))] },
+                  { label: "CT child tax credit", values: [cell("overview", "dependent", "ctChild", usd(dep.ctChild))], help: "$600 per child 16 or under; phases out between $200k and $209k federal AGI (joint)." },
+                  ...(mfj.ny ? [{ label: "New York dependent exemption", values: [cell("overview", "dependent", "ny", usd(depNy))], help: "$1,000 of income per dependent, at your New York (and City) rate." }] : []),
+                  { label: "Total savings", values: [cell("overview", "dependent", "total", usd(depFed + depCt + depNy))], strong: true },
                 ]}
               />
             </>
@@ -177,16 +202,20 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
 
 /** The year in one picture: total tax, and where every dollar of income goes. */
 function Hero({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
-  const mfj = r.scenarios.mfj;
   const b = taxBuckets(useJointColumn(r));
+  const mfj = r.scenarios.mfj;
+  const cell = useCells(r);
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const bucket = (id: string): ProofRef => derivedTarget("taxes", derived, "overview", cellKey(r.year, "bucket", id));
+  const gross = estOf(r, "all.earnedPlusInvestment", b.gross);
   const past = !r.isCurrentYear && Number(r.today.slice(0, 4)) > r.year;
   const segments: (ShareSegment & { short: string })[] = [
-    { id: "kept", label: "Take-home + savings", short: "you keep", cents: b.kept, color: "var(--chart-series-2)" },
-    { id: "federal", label: "Federal income tax", short: "federal", cents: b.federal, color: "var(--chart-series-0)" },
-    ...(b.ct ? [{ id: "ct", label: "Connecticut income tax", short: "Connecticut", cents: b.ct, color: "var(--chart-series-1)" }] : []),
-    ...(b.ny ? [{ id: "ny", label: mfj.ny?.city ? "New York State + City" : "New York State", short: mfj.ny?.city ? "New York + NYC" : "New York", cents: b.ny, color: "var(--chart-series-4)" }] : []),
-    ...(b.other ? [{ id: "other", label: "Other states", short: "other states", cents: b.other, color: "var(--chart-series-6)" }] : []),
-    { id: "payroll", label: "Social Security, Medicare, paid leave", short: "payroll", cents: b.payroll, color: "var(--chart-series-3)" },
+    { id: "kept", label: "Take-home + savings", short: "you keep", cents: b.kept, color: "var(--chart-series-2)", proof: bucket("kept") },
+    { id: "federal", label: "Federal income tax", short: "federal", cents: b.federal, color: "var(--chart-series-0)", proof: bucket("federal") },
+    ...(b.ct ? [{ id: "ct", label: "Connecticut income tax", short: "Connecticut", cents: b.ct, color: "var(--chart-series-1)", proof: bucket("ct") }] : []),
+    ...(b.ny ? [{ id: "ny", label: mfj.ny?.city ? "New York State + City" : "New York State", short: mfj.ny?.city ? "New York + NYC" : "New York", cents: b.ny, color: "var(--chart-series-4)", proof: bucket("ny") }] : []),
+    ...(b.other ? [{ id: "other", label: "Other states", short: "other states", cents: b.other, color: "var(--chart-series-6)", proof: bucket("other") }] : []),
+    { id: "payroll", label: "Social Security, Medicare, paid leave", short: "payroll", cents: b.payroll, color: "var(--chart-series-3)", proof: bucket("payroll") },
   ];
   const per100 = (c: number) => (b.gross > 0 ? Math.round((c / b.gross) * 100) : 0);
   const word = r.isCurrentYear ? "projected" : past ? (r.documents?.filed.federal ? "as filed" : "full year") : "estimated";
@@ -217,7 +246,7 @@ function Hero({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
             <EstimateValue year={r.year} k="all.earnedPlusInvestment" cents={b.gross}>
               {usd(b.gross)}
             </EstimateValue>{" "}
-            of earned + investment income — <b className="text-fg">{pct(b.gross > 0 ? b.total / b.gross : 0)}</b> all in
+            of earned + investment income — <b className="text-fg">{b.gross > 0 ? <ProofValue proof={compositeOf("share", [estOf(r, "all.totalTaxes", b.total), gross], { ratio: b.total / b.gross })}>{pct(b.total / b.gross)}</ProofValue> : pct(0)}</b> all in
           </div>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs">
             <Mini
@@ -228,8 +257,8 @@ function Hero({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
                 </EstimateValue>
               }
             />
-            <Mini label="Federal of AGI" value={pct(mfj.effective.federalOfAgi)} />
-            <Mini label="Next $1,000" value={pct(r.marginal.federal + r.marginal.ct + r.marginal.ny + r.marginal.payroll)} />
+            <Mini label="Federal of AGI" value={cell("compare", "effective-federal", "joint", pct(mfj.effective.federalOfAgi))} />
+            <Mini label={<NotFigure why="the probe the rate is worked out on">Next $1,000</NotFigure>} value={cell("overview", "marginal", "all", pct(r.marginal.federal + r.marginal.ct + r.marginal.ny + r.marginal.payroll))} />
           </div>
           {reproduced && (
             <button type="button" onClick={() => onGo("filed")} className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-pos-soft px-2.5 py-1 text-xs font-medium text-pos hover:opacity-90">
@@ -239,14 +268,25 @@ function Hero({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
         </div>
         <div className="flex min-w-0 flex-col justify-center gap-2">
           <div className="flex items-baseline justify-between gap-2">
-            <h2 className="text-[13px] font-semibold text-fg">Where every $100 goes</h2>
+            <h2 className="text-[13px] font-semibold text-fg">
+              <NotFigure why="a way of reading the shares">Where every $100 goes</NotFigure>
+            </h2>
             <span className="hidden text-xs text-muted sm:inline">hover a band for dollars</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {segments.map((s) => (
               <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2 py-0.5 text-xs text-fg-2">
                 <span className="h-2 w-2 rounded-full" style={{ background: s.color }} aria-hidden />
-                <b className="num text-fg">${per100(s.cents)}</b> {s.short}
+                <b className="num text-fg">
+                  {b.gross > 0 ? (
+                    <ProofValue proof={compositeOf("share", [s.proof!, gross], { ratio: s.cents / b.gross })} drawn={{ per: 0.01 }}>
+                      ${per100(s.cents)}
+                    </ProofValue>
+                  ) : (
+                    `${per100(s.cents)}`
+                  )}
+                </b>{" "}
+                {s.short}
               </span>
             ))}
           </div>
@@ -258,7 +298,7 @@ function Hero({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
   );
 }
 
-function Mini({ label, value }: { label: string; value: ReactNode }) {
+function Mini({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <div className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</div>
@@ -286,7 +326,7 @@ function AtFiling({ r }: { r: TaxResponse }) {
         <h2 className="text-[13px] font-semibold text-fg">At filing · {formatDate(r.plan.filingDate)}</h2>
         <span className="text-xs text-muted">
           All returns together:{" "}
-          <EstimateValue year={r.year} k="all.balance" cents={net}>
+          <EstimateValue year={r.year} k="all.balance" cents={net} drawn={{ zeroWithin: 1 }}>
             <BalanceBadge cents={net} />
           </EstimateValue>
         </span>
@@ -313,7 +353,7 @@ function BalanceCard({ year, prefix, name, sub, tax, paid, balance }: { year: nu
         <span className="text-[10px] uppercase tracking-wide text-muted">{sub}</span>
       </div>
       <div className={`num mt-2 text-2xl font-semibold tracking-tight ${tone}`}>
-        <EstimateValue year={year} k={`${prefix}.balance`} cents={balance}>
+        <EstimateValue year={year} k={`${prefix}.balance`} cents={balance} drawn={{ zeroWithin: 1 }}>
           {even ? "About even" : `${refund ? "Refund" : "Owe"} ${usd(Math.abs(balance))}`}
         </EstimateValue>
       </div>
@@ -337,7 +377,7 @@ function BalanceCard({ year, prefix, name, sub, tax, paid, balance }: { year: nu
               {usd(tax)}
             </EstimateValue>
           </span>{" "}
-          tax · {pct(covered, 0)}
+          tax · {tax > 0 ? <ProofValue proof={compositeOf("share", [{ descriptor: { report: "tax-estimate", year, basis: "projected", key: `${prefix}.totalPayments` }, shownCents: paid }, { descriptor: { report: "tax-estimate", year, basis: "projected", key: `${prefix}.totalTax` }, shownCents: tax }], { ratio: covered })}>{pct(covered, 0)}</ProofValue> : pct(covered, 0)}
         </span>
       </div>
     </div>
@@ -348,26 +388,44 @@ function BalanceCard({ year, prefix, name, sub, tax, paid, balance }: { year: nu
 
 function NextThousand({ r }: { r: TaxResponse }) {
   const m = r.marginal;
+  const n = nextThousand(m);
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const part = (id: string): ProofRef => derivedTarget("taxes", derived, "overview", cellKey(r.year, "next", id));
   const parts: ShareSegment[] = [
-    { id: "keep", label: "You keep", cents: Math.round((1 - m.federal - m.ct - m.ny - m.payroll) * 100_000), color: "var(--chart-series-2)" },
-    { id: "federal", label: "Federal", cents: Math.round(m.federal * 100_000), color: "var(--chart-series-0)" },
-    ...(m.ct ? [{ id: "ct", label: "Connecticut", cents: Math.round(m.ct * 100_000), color: "var(--chart-series-1)" }] : []),
-    ...(m.ny ? [{ id: "ny", label: "New York", cents: Math.round(m.ny * 100_000), color: "var(--chart-series-4)" }] : []),
-    ...(m.payroll ? [{ id: "payroll", label: "Payroll", cents: Math.round(m.payroll * 100_000), color: "var(--chart-series-3)" }] : []),
+    { id: "keep", label: "You keep", cents: n.keep, color: "var(--chart-series-2)", proof: part("keep") },
+    { id: "federal", label: "Federal", cents: n.federal, color: "var(--chart-series-0)", proof: part("federal") },
+    ...(m.ct ? [{ id: "ct", label: "Connecticut", cents: n.ct, color: "var(--chart-series-1)", proof: part("ct") }] : []),
+    ...(m.ny ? [{ id: "ny", label: "New York", cents: n.ny, color: "var(--chart-series-4)", proof: part("ny") }] : []),
+    ...(m.payroll ? [{ id: "payroll", label: "Payroll", cents: n.payroll, color: "var(--chart-series-3)", proof: part("payroll") }] : []),
   ];
   const mfj = r.scenarios.mfj;
   const b = taxBuckets(useJointColumn(r));
+  const cell = useCells(r);
   return (
-    <Card title="The next $1,000 of pay" subtitle={`Marginal rate ${pct(m.federal + m.ct + m.ny + m.payroll)}, against ${pct(b.gross > 0 ? b.total / b.gross : 0)} on average. A pre-tax 401(k) or HSA dollar skips the income-tax part.`}>
+    <Card
+      title={<NotFigure why="the probe the rate is worked out on">The next $1,000 of pay</NotFigure>}
+      subtitle={
+        <>
+          Marginal rate {cell("overview", "marginal", "all", pct(m.federal + m.ct + m.ny + m.payroll))}, against{" "}
+          {b.gross > 0 ? <ProofValue proof={compositeOf("share", [estOf(r, "all.totalTaxes", b.total), estOf(r, "all.earnedPlusInvestment", b.gross)], { ratio: b.total / b.gross })}>{pct(b.total / b.gross)}</ProofValue> : pct(0)} on average. A pre-tax 401(k) or HSA dollar skips
+          the income-tax part.
+        </>
+      }
+    >
       <div className="flex items-baseline gap-3">
-        <span className="num text-3xl font-semibold tracking-tight text-fg">{usd(parts[0]!.cents)}</span>
-        <span className="text-sm text-muted">of every extra $1,000 reaches you</span>
+        <span className="num text-3xl font-semibold tracking-tight text-fg">{cell("overview", "next", "keep", usd(parts[0]!.cents))}</span>
+        <span className="text-sm text-muted">
+          <NotFigure why="the probe the rate is worked out on">of every extra $1,000 reaches you</NotFigure>
+        </span>
       </div>
       <div className="mt-3">
         <ShareBar segments={parts} height={14} label="Where the next $1,000 of pay goes" />
         <ShareLegend segments={parts} />
       </div>
-      <p className="mt-2 text-xs text-muted">Federal bracket {pct(mfj.federal.marginalBracket, 0)}{mfj.federal.niit ? " plus the 3.8% investment-income surtax on investment dollars" : ""}.</p>
+      <p className="mt-2 text-xs text-muted">
+        Federal bracket {cell("compare", "bracket", "joint", pct(mfj.federal.marginalBracket, 0))}
+        {mfj.federal.niit ? <NotFigure why="set by tax law"> plus the 3.8% investment-income surtax on investment dollars</NotFigure> : ""}.
+      </p>
     </Card>
   );
 }
@@ -475,7 +533,7 @@ function FiledVerdict({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void })
 }
 
 /** Two totals as bars on one scale (the shorter is the cheaper filing). */
-function VersusBar({ a, b }: { a: { label: string; cents: number }; b: { label: string; cents: number } }) {
+function VersusBar({ a, b }: { a: { label: string; cents: number; proof: ProofRef }; b: { label: string; cents: number; proof: ProofRef } }) {
   const max = Math.max(a.cents, b.cents, 1);
   return (
     <div className="mt-3 grid gap-1.5 text-xs">
@@ -485,7 +543,9 @@ function VersusBar({ a, b }: { a: { label: string; cents: number }; b: { label: 
           <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-3">
             <div className="h-full rounded-full" style={{ width: `${(x.cents / max) * 100}%`, background: x.cents === Math.min(a.cents, b.cents) ? "var(--chart-series-2)" : "var(--chart-neutral)" }} />
           </div>
-          <span className="num w-20 shrink-0 text-right text-fg">{usd(x.cents)}</span>
+          <span className="num w-20 shrink-0 text-right text-fg">
+            <ProofValue proof={x.proof}>{usd(x.cents)}</ProofValue>
+          </span>
         </div>
       ))}
     </div>
@@ -495,6 +555,7 @@ function VersusBar({ a, b }: { a: { label: string; cents: number }; b: { label: 
 // ---------------------------------------------------------------- true-up
 
 function TrueUp({
+  r,
   name,
   sh,
   plan,
@@ -504,6 +565,7 @@ function TrueUp({
   dueDate,
   priorEstimated = false,
 }: {
+  r: TaxResponse;
   name: string;
   sh: SafeHarbor;
   plan: TruePlan;
@@ -514,42 +576,50 @@ function TrueUp({
   priorEstimated?: boolean;
 }) {
   const shortfall = plan.safeHarborShortfall;
+  const which = name === "Federal" ? "federal" : "ct";
+  const cell = useCells(r);
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const proofOf = (row: string, col: string): ProofRef => derivedTarget("taxes", derived, "overview", cellKey(r.year, row, col));
+  const fig = (row: string, text: string, drawn?: FigureProps["drawn"]) => cell("overview", `trueup:${row}`, which, text, drawn);
   return (
     <div className="rounded-md border border-line p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-fg">{name}</h3>
-        <BalanceBadge cents={plan.projectedBalanceDue} />
+        <ProofValue proof={proofOf("trueup:balance", which)} drawn={{ zeroWithin: 1 }}>
+          <BalanceBadge cents={plan.projectedBalanceDue} />
+        </ProofValue>
       </div>
       <NumberTable
         columns={[""]}
         rows={[
-          { label: "Projected tax for the year", values: [usd(sh.currentYearTax)] },
+          { label: "Projected tax for the year", values: [fig("tax", usd(sh.currentYearTax))] },
           {
-            label:
+            label: lawLabel(
               sh.basis === "PRIOR_YEAR"
                 ? `Safe harbor: ${Math.round(sh.priorYearPct * 100)}% of last year's tax${priorEstimated ? " (estimated)" : ""}`
                 : "Safe harbor: 90% of this year's tax",
-            values: [usd(sh.requiredAnnualPayment)],
+            ),
+            values: [fig("required", usd(sh.requiredAnnualPayment))],
             help:
               sh.priorYearTax != null
                 ? `90% of this year: ${usd(sh.currentYearTest)}. ${Math.round(sh.priorYearPct * 100)}% of last year${priorEstimated ? " (this app's estimate — enter the filed figure under Inputs)" : ""}: ${usd(sh.priorYearTest ?? 0)}. The smaller applies.`
                 : undefined,
           },
-          { label: "Withholding through year end", values: [usd(sh.withholding)], indent: true },
-          { label: "Estimated payments", values: [usd(sh.estimatesPaid)], indent: true },
-          { label: "Short of safe harbor", values: [usd(shortfall)], strong: true },
+          { label: "Withholding through year end", values: [fig("withholding", usd(sh.withholding))], indent: true },
+          { label: "Estimated payments", values: [fig("estimates", usd(sh.estimatesPaid))], indent: true },
+          { label: "Short of safe harbor", values: [fig("shortfall", usd(shortfall))], strong: true },
         ]}
       />
       <div className="mt-2 text-sm">
         {shortfall > 0 ? (
           <Callout tone="warn">
-            To avoid an underpayment penalty, add about <b>{usd(plan.perPaycheckForSafeHarbor ?? shortfall)}</b> of extra withholding
-            {remaining > 0 ? ` to each of ${who ? `${who}'s` : "the"} remaining ${remaining} paychecks (${form})` : ""}, or pay <b>{usd(shortfall)}</b>{" "}
+            To avoid an underpayment penalty, add about <b>{plan.perPaycheckForSafeHarbor != null ? fig("per-paycheck", usd(plan.perPaycheckForSafeHarbor)) : fig("shortfall", usd(shortfall))}</b> of extra withholding
+            {remaining > 0 ? ` to each of ${who ? `${who}'s` : "the"} remaining ${remaining} paychecks (${form})` : ""}, or pay <b>{fig("shortfall", usd(shortfall))}</b>{" "}
             as an estimated payment by {formatDate(dueDate)} (an estimated payment may still leave a small penalty for earlier quarters).
           </Callout>
         ) : sh.underDeMinimis && plan.projectedBalanceDue < 100_000 ? (
           <Callout tone="good">
-            No true-up needed: {plan.projectedBalanceDue < 0 ? "you're projected to get a refund" : "you're projected to owe less than $1,000 at filing"}, so no penalty
+            No true-up needed: {plan.projectedBalanceDue < 0 ? "you're projected to get a refund" : <NotFigure why="the penalty's de minimis line, set by tax law">you&apos;re projected to owe less than $1,000 at filing</NotFigure>}, so no penalty
             applies.
           </Callout>
         ) : (
@@ -557,12 +627,12 @@ function TrueUp({
         )}
         {plan.projectedBalanceDue >= 100 && plan.perPaycheckToBreakEven != null && (
           <p className="mt-2 text-xs text-muted">
-            To owe nothing in April instead, withhold about {usd(plan.perPaycheckToBreakEven)} more per paycheck ({usd(plan.projectedBalanceDue)} in total).
+            To owe nothing in April instead, withhold about {fig("break-even", usd(plan.perPaycheckToBreakEven))} more per paycheck ({fig("balance", usd(plan.projectedBalanceDue))} in total).
           </p>
         )}
         {plan.projectedBalanceDue <= -100 && (
           <p className="mt-2 text-xs text-muted">
-            Projected refund of {usd(-plan.projectedBalanceDue)}: you&apos;re over-withholding by about {remaining ? `${usd(-plan.projectedBalanceDue / remaining)} per remaining paycheck` : "that much"}.
+            Projected refund of {fig("balance", usd(-plan.projectedBalanceDue))}: you&apos;re over-withholding by about {remaining ? <>{fig("over", usd(-plan.projectedBalanceDue / remaining))} per remaining paycheck</> : "that much"}.
           </p>
         )}
       </div>
@@ -573,13 +643,11 @@ function TrueUp({
 function PaidToDate({ r }: { r: TaxResponse }) {
   const people = r.people;
   const cols = [...people.map((p) => p.name), "Total"];
-  const row = (label: string, f: (p: TaxResponse["people"][number]) => number, help?: string) => {
-    const vals = people.map(f);
-    return { label, values: [...vals.map(usd), usd(vals.reduce((a, b) => a + b, 0))], help };
-  };
-  const totalOf = (p: TaxResponse["people"][number]) => {
-    const t = p.paidToDate;
-    return t.federal + t.socialSecurity + t.medicare + t.ct + t.ctPfml + t.otherState + t.estimatesFederal + t.estimatesCt;
+  const cell = useCells(r);
+  const row = (label: string, k: (typeof PAID_ROWS)[number] | "total", help?: string) => {
+    const of = (p: TaxResponse["people"][number]) => (k === "total" ? paidTotal(p.paidToDate) : p.paidToDate[k]);
+    const vals = people.map(of);
+    return { label: lawLabel(label), values: [...people.map((p, i) => cell("overview", `paid:${k}`, p.id, usd(vals[i]!))), cell("overview", `paid:${k}`, "total", usd(vals.reduce((a, b) => a + b, 0)))], help };
   };
   const latest = people.flatMap((p) => p.payroll.filter((x) => x.active).map((x) => `${p.name}: ${formatDate(x.latestPayDate)}`));
   return (
@@ -587,15 +655,15 @@ function PaidToDate({ r }: { r: TaxResponse }) {
       <NumberTable
         columns={cols}
         rows={[
-          row("Federal income tax withheld", (p) => p.paidToDate.federal),
-          row("Social Security", (p) => p.paidToDate.socialSecurity),
-          row("Medicare (incl. 0.9% additional)", (p) => p.paidToDate.medicare),
-          row("CT income tax withheld", (p) => p.paidToDate.ct),
-          row("CT Paid Leave (PFML)", (p) => p.paidToDate.ctPfml, "0.5% payroll contribution, not income tax."),
-          row("NY / other state & city withheld", (p) => p.paidToDate.otherState),
-          row("Federal estimated payments", (p) => p.paidToDate.estimatesFederal, "Joint payments are split evenly."),
-          row("CT estimated payments", (p) => p.paidToDate.estimatesCt),
-          { ...row("Total paid", totalOf), strong: true },
+          row("Federal income tax withheld", "federal"),
+          row("Social Security", "socialSecurity"),
+          row("Medicare (incl. 0.9% additional)", "medicare"),
+          row("CT income tax withheld", "ct"),
+          row("CT Paid Leave (PFML)", "ctPfml", "0.5% payroll contribution, not income tax."),
+          row("NY / other state & city withheld", "otherState"),
+          row("Federal estimated payments", "estimatesFederal", "Joint payments are split evenly."),
+          row("CT estimated payments", "estimatesCt"),
+          { ...row("Total paid", "total"), strong: true },
         ]}
       />
       {latest.length > 0 && <p className="mt-2 text-xs text-muted">Latest pay stubs — {latest.join(" · ")}</p>}
@@ -616,12 +684,13 @@ const shortEmployer = (s: string) =>
 
 /** What the forecast stands on: each source's latest document, and what fills in the rest of the year. */
 function ForecastBasis({ r, onGo }: { r: TaxResponse; onGo: (tab: "inputs") => void }) {
+  const cell = useCells(r);
   const pay = r.people.flatMap((p) =>
     p.payroll
       .filter((e) => e.active)
       .map((e) => {
         const ahead = e.remainingPayDates.filter((d) => d > r.today).length;
-        const check = e.regularPaycheck ? usd(e.regularPaycheck.gross) : null;
+        const check = e.regularPaycheck ? cell("overview", `paycheck:${e.employer}`, p.id, usd(e.regularPaycheck.gross)) : null;
         return (
           <li key={`${p.id}-${e.employer}`}>
             <b className="text-fg">{p.name}</b> — {shortEmployer(e.employer)} stubs through {formatDate(e.latestPayDate)}
@@ -634,7 +703,7 @@ function ForecastBasis({ r, onGo }: { r: TaxResponse; onGo: (tab: "inputs") => v
             ) : (
               "; no more paychecks expected this year"
             )}
-            {e.extraBonus ? `, plus a ${usd(e.extraBonus)} bonus` : ""}.
+            {e.extraBonus ? <>, plus a {cell("income", employerRow(p, e, "extra-bonus"), "projected", usd(e.extraBonus))} bonus</> : ""}.
           </li>
         );
       }),
@@ -663,13 +732,18 @@ function ForecastBasis({ r, onGo }: { r: TaxResponse; onGo: (tab: "inputs") => v
 
 /** Each employer's W-2 boxes: to date (latest stub) and projected to year end. */
 function ProjectedW2s({ r }: { r: TaxResponse }) {
-  const cols = r.people.flatMap((p) => p.payroll.map((e) => ({ who: p.name, e })));
+  const cell = useCells(r);
+  const cols = r.people.flatMap((p) => p.payroll.map((e) => ({ who: p.name, p, e })));
   if (!cols.length) return <p className="text-sm text-muted">No pay stubs this year.</p>;
   const proj = r.isCurrentYear;
-  const row = (label: string, f: (w: (typeof cols)[number]["e"]["w2Ytd"]) => number, help?: string) => ({
+  // Each box is the employer's own income cell (lib/tax/incomeExtras), year to date and projected.
+  const row = (label: string, box: string, f: (w: (typeof cols)[number]["e"]["w2Ytd"]) => number, help?: string) => ({
     label,
     help,
-    values: cols.flatMap(({ e }) => (proj ? [usd(f(e.w2Ytd)), usd(f(e.w2Projected))] : [usd(f(e.w2Ytd))])),
+    values: cols.flatMap(({ p, e }) => {
+      const at = (side: "ytd" | "projected", w: (typeof cols)[number]["e"]["w2Ytd"]) => cell("income", employerRow(p, e, box), side, usd(f(w)));
+      return proj ? [at("ytd", e.w2Ytd), at("projected", e.w2Projected)] : [at("ytd", e.w2Ytd)];
+    }),
   });
   return (
     <NumberTable
@@ -678,18 +752,18 @@ function ProjectedW2s({ r }: { r: TaxResponse }) {
         return proj ? [`${name} — to date`, "Year end"] : [name];
       })}
       rows={[
-        row("Box 1 · Wages", (w) => w.box1Wages, "Gross less pre-tax 401(k), HSA and §125 benefits."),
-        row("Box 2 · Federal tax withheld", (w) => w.federalWithheld),
-        row("Box 3 · Social Security wages", (w) => w.box3SsWages),
-        row("Box 5 · Medicare wages", (w) => w.box5MedicareWages),
-        row("Box 12 D · 401(k) deferrals", (w) => w.box12.D),
-        row("Box 16 · CT wages", (w) => w.box16StateWages),
-        row("Box 17 · CT tax withheld", (w) => w.stateWithheld),
+        row("Box 1 · Wages", "box1", (w) => w.box1Wages, "Gross less pre-tax 401(k), HSA and §125 benefits."),
+        row("Box 2 · Federal tax withheld", "box2", (w) => w.federalWithheld),
+        row("Box 3 · Social Security wages", "box3", (w) => w.box3SsWages),
+        row("Box 5 · Medicare wages", "box5", (w) => w.box5MedicareWages),
+        row("Box 12 D · 401(k) deferrals", "box12d", (w) => w.box12.D),
+        row("Box 16 · CT wages", "box16", (w) => w.box16StateWages),
+        row("Box 17 · CT tax withheld", "box17", (w) => w.stateWithheld),
         ...(cols.some(({ e }) => (e.w2Projected.nyWithheld ?? 0) + (e.w2Projected.nycWithheld ?? 0) > 0)
           ? [
-              row("Box 16 · NY wages", (w) => w.nyStateWages ?? 0),
-              row("Box 17 · NY tax withheld", (w) => w.nyWithheld ?? 0),
-              row("Box 19 · NYC tax withheld", (w) => w.nycWithheld ?? 0),
+              row("Box 16 · NY wages", "box16ny", (w) => w.nyStateWages ?? 0),
+              row("Box 17 · NY tax withheld", "box17ny", (w) => w.nyWithheld ?? 0),
+              row("Box 19 · NYC tax withheld", "box19nyc", (w) => w.nycWithheld ?? 0),
             ]
           : []),
       ]}

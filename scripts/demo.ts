@@ -13,6 +13,9 @@
  *   npm run demo -- --dev     next dev, in its own build folder (.next-dev-demo)
  *   npm run demo -- --build-only   rebuild data/demo and exit
  *   npm run demo -- --sweep        rebuild data/demo and run the proof sweep on it (CI): exits 1 on any problem
+ *   npm run demo -- --render-audit start the demo on the production build, render every page in a
+ *                                  headless browser and hold what it draws to the sweep (CI, SSOT F6;
+ *                                  scripts/render-audit.ts): exits 1 on any problem. Takes --sweep too.
  * DEMO_PORT changes the port (default 3001).
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -48,10 +51,18 @@ const inherited = Object.fromEntries(
   Object.entries(process.env).filter(([k]) => !k.startsWith("__NEXT") && !["NEXT_RUNTIME", "NEXT_PHASE", "NODE_ENV", "PORT"].includes(k)),
 );
 
+/**
+ * The demo's "today": its made-up statements run through June 2026, so it always reads as
+ * mid-July 2026, figure for figure, whatever the date (lib/dates/isoDate.ts localToday). The
+ * render audit pins the browser's clock to the same day. DEMO_TODAY moves it.
+ */
+const DEMO_TODAY = process.env.DEMO_TODAY?.trim() || "2026-07-15";
+
 const env: Record<string, string | undefined> = {
   ...inherited,
   ...Object.fromEntries(REAL_FILES.map((k) => [k, ""])),
   APP_PROFILE: "demo",
+  APP_TODAY: DEMO_TODAY,
   DATA_DIR: DEMO_DIR,
   DATABASE_URL: `file:${DB.replace(/\\/g, "/")}`,
   BACKUP_AUTO: "0",
@@ -78,11 +89,39 @@ function buildDir(): string {
   return existsSync(path.join(ROOT, ".next-app", "BUILD_ID")) ? ".next-app" : ".next";
 }
 
+/** Starts the demo's Next server on the production build, waits until it answers, runs the render audit on it, and stops it. */
+async function renderAudit() {
+  const dir = buildDir();
+  if (!existsSync(path.join(ROOT, dir, "BUILD_ID"))) throw new Error(`No production build in ${dir}: run npm run build first.`);
+  const base = `http://127.0.0.1:${PORT}`;
+  const next = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
+  const server = spawn(process.execPath, [next, "start", "-H", "127.0.0.1", "-p", PORT], {
+    cwd: ROOT,
+    env: { ...env, NEXT_BUILD_DIR: dir } as Record<string, string | undefined> as NodeJS.ProcessEnv,
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  try {
+    const until = Date.now() + 60_000;
+    for (;;) {
+      if (server.exitCode != null) throw new Error(`The demo server stopped (${server.exitCode}).`);
+      if (await fetch(`${base}/api/app-password`).then((r) => r.ok, () => false)) break;
+      if (Date.now() > until) throw new Error(`The demo server didn't answer on ${base} within a minute.`);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "render-audit.ts"), base], "The demo's render audit");
+  } finally {
+    server.kill();
+  }
+}
+
 try {
   buildDemoData();
   if (process.argv.includes("--sweep")) {
     node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "proof-sweep.ts")], "The demo's proof sweep");
-  } else if (!process.argv.includes("--build-only")) {
+  }
+  if (process.argv.includes("--render-audit")) {
+    await renderAudit();
+  } else if (!process.argv.includes("--build-only") && !process.argv.includes("--sweep")) {
     const dir = buildDir();
     if (!dev && !existsSync(path.join(ROOT, dir, "BUILD_ID"))) throw new Error(`No production build in ${dir}: run npm run build first, or use npm run demo -- --dev.`);
     console.log(`\nDemo on http://127.0.0.1:${PORT} (data: ${path.relative(ROOT, DEMO_DIR)})`);

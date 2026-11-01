@@ -56,6 +56,8 @@ export type ScheduledBonus = {
   window?: string;
   /** PAID: the stub's pay date. */
   date?: string;
+  /** ESTIMATE on a letter's pattern: the share of the award this payment is (its label says it as a percent). */
+  share?: number;
 };
 
 export type SchedulePerson = {
@@ -112,7 +114,7 @@ export function bonusSchedule(x: {
         const key = monthKey(year + 1, part.offset);
         if (key <= x.startKey) continue;
         const gross = Math.round(award * part.share);
-        const base = { key, personId: p.personId, personName: p.name, source: "ESTIMATE" as const, gross, awardYear: year };
+        const base = { key, personId: p.personId, personName: p.name, source: "ESTIMATE" as const, gross, awardYear: year, ...(pattern ? { share: part.share } : {}) };
         const label = `${year} award (estimate) · ${part.label}`;
         if (part.plan) out.push({ ...base, counted: false, label, why: "into the deferred comp plan, which has no statements, so it isn't in net worth" });
         else if (x.estimates === "NONE") continue;

@@ -34,6 +34,25 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
     const w = car.warranty;
     const add = (figure: string, describes: string, value: DerivedFigure["value"], lines: DerivedFigure["lines"] = [], note?: string) => out.push({ figure, key, describes: `${car.name}: ${describes}`, value, lines, ...(note ? { note } : {}) });
     const readings = [ln(`Odometer at purchase`, num(o.purchase) ?? t("—"), undefined, { source: "proven" }), ln(`Odometer, ${o.asOf ?? "latest"}`, num(o.current) ?? t("—"), undefined, { source: "proven" })];
+    // What the page says beside its headline figures: the statements' part of the cost, a day of it, the planned wear a mile, the market's trend.
+    add("statement-cents", "costs from statements, to date", c(tt.statementCents), [ln("Every car charge on a statement, to date", c(tt.statementCents), undefined, { source: "proven" })]);
+    add("per-day", "owning it, a day (all-in)", money(tt.perDay), [ln("All-in to date ÷ days owned", money(tt.perDay) ?? t("—"))]);
+    add("planned-per-mile", "planned wear a mile", num(d.plannedPerMile), [ln("All-in less the resale you expect, ÷ the miles to the selling odometer", num(d.plannedPerMile) ?? t("—"), undefined, { source: "assumption" })]);
+    add("market-per-year", "the market's trend, a year", money(d.marketPerYear), [ln("The trend in your value checks, a year", money(d.marketPerYear) ?? t("—"))]);
+    add("insurance-expected", "the insurance premium expected at renewal", money(car.insurance.expectedCents), [ln("The latest premium, renewed", money(car.insurance.expectedCents) ?? t("—"))]);
+    add("insurance-monthly", "insurance, a month", money(car.insurance.monthlyCents), [ln("The latest premium ÷ its months", money(car.insurance.monthlyCents) ?? t("—"))]);
+    car.insurance.premiums.forEach((x, i) => {
+      const k = `${key}|${i}`;
+      out.push({ figure: "premium", key: k, describes: `${car.name}: the premium paid ${x.date}`, value: c(x.cents), lines: [ln("The premium", c(x.cents), undefined, { source: x.source === "STATEMENT" ? "proven" : "assumption" })] });
+      out.push({ figure: "premium-monthly", key: k, describes: `${car.name}: the premium paid ${x.date}, a month`, value: c(x.monthlyCents), lines: [ln("The premium", c(x.cents)), ln(`÷ ${x.months} months`, t(String(x.months)), "÷"), ln("A month", c(x.monthlyCents), "=")] });
+      if (x.changeShare != null) out.push({ figure: "premium-change", key: k, describes: `${car.name}: the premium paid ${x.date} against the one before`, value: r(x.changeShare), lines: [ln("Change from the premium before", r(x.changeShare))] });
+    });
+    f.fills.forEach((x) => {
+      const k = `${key}|${x.date}|${x.odometer}`;
+      if (x.cents != null) out.push({ figure: "fill", key: k, describes: `${car.name}: the fill-up ${x.date}, as the statement charged it`, value: c(x.cents), lines: [ln("The charge", c(x.cents), undefined, { source: "proven" })] });
+      if (x.pricePerGallon != null) out.push({ figure: "fill-price", key: k, describes: `${car.name}: the fill-up ${x.date}, price a gallon`, value: c(x.pricePerGallon), lines: [ln("Charge ÷ the gallons you logged", c(x.pricePerGallon))] });
+      if (x.costPerMile != null) out.push({ figure: "fill-per-mile", key: k, describes: `${car.name}: the fill-up ${x.date}, fuel a mile`, value: r(x.costPerMile), lines: [ln("Charge ÷ miles since the fill before", r(x.costPerMile))] });
+    });
     add("miles-driven", "miles driven since purchase", r(o.driven), [...readings, ln("Miles driven", r(o.driven), "=")], "From the odometer readings in the log.");
     for (const [year, miles] of milesByYear(car))
       out.push({ figure: "miles-year", key: yearKey(key, year), describes: `${car.name}: miles driven in ${year}`, value: r(miles), lines: [ln(`Miles in ${year}'s months, from the odometer readings`, r(miles))] });
@@ -80,10 +99,21 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
       add("warranty-miles-left", "warranty miles left", num(w.milesLeft), [ln("Warranty miles", r(w.milesLimit), undefined, { source: "assumption" }), ln("Odometer", num(o.current) ?? t("—"), "−"), ln("Miles left", num(w.milesLeft) ?? t("—"), "=")]);
       add("warranty-days-left", "warranty days left", num(w.daysLeft), [ln("Expires", t(w.expiresOn ?? "—"), undefined, { source: "assumption" }), ln("Days left", num(w.daysLeft) ?? t("—"))]);
       add("warranty-break-even", "miles a day that use the warranty up just in time", num(w.breakEvenPerDay), [ln("Miles left ÷ days left", num(w.breakEvenPerDay) ?? t("—"))]);
+      // How much of the warranty is used: of its miles, and of its time.
+      if (w.milesLimit && o.current != null) add("warranty-miles-used", "share of the warranty's miles used", r(Math.min(1, o.current / w.milesLimit)), [ln("Odometer", r(o.current), undefined, { source: "proven" }), ln("÷ warranty miles", r(w.milesLimit), "÷", { source: "assumption" }), ln("Used", r(Math.min(1, o.current / w.milesLimit)), "=")]);
+      if (w.expiresOn && w.startsOn) {
+        const used = Math.min(1, Math.max(0, (Date.parse(car.today) - Date.parse(w.startsOn)) / (Date.parse(w.expiresOn) - Date.parse(w.startsOn))));
+        add("warranty-time-used", "share of the warranty's time used", r(used), [ln("Days since it started ÷ days it runs", r(used))]);
+      }
       add("warranty-ends-by", "what runs out first", w.endsBy ? t(w.endsBy === "TIME" ? "by time" : "by miles") : null, [ln("At your recent pace, ends", t(w.endsOn ?? "—"))]);
     }
   }
   const a = g.statements.audit;
+  // The garage's statements against the log: what the statements say for matched entries, and the car payments (the purchase).
+  out.push(
+    { figure: "statement-matched", describes: "What the statements say for the log entries matched to them", value: c(a.matchedStatementCents), lines: [ln("Matched statement rows", c(a.matchedStatementCents), undefined, { source: "proven" })] },
+    { figure: "car-payments", describes: "Car payments on statements (the purchase)", value: c(a.paymentCents), lines: [ln("Car payment rows", c(a.paymentCents), undefined, { source: "proven" })] },
+  );
   const gx = (figure: string, describes: string, value: DerivedFigure["value"], lines: DerivedFigure["lines"]) => out.push({ figure, describes, value, lines });
   gx("statement-costs", "car costs from statements", c(a.rowsCents - a.paymentCents), [ln("Car rows on statements", c(a.rowsCents), undefined, { source: "proven" }), ln("Car payments (the purchase)", c(a.paymentCents), "−"), ln("Car costs from statements", c(a.rowsCents - a.paymentCents), "=")]);
   gx("log-matched", "log entries matched to a statement charge", t(`${a.matched + a.installments} of ${a.entries - a.noCost}`), [ln("Matched", t(String(a.matched))), ln("Paid in installments", t(String(a.installments))), ln("Log entries with a cost", t(String(a.entries - a.noCost)))]);

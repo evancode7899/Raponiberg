@@ -1,7 +1,8 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { windowKey } from "@/lib/book/derived/cashFlow";
+import { MAP_TOP, merchantKeyOf, windowKey } from "@/lib/book/derived/cashFlow";
+import { sumOf } from "@/components/ui/proof/context";
 import { Card, inputCls, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
@@ -49,12 +50,13 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
     </th>
   );
 
+  const mid = all[Math.floor(all.length / 2)];
   return (
     <>
       <StatGrid cols={4}>
         <StatCell proof={ctx.dp("merchants", windowKey(slice.months))} label="Merchants" value={all.length.toLocaleString("en-US")} sub={`${visits.toLocaleString("en-US")} charges in ${slice.label}`} />
-        <StatCell proof={ctx.dp("top10-share", windowKey(slice.months))} label="Top 10 merchants" value={t.spending > 0 ? formatPercentRatio(top10 / t.spending, 0) : "—"} sub={`of spending · ${usd0(top10)}`} />
-        <StatCell proof={ctx.dp("avg-charge", windowKey(slice.months))} label="Average charge" value={usd0(visits ? sum(all, (m) => m.cents) / visits : 0)} sub={`half of merchants got under ${usd0(all[Math.floor(all.length / 2)]?.cents ?? 0)} in total`} />
+        <StatCell proof={ctx.dp("top10-share", windowKey(slice.months))} label="Top 10 merchants" value={t.spending > 0 ? formatPercentRatio(top10 / t.spending, 0) : "—"} sub={<>of spending · <ProofValue proof={sumOf(all.slice(0, 10).map((m) => ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })), top10)}>{usd0(top10)}</ProofValue></>} />
+        <StatCell proof={ctx.dp("avg-charge", windowKey(slice.months))} label="Average charge" value={usd0(visits ? sum(all, (m) => m.cents) / visits : 0)} sub={mid ? <>half of merchants got under <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: mid.key, shownCents: mid.cents })}>{usd0(mid.cents)}</ProofValue> in total</> : undefined} />
         <StatCell proof={ctx.dp("charges-per-month", windowKey(slice.months))} label="Charges / month" value={Math.round(visits / Math.max(1, t.n)).toLocaleString("en-US")} sub={`${(visits / Math.max(1, t.n) / 30).toFixed(1)} a day`} />
       </StatGrid>
 
@@ -67,7 +69,7 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
         actions={
           <>
             <input className={`${inputCls} !py-1 !text-xs w-48`} placeholder="Search merchants…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search merchants" />
-            <select className={selectCls} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
+            <select data-audit-view="" className={selectCls} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
               <option value="">All categories</option>
               {SPEND_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -90,13 +92,15 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
                 {head("count", "Charges")}
                 {head("avg", "Avg charge")}
                 {head("months", "Months")}
+                <th className={table.th}>Pattern</th>
                 <th className={table.thR}>Last</th>
               </tr>
             </thead>
             <tbody>
-              {list.slice(0, limit).map((m) => (
+              {/* The render audit opens the first few merchants' drawers: every row's figures are in the table. */}
+              {list.slice(0, limit).map((m, i) => (
                 <tr key={m.key} className={`${table.trHover} cursor-pointer`} onClick={() => ctx.open({ kind: "merchant", key: m.key, name: m.name, lane: "EXPENSE" })}>
-                  <td className={`${table.td} max-w-[16rem] truncate font-medium`} title={m.key}>
+                  <td className={`${table.td} max-w-[16rem] truncate font-medium`} title={m.key} {...(i < 3 ? { "data-audit-drill": m.name } : {})}>
                     {m.name}
                   </td>
                   <td className={`${table.td} whitespace-nowrap text-xs text-fg-2`}>
@@ -116,10 +120,17 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
                       <span className="block h-full rounded-sm" style={{ width: `${(m.cents / max) * 100}%`, background: categoryColor(chart, m.category) }} />
                     </span>
                   </td>
-                  <td className={table.tdR}>{m.count}</td>
-                  <td className={`${table.tdR} text-muted`}>{usd0(m.cents / m.count)}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={ctx.dp("merchant-count", merchantKeyOf(slice.months, "EXPENSE", m.key))}>{m.count}</ProofValue>
+                  </td>
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={ctx.dp("merchant-avg", merchantKeyOf(slice.months, "EXPENSE", m.key))}>{usd0(m.cents / m.count)}</ProofValue>
+                  </td>
                   <td className={`${table.tdR} text-muted`}>
                     {m.months}/{t.n}
+                  </td>
+                  <td className={`${table.td} text-xs text-muted`}>
+                    <ProofValue proof={ctx.dp("merchant-pattern", merchantKeyOf(slice.months, "EXPENSE", m.key))}>{ctx.words("merchant-pattern", merchantKeyOf(slice.months, "EXPENSE", m.key))}</ProofValue>
                   </td>
                   <td className={`${table.tdR} whitespace-nowrap text-xs text-muted`}>{m.lastMonth}</td>
                 </tr>
@@ -128,7 +139,7 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
           </table>
           {list.length === 0 && <p className="py-4 text-sm text-muted">No merchant matches.</p>}
           {list.length > limit && (
-            <button type="button" className="mt-2 text-xs font-medium text-accent hover:underline" onClick={() => setLimit((l) => l + 100)}>
+            <button type="button" className="mt-2 text-xs font-medium text-accent hover:underline" onClick={() => setLimit((l) => l + 100)} data-audit-more="">
               Show more ({list.length - limit} left)
             </button>
           )}
@@ -143,8 +154,8 @@ type Tile = { name: string; key: string; size: number; color: string; category: 
 /** The biggest merchants as tiles sized by spending and colored by category. */
 function MerchantMap({ ctx, merchants, total }: { ctx: Ctx; merchants: MerchantTotal[]; total: number }) {
   const { chart } = ctx;
-  const top = merchants.slice(0, 40);
-  const rest = sum(merchants.slice(40), (m) => m.cents);
+  const top = merchants.slice(0, MAP_TOP);
+  const rest = sum(merchants.slice(MAP_TOP), (m) => m.cents);
   const data: Tile[] = top.map((m) => ({ name: m.name, key: m.key, size: m.cents, color: categoryColor(chart, m.category), category: m.category }));
   const Content = (p: TreemapNode) => {
     const t = p as unknown as TreemapNode & Tile;
@@ -170,7 +181,17 @@ function MerchantMap({ ctx, merchants, total }: { ctx: Ctx; merchants: MerchantT
   return (
     <Card
       title="Where it goes"
-      subtitle={`The ${top.length} biggest merchants, sized by spending and colored by category — ${total > 0 ? formatPercentRatio(sum(top, (m) => m.cents) / total, 0) : "—"} of all spending${rest > 0 ? `; ${usd0(rest)} more across ${merchants.length - top.length} others` : ""}. Click a tile for its charges.`}
+      subtitle={
+        <>
+          The {top.length} biggest merchants, sized by spending and colored by category — {total > 0 ? <ProofValue proof={ctx.dp("map-share", windowKey(ctx.slice.months))}>{formatPercentRatio(sum(top, (m) => m.cents) / total, 0)}</ProofValue> : "—"} of all spending
+          {rest > 0 ? (
+            <>
+              ; <ProofValue proof={ctx.dp("map-rest", windowKey(ctx.slice.months))}>{usd0(rest)}</ProofValue> more across {merchants.length - top.length} others
+            </>
+          ) : null}
+          . Click a tile for its charges.
+        </>
+      }
     >
       <div className="h-[340px] w-full min-w-0">
         <RechartsResponsive>
@@ -236,7 +257,12 @@ function NewAndQuiet({ ctx }: { ctx: Ctx }) {
         title={`New in ${slice.label}`}
         subtitle={
           earlier.length >= 6
-            ? `${fresh.length} merchant${fresh.length === 1 ? "" : "s"} never charged in the ${earlier.length} proven months before — ${usd0(sum(fresh, (m) => m.cents))} in all. New habits and subscriptions start here.`
+            ? (
+                <>
+                  {fresh.length} merchant{fresh.length === 1 ? "" : "s"} never charged in the {earlier.length} proven months before —{" "}
+                  <ProofValue proof={sumOf(fresh.map((m) => ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })), sum(fresh, (m) => m.cents))}>{usd0(sum(fresh, (m) => m.cents))}</ProofValue> in all. New habits and subscriptions start here.
+                </>
+              )
             : "Needs six proven months before the range starts. Pick a shorter range."
         }
       >

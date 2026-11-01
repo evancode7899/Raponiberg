@@ -13,7 +13,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ForecastInputs } from "./ForecastInputs";
 import { BonusPayments, ForecastLedger } from "./ForecastLedger";
-import { monthLabel, short } from "./forecastUi";
+import { monthLabel, short, type Dp } from "./forecastUi";
+import { NotFigure } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { forecastDerived } from "@/lib/book/derived/forecast";
+import { derivedTarget } from "@/lib/book/derived/types";
+import { unswept } from "@/lib/book/proof/clearance";
 
 const keyLabel = (key: string) => monthLabel(Number(key.slice(0, 4)), Number(key.slice(5, 7)));
 
@@ -72,6 +77,9 @@ function Body({ data, s, a, setA, onSave }: { data: ForecastData; s: OutlookSeed
     setMsg(null);
   };
   const f = useMemo(() => buildForecast({ seeds: s, bonusFacts: data.bonusFacts }, a), [s, data.bonusFacts, a]);
+  // The forecast's derived figures (book/derived/forecast.ts) on the saved drivers; unsaved edits make figures no sweep has seen.
+  const derived = useMemo(() => forecastDerived(f, s), [f, s]);
+  const dp: Dp = (figure, key) => (dirty ? unswept("the drivers have unsaved edits: save them to have these proven") : derivedTarget("forecast", derived, figure, key));
 
   const doSave = async () => {
     setBusy(true);
@@ -124,19 +132,19 @@ function Body({ data, s, a, setA, onSave }: { data: ForecastData; s: OutlookSeed
 
   return (
     <div className="grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
-      <ForecastInputs s={s} a={a} set={set} f={f} header={header} />
+      <ForecastInputs s={s} a={a} set={set} f={f} header={header} dp={dp} />
       <div className="flex min-w-0 flex-col gap-3">
         {data.lettersError && <Callout tone="warn" title="Bonus letters couldn't be read">{data.lettersError} The forecast uses stubs and estimates only until it&apos;s fixed.</Callout>}
-        <Feeds f={f} s={s} dirty={dirty} />
+        <Feeds f={f} s={s} dirty={dirty} dp={dp} />
         <ForecastLedger f={f} r={data.profile} provable={!dirty} />
-        <BonusPayments f={f} throughYear={s.currentYear + 2} />
+        <BonusPayments f={f} throughYear={s.currentYear + 2} dp={dp} />
       </div>
     </div>
   );
 }
 
 /** What each page that looks ahead takes from this forecast, on the drivers shown. */
-function Feeds({ f, s, dirty }: { f: Forecast; s: OutlookSeeds; dirty: boolean }) {
+function Feeds({ f, s, dirty, dp }: { f: Forecast; s: OutlookSeeds; dirty: boolean; dp: Dp }) {
   const fi = useMemo(() => fiYear(f.plan), [f.plan]);
   const cy = s.currentYear;
   const { bonusToCome: bonusLeft, liquidPerMonth } = forecastFeeds(f, cy);
@@ -152,24 +160,24 @@ function Feeds({ f, s, dirty }: { f: Forecast; s: OutlookSeeds; dirty: boolean }
       </div>
       <div className="grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-5 xl:divide-x">
         <Feed href="/fire" page="FIRE · FI year" value={fi ?? "60+ yrs"} sub={`${fi && f.plan.birthYear != null ? `age ${fi - f.plan.birthYear} · ` : ""}this path + withdrawal rules`} />
-        <Feed href="/taxes" page={`Taxes · bonus to come ${cy}`} value={short(bonusLeft)} sub={basis} />
-        <Feed href="/home-budget" page={`Home budget · liquid Dec ${cy + 1}`} value={short(balancesAt(f, `${cy + 1}-12`).liquid)} sub="cash for a buy in any month" />
-        <Feed href="/goals" page="Goals · into liquid / mo" value={short(liquidPerMonth)} sub="average change, next 12 months" negative={liquidPerMonth < 0} />
+        <Feed href="/taxes" page={`Taxes · bonus to come ${cy}`} value={<ProofValue proof={dp("feed-bonus")}>{short(bonusLeft)}</ProofValue>} sub={basis} />
+        <Feed href="/home-budget" page={`Home budget · liquid Dec ${cy + 1}`} value={<ProofValue proof={dp("feed-liquid")}>{short(balancesAt(f, `${cy + 1}-12`).liquid)}</ProofValue>} sub="cash for a buy in any month" />
+        <Feed href="/goals" page="Goals · into liquid / mo" value={<ProofValue proof={dp("feed-liquid-monthly")}>{short(liquidPerMonth)}</ProofValue>} sub="average change, next 12 months" negative={liquidPerMonth < 0} />
         <Feed
           href="/fire"
-          page={next[0] ? `Net worth ${next[0].label}` : "Milestones"}
+          page={next[0] ? <NotFigure why="a round milestone mark">{`Net worth ${next[0].label}`}</NotFigure> : "Milestones"}
           value={next[0] ? keyLabel(next[0].key!) : "—"}
-          sub={next[0] ? [ageAt(next[0].key!), next[1] && `${next[1].label} ${keyLabel(next[1].key!)}`].filter(Boolean).join(" · ") : "none ahead"}
+          sub={next[0] ? <NotFigure why="round milestone marks">{[ageAt(next[0].key!), next[1] && `${next[1].label} ${keyLabel(next[1].key!)}`].filter(Boolean).join(" · ")}</NotFigure> : "none ahead"}
         />
       </div>
     </section>
   );
 }
 
-function Feed({ href, page, value, sub, negative }: { href: string; page: string; value: ReactNode; sub: ReactNode; negative?: boolean }) {
+function Feed({ href, page, value, sub, negative }: { href: string; page: ReactNode; value: ReactNode; sub: ReactNode; negative?: boolean }) {
   return (
     <Link href={href} className="group min-w-0 px-3 py-1.5 hover:bg-surface-2">
-      <div className="truncate text-[11px] text-muted group-hover:text-accent" title={page}>{page} →</div>
+      <div className="truncate text-[11px] text-muted group-hover:text-accent" title={typeof page === "string" ? page : undefined}>{page} →</div>
       <div className={`num truncate text-sm font-semibold ${negative ? "text-neg" : "text-fg"}`}>{value}</div>
       <div className="truncate text-[11px] text-muted" title={typeof sub === "string" ? sub : undefined}>
         {sub}

@@ -5,11 +5,16 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ForecastDescriptor, LedgerLine } from "@/lib/book/proof/forecastProof";
 import type { ScheduledBonus } from "@/lib/forecast/bonusSchedule";
 import type { Forecast } from "@/lib/forecast/forecast";
-import { monthPeriods, yearPeriods, type Flows, type Period } from "@/lib/forecast/periods";
+import { ledgerColumns, ledgerDraws, ledgerYears, type LedgerSpan } from "@/lib/forecast/ledger";
+import type { Flows, Period } from "@/lib/forecast/periods";
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import { useMemo, useState } from "react";
 import { monthLabel, pct, usd } from "./forecastUi";
 import { unswept } from "@/lib/book/proof/clearance";
+import { NotFigure } from "@/components/ui/kit";
+import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
+import { scheduleKeys } from "@/lib/book/derived/forecast";
+import type { Dp } from "./forecastUi";
 
 type Row = {
   /** The cell's proof line (forecastProof.ts LedgerLine). */
@@ -20,8 +25,6 @@ type Row = {
   /** Shown negated (outflows). */
   out?: boolean;
   kind?: "sum" | "total" | "sub";
-  /** Hidden when zero in every column shown. */
-  optional?: boolean;
   /** Red when negative. */
   warnNegative?: boolean;
 };
@@ -29,7 +32,7 @@ type Row = {
 const ROWS: Row[] = [
   { line: "salary", label: "Base salary", help: "Regular pay before tax. Actual: pay stubs. Forecast: the drivers' base salary, raised each January.", get: (x) => x.salary },
   { line: "bonus", label: "Bonuses", help: "Gross. Actual: pay stubs. Forecast: the payments listed below (paid, on a letter, or estimated). Hover a cell for its payments.", get: (x) => x.bonus },
-  { line: "otherIncome", label: "Interest & other", help: "Actual only. The forecast counts interest and dividends in growth.", get: (x) => x.otherIncome, optional: true },
+  { line: "otherIncome", label: "Interest & other", help: "Actual only. The forecast counts interest and dividends in growth.", get: (x) => x.otherIncome },
   {
     line: "taxes",
     label: "Taxes & deductions",
@@ -44,11 +47,10 @@ const ROWS: Row[] = [
     help: "Actual only: a partner's net pay that reached only their own accounts (before the merge) — theirs, not the household's.",
     get: (x) => x.partnerKept,
     out: true,
-    optional: true,
   },
   { line: "living", label: "Living cost", help: "Everything spent except tagged one-offs.", get: (x) => x.living, out: true },
-  { line: "bonusSpent", label: "Bonus spent", help: "The part of bonuses kept after tax that isn't saved (the Bonus saved driver).", get: (x) => x.bonusSpent, out: true, optional: true },
-  { line: "oneOffs", label: "One-offs", help: "Actual: tagged one-off expenses. Forecast: planned one-offs.", get: (x) => x.oneOffs, out: true, optional: true },
+  { line: "bonusSpent", label: "Bonus spent", help: "The part of bonuses kept after tax that isn't saved (the Bonus saved driver).", get: (x) => x.bonusSpent, out: true },
+  { line: "oneOffs", label: "One-offs", help: "Actual: tagged one-off expenses. Forecast: planned one-offs.", get: (x) => x.oneOffs, out: true },
   { line: "saved", label: "Saved incl. retirement", help: "Income − taxes & deductions + employer money − spending (as Annual's; Cash flow's saved from take-home leaves out deferrals and employer money).", get: (x) => x.saved, kind: "sum" },
   { line: "toRetirement", label: "to retirement", help: "Your 401(k)/HSA deferrals + employer money.", get: (x) => x.toRetirement, kind: "sub" },
   {
@@ -82,21 +84,18 @@ const inPeriod = (p: Period, key: string) => key >= p.from && key <= p.through.s
  * walks from income to saved to the change in net worth.
  */
 export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfileReport; provable: boolean }) {
-  const lastYear = f.months.at(-1)?.year ?? f.plan.start.year;
-  const [view, setView] = usePersistentState<{ span: "5" | "10" | "all"; units: "k" | "usd" }>("pf-forecast-ledger", () => ({ span: "5", units: "k" }));
+  const { first: firstYear, last: lastYear } = ledgerYears(f);
+  const [view, setView] = usePersistentState<{ span: LedgerSpan; units: "k" | "usd" }>("pf-forecast-ledger", () => ({ span: "5", units: "k" }));
   const { span, units } = view;
   const money = (c: number) => (units === "usd" ? usd(c) : thousands(c));
   const [monthsOf, setMonthsOf] = useState<number | null>(null);
-  const firstYear = f.months[0]?.year ?? f.plan.start.year;
-  const through = span === "all" ? lastYear : r.currentYear + Number(span);
-  const periods = useMemo(
-    () => (monthsOf != null ? monthPeriods(f, r, monthsOf) : yearPeriods(f, r, { actualYears: 1, throughYear: through })),
-    [f, r, monthsOf, through],
-  );
+  // The views and the lines each draws are the proof sweep's too (forecast/ledger.ts): it clears exactly these cells.
+  const periods = useMemo(() => ledgerColumns(f, r, monthsOf != null ? { monthsOf } : { span }), [f, r, monthsOf, span]);
   const counted = f.schedule.filter((b) => b.counted);
-  const rows = ROWS.filter((row) => !row.optional || periods.some((p) => (row.get(p.flows) ?? 0) !== 0));
+  const rows = ROWS.filter((row) => ledgerDraws(row.line, periods));
   const nearTerm = (p: Period) => monthsOf == null && p.kind === "FORECAST" && p.nearTerm && f.assumptions.bonus.estimates === "AFTER_NEAR_TERM";
   const drill = (p: Period) => (p.kind !== "ACTUAL" && monthsOf == null ? () => setMonthsOf(p.year) : undefined);
+  const firstDrill = periods.find((p) => drill(p))?.id;
 
   return (
     <Card
@@ -109,19 +108,19 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
       actions={
         monthsOf != null ? (
           <span className="flex items-center gap-1">
-            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf <= firstYear} onClick={() => setMonthsOf(monthsOf - 1)} aria-label="Previous year">
+            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf <= firstYear} onClick={() => setMonthsOf(monthsOf - 1)} aria-label="Previous year" data-audit-step="">
               ‹
             </button>
             <span className="num text-xs font-medium text-fg">{monthsOf}</span>
-            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf >= lastYear} onClick={() => setMonthsOf(monthsOf + 1)} aria-label="Next year">
+            <button type="button" className="rounded px-1.5 text-muted hover:text-fg disabled:opacity-30" disabled={monthsOf >= lastYear} onClick={() => setMonthsOf(monthsOf + 1)} aria-label="Next year" data-audit-step="">
               ›
             </button>
-            <button type="button" className="ml-1 rounded-md border border-line-strong px-2 py-0.5 text-[11px] text-fg-2 hover:bg-surface-2" onClick={() => setMonthsOf(null)}>
+            <button type="button" className="ml-1 rounded-md border border-line-strong px-2 py-0.5 text-[11px] text-fg-2 hover:bg-surface-2" onClick={() => setMonthsOf(null)} data-audit-back="">
               Years
             </button>
           </span>
         ) : (
-          <Segmented
+          <Segmented view
             size="xs"
             ariaLabel="Years shown"
             value={span}
@@ -140,7 +139,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
           <thead>
             <tr className="border-b border-line-strong">
               <th className="sticky left-0 z-[1] bg-surface px-2 py-1 text-left align-bottom font-normal">
-                <Segmented
+                <Segmented view
                   size="xs"
                   ariaLabel="Units"
                   value={units}
@@ -156,7 +155,13 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                 return (
                   <th key={p.id} className={`whitespace-nowrap px-1.5 py-1 text-right align-bottom ${colCls(p)}`} title={p.note ?? (onClick ? `Show ${p.year} month by month` : undefined)}>
                     {onClick ? (
-                      <button type="button" className="num font-semibold text-fg hover:text-accent hover:underline" onClick={onClick}>
+                      <button
+                        type="button"
+                        className="num font-semibold text-fg hover:text-accent hover:underline"
+                        onClick={onClick}
+                        // One way into the month views is enough for the render audit: it steps through every year from there.
+                        {...(p.id === firstDrill ? { "data-audit-drill": "months" } : {})}
+                      >
                         {p.label}
                       </button>
                     ) : (
@@ -198,7 +203,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                       {shown == null ? (
                         <span className="text-faint">—</span>
                       ) : (
-                        <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : unswept("a forecast line with no proof")}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
+                        <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : unswept("a forecast line with no proof")} drawn={units === "usd" ? undefined : { per: 1000 }}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
                       )}
                     </td>
                   );
@@ -214,7 +219,31 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                 const gross = x.salary == null || x.bonus == null || x.otherIncome == null ? null : x.salary + x.bonus + x.otherIncome;
                 return (
                   <td key={p.id} className={`num px-1.5 py-[3px] text-right text-muted ${colCls(p)}`}>
-                    {gross && x.saved != null ? pct(x.saved / gross, 0) : "—"}
+                    {gross && x.saved != null ? (
+                      // Saved ÷ (salary + bonuses + other income): a share of the column's own cells.
+                      <ProofValue
+                        proof={
+                          provable
+                            ? compositeOf(
+                                "share",
+                                [
+                                  { descriptor: cellProof(p, "saved"), shownCents: x.saved },
+                                  // The income lines this column has (a zero adds nothing, and may be a cell no view draws).
+                                  sumOf(
+                                    (["salary", "bonus", "otherIncome"] as const).filter((l) => ledgerDraws(l, periods) && x[l]).map((l) => ({ descriptor: cellProof(p, l), shownCents: x[l]! })),
+                                    gross,
+                                  ),
+                                ],
+                                { ratio: x.saved / gross },
+                              )
+                            : unswept("a forecast line with no proof")
+                        }
+                      >
+                        {pct(x.saved / gross, 0)}
+                      </ProofValue>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 );
               })}
@@ -236,14 +265,21 @@ const thousands = (c: number) => {
 const colCls = (p: Period) => (p.kind === "ACTUAL" ? "bg-surface-2/70" : p.kind === "TOTAL" ? "border-x border-line-strong bg-accent-soft/40" : "");
 
 /** Every bonus payment the forecast knows about in the next few years, counted or not. */
-export function BonusPayments({ f, throughYear }: { f: Forecast; throughYear: number }) {
+export function BonusPayments({ f, throughYear, dp }: { f: Forecast; throughYear: number; dp: Dp }) {
+  const keys = useMemo(() => new Map(scheduleKeys(f.schedule).map((k, i) => [f.schedule[i]!, k])), [f.schedule]);
   const [all, setAll] = useState(false);
   const shown = f.schedule.filter((b) => b.key <= `${throughYear}-12` && (all || b.counted));
   const hidden = f.schedule.filter((b) => b.key <= `${throughYear}-12` && !b.counted).length;
   return (
     <Card
       title="Bonus payments"
-      subtitle={`What the Bonuses row is made of, through ${throughYear}. Taxes reads the ones still to come this year. Kept after tax ${pct(f.pay.bonus.keepRate)}, saved ${pct(f.assumptions.bonus.savedShare, 0)} of that.`}
+      subtitle={
+        <>
+          What the Bonuses row is made of, through {throughYear}. Taxes reads the ones still to come this year. Kept after tax{" "}
+          {f.pay.bonus.keepTyped ? <NotFigure why="your input (Drivers)">{pct(f.pay.bonus.keepRate)}</NotFigure> : <ProofValue proof={dp("bonus-keep")}>{pct(f.pay.bonus.keepRate)}</ProofValue>}, saved{" "}
+          <NotFigure why="your input (Drivers)">{pct(f.assumptions.bonus.savedShare, 0)}</NotFigure> of that.
+        </>
+      }
       actions={
         hidden > 0 ? (
           <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => setAll(!all)}>
@@ -266,10 +302,12 @@ export function BonusPayments({ f, throughYear }: { f: Forecast; throughYear: nu
                     <Badge tone={SOURCE[b.source].tone}>{SOURCE[b.source].label}</Badge>
                   </td>
                   <td className="w-full pr-2 text-fg-2">
-                    {b.label}
+                    <BonusLabel b={b} share={b.share != null ? dp("bonus-share", keys.get(b)) : null} />
                     {!b.counted && b.why ? <span className="text-muted"> — not counted: {b.why}</span> : null}
                   </td>
-                  <td className={`num whitespace-nowrap text-right ${b.counted ? "font-medium text-fg" : "line-through"}`}>{usd(b.gross)}</td>
+                  <td className={`num whitespace-nowrap text-right ${b.counted ? "font-medium text-fg" : "line-through"}`}>
+                    <ProofValue proof={dp("bonus", keys.get(b))}>{usd(b.gross)}</ProofValue>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -285,3 +323,16 @@ const cellProof = (p: Period, line: LedgerLine): ForecastDescriptor => {
   const through = p.through.slice(0, 7);
   return { report: "forecast", figure: "month", month: p.from, ...(through !== p.from ? { through } : {}), line };
 };
+
+/** A bonus payment's label, the share of its award it is (from the latest letter's split) drawn as its figure. */
+function BonusLabel({ b, share }: { b: ScheduledBonus; share: ProofRef | null }) {
+  const m = share && b.share != null ? /(\d+)% as/.exec(b.label) : null;
+  if (!m || !share) return <>{b.label}</>;
+  return (
+    <>
+      {b.label.slice(0, m.index)}
+      <ProofValue proof={share}>{`${m[1]}%`}</ProofValue>
+      {b.label.slice(m.index + m[1]!.length + 1)}
+    </>
+  );
+}

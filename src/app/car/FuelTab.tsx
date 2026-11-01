@@ -1,5 +1,6 @@
 "use client";
 
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, EmptyState, StatCell, StatGrid, table } from "@/components/ui/kit";
@@ -7,7 +8,7 @@ import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
-import { fmtDate, miles, perMile, usd2 } from "./parts";
+import { fmtDate, miles, perMile, usd2, carProof } from "./parts";
 
 export function FuelTab({ ctx }: { ctx: CarCtx }) {
   const { report: r, chart } = ctx;
@@ -27,7 +28,7 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
         <StatCell proof={ctx.dp("mpg")} label="Lifetime MPG" value={f.mpg ? f.mpg.toFixed(1) : "—"} sub={`${f.fills.length} full fills measured`} />
         <StatCell proof={ctx.dp("recent-mpg")} label="Last 5 fills" value={f.recentMpg ? f.recentMpg.toFixed(1) : "—"} tone={f.recentMpg && f.mpg ? (f.recentMpg >= f.mpg ? "pos" : "warn") : "neutral"} sub={f.bestMpg ? `best ${f.bestMpg.toFixed(1)} · worst ${f.worstMpg!.toFixed(1)}` : undefined} />
         <StatCell proof={ctx.dp("price-per-gallon")} label="Avg price paid" value={f.pricePerGallon ? `${usd2(Math.round(f.pricePerGallon))}/gal` : "—"} sub={`${miles(f.gallons, 1)} gallons`} />
-        <StatCell proof={ctx.dp("fuel-per-mile")} label="Fuel per mile" value={perMile(f.fuelPerMile, 3)} sub={`${usd2(r.accrued.FUEL)} on ${f.fillsCount} fill-ups`} />
+        <StatCell proof={ctx.dp("fuel-per-mile")} drawn={{ per: 100 }} label="Fuel per mile" value={perMile(f.fuelPerMile, 3)} sub={<><ProofValue proof={carProof(r.carId, { span: "toDate", line: "FUEL" }, r.accrued.FUEL)}>{usd2(r.accrued.FUEL)}</ProofValue> on {f.fillsCount} fill-ups</>} />
         <StatCell proof={ctx.dp("range")} label="Range on a tank" value={f.avgRange ? `${miles(f.avgRange)} mi` : "—"} sub={ctx.car.vehicle.tankGallons ? `${ctx.car.vehicle.tankGallons} gal tank` : "set the tank size"} />
         <StatCell proof={ctx.dp("recent-per-day")} label="Driving" value={r.odometer.recentPerDay ? `${r.odometer.recentPerDay.toFixed(1)} mi/day` : "—"} sub={r.odometer.perDay ? `${r.odometer.perDay.toFixed(1)} mi/day since purchase` : undefined} />
       </StatGrid>
@@ -113,10 +114,10 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
                     <td className={table.tdR}>{miles(x.odometer)}</td>
                     <td className={table.tdR}>{miles(x.miles)}</td>
                     <td className={table.tdR}>{x.gallons.toFixed(3)}</td>
-                    <td className={table.tdR}>{x.cents == null ? "—" : usd2(x.cents)}</td>
-                    <td className={table.tdR} title={x.pricePerGallon == null ? "A fill-up in this span has no statement charge yet" : undefined}>{x.pricePerGallon == null ? "—" : usd2(Math.round(x.pricePerGallon))}</td>
+                    <td className={table.tdR}>{x.cents == null ? "—" : <ProofValue proof={ctx.dp("fill", `${r.carId}|${x.date}|${x.odometer}`)}>{usd2(x.cents)}</ProofValue>}</td>
+                    <td className={table.tdR} title={x.pricePerGallon == null ? "A fill-up in this span has no statement charge yet" : undefined}>{x.pricePerGallon == null ? "—" : <ProofValue proof={ctx.dp("fill-price", `${r.carId}|${x.date}|${x.odometer}`)}>{usd2(Math.round(x.pricePerGallon))}</ProofValue>}</td>
                     <td className={`${table.tdR} ${f.mpg && x.mpg < f.mpg * 0.85 ? "text-warn" : ""}`}>{x.mpg.toFixed(1)}</td>
-                    <td className={table.tdR}>{perMile(x.costPerMile, 3)}</td>
+                    <td className={table.tdR}>{x.costPerMile == null ? "—" : <ProofValue proof={ctx.dp("fill-per-mile", `${r.carId}|${x.date}|${x.odometer}`)} drawn={{ per: 100 }}>{perMile(x.costPerMile, 3)}</ProofValue>}</td>
                     <td className={table.tdR}>{x.range ? miles(x.range) : "—"}</td>
                   </tr>
                 ))}

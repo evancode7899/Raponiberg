@@ -4,6 +4,7 @@ import { LaneBadge } from "@/components/ledger/TransactionTable";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table, type Tone } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { ProofRef } from "@/components/ui/proof/context";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { Lane } from "@/lib/classifier/taxonomy";
 import { formatUsdFromCents } from "@/lib/formatMoney";
@@ -112,7 +113,7 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
       actions={
         <>
           <input type="search" className={`${inputCls} w-52 !py-1 !text-xs`} placeholder="Filter by name or account…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <Segmented
+          <Segmented view
             options={[
               { value: "all", label: "All" },
               { value: "attention", label: "Needs attention" },
@@ -193,6 +194,8 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
   const failed = s.checksJson?.filter((c) => !c.passed) ?? [];
   // Only a committed statement is in the Book: it (and its rows) open their proofs.
   const inBook = s.status === "COMMITTED";
+  // Another line the statement prints, held to the statement's own proof.
+  const printedLine = (line: "opening" | "growth" | "fees", cents: number): ProofRef => (inBook ? { descriptor: { report: "statement", statementId: s.id, line }, shownCents: cents } : unswept("not in the Book yet: an import still to commit"));
 
   const toggle = async () => {
     setOpen(!open);
@@ -208,9 +211,16 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
         <Badge tone={STATUS[s.status].tone}>{STATUS[s.status].label}</Badge>
         <span className="font-medium text-fg">{s.account.name}</span>
         <span className="num text-muted">
-          {d10(s.periodStart)} → {d10(s.periodEnd)} · {formatUsdFromCents(s.openingBalanceCents)} →{" "}
+          {d10(s.periodStart)} → {d10(s.periodEnd)} · <ProofValue proof={printedLine("opening", s.openingBalanceCents)}>{formatUsdFromCents(s.openingBalanceCents)}</ProofValue> →{" "}
           <ProofValue proof={inBook ? { descriptor: { report: "statement", statementId: s.id }, shownCents: s.closingBalanceCents } : unswept("not in the Book yet: an import still to commit")}>{formatUsdFromCents(s.closingBalanceCents)}</ProofValue>
-          {(s.growthCents !== 0 || s.feesCents !== 0) && ` · market ${formatUsdFromCents(s.growthCents)} · fees ${formatUsdFromCents(s.feesCents)}`}
+          {(s.growthCents !== 0 || s.feesCents !== 0) && (
+            <>
+              {" · market "}
+              <ProofValue proof={printedLine("growth", s.growthCents)}>{formatUsdFromCents(s.growthCents)}</ProofValue>
+              {" · fees "}
+              <ProofValue proof={printedLine("fees", s.feesCents)}>{formatUsdFromCents(s.feesCents)}</ProofValue>
+            </>
+          )}
         </span>
         <button type="button" className={btn.link} onClick={() => void toggle()}>
           {open ? "Hide rows" : `${s._count.transactions} rows`}

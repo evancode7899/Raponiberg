@@ -1,5 +1,6 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
 import { buttonPrimary, buttonSecondary, Card } from "@/components/ledger/LedgerBits";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { ACCOUNT_KIND_LABEL, ACCOUNT_TAX_KINDS, CHILD_KINDS, type AccountTaxKind } from "@/lib/tax/facts/investments";
@@ -19,11 +20,12 @@ import { inputCls, PercentInput, selectCls } from "@/components/ui/kit";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { TaxResponse } from "./TaxClient";
-import { formatDate, MoneyField, NullableMoneyField, usd } from "./taxUi";
+import { formatDate, MoneyField, NullableMoneyField, usd, useOverviewCell } from "./taxUi";
 
 
 /** Everything the statements can't tell: household, last year's return, extras, deductions. */
 export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) => Promise<void> }) {
+  const cell = useOverviewCell(r);
   const [kept, setDraft] = useState<TaxProfile>(() => withYear(r.profile, r.year, r.inputs));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ tone: "good" | "warn"; text: string } | null>(null);
@@ -145,7 +147,7 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
                     <span className="font-medium text-fg-2">From the Forecast</span>
                     <span className="text-fg">
                       Rest of year paid at the {fc.paycheck === "TYPICAL" ? "typical recent" : "latest"} paycheck
-                      {fc.paycheck === "TYPICAL" ? (job?.typicalRegular ? ` (${usd(job.typicalRegular.amounts.gross)} gross)` : "") : job?.latestRegular ? ` (${usd(job.latestRegular.amounts.gross)} gross)` : ""}
+                      {fc.paycheck === "TYPICAL" ? (job?.typicalRegular ? <> ({cell("paycheck:typical", p.id, usd(job.typicalRegular.amounts.gross))} gross)</> : "") : job?.latestRegular ? <> ({cell("paycheck:latest", p.id, usd(job.latestRegular.amounts.gross))} gross)</> : ""}
                       {fc.bonus > 0 ? (
                         <>
                           , plus{" "}
@@ -156,7 +158,16 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
                       )}
                       .
                     </span>
-                    {fc.items.length > 0 && <span className="text-faint">{fc.items.map((b) => `${b.label}: ${usd(b.gross)}`).join("; ")}</span>}
+                    {fc.items.length > 0 && (
+                      <span className="text-faint">
+                        {fc.items.map((b, i) => (
+                          <span key={i}>
+                            {i ? "; " : ""}
+                            {b.label}: {cell(`forecast-item:${i}`, p.id, usd(b.gross))}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                     <Link href="/forecast" className="text-accent hover:underline">
                       Change on the Forecast page →
                     </Link>
@@ -170,10 +181,10 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
                       onChange={(e) => setPay((pay) => void (pay.paycheck = e.target.value === "TYPICAL" ? "TYPICAL" : "LATEST"))}
                     >
                       <option value="LATEST">
-                        Latest paycheck{job?.latestRegular ? ` (${usd(job.latestRegular.amounts.gross)} gross, ${formatDate(job.latestRegular.payDate)})` : ""}
+                        Latest paycheck{job?.latestRegular ? <> ({cell("paycheck:latest", p.id, usd(job.latestRegular.amounts.gross))} gross, {formatDate(job.latestRegular.payDate)})</> : ""}
                       </option>
                       <option value="TYPICAL">
-                        Typical recent paycheck{job?.typicalRegular ? ` (${usd(job.typicalRegular.amounts.gross)} gross)` : ""}
+                        Typical recent paycheck{job?.typicalRegular ? <> ({cell("paycheck:typical", p.id, usd(job.typicalRegular.amounts.gross))} gross)</> : ""}
                       </option>
                     </select>
                     <span className="text-faint">Typical = median of the last six regular paychecks. Pick it when the latest was a one-off (unpaid leave, short hours).</span>
@@ -308,7 +319,13 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
 
       <Card title="Sources and assumptions">
         <ul className="list-disc space-y-1 pl-4 text-xs text-fg-2">
-          {(r.blocked ? [] : [...r.paramsNotes, ...r.assumptions]).map((a, i) => (
+          {/* The rules the estimate follows (tax law, your choices under Inputs) say so; an assumption that names a figure is held to its proof like any other. */}
+          {(r.blocked ? [] : [...r.paramsNotes, ...r.rules]).map((a, i) => (
+            <li key={`rule-${i}`}>
+              <NotFigure why="a rule the estimate follows: tax law, or your choice under Inputs">{a}</NotFigure>
+            </li>
+          ))}
+          {(r.blocked ? [] : r.assumptions).map((a, i) => (
             <li key={i}>{a}</li>
           ))}
         </ul>
@@ -370,6 +387,7 @@ function PriorYearCard({
 }) {
   const auto = r.blocked ? null : r.priorYear;
   const source = r.blocked ? "NONE" : r.priorYearSource;
+  const cell = useOverviewCell(r);
   const anyTyped = typed.federalTotalTax != null || typed.federalAgi != null || typed.ctTotalTax != null;
   const [editing, setEditing] = useState(anyTyped);
   const where =
@@ -388,7 +406,7 @@ function PriorYearCard({
   return (
     <Card
       title={`Last year's return (${r.year - 1})`}
-      subtitle="Used for the safe harbor: paying 100% of last year's tax (110% when last year's AGI was over $150,000) through withholding avoids any underpayment penalty."
+      subtitle={<NotFigure why="the safe-harbor rule, set by tax law">Used for the safe harbor: paying 100% of last year&apos;s tax (110% when last year&apos;s AGI was over $150,000) through withholding avoids any underpayment penalty.</NotFigure>}
       actions={
         <button type="button" className={buttonSecondary} onClick={() => setEditing((e) => !e)}>
           {editing ? "Hide overrides" : "Override"}
@@ -399,7 +417,9 @@ function PriorYearCard({
         {tiles.map((t) => (
           <div key={t.k} className="min-w-0 rounded-md border border-line bg-surface-2 px-3 py-2">
             <div className="text-[11px] font-medium text-muted">{t.label}</div>
-            <div className="num mt-0.5 text-lg font-semibold text-fg">{usd(t.value)}</div>
+            <div className="num mt-0.5 text-lg font-semibold text-fg">
+              {t.value == null ? usd(null) : typed[t.k] != null ? <NotFigure why="your entry (Override)">{usd(t.value)}</NotFigure> : cell(`prior:${t.k}`, "auto", usd(t.value))}
+            </div>
             <div className="mt-0.5 truncate text-[11px] text-faint" title={typed[t.k] != null ? "Typed under Override" : where}>
               {typed[t.k] != null ? "Typed under Override" : t.value == null ? "—" : t.k === "ctTotalTax" && auto?.ctFile ? `Read from ${auto.ctFile.split("/").at(-1)}` : where}
             </div>

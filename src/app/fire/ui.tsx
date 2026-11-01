@@ -30,7 +30,7 @@ export const deflator = (plan: OutlookPlan, dollars: Dollars, year: number) => (
 
 export function DollarsToggle({ value, onChange }: { value: Dollars; onChange: (d: Dollars) => void }) {
   return (
-    <Segmented
+    <Segmented view
       size="xs"
       ariaLabel="Dollars"
       options={[

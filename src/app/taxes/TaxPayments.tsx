@@ -1,5 +1,6 @@
 "use client";
 
+import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Card } from "@/components/ledger/LedgerBits";
 import type { PaymentAttribution, TaxProfile } from "@/lib/tax/profile";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
@@ -99,7 +100,10 @@ export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProf
                         {p.payee}
                       </div>
                     </td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{p.amount < 0 ? `+${usd(-p.amount)} refund` : usd(p.amount)}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">
+                      {/* The bank row it is: its own proof, as the statement prints it. */}
+                      <ProofValue proof={{ descriptor: { report: "row", rowId: p.transactionId }, shownCents: null }}>{p.amount < 0 ? `+${usd(-p.amount)} refund` : usd(p.amount)}</ProofValue>
+                    </td>
                     <td className="py-1.5 pr-3">
                       <select
                         className="rounded-md border border-line-strong bg-surface px-2 py-1 text-xs"

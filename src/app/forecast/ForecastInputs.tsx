@@ -1,5 +1,7 @@
 "use client";
 
+import { NotFigure } from "@/components/ui/kit";
+import type { Dp } from "./forecastUi";
 import { btn, MoneyInput, PercentInput, Segmented, selectCls } from "@/components/ui/kit";
 import { useProof, type ProofTarget } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -25,7 +27,7 @@ const LIVING: LivingBasis[] = ["TRAILING_12", "LAST_YEAR", "THIS_YEAR"];
  * as its placeholder); a typed figure is highlighted and ↺ puts the computed one back. Hover
  * a label for where its default comes from.
  */
-export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: OutlookAssumptions; set: SetAssumption; f: Forecast; header: ReactNode }) {
+export function ForecastInputs({ s, a, set, f, header, dp }: { s: OutlookSeeds; a: OutlookAssumptions; set: SetAssumption; f: Forecast; header: ReactNode; dp: Dp }) {
   const setPerson = (id: string, patch: Partial<PersonOutlook>) => set("people", { ...a.people, [id]: { ...DEFAULT_PERSON_OUTLOOK, ...a.people[id], ...patch } });
   const { pay, nearTermThrough } = f;
   const t = pay.tax;
@@ -135,7 +137,7 @@ export function ForecastInputs({ s, a, set, f, header }: { s: OutlookSeeds; a: O
         )}
         {a.bonus.estimates !== "NONE" &&
           pay.people.map((p) => (
-            <BonusPct key={p.personId} p={p} seed={s.people.find((x) => x.personId === p.personId)!} f={f} onChange={(v) => setPerson(p.personId, { bonusPct: v })} />
+            <BonusPct key={p.personId} p={p} seed={s.people.find((x) => x.personId === p.personId)!} f={f} dp={dp} onChange={(v) => setPerson(p.personId, { bonusPct: v })} />
           ))}
         <Line
           label="Bonus kept after tax"
@@ -221,7 +223,7 @@ function PersonSalary({ p, seed, onChange }: { p: ResolvedPerson; seed: OutlookS
   );
 }
 
-function BonusPct({ p, seed, f, onChange }: { p: ResolvedPerson; seed: OutlookSeeds["people"][number]; f: Forecast; onChange: (v: number | null) => void }) {
+function BonusPct({ p, seed, f, dp, onChange }: { p: ResolvedPerson; seed: OutlookSeeds["people"][number]; f: Forecast; dp: Dp; onChange: (v: number | null) => void }) {
   const hist = seed.bonusHistory.filter((h) => h.pct != null).slice(-4);
   const first = f.schedule.find((b) => b.personId === p.personId && b.source === "ESTIMATE");
   const parts = first ? f.schedule.filter((b) => b.personId === p.personId && b.source === "ESTIMATE" && b.awardYear === first.awardYear) : [];
@@ -237,7 +239,13 @@ function BonusPct({ p, seed, f, onChange }: { p: ResolvedPerson; seed: OutlookSe
       label={
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="truncate">{p.name} bonus</span>
-          <span className="num truncate text-[10px] text-faint">{hist.map((h) => `’${String(h.year).slice(2)} ${pct(h.pct, 0)}`).join(" ")}</span>
+          <span className="num truncate text-[10px] text-faint">
+            {hist.map((h, i) => (
+              <span key={h.year}>
+                {i ? " " : ""}’{String(h.year).slice(2)} <ProofValue proof={dp("bonus-history", `${p.personId}|${h.year}`)}>{pct(h.pct, 0)}</ProofValue>
+              </span>
+            ))}
+          </span>
         </span>
       }
       help={help}
@@ -257,7 +265,7 @@ function OneOffs({ a, set, startYear }: { a: OutlookAssumptions; set: SetAssumpt
     <>
       <Line label="Planned one-offs" help="A down payment, tuition, a car… taken from liquid money in its month.">
         <button type="button" className="w-full rounded-md border border-line-strong px-2 py-1 text-right text-xs text-fg-2 hover:bg-surface-2" onClick={() => setOpen(!open)}>
-          {list.length ? `${list.length} · ${usd(total)}` : "none"} {open ? "▴" : "▾"}
+          {list.length ? <NotFigure why="your input: the one-offs you planned">{`${list.length} · ${usd(total)}`}</NotFigure> : "none"} {open ? "▴" : "▾"}
         </button>
       </Line>
       {open && (

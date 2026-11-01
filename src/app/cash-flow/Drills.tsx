@@ -3,7 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { categoryKey, merchantKeyOf, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Stat } from "@/components/ui/kit";
+import { Stat, NotFigure } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useProof } from "@/components/ui/proof/context";
 import type { MerchantMonth, SpendingMonth } from "@/lib/book/reports/spending";
@@ -100,7 +100,9 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
                 >
                   <span className="truncate text-fg-2">{m.name}</span>
                   <span className="num text-right text-xs text-muted">{m.count}×</span>
-                  <span className="num text-right font-medium">{usd0(m.cents)}</span>
+                  <span className="num text-right font-medium">
+                    <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })}>{usd0(m.cents)}</ProofValue>
+                  </span>
                 </button>
               </li>
             ))}
@@ -142,7 +144,9 @@ function RentTiming({ ctx }: { ctx: Ctx }) {
               paid {dayLabel(p.date)}
               {p.full ? "" : " · top-up"}
             </span>
-            <span className="num text-right font-medium">{formatUsdCents(p.cents)}</span>
+            <span className="num text-right font-medium">
+              <ProofValue proof={{ descriptor: { report: "row", rowId: p.rowId }, shownCents: null }}>{formatUsdCents(p.cents)}</ProofValue>
+            </span>
           </li>
         ))}
       </ul>
@@ -168,7 +172,13 @@ export function MerchantDrill({ ctx, drill }: { ctx: Ctx; drill: Extract<Drill, 
         <Stat proof={ctx.dp("merchant-pattern", merchantKeyOf(slice.months, drill.lane === "EXPENSE" ? "EXPENSE" : "INCOME", drill.key))}
           label="Pattern"
           value={recurring ? (recurring.kind === "bill" ? "Bill" : "Habit") : "Irregular"}
-          sub={recurring ? `${recurring.active ? "active" : "stopped"} · ${usd0(recurring.annualCents)}/yr` : undefined}
+          sub={
+            recurring ? (
+              <>
+                {recurring.active ? "active" : "stopped"} · <ProofValue proof={ctx.dp("recurring-annual", recurring.key)}>{usd0(recurring.annualCents)}</ProofValue>/yr
+              </>
+            ) : undefined
+          }
         />
       </div>
       <MonthBars
@@ -225,7 +235,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <p className="-mt-2 text-xs text-muted">
           {m.through ? `The month isn't over: figures run through ${m.through}. ` : ""}
           {m.unreviewed.rows > 0 &&
-            `${m.unreviewed.rows} row${m.unreviewed.rows === 1 ? "" : "s"} (${usd0(m.unreviewed.cents)}) count as the classifier filed them but still wait for your review (Statements → Review).`}
+            `${m.unreviewed.rows} row${m.unreviewed.rows === 1 ? "" : "s"} count as the classifier filed them but still wait for your review (Statements → Review).`}
         </p>
       )}
 
@@ -237,7 +247,9 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
               <span className="flex min-w-0 items-center gap-2">
                 <Dot color={[chart.series[6]!, chart.spending, chart.neutral][i]!} />
                 <span className="text-fg-2">{k.label}</span>
-                <span className="truncate text-xs text-muted">{k.hint}</span>
+                <span className="truncate text-xs text-muted">
+                  <NotFigure why="what the kind counts: the app's one-off rule">{k.hint}</NotFigure>
+                </span>
               </span>
               <span className={`num text-right font-medium ${m.kinds[k.id] < 0 ? "text-pos" : ""}`}>
                 <ProofValue proof={ctx.proof("spending", one, { spendingKind: k.kind, shownCents: m.kinds[k.id] })}>{usd0(m.kinds[k.id])}</ProofValue>
