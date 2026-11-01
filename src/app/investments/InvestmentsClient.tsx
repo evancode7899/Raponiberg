@@ -573,7 +573,7 @@ function Gains({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) 
       </StatGrid>
       <Card
         title="Tax-loss harvesting candidates"
-        subtitle={<>Taxable positions below cost. Selling realizes the loss: it offsets gains, then up to <NotFigure why="set by tax law">$3,000</NotFigure> of ordinary income a year, with the rest carried forward. Buying the same or a substantially identical security within 30 days before or after the sale (in any account, including IRAs) is a wash sale and disallows the loss. Holding period (short vs long term) isn't on the statement — check the lot details before selling. Not tax advice.</>}
+        subtitle={<>Taxable positions below cost. Selling realizes the loss: it offsets gains, then up to <NotFigure why="set by tax law">$3,000</NotFigure> of ordinary income a year, with the rest carried forward. Buying the same or a substantially identical security within 30 days before or after the sale (in any account, including IRAs) is a wash sale and disallows the loss. Holding period (short vs long term) isn&apos;t on the statement — check the lot details before selling. Not tax advice.</>}
       >
         {r.gains.harvest.length === 0 ? (
           <p className="text-xs text-muted">No taxable position is below its cost basis.</p>
