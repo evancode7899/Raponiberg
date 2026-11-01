@@ -223,7 +223,12 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], q
         await closeDialog();
         continue;
       }
-      const proof = (await res.json()) as unknown;
+      // A response whose body is already gone (the page moved on) leaves this drawer unchecked, not the page broken.
+      const proof = (await res.json().catch(() => null)) as unknown;
+      if (proof == null) {
+        await closeDialog();
+        continue;
+      }
       await settle(page);
       v.drawers = [...(v.drawers ?? []), { key: f.key, strays: drawerStrays(await page.evaluate(drawerTokens), proof, f.perMonths) }];
       await closeDialog();

@@ -509,7 +509,9 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
     const text = l.fmt === "pct" ? `${d > 0 ? "+" : "−"}${(Math.abs(d) * 100).toFixed(1)} pts` : `${d > 0 ? "+" : "−"}${usd(Math.abs(d))}`;
     // The change is the difference of the two years' figures: a composite that clears from theirs (rates drawn in points).
     const both = x.proof && p.proof && !isUnswept(x.proof) && !isUnswept(p.proof);
-    const proof = both ? compositeOf("diff", [x.proof!, p.proof!], l.fmt === "pct" ? { ratio: d } : { cents: d }) : unswept("change mode: one of the two years has no proof");
+    // A proof may hold the figure in the other sign (spending as a positive sum, drawn as an outflow): the difference follows its sign.
+    const flipped = both && "shownCents" in x.proof! && x.proof!.shownCents != null && x.v !== 0 && Math.sign(x.proof!.shownCents) === -Math.sign(x.v);
+    const proof = both ? compositeOf("diff", flipped ? [p.proof!, x.proof!] : [x.proof!, p.proof!], l.fmt === "pct" ? { ratio: d } : { cents: d }) : unswept("change mode: one of the two years has no proof");
     return { text: <span className={tone}>{text}</span>, proof, ...(l.fmt === "pct" ? { drawn: { per: 0.01 } } : {}), title: `${cols[c.prev!]!.head}: ${fmtV(p.v, l.fmt)} → ${fmtV(x.v, l.fmt)}${rel}` };
   });
   return { label: l.label, help: l.help, total: l.total, strong: l.strong, indent: l.indent, muted: l.muted, cells };

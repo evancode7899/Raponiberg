@@ -228,7 +228,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                                 "share",
                                 [
                                   { descriptor: cellProof(p, "saved"), shownCents: x.saved },
-                                  { descriptor: { report: "composite", op: "sum", of: (["salary", "bonus", "otherIncome"] as const).map((l) => cellProof(p, l)) }, shownCents: gross },
+                                  { descriptor: { report: "composite", op: "sum", of: (["salary", "bonus", "otherIncome"] as const).filter((l) => ledgerDraws(l, periods)).map((l) => cellProof(p, l)) }, shownCents: gross },
                                 ],
                                 { ratio: x.saved / gross },
                               )
