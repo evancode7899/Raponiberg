@@ -14,6 +14,8 @@ import { household, PARTNER_PRE_MERGE, PARTNER_SHARE_RENT } from "../householdVi
 import { resolveReimbursements, rowFingerprint } from "../reimbursements";
 import { buildCashFlowReport, cashFlowContributions } from "../reports/cashFlow";
 import { buildNetWorth } from "../reports/netWorth";
+import { rollforwardsDerived } from "../derived/netWorth";
+import { rederiveRollforwards } from "../rederive/netWorth";
 import type { ReimbursementLinksFile } from "../../reimbursements/store";
 import { buildAnnualProof, parseAnnualDescriptor, type AnnualDescriptor } from "./annualProof";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
@@ -304,6 +306,15 @@ describe("annual statement proofs", () => {
       expect(p.selfCheck?.ok, `${what}: ${p.selfCheck?.explain}`).toBe(true);
       for (const c of chains(p)) expect(reAdds(c.lines), `${what} · ${c.title}`).toEqual([]);
     }
+  });
+
+  it("re-derives each account's return since first on file from its timeline, and catches one that's off", () => {
+    const figs = rollforwardsDerived(rolls);
+    expect(figs.length).toBeGreaterThan(0);
+    const ties = (fs: typeof figs) => Object.values(rederiveRollforwards(book, fs)).map((x) => ("routes" in x ? x.routes.every((rt) => rt.ok) : null));
+    expect(ties(figs)).toEqual(figs.map(() => true));
+    const off = figs.map((f) => ({ ...f, value: { ratio: (f.value as { ratio: number }).ratio + 0.001 } }));
+    expect(ties(off)).toEqual(figs.map(() => false));
   });
 
   it("ratios re-divide to what the page shows", async () => {

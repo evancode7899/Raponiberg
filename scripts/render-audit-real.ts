@@ -20,7 +20,8 @@
  *   npm run audit:real -- --drills 0           no drill-downs (fastest); --drills 80 is CI's depth
  *   npm run audit:real -- --detail             each problem with its view, value and key (local only)
  *   npm run audit:real -- --json <file>        where the dump goes (outside the repo; default: temp)
- * AUDIT_PORT picks the port; NEXT_BUILD_DIR the build (default .next-app, else .next);
+ * AUDIT_PORT picks the port; NEXT_BUILD_DIR the build (default the newer of .next-app and
+ * .next; one older than the code is refused);
  * RENDER_AUDIT_BUDGET_MS the time budget (default 5 minutes here).
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -30,6 +31,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readAppPassword } from "../src/lib/appPassword.ts";
+import { latestBuildDir, staleBuild } from "./build-freshness.ts";
 import { dataDir } from "../src/lib/dataDir.ts";
 import { resolveSqliteDatabaseFilePath, sqliteFileUrlForPath } from "../src/lib/sqliteDbPath.ts";
 
@@ -64,13 +66,10 @@ const json = path.resolve(option("--json") ?? path.join(os.tmpdir(), "raponiberg
 const inside = (dir: string, f: string) => !path.relative(dir, f).startsWith("..") && !path.isAbsolute(path.relative(dir, f));
 if (inside(ROOT, json) && !inside(path.join(ROOT, "data"), json)) fail("--json must be outside the repo (or under data/): it holds real figures.");
 
-const dir = process.env.NEXT_BUILD_DIR || (existsSync(path.join(ROOT, ".next-app", "BUILD_ID")) ? ".next-app" : ".next");
-const buildId = path.join(ROOT, dir, "BUILD_ID");
-if (!existsSync(buildId)) fail(`no production build in ${dir}: run npm run build first.`);
-// A build older than the code draws what the code no longer does: say so, the audit holds the build.
-const head = spawnSync("git", ["log", "-1", "--format=%ct"], { cwd: ROOT, encoding: "utf8" });
-const built = statSync(buildId).mtimeMs;
-if (head.status === 0 && Number(head.stdout) * 1000 > built) console.warn(`Note: ${dir} was built before the last commit; rebuild for an audit of the current code.`);
+// Never old code: the same rule as the demo's audit (scripts/build-freshness.ts).
+const dir = latestBuildDir(ROOT);
+const stale = staleBuild(ROOT, dir);
+if (stale) fail(`${stale}: run npm run build first.`);
 
 /** A free port on 127.0.0.1, or AUDIT_PORT; never the real app's 3000 or the demo's 3001. */
 async function freePort(): Promise<string> {
@@ -91,6 +90,8 @@ async function freePort(): Promise<string> {
 
 const PORT = await freePort();
 const base = `http://127.0.0.1:${PORT}`;
+// Another server already there would answer for ours and be audited instead.
+if (await fetch(base).then(() => true, () => false)) fail(`something already answers on ${base}: pick another AUDIT_PORT.`);
 const serverEnv: Record<string, string | undefined> = {
   ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("__NEXT") && !["NEXT_RUNTIME", "NEXT_PHASE", "NODE_ENV", "PORT", "APP_TODAY"].includes(k))),
   DATA_DIR: DATA,
