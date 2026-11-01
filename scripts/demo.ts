@@ -9,19 +9,21 @@
  * time. The real app (port 3000) can run at the same time.
  *
  * Usage:
- *   npm run demo              next start on the last production build (.next-app, else .next)
+ *   npm run demo              next start on the newer production build of .next-app and .next
  *   npm run demo -- --dev     next dev, in its own build folder (.next-dev-demo)
  *   npm run demo -- --build-only   rebuild data/demo and exit
  *   npm run demo -- --sweep        rebuild data/demo and run the proof sweep on it (CI): exits 1 on any problem
  *   npm run demo -- --render-audit start the demo on the production build, render every page in a
  *                                  headless browser and hold what it draws to the sweep (CI, SSOT F6;
  *                                  scripts/render-audit.ts): exits 1 on any problem. Takes --sweep too.
+ *                                  Refuses a build older than the code it would audit; add --build to
+ *                                  build first (into .next, never the launcher's .next-app).
  *   npm run demo -- --render-audit --reuse-data   on the data/demo already there (CI's shards share
  *                                  one: each seed mints its own record ids, which proof keys carry)
  * DEMO_PORT changes the port (default 3001).
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -85,17 +87,66 @@ function buildDemoData() {
   node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", path.join(ROOT, "scripts", "demo-seed.ts")], "Filling the demo data");
 }
 
+/**
+ * What a production build is made from: the set the launcher stamps before it rebuilds
+ * (scripts/start-local-server.ps1). Scripts under scripts/ run from source, so they're not in it.
+ */
+const BUILD_INPUTS = ["src", "prisma", "next.config.ts", "postcss.config.mjs", "tsconfig.json", "package.json", "package-lock.json"];
+
+/** The most recently written build input, and when. */
+function newestInput(): { file: string; at: number } {
+  const newest = { file: "", at: 0 };
+  const walk = (p: string) => {
+    const st = statSync(p, { throwIfNoEntry: false });
+    if (st?.isDirectory()) for (const e of readdirSync(p)) walk(path.join(p, e));
+    else if (st && st.mtimeMs > newest.at) Object.assign(newest, { file: p, at: st.mtimeMs });
+  };
+  for (const p of BUILD_INPUTS) walk(path.join(ROOT, p));
+  return newest;
+}
+
+/** When the build in this folder finished (next build writes BUILD_ID last), or null with no build. */
+function builtAt(dir: string): number | null {
+  return statSync(path.join(ROOT, dir, "BUILD_ID"), { throwIfNoEntry: false })?.mtimeMs ?? null;
+}
+
 function buildDir(): string {
   if (dev) return ".next-dev-demo";
   if (process.env.NEXT_BUILD_DIR) return process.env.NEXT_BUILD_DIR;
-  return existsSync(path.join(ROOT, ".next-app", "BUILD_ID")) ? ".next-app" : ".next";
+  // The newer of the launcher's build and a plain `npm run build`.
+  return (builtAt(".next-app") ?? -1) > (builtAt(".next") ?? -1) ? ".next-app" : ".next";
+}
+
+/**
+ * The production build the render audit runs on: one finished after every build input last
+ * changed, so it never audits old code. A missing or stale build fails, or with --build is
+ * rebuilt first, into .next (or NEXT_BUILD_DIR): never .next-app, which the running app
+ * serves and only the launcher swaps.
+ */
+function freshBuildDir(): string {
+  const dir = buildDir();
+  const at = builtAt(dir);
+  const newest = newestInput();
+  if (at != null && at >= newest.at) return dir;
+  const why = at == null ? `No production build in ${dir}` : `The build in ${dir} is older than the code (${path.relative(ROOT, newest.file)} changed since)`;
+  if (!process.argv.includes("--build")) throw new Error(`${why}: run npm run build first, or add --build.`);
+  const target = process.env.NEXT_BUILD_DIR || ".next";
+  console.log(`${why}: building into ${target}.`);
+  for (const [args, what] of [
+    [[path.join(ROOT, "node_modules", "prisma", "build", "index.js"), "generate"], "prisma generate"],
+    [[path.join(ROOT, "node_modules", "next", "dist", "bin", "next"), "build"], "next build"],
+  ] as [string[], string][]) {
+    const r = spawnSync(process.execPath, args, { cwd: ROOT, env: { ...process.env, NEXT_BUILD_DIR: target }, stdio: "inherit" });
+    if (r.status !== 0) throw new Error(`${what} failed.`);
+  }
+  return target;
 }
 
 /** Starts the demo's Next server on the production build, waits until it answers, runs the render audit on it, and stops it. */
-async function renderAudit() {
-  const dir = buildDir();
-  if (!existsSync(path.join(ROOT, dir, "BUILD_ID"))) throw new Error(`No production build in ${dir}: run npm run build first.`);
+async function renderAudit(dir: string) {
   const base = `http://127.0.0.1:${PORT}`;
+  // Another server already there (another checkout's demo) would answer for ours and be audited instead.
+  if (await fetch(base).then(() => true, () => false)) throw new Error(`Something already answers on ${base}: stop it, or set DEMO_PORT.`);
   const next = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
   const server = spawn(process.execPath, [next, "start", "-H", "127.0.0.1", "-p", PORT], {
     cwd: ROOT,
@@ -117,13 +168,15 @@ async function renderAudit() {
 }
 
 try {
+  // Checked first, so a stale build fails before the minutes of demo data and sweep.
+  const auditDir = process.argv.includes("--render-audit") ? freshBuildDir() : null;
   if (!process.argv.includes("--reuse-data")) buildDemoData();
   else if (!existsSync(DB)) throw new Error(`--reuse-data: no demo database at ${path.relative(ROOT, DB)}.`);
   if (process.argv.includes("--sweep")) {
     node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "proof-sweep.ts")], "The demo's proof sweep");
   }
-  if (process.argv.includes("--render-audit")) {
-    await renderAudit();
+  if (auditDir) {
+    await renderAudit(auditDir);
   } else if (!process.argv.includes("--build-only") && !process.argv.includes("--sweep")) {
     const dir = buildDir();
     if (!dev && !existsSync(path.join(ROOT, dir, "BUILD_ID"))) throw new Error(`No production build in ${dir}: run npm run build first, or use npm run demo -- --dev.`);
