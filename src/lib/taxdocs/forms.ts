@@ -1,6 +1,6 @@
 import type { LayoutRow } from "../statements/pdfLayout.ts";
 import { CENTS, findLabels, mode, moneyCents, readBoxes, WHOLE, type BoxSpec } from "./boxes.ts";
-import type { Brokerage1099, Int1099, K1Form, R1099, Sa5498 } from "./types.ts";
+import type { Brokerage1099, Int1099, K1Coded, K1Form, K1StateForm, R1099, Sa5498 } from "./types.ts";
 
 /**
  * 1099s, the HSA 5498-SA and partnership K-1s. Brokerage consolidated 1099s print
@@ -188,17 +188,17 @@ const K1_BOXES: BoxSpec[] = [
   { id: "2", label: /Net rental real estate income/i },
   { id: "3", label: /Other net rental income/i },
   { id: "4a", label: /Guaranteed payments for services/i },
-  { id: "_4b", label: /Guaranteed payments for capital/i },
-  { id: "_4c", label: /Total guaranteed payments/i },
+  { id: "4b", label: /Guaranteed payments for capital/i },
+  { id: "4c", label: /Total guaranteed payments/i },
   { id: "5", label: /^Interest income$/i },
   { id: "6a", label: /Ordinary dividends/i },
   { id: "6b", label: /Qualified dividends/i },
-  { id: "_6c", label: /Dividend equivalents/i },
+  { id: "6c", label: /Dividend equivalents/i },
   { id: "7", label: /^Royalties$/i },
   { id: "8", label: /Net short-term capital gain/i },
   { id: "9a", label: /Net long-term capital gain/i },
-  { id: "_9b", label: /Collectibles \(28%\)/i },
-  { id: "_9c", label: /Unrecaptured section 1250/i },
+  { id: "9b", label: /Collectibles \(28%\)/i },
+  { id: "9c", label: /Unrecaptured section 1250/i },
   { id: "10", label: /Net section 1231 gain/i },
   { id: "_11", label: /Other income \(loss\)/i },
   { id: "_13", label: /Other deductions/i },
@@ -226,7 +226,23 @@ export function parseK1(rows: LayoutRow[], text: string): { k1: K1Form; warnings
   const d = (id: string) => b[id] ?? 0;
   const iso = (m: RegExpExecArray | null) => (m ? `${m[3]}-${m[1]}-${m[2]}` : null);
   const warnings: string[] = [];
-  if (/\bOther income \(loss\)[\s\S]{0,80}SEE STMT|ZZ\*/.test(text)) warnings.push("Box 11 (other income) refers to a statement; check the supporting schedule.");
+  const coded = readK1Coded(page1);
+  // What the face leaves to an attached statement can't be read here: the K-1 details file holds it.
+  const onStatement = [...new Set(coded.filter((e) => e.statement).map((e) => e.box))].sort((x, y) => Number(x) - Number(y));
+  if (onStatement.length) warnings.push(`Box${onStatement.length === 1 ? "" : "es"} ${onStatement.join(", ")} refer${onStatement.length === 1 ? "s" : ""} to an attached statement; its detail belongs in the K-1 details file.`);
+  else if (/\bOther income \(loss\)[\s\S]{0,80}SEE STMT|ZZ\*/.test(text)) warnings.push("Box 11 (other income) refers to a statement; check the supporting schedule.");
+  const ticked = (label: RegExp) => page1.some((r) => r.cells.some((c) => label.test(c.text)));
+  const pctOf = (label: RegExp) => {
+    const cells = page1.find((r) => r.cells.some((c) => label.test(c.text.trim())))?.cells.flatMap((c) => /^([\d.]+)\s*%$/.exec(c.text.trim())?.[1] ?? []) ?? [];
+    return cells.length ? Number(cells.at(-1)) / 100 : null;
+  };
+  const capitalOf = (label: RegExp) => {
+    const row = page1.find((r) => r.cells.some((c) => label.test(c.text)));
+    const at = row?.cells.findIndex((c) => label.test(c.text)) ?? -1;
+    const cell = row?.cells.slice(at + 1).filter((c) => c.x0 < 310 && WHOLE.test(c.text.replace(/[\s$]/g, ""))).at(-1);
+    return cell ? moneyCents(cell.text) : null;
+  };
+  const withdrawals = capitalOf(/^Withdrawals and distributions/i);
   return {
     k1: {
       partnership: nameUnder(page1, /Partnership.s name, address/i, 20) ?? "",
@@ -248,7 +264,62 @@ export function parseK1(rows: LayoutRow[], text: string): { k1: K1Form; warnings
       longTermGain: d("9a"),
       section1231: d("10"),
       foreignTax: d("21"),
+      guaranteedCapital: d("4b"),
+      guaranteedTotal: d("4c"),
+      dividendEquivalents: d("6c"),
+      collectibles28: d("9b"),
+      unrecaptured1250: d("9c"),
+      coded,
+      k3Attached: page1.some((r) => r.cells.some((c) => /^checked\b/i.test(c.text.trim())) && r.cells.some((c) => c.text.trim() === "X")) || ticked(/Schedule K-3 is attached[\s\S]*\bX$/),
+      amended: ticked(/^X\s*Amended K-1/),
+      generalPartner: ticked(/^X\s*General partner/),
+      publiclyTraded: ticked(/^X\s*Check if this is a publicly traded/),
+      multipleActivities: ticked(/^X\s*More than one activity for passive/),
+      share: { profit: pctOf(/^Profit$/), loss: pctOf(/^Loss$/), capital: pctOf(/^Capital$/) },
+      capital: {
+        beginning: capitalOf(/^Beginning capital account/i),
+        contributed: capitalOf(/^Capital contributed during the year/i),
+        netIncome: capitalOf(/^Current year net income/i),
+        withdrawals: withdrawals == null ? null : Math.abs(withdrawals),
+        ending: capitalOf(/^Ending capital account/i),
+      },
     },
     warnings,
+  };
+}
+
+const K1_CODED = new Set(["11", "13", "14", "15", "17", "18", "19", "20"]);
+
+/**
+ * The lettered entries of boxes 11–20. Each prints its letter at the head of the box's
+ * column and, on the same line, its amount or "SEE STMT"; an asterisk sends the reader to
+ * an attached statement. The box is the caption nearest above in that column.
+ */
+export function readK1Coded(page1: LayoutRow[]): K1Coded[] {
+  const labels = findLabels(page1, K1_BOXES);
+  const out: K1Coded[] = [];
+  for (const r of page1) {
+    r.cells.forEach((c, i) => {
+      const m = /^([A-Z]{1,2})?(\*)?$/.exec(c.text.trim());
+      if (!m || (!m[1] && !m[2]) || c.x1 - c.x0 > 20) return;
+      const box = labels.filter((h) => h.y > r.y && c.x0 >= h.x0 - 26 && c.x0 <= h.x0 - 4).sort((a, b) => a.y - b.y)[0]?.id.replace(/^_/, "");
+      if (!box || !K1_CODED.has(box)) return;
+      // Its amount is the next cell, while that still sits inside this column.
+      const next = r.cells[i + 1];
+      const text = next && next.x1 <= c.x0 + 135 ? next.text.trim() : "";
+      const cents = WHOLE.test(text.replace(/[\s$]/g, "")) ? moneyCents(text) : null;
+      out.push({ box, code: m[1] ?? "", cents, statement: !!m[2] || /STMT|STATEMENT/i.test(text) || cents == null });
+    });
+  }
+  return out;
+}
+
+/** A state's own K-1: which state, and whose (the federal K-1 of the same partnership carries the figures the return uses). */
+export function parseStateK1(rows: LayoutRow[], text: string): K1StateForm {
+  const page1 = rows.filter((r) => r.page === 1);
+  return {
+    state: /IT-204-IP/.test(text) ? "NY" : "CT",
+    partnership: nameUnder(page1, /(Partnership|Pass-through entity).s (legal )?name|Name of (partnership|pass-through entity)/i, 24) ?? "",
+    ein: /\b(\d{2}-\d{7})\b/.exec(text)?.[1] ?? null,
   };
 }

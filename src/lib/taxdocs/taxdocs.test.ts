@@ -194,6 +194,55 @@ describe("1099s and K-1s", () => {
     ];
     const { k1 } = parseK1(rows, "Schedule K-1 (Form 1065) X Limited partner");
     expect(k1).toMatchObject({ limitedPartner: true, ordinaryBusiness: -700, interest: 2_100, ordinaryDividends: 3_600, shortTermGain: 0, longTermGain: -900 });
+    expect(k1).toMatchObject({ coded: [], amended: false, k3Attached: false, collectibles28: 0 });
+  });
+
+  it("reads a K-1's lettered boxes: the code, its amount or 'see statement', under the box it sits in", () => {
+    const rows = [
+      row(1, 748, [336, 364, "Final K-1"], [415, 465, "X Amended K-1"]),
+      row(1, 616, [316, 324, "4b"], [334, 437, "Guaranteed payments for capital"], [453, 461, "16"], [472, 557, "Schedule K-3 is attached if"]),
+      row(1, 606, [472, 506, "checked ."], [564, 569, "X"]),
+      row(1, 594, [316, 324, "4c"], [334, 420, "Total guaranteed payments"], [453, 461, "17"], [471, 574, "Alternative minimum tax (AMT) items"]),
+      row(1, 580, [455, 461, "D"], [566, 571, "5"]),
+      row(1, 568, [318, 322, "5"], [334, 383, "Interest income"]),
+      // An asterisk beside a plain box's amount is that box's own footnote, not a lettered entry.
+      row(1, 555, [320, 323, "*"], [432, 442, "13"], [454, 463, "F*"], [566, 571, "2"]),
+      row(1, 400, [316, 324, "9b"], [334, 424, "Collectibles (28%) gain (loss)"]),
+      row(1, 392, [432, 442, "77"]),
+      row(1, 388, [453, 461, "20"], [471, 526, "Other information"]),
+      row(1, 363, [455, 461, "A"], [561, 571, "61"]),
+      row(1, 339, [58, 74, "Profit"], [139, 191, "1.250000 %"], [250, 299, "2.500000 %"], [453, 463, "N*"]),
+      row(1, 328, [317, 324, "11"], [334, 395, "Other income (loss)"]),
+      // A code with no amount, beside the next column's box number: the number isn't its amount.
+      row(1, 316, [317, 326, "A*"], [454, 463, "T*"], [566, 571, "4"]),
+      row(1, 291, [316, 331, "ZZ*"], [456, 460, "*"], [526, 571, "SEE STMT"]),
+      row(1, 256, [317, 324, "13"], [334, 389, "Other deductions"]),
+      row(1, 219, [316, 326, "H*"], [432, 442, "38"]),
+      row(1, 183, [333, 509, "X More than one activity for passive activity purposes*"]),
+      row(1, 134, [58, 158, "Current year net income (loss) ."], [250, 290, "(1,234)"]),
+      row(1, 99, [58, 134, "Ending capital account"], [250, 290, "50,000"]),
+    ];
+    const { k1, warnings } = parseK1(rows, "Schedule K-1 (Form 1065)");
+    expect(k1.coded).toEqual([
+      { box: "17", code: "D", cents: 500, statement: false },
+      { box: "17", code: "F", cents: 200, statement: true },
+      { box: "20", code: "A", cents: 6_100, statement: false },
+      { box: "20", code: "N", cents: null, statement: true },
+      { box: "11", code: "A", cents: null, statement: true },
+      { box: "20", code: "T", cents: 400, statement: true },
+      { box: "11", code: "ZZ", cents: null, statement: true },
+      { box: "20", code: "", cents: null, statement: true },
+      { box: "13", code: "H", cents: 3_800, statement: true },
+    ]);
+    expect(k1).toMatchObject({ interest: 1_300, collectibles28: 7_700, amended: true, k3Attached: true, multipleActivities: true, share: { profit: 0.025 }, capital: { netIncome: -123_400, ending: 5_000_000, beginning: null } });
+    expect(warnings).toEqual(["Boxes 11, 13, 17, 20 refer to an attached statement; its detail belongs in the K-1 details file."]);
+  });
+
+  it("an amended K-1 replaces the partnership's earlier one, and a state's own K-1 is filed apart", () => {
+    expect(classify("Schedule CT K-1 Member's Share of Certain Connecticut Items", "2026/ct-k1.pdf")).toBe("K1_STATE");
+    expect(classify("IT-204-IP New York Partner's Schedule K-1", "2026/ny.pdf")).toBe("K1_STATE");
+    // A federal K-1 package that carries the states' pages inside is still the federal K-1.
+    expect(classify("Schedule K-1 (Form 1065) OMB No. 1545-0123 ... Schedule CT K-1", "2026/k1.pdf")).toBe("K1");
   });
 });
 

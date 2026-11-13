@@ -10,6 +10,7 @@ import { groupFor, loadLedger, openAccountsEdge, type AccountGroup, type Ledger 
 import { readTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.ts";
 import { readProfileSettings } from "../profile/settings.ts";
 import { readAwards, type AwardsFile } from "../bonuses/awardStore.ts";
+import { readK1Details, type K1DetailsFile } from "../tax/k1DetailStore.ts";
 import { readTaxDocsChecked } from "../taxdocs/store.ts";
 import type { TaxDocsFile } from "../taxdocs/types.ts";
 import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts";
@@ -211,6 +212,12 @@ export type Book = {
    * damaged file is an error the readers report, never an empty list.
    */
   bonusAwards?: AwardsFile | { error: string };
+  /**
+   * What the K-1s' attached statements say (data/k1-details.json), as read with the rest of the
+   * Book: the tax report, its proofs and the tax.k1-details check read this one copy. A damaged
+   * file is an error the check reports, never an empty list.
+   */
+  k1Details?: K1DetailsFile | { error: string };
   /** The tax documents folder as last scanned (lib/taxdocs): filed returns, W-2s, 1099s, K-1s. Null before the first scan. */
   taxDocs: TaxDocsFile | null;
   persons: TaxPerson[];
@@ -553,6 +560,13 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       }
     })(),
     taxDocs: taxDocs.docs,
+    k1Details: (() => {
+      try {
+        return readK1Details();
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    })(),
     unreadable,
     persons,
     idle,

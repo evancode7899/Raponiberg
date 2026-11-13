@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FederalReturnSummary, FiledReturn, W2Form } from "../taxdocs/types";
+import type { FederalReturnSummary, FiledReturn, K1Form, W2Form } from "../taxdocs/types";
 import type { TaxReport } from "./buildTaxReport";
 import { computeReturn, type PersonIncome, type ReturnResult } from "./computeReturn";
 import { ctResidentShares, filedBalance, k1Income, matchW2s, safeHarborTax, w2FromForm, type YearDocs } from "./documents";
@@ -116,7 +116,7 @@ describe("K-1s", () => {
       longTermGain: -900,
       section1231: 0,
       foreignTax: 0,
-    });
+    } as K1Form);
     expect(k).toMatchObject({ interest: 2_100, ordinaryDividends: 3_600, longTermGain: -900, passive: -2_600 });
   });
 });
@@ -242,6 +242,10 @@ describe("a K-1 the filed return left off", () => {
     partnership,
     doc: { id, file: `2025/${id}.pdf` },
     estimate: false,
+    basis: "DOCUMENT",
+    form: {} as Use["form"],
+    detail: null,
+    gaps: [],
     figures: { interest: 0, ordinaryDividends: 0, qualifiedDividends: 0, shortTermGain: 0, longTermGain: 0, otherIncome: 0, passive: 0, foreignTax: 0, ...over },
     suspendedLoss: 0,
   });
@@ -258,11 +262,10 @@ describe("a K-1 the filed return left off", () => {
     });
   };
   const returnOf = (k1s: Use[]) => computeReturn({ params: P25, filingStatus: "MFJ", people: [withK1s(k1s)], dependents: [] });
-  const check = (onFile: Use[], onReturn: Use[], o: { scheduleE?: boolean; form?: string; warnings?: Record<string, string[]> } = {}) => {
+  const check = (onFile: Use[], onReturn: Use[], o: { scheduleE?: boolean; form?: string } = {}) => {
     const r = report(withK1s(onFile));
     r.people[0]!.k1s = onFile;
     const d = docs({ ...filed(returnOf(onReturn)), form: o.form ?? "1040", otherIncome: [], lines: o.scheduleE ? [{ form: "SE", page: 1, line: "32", label: "", values: [1] }] : [] } as FiledReturn);
-    d.all = Object.entries(o.warnings ?? {}).map(([id, warnings]) => ({ id, warnings })) as YearDocs["all"];
     return checkFiled(r, d);
   };
   const fund = k1("EXAMPLE FUND LP", "fund", { interest: $(4_000), ordinaryDividends: $(6_000), qualifiedDividends: $(5_000), longTermGain: $(20_000) });
@@ -289,8 +292,9 @@ describe("a K-1 the filed return left off", () => {
     expect(check([business, fund], [business, fund], { scheduleE: true, form: "1040X" }).amendment).toBeNull();
   });
 
-  it("says the change is short while part of the K-1 is on a statement the reader couldn't take in", () => {
-    expect(check([fund], [], { warnings: { fund: ["Box 11 (other income) refers to a statement; check the supporting schedule."] } }).amendment!.partial).toBe(true);
+  it("says the change is short while part of the K-1 is on a statement not yet read", () => {
+    const unread = { ...fund, gaps: [{ box: "11", code: "A", why: "Box 11 code A points to an attached statement that hasn't been read into the K-1 details file." }] };
+    expect(check([unread], []).amendment!.partial).toBe(true);
   });
 
   it("goes by the Schedule E when the lines can't tell: a K-1 whose loss is suspended moves none of them", () => {

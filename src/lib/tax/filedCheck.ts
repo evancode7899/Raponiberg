@@ -597,8 +597,8 @@ export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResu
       ct: full.ct.totalTax - before.ct.totalTax,
       ny: (full.ny?.totalTax ?? 0) - (before.ny?.totalTax ?? 0),
       k1s: left.map((k) => ({ partnership: k.partnership, doc: k.doc })),
-      // A K-1 the reader couldn't take in whole (a box that points to an attached statement) leaves the change short.
-      partial: left.some((k) => (docs.all.find((d) => d.id === k.doc.id)?.warnings.length ?? 0) > 0),
+      // A K-1 not read in full (a lettered box or attached statement missing from the K-1 details file) leaves the change short.
+      partial: left.some((k) => k.gaps.length > 0),
     },
   };
 }

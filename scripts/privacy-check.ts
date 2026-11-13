@@ -42,6 +42,7 @@ import { defaultInputs as defaultMortgageInputs } from "../src/lib/mortgage/inpu
 import { pageInputsFilePath } from "../src/lib/pageInputs.ts";
 import { normalizeProfile, TAX_PROFILE_KEY } from "../src/lib/tax/profile.ts";
 import { readTaxDocs } from "../src/lib/taxdocs/store.ts";
+import { readK1Details } from "../src/lib/tax/k1DetailStore.ts";
 import { resolveDbFilePath } from "./databasePath.mjs";
 
 // node:sqlite (Node 22.13+) is loaded untyped: this project's @types/node predates it.
@@ -201,6 +202,8 @@ for (const d of readTaxDocs()?.docs ?? []) {
     if (p.w2.wages >= 1_000_000) figure(p.w2.wages / 100);
   } else if (p.kind === "K1") {
     [p.k1.partnership, p.k1.partner, p.k1.ein ?? ""].forEach(word);
+  } else if (p.kind === "K1_STATE") {
+    [p.stateK1.partnership, p.stateK1.ein ?? ""].forEach(word);
   } else if (p.kind === "1099_BROKERAGE") {
     word(p.f1099.recipient);
     if (p.f1099.account) ending(p.f1099.account);
@@ -212,6 +215,13 @@ for (const d of readTaxDocs()?.docs ?? []) {
     const s = p.ret.federal ?? p.ret.state;
     for (const v of [s?.["agi" as keyof typeof s], s?.totalTax]) if (typeof v === "number" && v >= 1_000_000) figure(v / 100);
   }
+}
+
+// ---- the K-1 details file: partnership names and EINs as transcribed
+try {
+  for (const k of readK1Details().k1s) [k.partnership ?? "", k.ein].forEach(word);
+} catch {
+  /* an unreadable details file: nothing to add */
 }
 
 // ---- the HSA receipts log

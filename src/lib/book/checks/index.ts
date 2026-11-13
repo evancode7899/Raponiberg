@@ -15,7 +15,7 @@ import { checkReadable } from "./readable.ts";
 import { checkRetirement } from "./retirement.ts";
 import { checkStatements } from "./statements.ts";
 import { checkTaxCoverage, checkTaxParams } from "./tax.ts";
-import { checkTaxDocuments } from "./taxDocuments.ts";
+import { checkK1Details, checkTaxDocuments } from "./taxDocuments.ts";
 import { checkTransfers } from "./transfers.ts";
 
 /** Every integrity check, over the whole Book. Order matters: later checks skip what earlier ones block. */
@@ -41,6 +41,7 @@ export function runChecksWithPasses(book: Book, exceptions: StandingException[] 
   checkTaxCoverage(book, c);
   checkTaxParams(book, c);
   checkTaxDocuments(book, c);
+  checkK1Details(book, c);
   checkNetWorth(book, c);
   const report = c.report();
   report.stale = report.stale.map((e) => ({ ...e, evidence: staleEvidence(book, report, e) }));
