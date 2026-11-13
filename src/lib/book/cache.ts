@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { ENV_FILES, UNSTAMPED_ENV_FILES } from "../dataEnv.ts";
 import { resolveSqliteDatabaseFilePath } from "../sqliteDbPath.ts";
 import { localToday } from "../dates/isoDate.ts";
 import { deepFreeze } from "./freeze.ts";
@@ -40,26 +41,8 @@ const today = () => localToday();
 /** The database file, read off DATABASE_URL the way the rest of the app reads it (sqliteDbPath.ts). */
 const databaseFile = resolveSqliteDatabaseFilePath;
 
-/**
- * Every data file a figure reads that its env variable can point outside the data folder
- * (each is in the stamp wherever it lives). UNSTAMPED_ENV_FILES are the ones no figure reads
- * (read per request beside the Book); a test holds every `*_FILE` variable the code reads to
- * one list or the other.
- */
-export const ENV_FILES = [
-  "INTEGRITY_EXCEPTIONS_FILE",
-  "TRANSFER_DECISIONS_FILE",
-  "BONUS_AWARDS_FILE",
-  "BONUS_REVIEWS_FILE",
-  "MERCHANT_RULES_FILE",
-  "ROW_DECISIONS_FILE",
-  "HOUSEHOLD_FILE",
-  "REIMBURSEMENT_LINKS_FILE",
-  "TAX_DOCUMENTS_FILE",
-  "CLOSED_ACCOUNTS_FILE",
-  "FUND_DOCUMENTS_FILE",
-];
-export const UNSTAMPED_ENV_FILES = ["PAGE_INPUTS_FILE", "APP_PASSWORD_FILE", "HSA_EXPENSES_FILE", "HSA_RECEIPTS_FILE", "INSURANCE_DOCUMENTS_FILE", "CARD_REWARDS_FILE"];
+// The lists of data files an env variable can move (dataEnv.ts, shared with scripts/demo.ts).
+export { ENV_FILES, UNSTAMPED_ENV_FILES };
 
 function stat(file: string): string {
   try {

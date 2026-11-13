@@ -130,12 +130,23 @@ export function listSnapshots(root: string): Snapshot[] {
   return out.sort((a, b) => (a.name < b.name ? 1 : -1));
 }
 
-/** Problems with a snapshot's files (missing, wrong size or content); empty when it's whole. */
+/** A bare file name, as dataFiles() lists them: no folder, drive or stream in it, not a dot file. */
+function isPlainFileName(name: unknown): name is string {
+  return typeof name === "string" && name.length > 0 && name.length <= 255 && !name.startsWith(".") && !/[\\/:\0]/.test(name) && path.basename(name) === name;
+}
+
+/** Problems with a snapshot's files (missing, wrong size or content, a name that isn't a plain file); empty when it's whole. */
 export function verifySnapshot(s: Snapshot): string[] {
   const problems: string[] = [];
   if (s.manifest.format > BACKUP_FORMAT) problems.push(`made by a newer version of the app (format ${s.manifest.format})`);
   if (!s.manifest.files.some((f) => f.name === "finance.db")) problems.push("no finance.db");
   for (const f of s.manifest.files) {
+    // The manifest comes from the backup folder, so its names aren't trusted: a restore
+    // copies each one into data/, and a path in a name would land the file somewhere else.
+    if (!isPlainFileName(f?.name)) {
+      problems.push(`${JSON.stringify(f?.name)} is not a file name a backup holds`);
+      continue;
+    }
     const file = path.join(s.dir, f.name);
     if (!existsSync(file)) {
       problems.push(`${f.name} is missing`);

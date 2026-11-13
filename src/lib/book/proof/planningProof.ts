@@ -126,6 +126,10 @@ export function parsePlanningDescriptor(d: Record<string, unknown>): PlanningDes
         const f = d.fire;
         if (!isObj(f) || !(f.walkAwayYear === null || (isNum(f.walkAwayYear) && Number.isInteger(f.walkAwayYear))) || !isNum(f.withdrawalRate) || !(f.stateTaxRate === null || isNum(f.stateTaxRate)) || !isNum(f.retirementAge))
           return { error: "fire must be { walkAwayYear, withdrawalRate, stateTaxRate, retirementAge }." };
+        // Rates are shares, not percents: outside these the retirement-tax search has no answer.
+        const within = (v: number | null, lo: number, hi: number) => v === null || (v >= lo && v <= hi);
+        if (!within(f.withdrawalRate, 0, 1) || !within(f.stateTaxRate as number | null, 0, 0.5) || !within(f.retirementAge, 0, 120) || !within(f.walkAwayYear as number | null, 1900, 2300))
+          return { error: "fire is out of range: withdrawalRate 0–1, stateTaxRate 0–0.5, retirementAge 0–120." };
         fire = { walkAwayYear: f.walkAwayYear as number | null, withdrawalRate: f.withdrawalRate, stateTaxRate: f.stateTaxRate as number | null, retirementAge: f.retirementAge };
       }
       if (d.figure === "milestone" && (typeof d.milestone !== "string" || !/^(nw-\d+|fi-0\.\d+)$/.test(d.milestone))) return { error: "milestone must be a milestone id (nw-<cents> or fi-<share>)." };

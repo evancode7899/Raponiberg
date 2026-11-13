@@ -28,12 +28,21 @@ export function firePlans(f: Pick<Forecast, "plan" | "assumptions">): { full: Ou
 /** The same plan looking far enough ahead to answer "when". */
 export const extended = (plan: OutlookPlan): OutlookPlan => ({ ...plan, horizonYear: Math.max(plan.horizonYear, plan.start.year + SPAN_YEARS) });
 
-/** Smallest pre-tax draw in `year` whose after-tax income reaches `target`. */
+/** How many times drawFor doubles its upper bound: 2^40 × the target is past any real plan. */
+const MAX_DOUBLINGS = 40;
+
+/**
+ * Smallest pre-tax draw in `year` whose after-tax income reaches `target`. Infinity when no
+ * draw does (tax rates that together take everything).
+ */
 export function drawFor(plan: Pick<OutlookPlan, "tax" | "inflation" | "stateTaxRate">, year: number, target: number): number {
   if (target <= 0) return 0;
   let lo = target;
   let hi = target * 2;
-  while (retirementTax(plan, year, hi).afterTax < target) hi *= 2;
+  for (let i = 0; !(retirementTax(plan, year, hi).afterTax >= target); i++) {
+    if (i >= MAX_DOUBLINGS) return Infinity;
+    hi *= 2;
+  }
   while (hi - lo > 1) {
     const mid = Math.floor((lo + hi) / 2);
     if (retirementTax(plan, year, mid).afterTax >= target) hi = mid;

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { dataDir } from "../dataDir.ts";
+import { dataDir, isDemo } from "../dataDir.ts";
 import type { TaxDocsFile } from "./types.ts";
 
 /**
@@ -16,8 +16,9 @@ export const TAX_DOCS_VERSION = 3;
  * apart from the scanner so the Book can read it without loading the PDF libraries.
  */
 
-/** The folder holding the filed returns and the forms behind them (TAX_DOCS_DIR), or null when not set up. */
+/** The folder holding the filed returns and the forms behind them (TAX_DOCS_DIR), or null when not set up. The demo never reads the real one. */
 export function taxDocsDir(env: Record<string, string | undefined> = process.env): string | null {
+  if (isDemo(env)) return null;
   const d = env.TAX_DOCS_DIR?.trim();
   return d ? path.resolve(d) : null;
 }

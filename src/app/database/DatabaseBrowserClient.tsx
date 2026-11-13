@@ -1,5 +1,6 @@
 "use client";
 
+import { apiSecretHeaders } from "@/components/ledger/useApi";
 import { btn, Card, ErrorNote, inputCls, PageBody } from "@/components/ui/kit";
 import { useCallback, useEffect, useState } from "react";
 
@@ -67,7 +68,7 @@ export function DatabaseBrowserClient({ requiresDbSecret }: { requiresDbSecret: 
 
   const headers = useCallback((): HeadersInit => {
     const t = dbSecret.trim();
-    return t ? { "x-settings-database-secret": t } : {};
+    return { ...apiSecretHeaders(), ...(t ? { "x-settings-database-secret": t } : {}) };
   }, [dbSecret]);
 
   useEffect(() => {

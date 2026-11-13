@@ -38,6 +38,10 @@ describe("FIRE number", () => {
     expect(fireNumber(plan, 2035, 60_000_00)).toBe(Math.ceil(drawFor(plan, 2035, 60_000_00) / 0.035));
   });
 
+  it("has no answer, rather than searching forever, when tax takes every extra dollar", () => {
+    expect(drawFor({ ...plan, stateTaxRate: 1 }, 2035, 60_000_00)).toBe(Infinity);
+  });
+
   it("is 25× spending at 4% when no tax applies", () => {
     const noTax = { ...plan, stateTaxRate: 0, withdrawalRate: 0.04, tax: { ...plan.tax, standardDeduction: 1e12 } };
     expect(fireNumber(noTax, 2030, 80_000_00)).toBe(2_000_000_00);
