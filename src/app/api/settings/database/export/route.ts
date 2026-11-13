@@ -2,7 +2,8 @@ import { AUDIT_ACTOR_SETTINGS, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { prisma } from "@/lib/db";
 import { assertSettingsDatabaseRequest } from "@/lib/settingsDatabaseAuth";
 import { resolveSqliteDatabaseFilePath } from "@/lib/sqliteDbPath";
-import { existsSync, readFileSync } from "node:fs";
+import { databaseBytes } from "@/lib/sqliteSnapshot";
+import { existsSync } from "node:fs";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -27,13 +28,13 @@ export async function GET(req: Request) {
     );
   }
 
+  // A copy SQLite writes itself: the file on disk alone can lack what the write-ahead log still holds.
+  let buf: Buffer;
   try {
-    await prisma.$queryRawUnsafe("PRAGMA wal_checkpoint(TRUNCATE)");
-  } catch {
-    /* ignore */
+    buf = await databaseBytes(prisma);
+  } catch (e) {
+    return NextResponse.json({ error: `Could not copy the database: ${e instanceof Error ? e.message : e}` }, { status: 500 });
   }
-
-  const buf = readFileSync(dbPath);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
   await logAuditEvent({
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
     payload: { bytes: buf.length, pathHint: "finance.db" },
   });
 
-  return new NextResponse(buf, {
+  return new NextResponse(new Uint8Array(buf), {
     status: 200,
     headers: {
       "Content-Type": "application/octet-stream",

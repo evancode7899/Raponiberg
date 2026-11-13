@@ -41,7 +41,7 @@ const ALLOWED: Record<string, string> = {
   "src/app/api/export/transactions/route.ts": "raw row export (with whether the Book counts each row)",
   "src/app/api/health/db/route.ts": "database health check (counts, applied migrations)",
   "src/app/api/settings/database/browse/route.ts": "raw table browser (Settings → Database)",
-  "src/app/api/settings/database/export/route.ts": "copies the database file",
+  "src/lib/sqliteSnapshot.ts": "copies the database file (no figures), for Settings → export and the copy kept before an import",
   "src/app/api/settings/database/import/route.ts": "validates and replaces the database file",
   "src/app/api/settings/database/wipe/route.ts": "empties the database",
 };

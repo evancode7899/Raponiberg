@@ -16,9 +16,10 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? prismaLog : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+// One client for the whole server, in production too: each route is bundled separately, and
+// a client per bundle would keep the database open after the import route closes its own
+// (it must close every connection before it replaces the file).
+globalForPrisma.prisma = prisma;
 
 const globalForSqlite = globalThis as unknown as {
   __prismaSqlitePerfInit?: boolean;

@@ -30,6 +30,8 @@ export type SweepRunner = {
   peek: () => SweepPeek;
   /** Starts the sweep of the data as it is now, if it isn't already done or under way. */
   warm: () => void;
+  /** Stops the sweep under way, if any (the database file is about to be replaced: it holds it open). */
+  stop: () => void;
 };
 
 /** The data changed while a sweep ran: it was stopped, and the caller asks again. */
@@ -54,9 +56,15 @@ export function createSweepRunner(opts: {
   let current: { stamp: string; result: Promise<string> } | null = null;
   // The last sweep that failed outright (not overtaken), so a page hears why rather than waiting forever.
   let failed: { stamp: string; error: string } | null = null;
+  // The job under way, to stop it on request.
+  let running: SweepJob | null = null;
 
   const start = (s: string) => {
     const job = run(s);
+    running = job;
+    void job.result.catch(() => {}).finally(() => {
+      if (running === job) running = null;
+    });
     let timer: ReturnType<typeof setInterval> | undefined;
     const overtaken = new Promise<never>((_, reject) => {
       timer = setInterval(() => {
@@ -130,8 +138,14 @@ export function createSweepRunner(opts: {
     warm() {
       void forNow().catch(() => {});
     },
+    stop() {
+      running?.stop();
+    },
   };
 }
+
+/** A sweep takes seconds on a full ledger; one still running after this long is stuck. */
+const SWEEP_TIMEOUT_MS = 10 * 60_000;
 
 /** Runs scripts/proof-sweep.ts --child on the server's own data, environment and folder; its answer arrives over IPC. */
 function runChild(): SweepJob {
@@ -144,9 +158,24 @@ function runChild(): SweepJob {
   child.stderr?.on("data", (b: Buffer) => (stderr = (stderr + b.toString()).slice(-2000)));
   const result = new Promise<string>((resolve, reject) => {
     let body: string | null = null;
+    let timedOut = false;
+    // A sweep that hangs would otherwise leave its callers waiting until the data next changes.
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, SWEEP_TIMEOUT_MS);
+    timer.unref?.();
     child.on("message", (m) => (body = typeof m === "string" ? m : JSON.stringify(m)));
-    child.on("error", reject);
-    child.on("exit", (code) => (body != null ? resolve(body) : reject(new Error(`The proof sweep stopped (exit ${code}): ${stderr.trim().split("\n").at(-1) ?? ""}`))));
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      if (body != null) resolve(body);
+      else if (timedOut) reject(new Error(`The proof sweep didn't finish within ${SWEEP_TIMEOUT_MS / 60_000} minutes and was stopped.`));
+      else reject(new Error(`The proof sweep stopped (exit ${code}): ${stderr.trim().split("\n").at(-1) ?? ""}`));
+    });
   });
   return { result, stop: () => void child.kill() };
 }

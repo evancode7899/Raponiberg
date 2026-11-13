@@ -20,6 +20,9 @@ import { sweepProofs } from "../src/lib/book/proof/sweep.ts";
 import { prisma } from "../src/lib/db.ts";
 
 if (process.argv.includes("--child")) {
+  // The server that started this is gone (stopped, or killed): nobody is waiting for the
+  // answer, and a sweep left running would hold the database open.
+  process.on("disconnect", () => process.exit(1));
   try {
     setPriority(constants.priority.PRIORITY_BELOW_NORMAL);
   } catch {

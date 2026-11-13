@@ -1,10 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { transferDifferenceAdjustments } from "../ledger/transferFees.ts";
-import { planBillPayments, type BillLeg } from "./billPayments.ts";
+import { loadBillPaymentInputs, planBillPayments, type BillLeg } from "./billPayments.ts";
 import { legKey } from "./matchTransfers.ts";
 
 // Invented bill cycles and rent payments.
 const cycle = (id: string, start: string, end: string, cents: number): BillLeg => ({ id, accountId: "bill", date: end, precision: "PERIOD", periodStart: start, periodEnd: end, amountCents: cents });
+
+describe("loading the bank payments that could pay a bill", () => {
+  it("looks through the last day of the window, where a row sits at noon UTC", async () => {
+    const noon = (d: string) => new Date(`${d}T12:00:00Z`);
+    const wheres: { date?: { gte: Date; lte: Date } }[] = [];
+    const db = {
+      transaction: {
+        findMany: async (args: { where: { date?: { gte: Date; lte: Date } } }) => {
+          wheres.push(args.where);
+          if (wheres.length > 1) return [];
+          return [{ id: "p1", accountId: "bill", date: noon("2027-04-10"), datePrecision: "EXACT", amountCents: 301_500, statementImport: { periodStart: noon("2027-03-26"), periodEnd: noon("2027-04-25") } }];
+        },
+      },
+      statementImport: { groupBy: async () => [] },
+    };
+    await loadBillPaymentInputs(db as unknown as Parameters<typeof loadBillPaymentInputs>[0], []);
+    // A printed payment pairs with a bank row up to six days either side.
+    const { gte, lte } = wheres[1]!.date!;
+    expect(gte.getTime()).toBeLessThanOrEqual(noon("2027-04-04").getTime());
+    expect(lte.getTime()).toBeGreaterThanOrEqual(noon("2027-04-16").getTime());
+  });
+});
 
 describe("paying a landlord's bill", () => {
   it("pairs a cycle with the rent payments in it that add up to what the bill says was paid", () => {
