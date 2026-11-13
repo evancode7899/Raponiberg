@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { categorizeMerchant, type MerchantRule } from "../classifier/merchants.ts";
 import { addDays, daysBetween } from "../dates/isoDate.ts";
+import { parseIsoDate } from "../statements/parseIsoDate.ts";
 import { legKey, type MatchMethod } from "./matchTransfers.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -126,7 +127,8 @@ export async function loadBillPaymentInputs(db: Db, merchantRules: MerchantRule[
       userLocked: false,
       transferLeg: null,
       datePrecision: "EXACT",
-      date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) },
+      // Rows are stored at noon UTC (parseIsoDate): a midnight bound would drop the window's last day.
+      date: { gte: parseIsoDate(from), lte: parseIsoDate(to) },
       category: { name: "Housing & utilities" },
       account: { type: { in: ["CHECKING", "SAVINGS"] } },
       statementImport: { isSummary: false, status: "COMMITTED" },

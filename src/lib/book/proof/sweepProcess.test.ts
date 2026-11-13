@@ -76,6 +76,20 @@ describe("the proof sweep runner", () => {
     expect(started).toHaveLength(2);
   });
 
+  it("stops the sweep under way on request, and only that one", async () => {
+    const { started, run } = fakeRuns();
+    const s = createSweepRunner({ stamp: () => "a", run, pollMs: 1000 });
+    s.stop();
+    const one = s.report();
+    s.stop();
+    expect(started[0]!.stopped).toBe(true);
+    started[0]!.finish("{}");
+    await one;
+    void s.report();
+    s.stop();
+    expect(started).toHaveLength(1);
+  });
+
   it("warms without anyone waiting, and a warm sweep answers the next ask", async () => {
     const { started, run } = fakeRuns();
     const s = createSweepRunner({ stamp: () => "a", run, pollMs: 5 });
