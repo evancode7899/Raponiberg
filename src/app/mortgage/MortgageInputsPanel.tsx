@@ -1,5 +1,6 @@
 "use client";
 
+import { YearInput } from "@/app/forecast/forecastUi";
 import { Group } from "@/app/home-budget/parts";
 import { fmtValue, RangeSlider } from "@/app/home-budget/RangeSlider";
 import { LINKED_KEYS, type LinkedKey } from "@/lib/mortgage/inputs";
@@ -129,15 +130,8 @@ export function MortgageInputsPanel({
                 </option>
               ))}
             </select>
-            <input
-              aria-label="First payment year"
-              type="number"
-              className={`${selectCls} num w-20`}
-              value={ins.startYear}
-              min={1990}
-              max={2100}
-              onChange={(e) => Number.isFinite(Number(e.target.value)) && set({ startYear: Math.round(Number(e.target.value)) })}
-            />
+            {/* Commits on blur or Enter, and never a blank: a cleared field used to save year 0. */}
+            <YearInput ariaLabel="First payment year" className={`${selectCls} num w-20`} value={ins.startYear} min={1990} max={2100} required onChange={(y) => y != null && set({ startYear: y })} />
           </div>
         </div>
       </Card>
@@ -177,31 +171,21 @@ export function MortgageInputsPanel({
                         </option>
                       ))}
                     </select>
-                    <input
-                      aria-label="Year"
-                      type="number"
-                      className={`${selectCls} num py-1`}
-                      value={r.year}
-                      onChange={(e) => {
-                        const y = Math.round(Number(e.target.value));
-                        if (Number.isFinite(y)) setRow(r.id, { year: y, untilYear: Math.max(y, r.untilYear) });
-                      }}
-                    />
+                    <YearInput ariaLabel="Year" className={`${selectCls} num py-1`} value={r.year} min={1990} max={2200} required onChange={(y) => y != null && setRow(r.id, { year: y, untilYear: Math.max(y, r.untilYear) })} />
                     <MoneyInput size="xs" ariaLabel="Amount" allowNegative={false} cents={Math.round(r.amount * 100)} onChange={(c) => setRow(r.id, { amount: Math.max(0, (c ?? 0) / 100) })} />
                   </div>
                   <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-fg-2">
                     <input type="checkbox" checked={r.repeat} onChange={(e) => setRow(r.id, { repeat: e.target.checked })} />
                     Every year through
-                    <input
-                      aria-label="Repeat until year"
-                      type="number"
+                    <YearInput
+                      ariaLabel="Repeat until year"
                       disabled={!r.repeat}
                       className={`${selectCls} num w-[4.5rem] py-0.5 disabled:opacity-40`}
                       value={r.untilYear}
-                      onChange={(e) => {
-                        const y = Math.round(Number(e.target.value));
-                        if (Number.isFinite(y)) setRow(r.id, { untilYear: y });
-                      }}
+                      min={1990}
+                      max={2200}
+                      required
+                      onChange={(y) => y != null && setRow(r.id, { untilYear: y })}
                     />
                   </label>
                 </li>

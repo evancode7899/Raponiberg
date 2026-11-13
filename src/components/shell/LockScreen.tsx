@@ -64,8 +64,8 @@ export function LockScreen({ onUnlock }: { onUnlock: () => void }) {
       setWrong(true);
       setPassword("");
     } catch {
-      setDemo(null);
-      setWrong(true);
+      // The request never got an answer: that isn't a wrong password, so the entry is kept.
+      setDemo("Couldn't reach the app. Check it's still running, then press Enter again.");
     } finally {
       setBusy(false);
     }

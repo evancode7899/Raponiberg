@@ -29,14 +29,21 @@ export function AuditPanel({ api }: { api: Api }) {
 
   const download = async () => {
     const headers: Record<string, string> = api.requiresApiSecret && api.secret.trim() ? { "x-api-secret": api.secret.trim() } : {};
-    const res = await fetch("/api/export/audit", { headers });
-    if (res.ok) await downloadResponse(res, "audit_log.csv");
-    else setError(`Download failed (${res.status})`);
+    setError(null);
+    try {
+      const res = await fetch("/api/export/audit", { headers });
+      if (res.ok) await downloadResponse(res, "audit_log.csv");
+      else setError(`Download failed (${res.status})`);
+    } catch {
+      setError("Download failed: the app didn't answer.");
+    }
   };
 
-  if (error) return <ErrorNote>{error}</ErrorNote>;
-  if (!data) return <Loading />;
+  // A failed download leaves the log on screen; only a failed load has nothing to show.
+  if (!data) return error ? <ErrorNote>{error}</ErrorNote> : <Loading />;
   return (
+    <>
+    {error && <ErrorNote>{error}</ErrorNote>}
     <Card
       title={`Audit log (${data.total.toLocaleString()} events)`}
       subtitle={`Newest first, times in Eastern. Showing the latest ${data.events.length}; download the CSV for everything. Click a row for its details.`}
@@ -78,5 +85,6 @@ export function AuditPanel({ api }: { api: Api }) {
         </table>
       </div>
     </Card>
+    </>
   );
 }

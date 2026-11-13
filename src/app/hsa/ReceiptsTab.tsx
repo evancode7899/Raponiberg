@@ -209,7 +209,7 @@ export function ReceiptsTab({
               ))}
             </select>
           )}
-          <input className={`${inputCls} w-48 py-1 text-xs`} placeholder="Search provider or notes" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className={`${inputCls} w-48 py-1 text-xs`} placeholder="Search provider or notes" aria-label="Search provider or notes" value={q} onChange={(e) => setQ(e.target.value)} />
           <span className="ml-auto text-xs text-muted">
             {shown.length} shown · <span className="num text-fg"><ProofValue proof={expensesSum(dp, shown)}>{formatUsdCents(shownCents)}</ProofValue></span>
           </span>
