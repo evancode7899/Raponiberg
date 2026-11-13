@@ -613,28 +613,44 @@ export async function fetchSavedInputs<T extends object>(key: string): Promise<P
  * Calculator inputs saved in the app's data (data/page-inputs.json), so they are backed up
  * and follow the data to a new computer. This browser's copy draws the first frame; the
  * saved copy replaces it once loaded. Inputs only this browser had are saved on first load.
+ *
+ * The third value says why the inputs aren't being saved, when they aren't (the page
+ * shows it): the saved copy couldn't be loaded, so nothing is written over it, or a save
+ * failed. Both are tried again.
  */
-export function useSavedState<T extends object>(key: string, initial: () => T): [T, Dispatch<SetStateAction<T>>] {
+export function useSavedState<T extends object>(key: string, initial: () => T): [T, Dispatch<SetStateAction<T>>, string | null] {
   const [value, setValue] = usePersistentState<T>(key, initial);
   const [ready, setReady] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  // Bumped to try a failed save again.
+  const [retry, setRetry] = useState(0);
   const lastSaved = useRef<string | null>(null);
   useEffect(() => {
     let live = true;
-    fetchSavedInputs<T>(key)
-      .then((saved) => {
-        if (!live) return;
-        if (saved) {
-          const next = { ...initial(), ...saved };
-          lastSaved.current = JSON.stringify(next);
-          setValue(next);
-        }
-        setReady(true);
-      })
-      .catch(() => {
-        /* server unreachable: keep this browser's copy, don't overwrite the saved one */
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = (attempt: number) => {
+      fetchSavedInputs<T>(key)
+        .then((saved) => {
+          if (!live) return;
+          if (saved) {
+            const next = { ...initial(), ...saved };
+            lastSaved.current = JSON.stringify(next);
+            setValue(next);
+          }
+          setProblem(null);
+          setReady(true);
+        })
+        .catch(() => {
+          // Server unreachable: keep this browser's copy, and don't overwrite the saved one.
+          if (!live) return;
+          if (attempt >= 2) setProblem("Couldn't load your saved inputs, so changes here aren't being saved yet. Still trying.");
+          timer = setTimeout(() => load(attempt + 1), Math.min(15_000, 1000 * 2 ** attempt));
+        });
+    };
+    load(0);
     return () => {
       live = false;
+      clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` is a factory for defaults
   }, [key]);
@@ -642,6 +658,13 @@ export function useSavedState<T extends object>(key: string, initial: () => T): 
     if (!ready) return;
     const json = JSON.stringify(value);
     if (json === lastSaved.current) return;
+    let live = true;
+    let again: ReturnType<typeof setTimeout> | undefined;
+    const failed = (why: string) => {
+      if (!live) return;
+      setProblem(`Couldn't save these inputs (${why}). Trying again.`);
+      again = setTimeout(() => setRetry((n) => n + 1), 5000);
+    };
     const t = setTimeout(() => {
       fetch(`/api/page-inputs/${encodeURIComponent(key)}`, {
         method: "PUT",
@@ -649,13 +672,19 @@ export function useSavedState<T extends object>(key: string, initial: () => T): 
         body: JSON.stringify({ value }),
       })
         .then((res) => {
-          if (res.ok) lastSaved.current = json;
+          if (!res.ok) return failed(`the app answered ${res.status}`);
+          lastSaved.current = json;
+          if (live) setProblem(null);
         })
-        .catch(() => {});
+        .catch(() => failed("the app didn't answer"));
     }, 600);
-    return () => clearTimeout(t);
-  }, [key, value, ready]);
-  return [value, setValue];
+    return () => {
+      live = false;
+      clearTimeout(t);
+      clearTimeout(again);
+    };
+  }, [key, value, ready, retry]);
+  return [value, setValue, problem];
 }
 
 /** Page body: consistent width and padding under the tabs. */
@@ -665,6 +694,9 @@ export function PageBody({ children, width = "wide", className = "" }: { childre
 }
 
 // ---------------------------------------------------------------------------- overlays
+
+/** What Tab stops on inside a panel. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** Right-hand panel for details (transactions behind a bar, an account…). */
 export function Drawer({
@@ -684,13 +716,42 @@ export function Drawer({
 }) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
+  // In a ref: a parent that passes a new onClose each render must not re-run the effect
+  // below, which would pull focus out of whatever field is being typed in.
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  });
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return close.current();
+      if (e.key !== "Tab" || !panel.current) return;
+      // Tab stays inside the panel while it's open.
+      const stops = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      const at = document.activeElement;
+      if (!first || !last) {
+        e.preventDefault();
+        panel.current.focus();
+      } else if (!panel.current.contains(at) || (e.shiftKey && (at === first || at === panel.current))) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (!e.shiftKey && at === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
     panel.current?.focus();
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      // Back to what opened it, if that's still on the page.
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex justify-end">

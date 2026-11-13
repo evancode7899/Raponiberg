@@ -191,6 +191,7 @@ export function GoalsClient({ requiresApiSecret }: { requiresApiSecret: boolean 
             setEditing(null);
           }}
           onDelete={() => {
+            if (!window.confirm("Delete this goal? Its target, date and funding choices are removed.")) return;
             saveGoals(goals.filter((g) => g.id !== editing.id));
             setEditing(null);
           }}

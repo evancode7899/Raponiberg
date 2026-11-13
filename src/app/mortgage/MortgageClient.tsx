@@ -1,7 +1,7 @@
 "use client";
 
 import { useChartPalette } from "@/components/shell/chartPalette";
-import { Callout, Card, NotFigure, PageBody, StatCell, StatGrid, table, useSavedState, WhatIf } from "@/components/ui/kit";
+import { Callout, Card, ErrorNote, NotFigure, PageBody, StatCell, StatGrid, table, useSavedState, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { comparePrepayVsInvest, loanMonthToCalendar, type PathSeries } from "@/lib/mortgage/prepayVsInvest";
@@ -32,7 +32,7 @@ const span = (months: number) => {
 export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
   const chart = useChartPalette();
-  const [ins, setIns] = useSavedState<MortgageInputs>(STORAGE_KEY, defaultInputs);
+  const [ins, setIns, notSaved] = useSavedState<MortgageInputs>(STORAGE_KEY, defaultInputs);
   useEffect(() => {
     const legacy = migrateLegacy();
     if (legacy) setIns((x) => ({ ...x, ...legacy }));
@@ -141,8 +141,19 @@ export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boole
 
   return (
     <PageBody>
+      {notSaved && <ErrorNote>{notSaved}</ErrorNote>}
       <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <MortgageInputsPanel ins={eff} typed={ins.typed ?? {}} links={links} year={linkYear} set={set} payment={cmp.monthlyPayment} onReset={() => setIns(defaultInputs())} />
+        <MortgageInputsPanel
+          ins={eff}
+          typed={ins.typed ?? {}}
+          links={links}
+          year={linkYear}
+          set={set}
+          payment={cmp.monthlyPayment}
+          onReset={() => {
+            if (window.confirm("Reset every input on this page to its default? Your lump sums are removed too.")) setIns(defaultInputs());
+          }}
+        />
 
         <div className="flex min-w-0 flex-col gap-4">
           {!hasChoice ? (

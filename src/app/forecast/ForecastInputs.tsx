@@ -272,7 +272,7 @@ function OneOffs({ a, set, startYear }: { a: OutlookAssumptions; set: SetAssumpt
         <div className="mb-1 flex flex-col gap-1 rounded-md bg-surface-2 p-1.5">
           {list.map((e) => (
             <div key={e.id} className="grid grid-cols-[1fr_3.25rem_3.5rem_5.5rem_auto] items-center gap-1">
-              <input className="min-w-0 rounded border border-line-strong bg-surface px-1.5 py-1 text-xs text-fg" placeholder="What for" defaultValue={e.label} onBlur={(ev) => update(e.id, { label: ev.target.value })} />
+              <input className="min-w-0 rounded border border-line-strong bg-surface px-1.5 py-1 text-xs text-fg" placeholder="What for" aria-label="What the one-off is for" defaultValue={e.label} onBlur={(ev) => update(e.id, { label: ev.target.value })} />
               <select className={`${selectCls} !px-1 !py-1`} value={e.month ?? 6} onChange={(ev) => update(e.id, { month: Number(ev.target.value) })} aria-label="Month">
                 {Array.from({ length: 12 }, (_, i) => (
                   <option key={i + 1} value={i + 1}>
@@ -280,9 +280,9 @@ function OneOffs({ a, set, startYear }: { a: OutlookAssumptions; set: SetAssumpt
                   </option>
                 ))}
               </select>
-              <YearInput value={e.year} min={startYear} onChange={(v) => v != null && update(e.id, { year: v })} />
-              <MoneyInput size="xs" cents={e.amount} onChange={(v) => update(e.id, { amount: v ?? 0 })} />
-              <button type="button" className="px-1 text-neg" title="Remove" onClick={() => set("plannedExpenses", list.filter((x) => x.id !== e.id))}>
+              <YearInput ariaLabel="Year" value={e.year} min={startYear} onChange={(v) => v != null && update(e.id, { year: v })} />
+              <MoneyInput size="xs" ariaLabel="Amount" cents={e.amount} onChange={(v) => update(e.id, { amount: v ?? 0 })} />
+              <button type="button" className="px-1 text-neg" title="Remove" aria-label="Remove this one-off" onClick={() => set("plannedExpenses", list.filter((x) => x.id !== e.id))}>
                 ×
               </button>
             </div>

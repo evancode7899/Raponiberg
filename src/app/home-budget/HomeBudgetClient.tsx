@@ -42,8 +42,9 @@ export type Patch = <K extends keyof HomeBudgetInputs>(key: K, v: HomeBudgetInpu
 export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
   const [tab, setTab] = useTabParam(TABS, "afford");
-  const [stored, setStored] = useSavedState<HomeBudgetInputs>("pf-home-budget-inputs", defaultHomeBudgetInputs);
-  const [config, setConfig] = useSavedState<FundsConfig>("pf-home-budget-funds", defaultFunds);
+  const [stored, setStored, storedNotSaved] = useSavedState<HomeBudgetInputs>("pf-home-budget-inputs", defaultHomeBudgetInputs);
+  const [config, setConfig, configNotSaved] = useSavedState<FundsConfig>("pf-home-budget-funds", defaultFunds);
+  const notSaved = storedNotSaved ?? configNotSaved;
   const [book, setBook] = useState(() => cachedResponse<FundsBook>("/api/home-budget/funds"));
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +69,7 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
   const lenderMax = useMemo(() => computeLenderMax(ins, lender.income), [ins, lender.income]);
   const spendMonthly = book?.spending ? book.spending.monthlyCents / 100 : null;
   const reset = () => {
+    if (!window.confirm("Reset every input on this page to its default? Cash goes back to following your net worth.")) return;
     setStored(defaultHomeBudgetInputs());
     setConfig(defaultFunds());
   };
@@ -96,6 +98,7 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
       />
       <PageBody>
         <ApiSecretField api={api} />
+        {notSaved && <ErrorNote>{notSaved}</ErrorNote>}
         {error && <ErrorNote>Couldn&apos;t load net worth for the cash default: {error}. Using the fixed amount instead.</ErrorNote>}
         {tab === "afford" || tab === "price" ? (
           <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
