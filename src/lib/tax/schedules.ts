@@ -63,7 +63,8 @@ export function returnSchedules(r: ReturnResult, people: PersonIncome[], params:
     brackets(
       "pref",
       "Qualified dividends & long-term gains",
-      fill(f.preferentialIncome, [cg.zeroMax, cg.fifteenMax], [0, 0.15, 0.2], ordinary),
+      // Gain taxed at up to 25% and 28% sits between ordinary income and these bands (Schedule D Tax Worksheet).
+      fill(f.preferentialIncome - f.rateGain.unrecaptured1250 - f.rateGain.collectibles, [cg.zeroMax, cg.fifteenMax], [0, 0.15, 0.2], ordinary + f.rateGain.unrecaptured1250 + f.rateGain.collectibles),
       "Stacked on top of ordinary income: the bands are measured on total taxable income.",
     ),
   );
@@ -76,6 +77,7 @@ export function returnSchedules(r: ReturnResult, people: PersonIncome[], params:
   if (f.nonrefundableCredits) fedLines.push({ label: "Credits (child, dependent care, foreign tax)", value: -f.nonrefundableCredits });
   fedLines.push(
     { label: "Income tax after credits", value: f.incomeTaxAfterCredits, strong: true },
+    ...(f.selfEmploymentTax ? [{ label: "Self-employment tax (Schedule SE)", value: f.selfEmploymentTax }] : []),
     { label: "Additional Medicare tax (0.9%)", value: f.additionalMedicareTax },
     { label: "Net investment income tax (3.8%)", value: f.niit },
   );

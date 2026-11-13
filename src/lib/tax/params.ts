@@ -45,6 +45,10 @@ export type FederalParams = {
   };
   salt: { cap: ByStatus<number>; phaseoutStart: ByStatus<number>; floor: ByStatus<number>; phaseoutRate: number };
   qbiThreshold: ByStatus<number>;
+  /** How far above the threshold the wage and property limit phases in, and a service business phases out (Form 8995-A line 23). */
+  qbiPhaseIn: ByStatus<number>;
+  /** From 2026: the least the deduction is with at least `activeIncome` of income from businesses the owner materially participates in (null before). */
+  qbiMinimum: { deduction: number; activeIncome: number } | null;
   /** Rates on qualified dividends and long-term gains above the 0% band (the 15% band, then 20%). */
   preferentialRates: { fifteen: number; twenty: number };
   /** AMT rates: on AMT income up to rate28Above, and above it. */
@@ -173,6 +177,9 @@ const FED_2026: FederalParams = {
   ctcPhaseout: { per: $(50), step: $(1_000) },
   ctcRefundable: { earnedFloor: $(2_500), rate: 0.15 },
   qbiThreshold: byStatus($(201_750), $(403_500), $(201_775), $(201_750)),
+  // Rev. Proc. 2025-32 §4.26: the range now ends $75,000 ($150,000 joint) above the threshold (P.L. 119-21).
+  qbiPhaseIn: byStatus($(75_000), $(150_000), $(75_000), $(75_000)),
+  qbiMinimum: { deduction: $(400), activeIncome: $(1_000) },
   amt: {
     exemption: byStatus($(90_100), $(140_200), $(70_100), $(90_100)),
     phaseoutStart: byStatus($(500_000), $(1_000_000), $(500_000), $(500_000)),
@@ -237,6 +244,8 @@ const FED_2025: FederalParams = {
   ctcPhaseout: { per: $(50), step: $(1_000) },
   ctcRefundable: { earnedFloor: $(2_500), rate: 0.15 },
   qbiThreshold: byStatus($(197_300), $(394_600), $(197_300), $(197_300)),
+  qbiPhaseIn: byStatus($(50_000), $(100_000), $(50_000), $(50_000)),
+  qbiMinimum: null,
   amt: {
     exemption: byStatus($(88_100), $(137_000), $(68_500), $(88_100)),
     phaseoutStart: byStatus($(626_350), $(1_252_700), $(626_350), $(626_350)),
@@ -295,6 +304,8 @@ const FED_2024: FederalParams = {
   ctcPhaseout: { per: $(50), step: $(1_000) },
   ctcRefundable: { earnedFloor: $(2_500), rate: 0.15 },
   qbiThreshold: byStatus($(191_950), $(383_900), $(191_950), $(191_950)),
+  qbiPhaseIn: byStatus($(50_000), $(100_000), $(50_000), $(50_000)),
+  qbiMinimum: null,
   amt: {
     exemption: byStatus($(85_700), $(133_300), $(66_650), $(85_700)),
     phaseoutStart: byStatus($(609_350), $(1_218_700), $(609_350), $(609_350)),
@@ -332,6 +343,8 @@ const FED_2023: FederalParams = {
   ),
   childTaxCredit: { ...FED_2024.childTaxCredit, refundablePerChild: $(1_600) },
   qbiThreshold: byStatus($(182_100), $(364_200), $(182_100), $(182_100)),
+  qbiPhaseIn: byStatus($(50_000), $(100_000), $(50_000), $(50_000)),
+  qbiMinimum: null,
   amt: {
     exemption: byStatus($(81_300), $(126_500), $(63_250), $(81_300)),
     phaseoutStart: byStatus($(578_150), $(1_156_300), $(578_150), $(578_150)),
@@ -368,6 +381,8 @@ const FED_2022: FederalParams = {
   ),
   childTaxCredit: { ...FED_2024.childTaxCredit, refundablePerChild: $(1_500) },
   qbiThreshold: byStatus($(170_050), $(340_100), $(170_050), $(170_050)),
+  qbiPhaseIn: byStatus($(50_000), $(100_000), $(50_000), $(50_000)),
+  qbiMinimum: null,
   amt: {
     exemption: byStatus($(75_900), $(118_100), $(59_050), $(75_900)),
     phaseoutStart: byStatus($(539_900), $(1_079_800), $(539_900), $(539_900)),

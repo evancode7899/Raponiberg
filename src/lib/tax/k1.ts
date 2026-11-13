@@ -30,7 +30,6 @@ export type K1Items = {
   seEarnings: number;
   /** Positive cents. */
   investmentInterestExpense: number;
-  investmentExpensesNiiOnly: number;
   foreignTax: number;
   foreignSourceIncome: number;
   qbi: { income: number; w2Wages: number; ubia: number; sstb: boolean; reitDividends: number };
@@ -83,7 +82,6 @@ export function k1Items(form: K1Form, detail: K1Detail | null): K1Items {
     guaranteedPayments: form.guaranteedTotal || form.guaranteedPayments + form.guaranteedCapital,
     seEarnings: s("SE_EARNINGS"),
     investmentInterestExpense: expense(lines, "INVESTMENT_INTEREST_EXPENSE"),
-    investmentExpensesNiiOnly: expense(lines, "INVESTMENT_EXPENSE_NII_ONLY"),
     foreignTax: form.foreignTax + expense(lines, "FOREIGN_TAX"),
     foreignSourceIncome: s("FOREIGN_SOURCE_PASSIVE") + s("FOREIGN_SOURCE_GENERAL"),
     qbi: { income: s("QBI_INCOME"), w2Wages: s("QBI_W2_WAGES"), ubia: s("QBI_UBIA"), sstb: lines.some((l) => l.treatment === "QBI_SSTB" && l.cents !== 0), reitDividends: s("QBI_REIT_DIVIDENDS") },
@@ -92,6 +90,90 @@ export function k1Items(form: K1Form, detail: K1Detail | null): K1Items {
     usObligationInterest: s("US_OBLIGATION_INTEREST"),
     states,
   };
+}
+
+/** The lines of a person's return that only a K-1 fills. */
+export const K1_OWN_FIELDS = [
+  "partnershipIncome",
+  "partnershipNii",
+  "royalties",
+  "portfolioOtherIncome",
+  "collectiblesGain",
+  "unrecaptured1250Gain",
+  "investmentInterestExpense",
+  "seEarnings",
+  "foreignSourceIncome",
+  "foreignTaxSourced",
+  "amtAdjustments",
+  "ctPeCredit",
+  "nyPtetCredit",
+] as const;
+/** Every line of a person's return a K-1 can add to. */
+export type K1AddField =
+  | (typeof K1_OWN_FIELDS)[number]
+  | "taxableInterest"
+  | "ordinaryDividends"
+  | "qualifiedDividends"
+  | "shortTermGain"
+  | "longTermGain"
+  | "foreignTaxPaid"
+  | "section199aDividends"
+  | "taxExemptInterest"
+  | "usObligationIncome"
+  | "ctOtherAdditions"
+  | "ctOtherSubtractions"
+  | "estimatedCt"
+  | "estimatedNy"
+  | "otherStateTax";
+export type K1Adds = Partial<Record<K1AddField, number>>;
+
+/**
+ * What one K-1 adds to each line of its owner's return. `activityIncluded` is what the
+ * passive-loss limit lets through of its box 1–3 activity (all of it when the activity
+ * isn't passive). A trading fund's income is investment income even though it isn't passive.
+ */
+export function k1Adds(
+  partnership: string,
+  k: K1Items,
+  activityIncluded: number,
+  traderFund: boolean,
+): { adds: K1Adds; qbi: { name: string; income: number; w2Wages: number; ubia: number; sstb: boolean; active: boolean } | null } {
+  const home = (code: string) => k.states[code] ?? { addition: 0, subtraction: 0, sourceIncome: 0, pteCredit: 0, withheld: 0 };
+  const elsewhere = Object.entries(k.states).filter(([code]) => code !== "CT" && code !== "NY");
+  const all: K1Adds = {
+    taxableInterest: k.interest,
+    ordinaryDividends: k.ordinaryDividends,
+    qualifiedDividends: k.qualifiedDividends,
+    shortTermGain: k.shortTermGain,
+    longTermGain: k.longTermGain,
+    foreignTaxPaid: k.foreignTax,
+    // Only a K-1 whose Schedule K-3 income has been read can be held to the Form 1116 limit.
+    foreignTaxSourced: k.foreignSourceIncome > 0 ? k.foreignTax : 0,
+    foreignSourceIncome: k.foreignSourceIncome,
+    partnershipIncome: activityIncluded + k.guaranteedPayments,
+    partnershipNii: k.passive || traderFund ? activityIncluded : 0,
+    royalties: k.royalties,
+    portfolioOtherIncome: k.otherPortfolioIncome,
+    collectiblesGain: k.collectiblesGain,
+    unrecaptured1250Gain: k.unrecaptured1250Gain,
+    investmentInterestExpense: k.investmentInterestExpense,
+    seEarnings: k.seEarnings,
+    section199aDividends: k.qbi.reitDividends,
+    amtAdjustments: k.amtAdjustments,
+    taxExemptInterest: k.taxExemptInterest,
+    usObligationIncome: k.usObligationInterest,
+    ctOtherAdditions: home("CT").addition,
+    ctOtherSubtractions: home("CT").subtraction,
+    ctPeCredit: home("CT").pteCredit,
+    nyPtetCredit: home("NY").pteCredit,
+    // Tax a partnership paid over for the partner: the home states' as payments, other states' as tax paid there.
+    estimatedCt: home("CT").withheld,
+    estimatedNy: home("NY").withheld,
+    otherStateTax: elsewhere.reduce((t, [, st]) => t + st.withheld + st.pteCredit, 0),
+  };
+  const adds = Object.fromEntries(Object.entries(all).filter(([, v]) => v !== 0)) as K1Adds;
+  const qbi = k.qbi.income || k.qbi.w2Wages || k.qbi.ubia ? { name: partnership, income: k.qbi.income, w2Wages: k.qbi.w2Wages, ubia: k.qbi.ubia, sstb: k.qbi.sstb, active: !k.passive } : null;
+  return { adds, qbi };
 }
 
 export type K1Gap = { box: string; code: string; why: string };
@@ -253,7 +335,6 @@ export const K1_TREATMENT_LABEL: Record<K1Treatment, string> = {
   COLLECTIBLES_GAIN: "Part of the long-term gain",
   UNRECAPTURED_1250_GAIN: "Part of the long-term gain",
   INVESTMENT_INTEREST_EXPENSE: "Investment interest (itemized)",
-  INVESTMENT_EXPENSE_NII_ONLY: "Lowers investment income tax only",
   PORTFOLIO_DEDUCTION_NOT_DEDUCTIBLE: "Not deductible",
   SE_EARNINGS: "Self-employment tax",
   QBI_INCOME: "Business income deduction",

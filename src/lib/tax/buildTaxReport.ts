@@ -6,11 +6,10 @@ import { chetYear, excessDeferral, excessDeferralMessage, iraYear, k401Limit, st
 import { taxRows } from "../book/taxPayments.ts";
 import type { TaxForecastLink } from "../forecast/forecast.ts";
 import type { FiledReturn, K1Form, TaxDoc } from "../taxdocs/types.ts";
-import { computeReturn, safeHarbor, type NyFiling, type PersonIncome, type ReturnResult, type SafeHarbor, type W2 } from "./computeReturn.ts";
+import { additionalIncome, computeReturn, safeHarbor, type NyFiling, type PersonIncome, type QbiBusiness, type ReturnResult, type SafeHarbor, type W2 } from "./computeReturn.ts";
 import {
   ctResidentShares,
   filedBalance,
-  k1Income,
   matchW2s,
   NYC_LOCALITY,
   safeHarborTax,
@@ -23,7 +22,8 @@ import { ACCOUNT_KIND_LABEL, CHILD_KINDS, type AccountTaxKind, type Distribution
 import { taxPaymentsFrom, type FiledBalances, type TaxPaymentRow } from "./facts/payments.ts";
 import { amountsFromLines, projectPayroll, w2FromAmounts, ZERO_AMOUNTS, type PayrollAmounts, type PayrollProjection, type W2Boxes } from "./facts/payroll.ts";
 import { checkFiled, type FiledCheck } from "./filedCheck.ts";
-import { annualizedK1, expectedK1, k1Gaps, type K1Gap } from "./k1.ts";
+import { annualizedK1, expectedK1, k1Adds, k1Gaps, k1Items, K1_OWN_FIELDS, type K1AddField, type K1Adds, type K1Gap, type K1Items } from "./k1.ts";
+import { passiveCarryforwards, passiveKey, passiveLimit, type PassiveOutcome } from "./passive.ts";
 import { k1DetailFor, type K1Detail } from "./k1DetailStore.ts";
 import { TAX_YEARS, taxYearParams, type TaxYearParams } from "./params.ts";
 import { bestSeparate, type MfsResult } from "./scenarios.ts";
@@ -121,9 +121,14 @@ export type K1Use = {
   detail: K1Detail | null;
   /** What of it hasn't been read yet (tax/k1.ts k1Gaps): its lettered boxes with no line in the details file. */
   gaps: K1Gap[];
-  figures: ReturnType<typeof k1Income>;
-  /** A net passive loss with no passive income to absorb it: carried forward (Form 8582), not deducted. */
-  suspendedLoss: number;
+  /** The K-1 sorted into the return's places (tax/k1.ts). */
+  items: K1Items;
+  /** Its passive-loss outcome for the year (Form 8582); null when its activity isn't passive for this partner. */
+  passive: PassiveOutcome | null;
+  /** What it adds to each line of its owner's return, after the passive-loss limit: the model without it is the return less these. */
+  adds: K1Adds;
+  /** Its trade or business for the 20% deduction, when it reports one. */
+  qbi: QbiBusiness | null;
 };
 
 /** One payroll employer's W-2 figures, with where they came from. */
@@ -471,6 +476,64 @@ export function buildTaxReport(
   const chetByAccount = new Map(chet.accounts.map((a) => [a.accountNumber, a.cents]));
 
   const nPeople = filers.length;
+  const k1sOf = (person: TaxPerson): K1Use[] => {
+    // Partnership K-1s: a finished year's forms; for the year in progress, last year's again
+    // (an estimate) for any partnership that didn't mark its K-1 final.
+    const k1s: K1Use[] = [];
+    const countK1 = (form: K1Form, doc: DocRef, detail: K1Detail | null, basis: K1Use["basis"]) => {
+      const gaps = basis !== "DOCUMENT" ? [] : staleK1Scan ? [{ box: "", code: "", why: "It was scanned before the reader kept the lettered boxes: scan the tax documents folder again (Statements)." }] : k1Gaps(form, detail);
+      k1s.push({ partnership: form.partnership, doc, estimate: basis !== "DOCUMENT", basis, form, detail, gaps, items: k1Items(form, detail), passive: null, adds: {}, qbi: null });
+    };
+    if (useDocs) {
+      for (const k of docs.k1s.filter((k) => k1Owner(k, year) === person.id)) countK1(k.form, k.doc, k1DetailFor(book.k1Details, k.form.ein, year), "DOCUMENT");
+    } else if (isForecast) {
+      const repeated = lastYearDocs.k1s.filter((k) => !k.form.final && k1Owner(k, year - 1) === person.id);
+      for (const k of repeated) {
+        const lastDetail = k1DetailFor(book.k1Details, k.form.ein, year - 1);
+        const now = k1DetailFor(book.k1Details, k.form.ein, year);
+        // What the partnership says to expect beats last year again; a K-1 that covered part of last year is scaled to a full one.
+        if (now?.expected) {
+          countK1(expectedK1(k.form, k.form.partnership, k.form.ein!, now.expected), k.doc, now, "EXPECTED");
+          continue;
+        }
+        const full = annualizedK1(k.form);
+        if (!full) {
+          countK1(k.form, k.doc, lastDetail, "REPEATED");
+          continue;
+        }
+        const scale = (c: number) => Math.round((c * 365) / full.days);
+        countK1(full.form, k.doc, lastDetail && { ...lastDetail, lines: lastDetail.lines.map((l) => ({ ...l, cents: scale(l.cents) })) }, "ANNUALIZED");
+        assumptions.push(`${person.name}'s ${year - 1} K-1 from ${k.form.partnership} covered ${full.days} days; ${year} counts it at the same rate for the full year, as an estimate, until the partnership's expected figures or the ${year} K-1 are on file.`);
+      }
+      // A partnership joined this year: only its expected figures exist.
+      const file = book.k1Details && !("error" in book.k1Details) ? book.k1Details : null;
+      for (const d of file?.k1s ?? []) {
+        if (d.year !== year || !d.expected || d.owner !== person.id || lastYearDocs.k1s.some((k) => k.form.ein === d.ein)) continue;
+        const name = d.partnership ?? `the partnership ${d.ein}`;
+        countK1(expectedK1(null, name, d.ein, d.expected), { id: `k1-expected:${d.ein}:${year}`, file: "the K-1 details file" }, d, "EXPECTED");
+      }
+    }
+    return k1s;
+  };
+  const k1ByPerson = new Map(filers.map((person) => [person.id, k1sOf(person)]));
+  // Form 8582 across the household's passive partnerships, starting from what earlier years left suspended.
+  {
+    const uses = [...k1ByPerson.values()].flat();
+    const carryIn = passiveCarryforwards(
+      Object.keys(TAX_YEARS).map(Number).filter((y) => y < year || (useDocs && y === year)).map((y) => ({ year: y, k1s: yearDocs(book.taxDocs, y, profile.persons).k1s })),
+      book.k1Details,
+    )(year);
+    const outcome = passiveLimit(
+      uses.filter((k) => k.items.passive).map((k) => ({ key: passiveKey(k.form), net: k.items.activity, publiclyTraded: k.form.publiclyTraded, final: k.form.final })),
+      carryIn,
+    );
+    for (const k of uses) {
+      k.passive = k.items.passive ? (outcome[passiveKey(k.form)] ?? null) : null;
+      const made = k1Adds(k.partnership, k.items, k.passive ? k.passive.allowed : k.items.activity, k.detail?.activity === "TRADER_FUND");
+      k.adds = made.adds;
+      k.qbi = made.qbi;
+    }
+  }
   const people: PersonReport[] = filers.map((person) => {
     const { extras, pay: typedPay } = inputs.people[person.id]!;
     const stubs = stubsByPerson.get(person.id) ?? [];
@@ -546,48 +609,16 @@ export function buildTaxReport(
         (rForms.some((r) => r.form.taxableNotDetermined) ? fromStatementsTaxable : 0)
       : fromStatementsTaxable;
 
-    // Partnership K-1s: a finished year's forms; for the year in progress, last year's again
-    // (an estimate) for any partnership that didn't mark its K-1 final.
-    const k1s: K1Use[] = [];
-    const countK1 = (form: K1Form, doc: DocRef, detail: K1Detail | null, basis: K1Use["basis"]) => {
-      const figures = k1Income(form);
-      k1s.push({ partnership: form.partnership, doc, estimate: basis !== "DOCUMENT", basis, form, detail, gaps: basis !== "DOCUMENT" ? [] : staleK1Scan ? [{ box: "", code: "", why: "It was scanned before the reader kept the lettered boxes: scan the tax documents folder again (Statements)." }] : k1Gaps(form, detail), figures, suspendedLoss: form.limitedPartner && figures.passive < 0 ? -figures.passive : 0 });
-    };
-    if (useDocs) {
-      for (const k of docs.k1s.filter((k) => k1Owner(k, year) === person.id)) countK1(k.form, k.doc, k1DetailFor(book.k1Details, k.form.ein, year), "DOCUMENT");
-    } else if (isForecast) {
-      const repeated = lastYearDocs.k1s.filter((k) => !k.form.final && k1Owner(k, year - 1) === person.id);
-      for (const k of repeated) {
-        const lastDetail = k1DetailFor(book.k1Details, k.form.ein, year - 1);
-        const now = k1DetailFor(book.k1Details, k.form.ein, year);
-        // What the partnership says to expect beats last year again; a K-1 that covered part of last year is scaled to a full one.
-        if (now?.expected) {
-          countK1(expectedK1(k.form, k.form.partnership, k.form.ein!, now.expected), k.doc, now, "EXPECTED");
-          continue;
-        }
-        const full = annualizedK1(k.form);
-        if (!full) {
-          countK1(k.form, k.doc, lastDetail, "REPEATED");
-          continue;
-        }
-        const scale = (c: number) => Math.round((c * 365) / full.days);
-        countK1(full.form, k.doc, lastDetail && { ...lastDetail, lines: lastDetail.lines.map((l) => ({ ...l, cents: scale(l.cents) })) }, "ANNUALIZED");
-        assumptions.push(`${person.name}'s ${year - 1} K-1 from ${k.form.partnership} covered ${full.days} days; ${year} counts it at the same rate for the full year, as an estimate, until the partnership's expected figures or the ${year} K-1 are on file.`);
-      }
-      // A partnership joined this year: only its expected figures exist.
-      const file = book.k1Details && !("error" in book.k1Details) ? book.k1Details : null;
-      for (const d of file?.k1s ?? []) {
-        if (d.year !== year || !d.expected || d.owner !== person.id || lastYearDocs.k1s.some((k) => k.form.ein === d.ein)) continue;
-        const name = d.partnership ?? `the partnership ${d.ein}`;
-        countK1(expectedK1(null, name, d.ein, d.expected), { id: `k1-expected:${d.ein}:${year}`, file: "the K-1 details file" }, d, "EXPECTED");
-      }
-    }
-    const k1 = (f: keyof ReturnType<typeof k1Income>) => k1s.reduce((s, k) => s + k.figures[f], 0);
-    const k1Passive = k1s.reduce((s, k) => s + (k.suspendedLoss ? 0 : k.figures.passive), 0);
-    for (const k of k1s.filter((k) => k.suspendedLoss)) {
-      assumptions.push(
-        `${person.name}'s K-1 from ${k.partnership}${k.basis === "EXPECTED" ? " (its expected figures)" : k.estimate ? ` (last year's, as an estimate)` : ""} has a ${usd(k.suspendedLoss)} passive loss (boxes 1–3). As a limited partner with no passive income to offset, it's carried forward on Form 8582, not deducted.`,
-      );
+    // Partnership K-1s (gathered for the whole household above, where the passive-loss limit is applied across them).
+    const k1s = k1ByPerson.get(person.id) ?? [];
+    const k1 = (f: K1AddField) => k1s.reduce((t, k) => t + (k.adds[f] ?? 0), 0);
+    const k1Qbi = k1s.flatMap((k) => (k.qbi ? [k.qbi] : []));
+    for (const k of k1s.filter((x) => x.passive && (x.passive.suspended || x.passive.carryIn))) {
+      const o = k.passive!;
+      const which = k.basis === "EXPECTED" ? " (its expected figures)" : k.estimate ? " (last year's, as an estimate)" : "";
+      if (o.suspended)
+        assumptions.push(`${person.name}'s K-1 from ${k.partnership}${which} leaves a ${usd(o.suspended)} passive loss the year can't use${o.carryIn ? ` (${usd(o.carryIn)} of it carried in from earlier years)` : ""}: there isn't enough passive income to absorb it, so it's carried forward (Form 8582), not deducted.`);
+      else assumptions.push(`${person.name}'s K-1 from ${k.partnership}${which} uses the ${usd(o.carryIn)} passive loss carried in from earlier years${k.form.final ? " (a final K-1 releases it in full)" : ""}.`);
     }
 
     const chetCents = mine.filter(({ a }) => a.isChet).reduce((s, { a, share }) => s + Math.round((chetByAccount.get(a.accountNumber) ?? 0) * share), 0);
@@ -612,26 +643,26 @@ export function buildTaxReport(
       id: person.id,
       name: person.name,
       w2s,
-      taxableInterest: invP.interest + bankInterest(person.id, "projected") + k1("interest") + extras.extraInterest,
+      taxableInterest: invP.interest + bankInterest(person.id, "projected") + k1("taxableInterest") + extras.extraInterest,
       ordinaryDividends: invP.ordinaryDividends + invP.capGainDistShort + k1("ordinaryDividends"),
       qualifiedDividends: invP.qualifiedDividends + k1("qualifiedDividends"),
-      section199aDividends: invP.section199a,
-      taxExemptInterest: invP.taxExempt,
-      usObligationIncome: Math.round(invP.moneyMarketDividends * profile.moneyMarketUsGovShare) + invP.usTreasury + extras.usObligationIncome,
+      section199aDividends: invP.section199a + k1("section199aDividends"),
+      taxExemptInterest: invP.taxExempt + k1("taxExemptInterest"),
+      usObligationIncome: Math.round(invP.moneyMarketDividends * profile.moneyMarketUsGovShare) + invP.usTreasury + extras.usObligationIncome + k1("usObligationIncome"),
       capitalGainDistributions: invP.capGainDistLong,
       shortTermGain: invP.shortTermGain + extras.extraShortTermGain - extras.capitalLossCarryover + k1("shortTermGain"),
       longTermGain: invP.longTermGain + extras.extraLongTermGain + k1("longTermGain"),
-      foreignTaxPaid: invP.foreignTax + k1("foreignTax"),
+      foreignTaxPaid: invP.foreignTax + k1("foreignTaxPaid"),
       retirementTaxable,
-      otherIncome: extras.otherIncome + k1("otherIncome") + k1Passive + k401Excess.projected,
+      otherIncome: extras.otherIncome + k401Excess.projected,
       businessIncome: 0,
       adjustments: extras.hsaOutsidePayroll + extras.otherAdjustments,
       ctChetContributions: chetCents,
-      ctOtherSubtractions: 0,
-      ctOtherAdditions: 0,
+      ctOtherSubtractions: k1("ctOtherSubtractions"),
+      ctOtherAdditions: k1("ctOtherAdditions"),
       estimatedFederal: half(estFederal) + extras.estimatedFederalExtra,
-      estimatedCt: half(estCt) + extras.estimatedCtExtra,
-      estimatedNy: nyFiling ? half(estNy) : 0,
+      estimatedCt: half(estCt) + extras.estimatedCtExtra + k1("estimatedCt"),
+      estimatedNy: nyFiling ? half(estNy) + k1("estimatedNy") : 0,
       mortgageInterest: half(inputs.household.mortgageInterest),
       propertyTax: half(inputs.household.propertyTax),
       charitableCash: half(inputs.household.charitableCash),
@@ -639,14 +670,16 @@ export function buildTaxReport(
       otherItemized: 0,
       dependentCareExpenses: half(inputs.household.dependentCareExpenses),
       dependentCareFsa: payroll.reduce((s, p) => s + p.w2Projected.box10, 0),
-      otherStateTax: extras.otherStateTax,
+      otherStateTax: extras.otherStateTax + k1("otherStateTax"),
+      ...Object.fromEntries(K1_OWN_FIELDS.map((f) => [f, k1(f)])),
+      qbiBusinesses: k1Qbi,
       priorYearStateTaxPaid: half(ctPaidForPrior),
     };
     // Year to date: stubs and statements as they stand, no expected bonus or future sales.
     const incomeYtd: PersonIncome = {
       ...projectedIncome,
       w2s: payroll.map((p) => p.w2Ytd),
-      taxableInterest: invY.interest + bankInterest(person.id, "ytd") + (useDocs ? k1("interest") : 0) + extras.extraInterest,
+      taxableInterest: invY.interest + bankInterest(person.id, "ytd") + (useDocs ? k1("taxableInterest") : 0) + extras.extraInterest,
       ordinaryDividends: invY.ordinaryDividends + invY.capGainDistShort + (useDocs ? k1("ordinaryDividends") : 0),
       qualifiedDividends: invY.qualifiedDividends + (useDocs ? k1("qualifiedDividends") : 0),
       section199aDividends: invY.section199a,
@@ -655,8 +688,9 @@ export function buildTaxReport(
       capitalGainDistributions: invY.capGainDistLong,
       shortTermGain: invY.shortTermGain - extras.capitalLossCarryover + (useDocs ? k1("shortTermGain") : 0),
       longTermGain: invY.longTermGain + (useDocs ? k1("longTermGain") : 0),
-      foreignTaxPaid: invY.foreignTax + (useDocs ? k1("foreignTax") : 0),
-      otherIncome: extras.otherIncome + (useDocs ? k1("otherIncome") + k1Passive : 0) + k401Excess.ytd,
+      foreignTaxPaid: invY.foreignTax + (useDocs ? k1("foreignTaxPaid") : 0),
+      otherIncome: extras.otherIncome + k401Excess.ytd,
+      ...(useDocs ? {} : { ...Object.fromEntries([...K1_OWN_FIELDS, "ctOtherSubtractions", "ctOtherAdditions"].map((f) => [f, 0])), qbiBusinesses: [], otherStateTax: extras.otherStateTax }),
       estimatedFederal: half(estFederalToDate) + extras.estimatedFederalExtra,
       estimatedCt: half(estCtToDate) + extras.estimatedCtExtra,
       estimatedNy: nyFiling ? half(estNyToDate) : 0,
@@ -679,7 +713,7 @@ export function buildTaxReport(
       const i = projectedIncome;
       const share = residency.investmentShare ?? 0;
       const investment = [i.taxableInterest, i.ordinaryDividends, i.capitalGainDistributions + i.shortTermGain + i.longTermGain].reduce((s, x) => s + whole(x * share), 0);
-      const other = residency.ct === "PART_YEAR" ? i.otherIncome : 0;
+      const other = residency.ct === "PART_YEAR" ? additionalIncome(i) : 0;
       ctSource = { total: wages + investment + other, wages, investment, other, investmentShare: share };
       // An entered CT-source total replaces the worked-out one (all of it on the first person's return).
       if (residency.sourceIncome != null) ctSource = { ...ctSource, total: person.id === filers[0]!.id ? residency.sourceIncome : 0 };
@@ -705,7 +739,7 @@ export function buildTaxReport(
       const i = projectedIncome;
       const share = ny.state === "PART_YEAR" ? (residency.ct === "PART_YEAR" ? 1 - (residency.investmentShare ?? 0) : (beforeMove(ny.movedOut, year) ?? 0)) : 0;
       const investment = [i.taxableInterest, i.ordinaryDividends, i.capitalGainDistributions + i.shortTermGain + i.longTermGain].reduce((s, x) => s + whole(x * share), 0);
-      const other = ny.state === "PART_YEAR" && residency.ct !== "PART_YEAR" ? whole(i.otherIncome * share) : 0;
+      const other = ny.state === "PART_YEAR" && residency.ct !== "PART_YEAR" ? whole(additionalIncome(i) * share) : 0;
       nySource = { total: wages + investment + other, wages, investment, other, investmentShare: share };
       projectedIncome.nySourceIncome = nySource.total;
       incomeYtd.nySourceIncome = nySource.total;

@@ -37,8 +37,8 @@ describe("a K-1 sorted into the return's places", () => {
   });
 
   it("reads deductions as positive however the statement signs them", () => {
-    const k = k1Items(form(), detail([line("13", "H", -$(380), "INVESTMENT_INTEREST_EXPENSE"), line("20", "B", $(120), "INVESTMENT_EXPENSE_NII_ONLY"), line("13", "L", -$(900), "PORTFOLIO_DEDUCTION_NOT_DEDUCTIBLE")]));
-    expect(k).toMatchObject({ investmentInterestExpense: $(380), investmentExpensesNiiOnly: $(120), activity: 0, otherPortfolioIncome: 0 });
+    const k = k1Items(form(), detail([line("13", "H", -$(380), "INVESTMENT_INTEREST_EXPENSE"), line("13", "L", -$(900), "PORTFOLIO_DEDUCTION_NOT_DEDUCTIBLE")]));
+    expect(k).toMatchObject({ investmentInterestExpense: $(380), activity: 0, otherPortfolioIncome: 0 });
   });
 
   it("keeps each state's items apart", () => {

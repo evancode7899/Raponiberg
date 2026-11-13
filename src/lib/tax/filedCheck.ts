@@ -1,7 +1,8 @@
 import type { FederalKey, StateKey } from "../taxdocs/types.ts";
 import type { TaxReport } from "./buildTaxReport.ts";
-import { computeReturn, type FederalResult, type CtResult, type NyResult, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
+import { additionalIncome, computeReturn, type FederalResult, type CtResult, type NyResult, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
 import { ownerOf, type DocRef, type YearDocs } from "./documents.ts";
+import type { K1AddField } from "./k1.ts";
 import { taxYearParams } from "./params.ts";
 
 /**
@@ -533,30 +534,21 @@ export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResu
   type Use = (typeof all)[number];
   const withoutK1s = (left: Set<Use>): PersonIncome[] => report.people.map((p) => {
     const mine = p.k1s.filter((k) => left.has(k));
-    const sum = (f: keyof Use["figures"]) => mine.reduce((s, k) => s + k.figures[f], 0);
-    const passive = mine.filter((k) => !k.suspendedLoss).reduce((s, k) => s + k.figures.passive, 0);
+    // The return less everything each left-out K-1 adds to it (tax/k1.ts k1Adds), its business for the 20% deduction included.
+    const out: PersonIncome = { ...p.income, qbiBusinesses: (p.income.qbiBusinesses ?? []).filter((b) => !mine.some((k) => k.qbi && k.qbi.name === b.name)) };
+    for (const k of mine) for (const [field, cents] of Object.entries(k.adds) as [K1AddField, number][]) (out as Record<K1AddField, number | undefined>)[field] = (out[field] ?? 0) - cents;
     const i = p.income;
-    const out: PersonIncome = {
-      ...i,
-      taxableInterest: i.taxableInterest - sum("interest"),
-      ordinaryDividends: i.ordinaryDividends - sum("ordinaryDividends"),
-      qualifiedDividends: i.qualifiedDividends - sum("qualifiedDividends"),
-      shortTermGain: i.shortTermGain - sum("shortTermGain"),
-      longTermGain: i.longTermGain - sum("longTermGain"),
-      otherIncome: i.otherIncome - sum("otherIncome") - passive,
-      foreignTaxPaid: i.foreignTaxPaid - sum("foreignTax"),
-    };
     // CT-source income again without the K-1, rounded line by line as Schedule CT-SI does.
     if (p.ctSource && i.ctSourceIncome != null) {
       const share = p.ctSource.investmentShare;
       const lines = [out.taxableInterest, out.ordinaryDividends, out.capitalGainDistributions + out.shortTermGain + out.longTermGain];
-      out.ctSourceIncome = p.ctSource.wages + lines.reduce((s, x) => s + dollar(x * share), 0) + (p.ctSource.other ? out.otherIncome : 0);
+      out.ctSourceIncome = p.ctSource.wages + lines.reduce((s, x) => s + dollar(x * share), 0) + (p.ctSource.other ? additionalIncome(out) : 0);
     }
     // New York's amount column likewise.
     if (p.nySource && i.nySourceIncome != null) {
       const share = p.nySource.investmentShare;
       const lines = [out.taxableInterest, out.ordinaryDividends, out.capitalGainDistributions + out.shortTermGain + out.longTermGain];
-      out.nySourceIncome = p.nySource.wages + lines.reduce((s, x) => s + dollar(x * share), 0) + (p.nySource.other ? dollar(out.otherIncome * share) : 0);
+      out.nySourceIncome = p.nySource.wages + lines.reduce((s, x) => s + dollar(x * share), 0) + (p.nySource.other ? dollar(additionalIncome(out) * share) : 0);
     }
     return out;
   });
@@ -577,7 +569,7 @@ export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResu
     // Where the lines can't tell (the K-1 moves none of them, or they differ either way), a
     // K-1 with business or rental income is on the return only if it has a Schedule E or
     // Form 8582; failing that, a K-1 counts as filed.
-    const evidence = all.filter((k) => k.figures.passive !== 0 && left.has(k) === !hasScheduleE).length;
+    const evidence = all.filter((k) => (k.items.activity !== 0 || k.items.royalties !== 0 || k.items.guaranteedPayments !== 0) && left.has(k) === !hasScheduleE).length;
     const score = [lineScore(result), evidence, -left.size];
     // Scores rank in order: the first that differs decides.
     const at = best ? score.findIndex((s, i) => s !== best!.score[i]) : 0;

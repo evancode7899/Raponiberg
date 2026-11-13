@@ -2,6 +2,7 @@ import { formatUsdFromCents } from "../../formatMoney.ts";
 import { taxLink } from "../../forecast/forecast.ts";
 import { loadForecast } from "../../forecast/load.ts";
 import { buildTaxReport, type AccountIncome, type InvestmentFigures, type PersonReport, type TaxReport } from "../../tax/buildTaxReport.ts";
+import type { K1AddField } from "../../tax/k1.ts";
 import type { PersonIncome, W2 } from "../../tax/computeReturn.ts";
 import { yearDocs } from "../../tax/documents.ts";
 import {
@@ -392,14 +393,23 @@ function investmentLines(x: X, p: PersonReport, k: keyof InvestmentFigures): Cha
   return out;
 }
 
-type K1Field = keyof PersonReport["k1s"][number]["figures"];
+type K1Field = K1AddField;
 
 /** K-1s counted for a person: a finished year's forms, or for a year in progress last year's again (estimates), projected basis only. */
-function k1Lines(x: X, p: PersonReport, f: K1Field, opts: { always?: boolean } = {}): ChainLine[] {
+const K1_BASIS_NOTE: Record<PersonReport["k1s"][number]["basis"], string> = {
+  DOCUMENT: "Read off",
+  EXPECTED: "The partnership's expected figures (the K-1 details file), an estimate until the K-1 comes; last year's was",
+  REPEATED: "Last year's K-1 repeated as an estimate (the partnership didn't mark it final):",
+  ANNUALIZED: "Last year's part-year K-1 at a full year's rate, as an estimate:",
+};
+const k1Note = (k: PersonReport["k1s"][number]) => `${K1_BASIS_NOTE[k.basis]} ${k.doc.file}.`;
+
+function k1Lines(x: X, p: PersonReport, f: K1Field, opts: { always?: boolean; what?: string } = {}): ChainLine[] {
+  const what = opts.what;
   if (!opts.always && x.pick === "ytd" && !x.finished) return [];
   return p.k1s
-    .filter((k) => k.figures[f])
-    .map((k) => ln("+", `${who(x, p)}K-1 from ${k.partnership}`, k.figures[f], k.estimate ? "estimate" : "proven", k.estimate ? `Last year's K-1 (${k.doc.file}) repeated as an estimate: the partnership didn't mark it final.` : `Read off ${k.doc.file}.`));
+    .filter((k) => k.adds[f])
+    .map((k) => ln("+", `${who(x, p)}K-1 from ${k.partnership}${what ? `: ${what}` : ""}`, k.adds[f]!, k.estimate ? "estimate" : "proven", k1Note(k)));
 }
 
 const extras = (x: X, p: PersonReport) => x.report.inputs.people[p.id]!.extras;
@@ -533,7 +543,7 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
       return w2Lines(x, ["medicareWithheld"]);
 
     case "fed.taxableInterest":
-      return each((p) => [...bankInterestLines(x, p), ...investmentLines(x, p, "interest"), ...k1Lines(x, p, "interest"), ...typed(x, p, "+", "other interest", extras(x, p).extraInterest)]);
+      return each((p) => [...bankInterestLines(x, p), ...investmentLines(x, p, "interest"), ...k1Lines(x, p, "taxableInterest"), ...typed(x, p, "+", "other interest", extras(x, p).extraInterest)]);
     case "fed.ordinaryDividends":
       return each((p) => [...investmentLines(x, p, "ordinaryDividends"), ...investmentLines(x, p, "capGainDistShort"), ...k1Lines(x, p, "ordinaryDividends")]);
     case "fed.qualifiedDividends": {
@@ -575,16 +585,32 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
     case "fed.additionalIncome":
       return each((p) => [
         ...typed(x, p, "+", "other income", extras(x, p).otherIncome),
-        ...k1Lines(x, p, "otherIncome"),
         ...(finishedOrProjected
-          ? p.k1s.filter((k) => !k.suspendedLoss && k.figures.passive).map((k) => ln("+", `${who(x, p)}K-1 from ${k.partnership}: passive income (boxes 1–3)`, k.figures.passive, k.estimate ? "estimate" : "proven", `Read off ${k.doc.file}.`))
+          ? [
+              ...p.k1s
+                .filter((k) => k.adds.partnershipIncome)
+                .map((k) =>
+                  ln(
+                    "+",
+                    `${who(x, p)}K-1 from ${k.partnership}: partnership income (Schedule E)`,
+                    k.adds.partnershipIncome!,
+                    k.estimate ? "estimate" : "proven",
+                    `${k1Note(k)} Boxes 1–3 and its statement lines net to ${money(k.items.activity)}${k.items.guaranteedPayments ? `, with ${money(k.items.guaranteedPayments)} of guaranteed payments` : ""}${k.passive ? `; a passive activity, of which the year allows ${money(k.passive.allowed)}${k.passive.carryIn ? ` after ${money(k.passive.carryIn)} of loss carried in` : ""}${k.passive.suspended ? ` and carries ${money(k.passive.suspended)} of loss forward` : ""} (Form 8582)` : ""}.`,
+                  ),
+                ),
+              ...k1Lines(x, p, "royalties", { what: "royalties (Schedule E)" }),
+              ...k1Lines(x, p, "portfolioOtherIncome", { what: "other portfolio income" }),
+            ]
           : []),
         ...(p.k401.excess[x.pick]
           ? [ln("+", `${who(x, p)}401(k) deferrals over the limit`, p.k401.excess[x.pick], "law", `${money(p.k401.deferred[x.pick])} deferred against the ${money(p.k401.limit)} limit for ${x.d.year}: the excess is income for the year.`)]
           : []),
       ]);
     case "fed.adjustments":
-      return each((p) => [...typed(x, p, "+", "HSA contributions outside payroll", extras(x, p).hsaOutsidePayroll), ...typed(x, p, "+", "other adjustments", extras(x, p).otherAdjustments)]);
+      return [
+        ...each((p) => [...typed(x, p, "+", "HSA contributions outside payroll", extras(x, p).hsaOutsidePayroll), ...typed(x, p, "+", "other adjustments", extras(x, p).otherAdjustments)]),
+        ...(f.selfEmploymentDeduction ? [ln("+", "Half of self-employment tax (Schedule SE)", f.selfEmploymentDeduction, "law", `Half of the ${money(f.selfEmploymentTax)} self-employment tax on the K-1s' net earnings.`)] : []),
+      ];
     case "fed.investmentIncome":
       return [ref(x, "+", "fed.taxableInterest"), ref(x, "+", "fed.ordinaryDividends"), ref(x, "+", "fed.capitalGain"), ref(x, "+", "fed.iraTaxable"), ref(x, "+", "fed.additionalIncome")];
     case "fed.totalIncome":
@@ -604,6 +630,7 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
         ln("=", "State and local tax paid", it.saltPaid, "derived"),
         ln("−", "Over the SALT cap", it.saltPaid - it.salt, "law", lawNote(x, `Cap ${usd0(it.saltCap)} at this AGI`)),
         ln("+", "Mortgage interest", it.mortgageInterest, "assumption", "Typed under Inputs."),
+        ln("+", "Investment interest (Form 4952)", it.investmentInterest, "law", `${money(f.investmentInterest.paid)} paid through the K-1s, deductible up to the year's ${money(f.investmentInterest.investmentIncome)} of investment income (qualified dividends and net capital gain aside).`),
         ln("+", "Charitable gifts above the AGI floor", it.charitable, "assumption", "Gifts typed under Inputs, less the share of AGI the law disallows."),
         ln("+", "Other itemized deductions", it.other, "assumption"),
         ...(it.limitation37 ? [ln("−", "2/37 limitation at the top bracket", it.limitation37, "law", lawNote(x, "Itemized deduction limitation"))] : []),
@@ -614,13 +641,16 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
     }
     case "fed.qbiDeduction": {
       const base = x.col.incomes.reduce((t, i) => t + i.section199aDividends, 0);
-      if (!f.qbiDeduction) return [ln(undefined, base ? "Limited to 20% of taxable income less net capital gain: none left" : "No REIT dividends or qualified business income", 0, base ? "law" : "derived")];
-      const twenty = Math.round(0.2 * base);
+      if (!f.qbiDeduction) return [ln(undefined, base || f.qbi.business ? "Limited to 20% of taxable income less net capital gain: none left" : "No REIT dividends or qualified business income", 0, base ? "law" : "derived")];
+      const twenty = f.qbi.reit;
+      const before = twenty + f.qbi.business;
       return [
-        ln(undefined, "REIT (section 199A) dividends", base, "proven", "1099-DIV box 5, or the statements' share from last year's 1099."),
+        ln(undefined, "REIT (section 199A) dividends", base, "proven", "1099-DIV box 5, or the statements' share from last year's 1099; a K-1's when its statement reports them."),
         ln("×", "20%", { ratio: 0.2 }, "law", lawNote(x, "QBI deduction")),
         ln("=", "20% of REIT dividends", twenty, "derived"),
-        ...(f.qbiDeduction !== twenty ? [ln("−", "Limited to 20% of taxable income less net capital gain", twenty - f.qbiDeduction, "law")] : []),
+        ...(f.qbi.business ? [ln("+", "The K-1s' businesses (Form 8995-A)", f.qbi.business, "law", "20% of each business's income; above the threshold, no more than the greater of 50% of its W-2 wages or 25% of them plus 2.5% of its property, phased in across the range.")] : []),
+        ...(f.qbiDeduction < before ? [ln("−", "Limited to 20% of taxable income less net capital gain", before - f.qbiDeduction, "law")] : []),
+        ...(f.qbiDeduction > before ? [ln("+", "Up to the minimum deduction for a business you work in", f.qbiDeduction - before, "law", lawNote(x, "QBI minimum deduction"))] : []),
       ];
     }
     case "fed.taxableIncome": {
@@ -635,7 +665,9 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
     }
     case "fed.tax": {
       x.blocks.push({ kind: "breakdown", title: "Income the brackets apply to", items: [{ label: label("fed.taxableIncome"), value: cents(f.taxableIncome), link: selfLink(x, "fed.taxableIncome") }, { label: label("fed.preferentialIncome"), value: cents(f.preferentialIncome), link: selfLink(x, "fed.preferentialIncome") }], note: "Ordinary income (taxable income less qualified dividends and long-term gains) fills the brackets first; the preferential part stacks on top at 0%, 15% and 20%." });
-      return [...bandLines(x, "fed", f.ordinaryTax, "Federal brackets on ordinary income"), ...bandLines(x, "pref", f.preferentialTax, "Qualified dividends and long-term gains").map((l, i) => (i === 0 && !l.op ? { ...l, op: "+" as const } : l))];
+      return [...bandLines(x, "fed", f.ordinaryTax, "Federal brackets on ordinary income"), ...bandLines(x, "pref", f.preferentialTax - f.rateGain.tax, "Qualified dividends and long-term gains").map((l, i) => (i === 0 && !l.op ? { ...l, op: "+" as const } : l)),
+        ...(f.rateGain.tax ? [ln("+", "Unrecaptured section 1250 gain and collectibles gain", f.rateGain.tax, "law", `${money(f.rateGain.unrecaptured1250)} taxed at the bracket rates up to 25% and ${money(f.rateGain.collectibles)} up to 28%, stacked right above ordinary income (Schedule D Tax Worksheet).`)] : []),
+      ];
     }
     case "fed.amt":
       return [ln(undefined, f.amt ? "Tentative minimum tax over the regular tax (Form 6251, simplified)" : "Tentative minimum tax is below the regular tax: no AMT", f.amt, "derived", "The standard deduction (or the SALT deduction) added back, the AMT exemption and its phase-out, at 26% / 28%.")];
@@ -657,25 +689,26 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
       const paid = x.col.incomes.reduce((t, i) => t + i.foreignTaxPaid, 0);
       return [
         ln(undefined, "Foreign tax paid (1099-DIV, statements, K-1s)", paid, "proven"),
-        ...(paid > f.foreignTaxCredit ? [ln("−", "More than the tax", paid - f.foreignTaxCredit, "law")] : []),
+        ...(paid > f.foreignTaxCredit ? [ln("−", f.foreignTax.limit != null ? "Over the foreign tax credit limit (Form 1116), or more than the tax" : "More than the tax", paid - f.foreignTaxCredit, "law", f.foreignTax.limit != null ? `The K-1s' foreign tax is credited up to US tax × foreign-source income ÷ taxable income: ${money(f.foreignTax.limit)}.` : undefined)] : []),
         ln("+", "Dependent care credit", f.dependentCareCredit, "derived", "Care expenses typed under Inputs, less the dependent care FSA, at the year's rate."),
       ];
     }
     case "fed.additionalMedicareTax": {
       const thr = fp.surtaxThreshold[fs];
       const box5 = val(x, "pay.medicareWages");
-      return [ref(x, undefined, "pay.medicareWages"), ln("−", "Threshold", thr, "law", lawNote(x, "Additional Medicare tax threshold")), ...(box5 < thr ? [ln("+", "Below the threshold: nothing over it", thr - box5, "law")] : []), ln("×", "0.9%", { ratio: fp.additionalMedicareRate }, "law"), ln("=", "Additional Medicare tax", f.additionalMedicareTax, "derived")];
+      const seNet = f.selfEmploymentNet;
+      return [ref(x, undefined, "pay.medicareWages"), ...(seNet ? [ln("+", "Net self-employment earnings (Schedule SE)", seNet, "law", "92.35% of the K-1s' self-employment earnings.")] : []), ln("−", "Threshold", thr, "law", lawNote(x, "Additional Medicare tax threshold")), ...(box5 + seNet < thr ? [ln("+", "Below the threshold: nothing over it", thr - box5 - seNet, "law")] : []), ln("×", "0.9%", { ratio: fp.additionalMedicareRate }, "law"), ln("=", "Additional Medicare tax", f.additionalMedicareTax, "derived")];
     }
     case "fed.niit": {
       const over = pos(f.agi - fp.surtaxThreshold[fs]);
       const first =
         f.netInvestmentIncome <= over
-          ? ln(undefined, "Net investment income (interest, dividends, gains)", f.netInvestmentIncome, "derived", `Less than AGI over the ${usd0(fp.surtaxThreshold[fs])} threshold (${usd0(over)}), so it's what's taxed.`)
+          ? ln(undefined, "Net investment income (interest, dividends, gains, and the K-1s' passive and trading income)", f.netInvestmentIncome, "derived", `Less than AGI over the ${usd0(fp.surtaxThreshold[fs])} threshold (${usd0(over)}), so it's what's taxed.`)
           : ln(undefined, `AGI over the ${usd0(fp.surtaxThreshold[fs])} threshold`, over, "law", `Less than net investment income (${usd0(f.netInvestmentIncome)}), so it's what's taxed.`);
       return [first, ln("×", "3.8%", { ratio: fp.niitRate }, "law", lawNote(x, "Net investment income tax")), ln("=", "Net investment income tax", f.niit, "derived")];
     }
     case "fed.totalTax":
-      return [ref(x, "+", "fed.tax"), ref(x, "+", "fed.amt"), ref(x, "−", "fed.childCredit"), ref(x, "−", "fed.otherCredits"), ref(x, "+", "fed.additionalMedicareTax"), ref(x, "+", "fed.niit")];
+      return [ref(x, "+", "fed.tax"), ref(x, "+", "fed.amt"), ref(x, "−", "fed.childCredit"), ref(x, "−", "fed.otherCredits"), ...(f.selfEmploymentTax ? [ln("+", "Self-employment tax (Schedule SE)", f.selfEmploymentTax, "law", "12.4% Social Security up to what the wage base leaves after W-2 wages, and 2.9% Medicare, on 92.35% of the K-1s' self-employment earnings.")] : []), ref(x, "+", "fed.additionalMedicareTax"), ref(x, "+", "fed.niit")];
     case "fed.incomeTax":
       return [ref(x, "+", "fed.tax"), ref(x, "+", "fed.amt"), ref(x, "−", "fed.childCredit"), ref(x, "−", "fed.otherCredits"), ref(x, "−", "fed.refundableChildCredit")];
     case "fed.otherWithholding":
@@ -769,7 +802,7 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
         ref(x, "−", "ct.childTaxCredit"),
       ];
     case "ct.totalPayments":
-      return [ref(x, "+", "ct.withheld"), ref(x, "+", "ct.estimatedPayments")];
+      return [ref(x, "+", "ct.withheld"), ref(x, "+", "ct.estimatedPayments"), ...(ct.peCredit ? [ln("+", "Pass-through entity tax credit (Schedule CT-PE)", ct.peCredit, "proven", "The credit the partnerships' Connecticut K-1s report, from the K-1 details file.")] : [])];
     case "ct.balance":
       return [ref(x, "+", "ct.totalTax"), ref(x, "−", "ct.totalPayments")];
     case "ct.incomePercentage":
@@ -778,7 +811,7 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
     case "ny.federalAgi":
       return [ref(x, "+", "fed.agi")];
     case "ny.stateAgi":
-      return [ref(x, "+", "ny.federalAgi"), ref(x, "−", "ny.usObligationSubtraction")];
+      return [ref(x, "+", "ny.federalAgi"), ref(x, "−", "ny.usObligationSubtraction"), ...(ny?.ptetCredit ? [ln("+", "Pass-through entity tax credit added back (IT-225)", ny.ptetCredit, "law")] : [])];
     case "ny.deductions":
       return ny ? [ln(undefined, "Standard deduction", ny.standardDeduction, "law", lawNote(x, "New York standard deduction")), ...(ny.dependentExemption ? [ln("+", `${x.col.dependents.length} dependent exemption${x.col.dependents.length === 1 ? "" : "s"}`, ny.dependentExemption, "law")] : [])] : [];
     case "ny.taxableIncome": {
@@ -804,7 +837,7 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
     case "ny.credits":
       return [ln(undefined, "NYC school tax credits (refundable)", ny?.city ? ny.city.schoolCredit + ny.city.schoolRateReduction : 0, "law", lawNote(x, "NYC school tax credit")), ...(ny ? [ref(x, "+", "ny.estimatedPayments")] : [])];
     case "ny.totalPayments":
-      return ny ? [ref(x, "+", "ny.withheld"), ref(x, "+", "ny.cityWithheld"), ref(x, "+", "ny.estimatedPayments"), ln("+", "NYC school tax credits (refundable)", ny.city ? ny.city.schoolCredit + ny.city.schoolRateReduction : 0, "law")] : [];
+      return ny ? [ref(x, "+", "ny.withheld"), ref(x, "+", "ny.cityWithheld"), ref(x, "+", "ny.estimatedPayments"), ln("+", "NYC school tax credits (refundable)", ny.city ? ny.city.schoolCredit + ny.city.schoolRateReduction : 0, "law"), ...(ny.ptetCredit ? [ln("+", "Pass-through entity tax credit (IT-653)", ny.ptetCredit, "proven", "The credit the partnerships' New York K-1s report, from the K-1 details file.")] : [])] : [];
     case "ny.balance":
       return ny ? [ref(x, "+", "ny.totalTax"), ref(x, "−", "ny.totalPayments")] : [];
 
@@ -833,6 +866,7 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
     case "all.totalTaxes":
       return [
         ref(x, "+", "fed.incomeTax"),
+        ...(f.selfEmploymentTax ? [ln("+", "Self-employment tax (Schedule SE)", f.selfEmploymentTax, "law", "Social Security and Medicare on the K-1s' self-employment earnings.")] : []),
         ref(x, "+", "fica.medicareTotal"),
         ref(x, "+", "fed.niit"),
         ref(x, "+", "fica.socialSecurity"),
