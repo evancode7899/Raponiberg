@@ -77,6 +77,17 @@ describe("verifySnapshot", () => {
     rmSync(path.join(snapshot.dir, "row-decisions.journal.jsonl"));
     expect(verifySnapshot(snapshot)).toEqual(["merchant-rules.json doesn't match its manifest", "row-decisions.journal.jsonl is missing"]);
   });
+
+  it("refuses a manifest whose file names lead outside the snapshot", async () => {
+    const { snapshot } = await createBackup(fakeDb, { root, dataDir });
+    for (const name of ["../escaped.json", "..\\escaped.json", "sub/inner.json", "C:\\escaped.json", "/escaped.json", ".env", "rules.json:stream", ""]) {
+      const tampered = { ...snapshot, manifest: { ...snapshot.manifest, files: [...snapshot.manifest.files, { name, bytes: 1, sha256: "0" }] } };
+      expect(verifySnapshot(tampered).join("; ")).toMatch(/is not a file name a backup holds/);
+      const fresh = path.join(tmp, "target", "data");
+      expect(() => restoreSnapshot({ snapshot: tampered, root, dataDir: fresh, dbFile: path.join(fresh, "finance.db") })).toThrow(/can't be restored/);
+      expect(existsSync(path.join(tmp, "target", "escaped.json"))).toBe(false);
+    }
+  });
 });
 
 describe("restoreSnapshot", () => {

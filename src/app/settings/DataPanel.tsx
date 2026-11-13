@@ -1,6 +1,6 @@
 "use client";
 
-import type { Api } from "@/components/ledger/useApi";
+import { apiSecretHeaders, type Api } from "@/components/ledger/useApi";
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { btn, Callout, Card, downloadResponse, ErrorNote, Field, inputCls, selectCls } from "@/components/ui/kit";
 import Link from "next/link";
@@ -31,7 +31,7 @@ export function DataPanel({ api, requiresDbSecret }: { api: Api; requiresDbSecre
   }, [api]);
 
   const total = accounts.reduce((s, a) => s + a._count.transactions, 0);
-  const dbHeaders = (): Record<string, string> => (dbSecret.trim() ? { "x-settings-database-secret": dbSecret.trim() } : {});
+  const dbHeaders = (): Record<string, string> => ({ ...apiSecretHeaders(), ...(dbSecret.trim() ? { "x-settings-database-secret": dbSecret.trim() } : {}) });
   const syncHeaders = (): Record<string, string> => (api.requiresApiSecret && api.secret.trim() ? { "x-api-secret": api.secret.trim() } : {});
 
   const run = async (label: string, fn: () => Promise<string | void>) => {

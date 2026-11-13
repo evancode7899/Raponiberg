@@ -8,8 +8,21 @@ describe("rejectNonLocalRequest", () => {
     expect(rejectNonLocalRequest("/", headers({ host: "127.0.0.1:3000" }))).toBeNull();
     expect(rejectNonLocalRequest("/api/dashboard", headers({ host: "localhost:3000", origin: "http://localhost:3000", "sec-fetch-site": "same-origin" }))).toBeNull();
     expect(rejectNonLocalRequest("/api/system/shutdown", headers({ host: "[::1]:3000" }))).toBeNull();
-    // The demo (port 3001) and the real app are the same site.
-    expect(rejectNonLocalRequest("/api/app-password", headers({ host: "127.0.0.1:3001", origin: "http://127.0.0.1:3000", "sec-fetch-site": "same-site" }))).toBeNull();
+    expect(rejectNonLocalRequest("/api/budget", headers({ host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", "sec-fetch-site": "same-origin" }))).toBeNull();
+    expect(rejectNonLocalRequest("/api/budget", headers({ host: "LOCALHOST:3000", origin: "http://localhost:3000" }))).toBeNull();
+    // The address bar's own requests (a typed API URL) carry "none".
+    expect(rejectNonLocalRequest("/api/health/db", headers({ host: "127.0.0.1:3000", "sec-fetch-site": "none" }))).toBeNull();
+  });
+
+  it("refuses the API to a page another program on this computer serves", () => {
+    const local = { host: "127.0.0.1:3000" };
+    expect(rejectNonLocalRequest("/api/settings/database/wipe", headers({ ...local, origin: "http://127.0.0.1:5173", "sec-fetch-site": "same-site" }))).toMatch(/another page on this computer/);
+    expect(rejectNonLocalRequest("/api/settings/database/export", headers({ ...local, origin: "http://localhost:3000" }))).toMatch(/another page on this computer/);
+    expect(rejectNonLocalRequest("/api/export/transactions", headers({ ...local, "sec-fetch-site": "same-site" }))).toMatch(/another page on this computer/);
+    // The demo (port 3001) and the real app are the same site, but not each other's API.
+    expect(rejectNonLocalRequest("/api/app-password", headers({ host: "127.0.0.1:3001", origin: "http://127.0.0.1:3000", "sec-fetch-site": "same-site" }))).toMatch(/another page on this computer/);
+    // Its pages still open from a link there ("Exit demo").
+    expect(rejectNonLocalRequest("/", headers({ ...local, "sec-fetch-site": "same-site" }))).toBeNull();
   });
 
   it("refuses a rebound domain (DNS rebinding)", () => {

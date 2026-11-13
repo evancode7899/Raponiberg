@@ -26,6 +26,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { REAL_DATA_ENV } from "../src/lib/dataEnv.ts";
 import { latestBuildDir, staleBuild } from "./build-freshness.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,21 +35,10 @@ const DB = path.join(DEMO_DIR, "finance.db");
 const PORT = process.env.DEMO_PORT?.trim() || "3001";
 const dev = process.argv.includes("--dev");
 
-// Files the real .env may point elsewhere. Set empty here, they win over .env (Next and
-// Prisma never override a variable that's already set) and fall back to DATA_DIR.
-const REAL_FILES = [
-  "INTEGRITY_EXCEPTIONS_FILE",
-  "TRANSFER_DECISIONS_FILE",
-  "BONUS_AWARDS_FILE",
-  "BONUS_REVIEWS_FILE",
-  "MERCHANT_RULES_FILE",
-  "ROW_DECISIONS_FILE",
-  "PAGE_INPUTS_FILE",
-  "APP_PASSWORD_FILE",
-  "HOUSEHOLD_FILE",
-  "STATEMENTS_DIR",
-  "BACKUP_DIR",
-];
+// Files and folders the real .env may point elsewhere (every one the app reads: lib/dataEnv.ts).
+// Set empty here, they win over .env (Next and Prisma never override a variable that's
+// already set) and fall back to DATA_DIR.
+const REAL_FILES = REAL_DATA_ENV;
 
 // Started by the real server (lib/demo/launch.ts), this inherits that server's runtime
 // variables (its origin, phase, NODE_ENV); the demo's own Next server sets its own.
