@@ -426,7 +426,6 @@ function RecentLog({ ctx }: { ctx: CarCtx }) {
                   </span>
                   <span className="num shrink-0 text-muted">{i.odometer != null ? `${miles(i.odometer)} mi` : ""}</span>
                   <span className="num w-20 shrink-0 text-right text-fg-2">{isReading(i) ? "" : <ProofValue proof={logProof(i.id, i.cents)}>{usd2(i.cents)}</ProofValue>}</span>
-                  {i.source === "STATEMENT" && i.counted && <Badge tone="info">stmt</Badge>}
                 </button>
               </li>
             );

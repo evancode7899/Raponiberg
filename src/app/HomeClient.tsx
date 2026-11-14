@@ -2,7 +2,7 @@
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
-import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
+import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Card, ErrorNote, Loading, PageBody, StatCell, StatGrid } from "@/components/ui/kit";
@@ -148,10 +148,9 @@ function NetWorthHero({ nw }: { nw: Summary["netWorth"] }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Net worth</div>
-          <div className="num mt-1 text-4xl font-semibold tracking-tight">{nw.totalCents == null ? <BlockedValue blockers={nw.blockers} className="!text-base" /> : <ProofValue proof={proofOf(nw.proofs?.total, nw.totalCents)}>{usd0(nw.totalCents)}</ProofValue>}</div>
+          <div className="num mt-1 text-4xl font-semibold tracking-tight">{nw.totalCents == null ? <BlockedValue blockers={nw.blockers} className="!text-base" /> : <ProofValue proof={proofOf(nw.proofs?.total, nw.totalCents)} quality={nw.quality}>{usd0(nw.totalCents)}</ProofValue>}</div>
           <div className="mt-1 text-xs text-muted">
             as of {date(nw.asOf)}
-            {nw.totalCents != null && <QualityBadge quality={nw.quality} asOf={nw.asOf} />}
           </div>
         </div>
         <dl className="flex flex-wrap gap-x-6 gap-y-2">

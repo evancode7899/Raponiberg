@@ -3,6 +3,7 @@
 import type { Figure, FigureBasis } from "@/lib/book/figure";
 import { isUnswept, showValue } from "@/lib/book/proof/clearance";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
+import { QUALITY_TEXT } from "@/lib/ledger/qualityText";
 import type { Quality } from "@/lib/ledger/timeline";
 import type { ReactNode } from "react";
 import { targetOf, useClearance, useProof, type ProofRef } from "./context";
@@ -28,32 +29,17 @@ export type FigureProps = ({ proof: ProofRef; figure?: never } | { figure: Figur
 const WEAKER: Record<FigureBasis, number> = { proven: 0, accepted: 1, estimate: 2 };
 const weakest = (...bs: (FigureBasis | undefined)[]): FigureBasis => bs.reduce<FigureBasis>((w, b) => (b && WEAKER[b] > WEAKER[w] ? b : w), "proven");
 
-const QUALITY_WORDS: Partial<Record<Quality, string>> = { ESTIMATED: "est.", DERIVED: "derived", INTERPOLATED: "interp.", STALE: "stale" };
-
-/** The estimate / accepted-exception / quality marks shown beside a cleared figure, on the page itself. */
-function Marks({ basis, quality }: { basis: FigureBasis; quality?: Quality }) {
-  const q = quality ? QUALITY_WORDS[quality] : undefined;
-  if (basis === "proven" && !q) return null;
-  const mark = "ml-1 inline-block rounded-sm px-1 align-super text-[9px] font-semibold uppercase leading-tight tracking-wide not-italic";
-  return (
-    <>
-      {basis === "estimate" && (
-        <span data-proof-mark="estimate" title="An estimate: part of it isn't read off a statement (the proof says which)." className={`${mark} bg-warn-soft text-warn`}>
-          est
-        </span>
-      )}
-      {basis === "accepted" && (
-        <span data-proof-mark="accepted" title="Rests on an exception you accepted (the proof lists it)." className={`${mark} bg-info-soft text-info`}>
-          acc
-        </span>
-      )}
-      {q && basis !== "estimate" && (
-        <span data-proof-mark="quality" title={`Quality: ${quality!.toLowerCase()}`} className={`${mark} bg-surface-3 text-fg-2`}>
-          {q}
-        </span>
-      )}
-    </>
-  );
+/**
+ * What a cleared figure's hover says about how it stands. The page itself carries no
+ * estimate / accepted / quality marks (owner's rule, 2026-11-14: a figure that cleared
+ * shows plain); the hover names how it stands and the proof drawer explains it.
+ */
+function standing(basis: FigureBasis, quality?: Quality): string {
+  const q = quality && quality !== "EXACT" ? QUALITY_TEXT[quality] : undefined;
+  if (basis === "estimate") return "An estimate: part of it isn't read off a statement. Click for the proof, which says which part.";
+  if (basis === "accepted") return "Rests on an exception you accepted. Click for the proof, which lists it.";
+  if (q) return `${q.label}: ${q.help} Click for the proof.`;
+  return "Show the rows and checks behind this figure";
 }
 
 /**
@@ -61,6 +47,9 @@ function Marks({ basis, quality }: { basis: FigureBasis; quality?: Quality }) {
  * cleared it at the very value the page shows (clearance.ts). Until the sweep answers it
  * shows the page's number, plain; blocked, flagged, a different number, never swept, or no sweep at all,
  * it's withheld: a dash that opens the drawer saying why. A cleared figure opens its proof.
+ *
+ * A cleared figure shows plain whatever it rests on: how it stands (an estimate, an accepted
+ * exception, a data quality) is in its hover and its drawer, never a mark on the page.
  *
  * Every one carries data-proof-key (its descriptor key, or "unswept"), data-shown (the
  * value the page shows), data-shown-kind, data-per-months and data-drawn, so the render audit
@@ -112,17 +101,18 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
     <button
       type="button"
       {...data}
+      data-basis={basis}
+      {...(quality && quality !== "EXACT" ? { "data-quality": quality } : {})}
       onClick={(e) => {
         // Inside a clickable row or a link, open the proof rather than the row's own drill-down or the link's page.
         e.preventDefault();
         e.stopPropagation();
-        open?.(target, c);
+        open?.(target, { ...c, basis }, quality);
       }}
-      title="Show the rows and checks behind this figure"
+      title={standing(basis, quality)}
       className={`cursor-pointer rounded-sm text-inherit underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${className}`}
     >
       {children}
-      <Marks basis={basis} quality={quality} />
     </button>
   );
 }

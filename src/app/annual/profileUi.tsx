@@ -14,7 +14,7 @@ export { axisUsd } from "@/lib/formatMoney";
 export const usd = usd0;
 export const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
 
-export type Cell = { text: React.ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[]; drawn?: FigureProps["drawn"] } | null;
+export type Cell = { text: React.ReactNode; title?: string; dim?: boolean; proof: ProofRef; blockers?: BlockerRef[]; drawn?: FigureProps["drawn"]; quality?: FigureProps["quality"] } | null;
 
 /** Year-per-column statement table (shared with Taxes). */
 export const YearTable = StatementTable;

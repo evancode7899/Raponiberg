@@ -3,12 +3,13 @@
 import { apiSecretHeaders, lastDataStamp, onDataStamp } from "@/components/ledger/useApi";
 import type { Proof, ProofDescriptor } from "@/lib/book/proof";
 import { sweepAnswer, type Clearance, type SweepState } from "@/lib/book/proof/clearance";
+import type { Quality } from "@/lib/ledger/timeline";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { DataStampContext, ProofContext, SweepContext, type ProofTarget } from "./context";
 import { ProofPanel } from "./ProofPanel";
 
 /** One proof in the drawer: what was asked for (none for a figure with no proof), why the page shows or withholds it, and the answer once it arrives. */
-export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; proof: (Proof & { stamp: string }) | null; error: string | null };
+export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string }) | null; error: string | null };
 
 /** How long to wait before asking again while the sweep runs, and after it failed. */
 const PENDING_POLL_MS = 2000;
@@ -29,9 +30,9 @@ export function ProofProvider({ children }: { children: ReactNode }) {
   // Which request each entry is waiting on, so a slow answer never lands on a newer entry.
   const seq = useRef(0);
 
-  const load = useCallback((target: ProofTarget | null, clearance: Clearance | null, mode: "open" | "push") => {
+  const load = useCallback((target: ProofTarget | null, clearance: Clearance | null, mode: "open" | "push", quality?: Quality) => {
     const id = ++seq.current;
-    const entry: ProofEntry & { id: number } = { target, clearance, proof: null, error: null, id };
+    const entry: ProofEntry & { id: number } = { target, clearance, quality, proof: null, error: null, id };
     setStack((s) => (mode === "open" ? [entry] : [...s, entry]));
     if (!target) return;
     const settle = (patch: Partial<ProofEntry>) => setStack((s) => s.map((e) => ((e as typeof entry).id === id ? { ...e, ...patch } : e)));
@@ -44,7 +45,7 @@ export function ProofProvider({ children }: { children: ReactNode }) {
       .catch((e: Error) => settle({ error: e.message }));
   }, []);
 
-  const open = useCallback((t: ProofTarget | null, clearance?: Clearance) => load(t, clearance ?? null, "open"), [load]);
+  const open = useCallback((t: ProofTarget | null, clearance?: Clearance, quality?: Quality) => load(t, clearance ?? null, "open", quality), [load]);
   const follow = useCallback((descriptor: ProofDescriptor) => load({ descriptor, shownCents: null }, null, "push"), [load]);
   const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
   const close = useCallback(() => setStack([]), []);

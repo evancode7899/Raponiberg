@@ -204,7 +204,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                   {[...r.insurance.premiums].map((x, i) => ({ x, k: `${s.id}|${i}` })).reverse().slice(0, PREMIUMS_LISTED).map(({ x, k }, i) => (
                     <tr key={i} className={table.tr}>
                       <td className={table.td}>
-                        {fmtDate(x.date)} {x.source === "STATEMENT" && <Badge tone="info">statement</Badge>}
+                        {fmtDate(x.date)}
                       </td>
                       <td className={table.tdR}>
                         <ProofValue proof={ctx.dp("premium", k)}>{usd2(x.cents)}</ProofValue>

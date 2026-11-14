@@ -1,12 +1,13 @@
 "use client";
 
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
-import { Card, QualityBadge } from "@/components/ledger/LedgerBits";
+import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, Segmented, StatCell, StatGrid } from "@/components/ui/kit";
 import type { ProofRef, ProofTarget } from "@/components/ui/proof/context";
 import type { AnnualBridgeLine, AnnualCashLine, AnnualDescriptor, AnnualNetWorthLine } from "@/lib/book/proof/annualProof";
 import type { PayLine } from "@/lib/book/proof/payProof";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
+import type { Quality } from "@/lib/ledger/timeline";
 import type { CashWaterfall } from "@/lib/profile/annualMath";
 import type { AnnualProfileReport, PersonYear, YearCash, YearNetWorth, YearProfile } from "@/lib/profile/buildAnnualProfile";
 import Link from "next/link";
@@ -62,7 +63,7 @@ export type Col = {
 };
 
 /** A cell's figure: a number (as shown — "less" lines negative), a section that can't be proven, or nothing. */
-type V = { v: number; proof?: ProofTarget; title?: string; after?: ReactNode } | { blocked: BlockerRef[] } | null;
+type V = { v: number; proof?: ProofTarget; title?: string; after?: ReactNode; quality?: Quality } | { blocked: BlockerRef[] } | null;
 
 type Line = {
   label: ReactNode;
@@ -137,12 +138,8 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
           label="Net worth"
           value={value(latest?.netWorth?.netWorth, latest?.blockers.netWorth)}
           proof={latest?.netWorth ? nwP(latest, "net-worth", latest.netWorth.netWorth) : noFigure("no year with a proven net worth")}
-          sub={
-            <>
-              {latest ? `as of ${latest.netWorthAsOf}` : ""}
-              {latest?.netWorth && <QualityBadge quality={latest.netWorth.quality} />}
-            </>
-          }
+          quality={latest?.netWorth?.quality}
+          sub={latest ? `as of ${latest.netWorthAsOf}` : ""}
         />
         <StatCell
           label={`Change ${cur ? `${cur.year} YTD` : ""}`}
@@ -473,7 +470,7 @@ function statementRows(r: AnnualProfileReport, cols: Col[], mode: "amounts" | "c
     get: (c) =>
       nw(
         c,
-        (n, y) => ({ v: n.netWorth, proof: nwP(y, "net-worth", n.netWorth), after: <QualityBadge quality={n.quality} /> }),
+        (n, y) => ({ v: n.netWorth, proof: nwP(y, "net-worth", n.netWorth), quality: n.quality }),
         (e) => estV(e, "net-worth"),
       ),
   });
@@ -538,6 +535,7 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
         ),
         proof: x.proof ?? unswept(`${l.label}: no recipe for this line`),
         title: x.title,
+        quality: x.quality,
       };
     if (l.fmt === "plain") return { text: fmtV(x.v, l.fmt), dim: true, proof: noFigure("ages aren't compared") };
     const p = c.prev != null && !(c.est && l.estPartial) ? vals[c.prev] : null;
