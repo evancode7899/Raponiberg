@@ -752,6 +752,7 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
             ? [...mm, ln("×", "Share from US obligations", { ratio: x.report.profile.moneyMarketUsGovShare }, "assumption", "Typed under Inputs from the fund's annual percentage."), ln("=", "Money-market dividends from US obligations", Math.round(mmTotal * x.report.profile.moneyMarketUsGovShare), "derived")]
             : []),
           ...investmentLines(x, p, "usTreasury"),
+          ...k1Lines(x, p, "usObligationIncome", { what: "interest on US obligations" }),
           ...typed(x, p, "+", "other US-obligation income", extras(x, p).usObligationIncome),
         ];
       });

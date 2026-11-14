@@ -129,10 +129,10 @@ export function buildCardPerks(input: CardPerksInput): CardPerksReport {
     else cards.push(score(p, year));
   }
 
-  function rewardsFor(p: Prepared, y: number): CardRewards {
+  /** `exp`: what the year's spending should earn, the card's earn lines as drawn (each rounded) re-added, so the total ties to them to the unit. */
+  function rewardsFor(p: Prepared, y: number, exp: number): CardRewards {
     const program = PROGRAMS[p.product?.program ?? "none"];
     const rate = program.kind === "CASH" ? 1 : cpp(p);
-    const exp = p.earned.filter((e) => inYear(e.date, y)).reduce((t, e) => t + e.units, 0);
     const redeemedCents = p.sorted.credits.filter((c) => c.kind === "REDEMPTION" && inYear(c.date, y)).reduce((t, c) => t + c.amountCents, 0);
     const pool = pools.find((x) => x.accountIds.includes(p.account.id));
     const last = pool?.balances.filter((b) => b.date <= `${y}-12-31`).at(-1);
@@ -165,7 +165,7 @@ export function buildCardPerks(input: CardPerksInput): CardPerksReport {
       earnBy.set(e.label, { ...l, spendCents: l.spendCents + e.spendCents, units: l.units + e.units });
     }
     const earn = [...earnBy.values()].map((l) => ({ ...l, units: Math.round(l.units) })).sort((a, b) => b.units - a.units);
-    const rewards = rewardsFor(p, y);
+    const rewards = rewardsFor(p, y, earn.reduce((t, l) => t + l.units, 0));
     const perks = p.product ? mergeLines(perkLines({ accountId: p.account.id, product: p.product, held: p.held, rows: p.rows, sorted: p.sorted, inApp, year: y, today })) : [];
 
     const feeRows = p.sorted.feeRows.filter((r) => inYear(r.date, y));
@@ -245,7 +245,7 @@ export function buildCardPerks(input: CardPerksInput): CardPerksReport {
   for (const c of cards) {
     const rate = c.rewards.kind === "CASH" ? 1 : c.centsPerPoint;
     for (const l of c.earn) {
-      const label = l.label.replace(/ (past the cap)$/, "");
+      const label = l.label.replace(/ \(past the cap\)$/, "");
       mix.set(label, (mix.get(label) ?? 0) + l.units * rate);
     }
   }
