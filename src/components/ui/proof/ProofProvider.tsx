@@ -7,6 +7,7 @@ import type { Quality } from "@/lib/ledger/timeline";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { DataStampContext, ProofContext, SweepContext, type ProofTarget } from "./context";
 import { ProofPanel } from "./ProofPanel";
+import { SweepNotice } from "./SweepNotice";
 
 /** One proof in the drawer: what was asked for (none for a figure with no proof), why the page shows or withholds it, and the answer once it arrives. */
 export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string }) | null; error: string | null };
@@ -103,6 +104,7 @@ export function ProofProvider({ children }: { children: ReactNode }) {
     <ProofContext.Provider value={open}>
       <SweepContext.Provider value={sweep}>
         <DataStampContext.Provider value={pageStamp}>
+          <SweepNotice />
           {children}
           <ProofPanel stack={stack} onFollow={follow} onBack={back} onClose={close} />
         </DataStampContext.Provider>

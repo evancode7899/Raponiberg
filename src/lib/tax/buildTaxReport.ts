@@ -684,7 +684,7 @@ export function buildTaxReport(
       qualifiedDividends: invY.qualifiedDividends + (useDocs ? k1("qualifiedDividends") : 0),
       section199aDividends: invY.section199a,
       taxExemptInterest: invY.taxExempt,
-      usObligationIncome: Math.round(invY.moneyMarketDividends * profile.moneyMarketUsGovShare) + invY.usTreasury + extras.usObligationIncome,
+      usObligationIncome: Math.round(invY.moneyMarketDividends * profile.moneyMarketUsGovShare) + invY.usTreasury + extras.usObligationIncome + (useDocs ? k1("usObligationIncome") : 0),
       capitalGainDistributions: invY.capGainDistLong,
       shortTermGain: invY.shortTermGain - extras.capitalLossCarryover + (useDocs ? k1("shortTermGain") : 0),
       longTermGain: invY.longTermGain + (useDocs ? k1("longTermGain") : 0),
