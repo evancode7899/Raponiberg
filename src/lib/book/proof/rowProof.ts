@@ -1,6 +1,7 @@
 import { endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
 import { LANE_LABELS } from "../../classifier/taxonomy.ts";
+import { FUND_NOTICE } from "../../ledger/transferFees.ts";
 import { RELABEL } from "../../transfers/relabel.ts";
 import type { Book, BookAccount, BookRow, BookStatement, BookStub, BookTransferMatch } from "../load.ts";
 import { dayOfFor } from "../reports/cashFlow.ts";
@@ -290,7 +291,7 @@ export function buildRowProof(book: Book, d: RowDescriptor): Proof {
         })),
         {
           label: "Paired by",
-          text: `${match.status === "CONFIRMED" ? "You (confirmed, never re-decided)" : "The transfer matcher, re-checked on every run"}${match.differenceCents ? ` · the legs differ by ${money(match.differenceCents)}, booked as a fee` : " · the legs net to $0.00"}`,
+          text: `${match.status === "CONFIRMED" ? "You (confirmed, never re-decided)" : "The transfer matcher, re-checked on every run"}${match.method === FUND_NOTICE ? ` · the fund's notices paid ${money(match.differenceCents)} of the contribution with interest it owed you, counted as the fund's growth, not money in` : match.differenceCents ? ` · the legs differ by ${money(match.differenceCents)}, booked as a fee` : " · the legs net to $0.00"}`,
           tone: "good",
         },
       ],

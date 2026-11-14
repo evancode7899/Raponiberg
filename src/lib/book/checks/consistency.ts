@@ -1,5 +1,5 @@
 import { addDays, dayNumber, fromDayNumber, periodsBetween, startOfMonth } from "../../dates/isoDate.ts";
-import { billAccountIds, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
+import { billAccountIds, carriesDifference, FUND_NOTICE, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
 import { bookedShare } from "../booking.ts";
 import { money } from "../coverage.ts";
 import { accountRef, stubRef } from "../findingKeys.ts";
@@ -17,14 +17,15 @@ import type { Collector } from "./collector.ts";
  *  - no two segments of an account cover the same day (nothing counted twice);
  *  - each account's rows, booked month by month, equal its timeline's flows lane by lane
  *    (so cash flow and net worth can't disagree about a dollar or the month it fell in);
- *  - every transfer pairing nets to its confirmed difference and points at rows in the
+ *  - every transfer pairing nets to its difference (the owner's confirmed one, or the
+ *    interest a fund's notices paid a contribution with; otherwise zero) and points at rows in the
  *    ledger, and every pay stub's deposit link points at a ledger row for its net pay.
  */
 export function checkConsistency(book: Book, c: Collector) {
   const fees = transferDifferenceAdjustments(
     book.matches
-      .filter((m) => m.status === "CONFIRMED")
-      .map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents, accountId: l.accountId })) })),
+      .filter(carriesDifference)
+      .map((m) => ({ differenceCents: m.differenceCents, method: m.method, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents, accountId: l.accountId })) })),
     billAccountIds(book.accounts),
   );
 
@@ -111,13 +112,15 @@ export function checkConsistency(book: Book, c: Collector) {
   for (const m of book.matches) {
     const rows = m.legs.map((l) => book.rowById.get(l.transactionId));
     const sum = m.legs.reduce((t, l) => t + l.amountCents, 0);
-    const want = m.status === "CONFIRMED" ? m.differenceCents : 0;
+    const want = carriesDifference(m) ? m.differenceCents : 0;
+    // A fund contribution its notices paid entirely with interest has no bank leg at all.
+    const interestOnly = m.method === FUND_NOTICE && m.legs.length === 1;
     const first = m.legs.map((l) => l.date).sort()[0] ?? book.today;
     const last = m.legs.map((l) => l.date).sort().at(-1) ?? book.today;
     const label = m.legs.map((l) => `${l.date} ${money(l.amountCents)}`).join(" ↔ ");
     const key = m.legs.map((l) => `${accountRef(book, l.accountId).ref}:${l.date}:${l.amountCents}`).sort().join("+");
     const problems: string[] = [];
-    if (m.legs.length < 2 || new Set(m.legs.map((l) => l.accountId)).size < 2) problems.push("it doesn't join two different accounts");
+    if (!interestOnly && (m.legs.length < 2 || new Set(m.legs.map((l) => l.accountId)).size < 2)) problems.push("it doesn't join two different accounts");
     if (sum !== want) problems.push(`its legs net to ${money(sum)} instead of ${money(want)}`);
     if (rows.some((r) => !r)) problems.push("a leg is on a statement that isn't in the ledger (held, a year-end summary, or an archived account)");
     if (rows.some((r) => r && r.lane !== "TRANSFER")) problems.push("a leg is no longer filed as a transfer, so the pair would count it twice");

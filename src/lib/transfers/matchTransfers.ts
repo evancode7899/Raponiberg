@@ -55,9 +55,10 @@ export type Leg = {
   counterpartySubtypes?: AccountSubtype[] | null;
 };
 
-export type MatchMethod = "EXACT_PAIR" | "ORDERED_PAIR" | "AGGREGATE";
+export type MatchMethod = "EXACT_PAIR" | "ORDERED_PAIR" | "AGGREGATE" | "FUND_NOTICE";
 
-export type ProposedMatch = { legIds: string[]; method: MatchMethod };
+/** differenceCents: only a fund contribution its notices paid partly with interest (fundContributions.ts). */
+export type ProposedMatch = { legIds: string[]; method: MatchMethod; differenceCents?: number };
 
 export type MatchResult = {
   matches: ProposedMatch[];

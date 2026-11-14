@@ -198,6 +198,11 @@ export async function storedDocumentFiles(db: Pick<PrismaClient, "sourceDocument
   return db.sourceDocument.findMany({ where: { id: { in: ids } }, select: { id: true, fileHash: true, filePath: true } });
 }
 
+/** Every stored document: who it's filed under and which reader read it (no figures). */
+export async function storedDocumentIndex(db: Pick<PrismaClient, "sourceDocument">): Promise<{ id: string; parserId: string; institution: string }[]> {
+  return db.sourceDocument.findMany({ select: { id: true, parserId: true, institution: true } });
+}
+
 /**
  * Re-reads the statements whose parser has changed since they were imported, from the
  * statements folder, so a parser update reaches the ledger without anyone running a

@@ -272,9 +272,10 @@ model TransferMatch {
   id              String   @id @default(cuid())
   /// AUTO (matcher, recomputed every run) | CONFIRMED (owner; never recomputed)
   status          String
-  /// EXACT_PAIR | ORDERED_PAIR | AGGREGATE | MANUAL
+  /// EXACT_PAIR | ORDERED_PAIR | AGGREGATE | FUND_NOTICE | MANUAL
   method          String
-  /// Σin + Σout; nonzero only for owner-confirmed lossy transfers (rollover fees).
+  /// Σin + Σout; nonzero only for owner-confirmed lossy transfers (rollover fees) and
+  /// FUND_NOTICE pairings (the interest a fund's notices paid a contribution with).
   differenceCents Int      @default(0)
   note            String?
   createdAt       DateTime @default(now())
