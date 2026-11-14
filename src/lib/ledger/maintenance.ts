@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { applyRecurringChecks, reclassifyRows, syncMerchantRules } from "../classifier/persist.ts";
 import { CLASSIFIER_HOUSEHOLD_SETTING, CLASSIFIER_VERSION, CLASSIFIER_VERSION_SETTING } from "../classifier/version.ts";
+import { refreshFundDocs } from "../funds/read.ts";
 import { householdPatterns } from "../household/householdFile.ts";
 import { refreshOutdatedFacts } from "../ingest/documentFacts.ts";
 import { FACT_PARSERS, FACTS_VERSION } from "../ingest/factsVersion.ts";
@@ -68,7 +69,8 @@ function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * Everything derived from the full ledger rather than a single statement. Run after any
  * import, deletion, reclassification or owner edit:
- *  - outside a transaction, re-extracts facts for documents stored by an older extractor;
+ *  - outside a transaction, re-extracts facts for documents stored by an older extractor,
+ *    and reads any private-fund notice not read yet;
  *  - syncs the merchant rules with their file (restoring any a rebuild lost);
  *  - re-runs the current classification rules over rows the owner hasn't corrected, so a
  *    rule change never leaves stale lanes behind (and records the rules' version);
@@ -79,6 +81,10 @@ function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
 export async function refreshDerived(db: Db): Promise<MaintenanceReport> {
   return oneAtATime(async () => {
     const facts = "$transaction" in db ? await refreshOutdatedFacts(db as PrismaClient) : { refreshed: 0, failed: [] };
+    // The transfer matcher pairs a fund's contributions by its notices: read any not read
+    // yet. A notice that can't be read leaves its contribution unpaired (a finding), so a
+    // failure here never stops the refresh.
+    await refreshFundDocs(db).catch(() => undefined);
     const run = async (tx: Db) => {
       const merchantRules = await syncMerchantRules(tx);
       const rowDecisions = await syncRowDecisions(tx);

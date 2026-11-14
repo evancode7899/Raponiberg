@@ -93,7 +93,7 @@ type Read = { source: FundSource; doc: FundDoc };
  * copies of the same notice. The letter's figures win (it prints the commitment summary);
  * the template fills in a breakdown the letter leaves out.
  */
-function mergeCalls(xs: { source: FundSource; doc: FundCall }[]): { call: FundCall; sources: FundSource[] }[] {
+export function mergeCalls(xs: { source: FundSource; doc: FundCall }[]): { call: FundCall; sources: FundSource[] }[] {
   const by = new Map<string, { call: FundCall; sources: FundSource[] }>();
   for (const x of [...xs].sort((a, b) => (a.doc.format === b.doc.format ? 0 : a.doc.format === "letter" ? -1 : 1))) {
     const k = x.doc.issued;

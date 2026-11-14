@@ -1,6 +1,6 @@
 import { addDays } from "../../dates/isoDate.ts";
 import { buildNetWorthReport } from "../../ledger/netWorthReport.ts";
-import { billAccountIds, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
+import { billAccountIds, carriesDifference, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
 import { bookedShare } from "../booking.ts";
 import { money } from "../coverage.ts";
 import type { Book, BookRow } from "../load.ts";
@@ -24,8 +24,8 @@ export function checkNetWorth(book: Book, c: Collector) {
   const nw = buildNetWorthReport(book.ledger, { granularity: "month", today: book.today, through: book.horizon.netWorth });
   const fees = transferDifferenceAdjustments(
     book.matches
-      .filter((m) => m.status === "CONFIRMED")
-      .map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents, accountId: l.accountId })) })),
+      .filter(carriesDifference)
+      .map((m) => ({ differenceCents: m.differenceCents, method: m.method, legs: m.legs.map((l) => ({ id: l.transactionId, amountCents: l.amountCents, accountId: l.accountId })) })),
     billAccountIds(book.accounts),
   );
   const outside = new Set(c.inferences.filter((i) => i.check === "transfer.unmatched" && i.partial).flatMap((i) => i.rowIds ?? []));
@@ -56,7 +56,8 @@ export function checkNetWorth(book: Book, c: Collector) {
     for (const m of book.matches) {
       const shares = m.legs.map((l) => share(l.transactionId, l.date, p.start, end));
       if (shares.every((s) => s === 0) || shares.every((s) => s === 1)) continue;
-      // The ledger books a confirmed lossy transfer's shortfall as a fee on the sending leg, not a transfer.
+      // The ledger books a confirmed lossy transfer's shortfall as a fee on the sending leg, not a transfer
+      // (and the interest a fund's notices paid a contribution with as growth on the fund).
       m.legs.forEach((l, i) => (inFlight += shares[i]! * (l.amountCents - (fees.get(l.transactionId) ?? 0))));
       fractional += shares.filter((s) => s > 0 && s < 1).length;
     }

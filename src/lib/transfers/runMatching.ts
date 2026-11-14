@@ -7,8 +7,11 @@ import { getMergeDate } from "../ledger/householdSettings.ts";
 import type { AccountSubtype } from "../ingest/types.ts";
 import { applyTransferDecisions } from "./applyDecisions.ts";
 import { loadBillPaymentInputs, planBillPayments } from "./billPayments.ts";
+import { fundCallsOnFile } from "../funds/read.ts";
+import { FUND_NOTICE } from "../ledger/transferFees.ts";
 import { readDecisions } from "./decisionStore.ts";
-import { matchTransfers, type Leg, type MatchResult } from "./matchTransfers.ts";
+import { planFundContributions } from "./fundContributions.ts";
+import { legKey, matchTransfers, type Leg, type MatchResult } from "./matchTransfers.ts";
 import { isRelabel, readStash, RELABEL, type RelabelStash } from "./relabel.ts";
 
 export { RELABEL } from "./relabel.ts";
@@ -74,6 +77,15 @@ export async function computeMatches(db: Db): Promise<{ result: MatchResult; leg
   const { legs } = await loadLegs(db);
   const rejections = await db.transferRejection.findMany({ select: { legKey: true } });
   const result = matchTransfers(legs, rejections.map((r) => r.legKey));
+  // A private fund's contribution its notices paid partly with interest: paired by the
+  // notices, so it's no longer a near miss for the owner to decide.
+  const paired = new Set(result.matches.flatMap((m) => m.legIds));
+  const rejected = new Set(rejections.map((r) => r.legKey));
+  const byNotice = planFundContributions(legs.filter((l) => !paired.has(l.id)), fundCallsOnFile()).filter((m) => !rejected.has(legKey(m.legIds)));
+  const fundLegs = new Set(byNotice.flatMap((m) => m.legIds));
+  result.matches.push(...byNotice.map((m) => ({ legIds: m.legIds, method: FUND_NOTICE, differenceCents: m.differenceCents })));
+  result.suggestions = result.suggestions.filter((s) => !s.legIds.some((id) => fundLegs.has(id)));
+  result.ambiguous = result.ambiguous.filter((ids) => !ids.some((id) => fundLegs.has(id)));
   // Bills nothing in their cycle adds up to: offered with the cycle's rent payments.
   const { bills, bank } = await loadBillPaymentInputs(db, householdPatterns().merchantRules);
   result.suggestions.push(...planBillPayments(bills, bank, new Set(rejections.map((r) => r.legKey))).suggestions);
@@ -193,7 +205,7 @@ export async function runTransferMatching(
   const matchedIds = new Set<string>();
   for (const m of result.matches) {
     await db.transferMatch.create({
-      data: { status: "AUTO", method: m.method, legs: { create: m.legIds.map((transactionId) => ({ transactionId })) } },
+      data: { status: "AUTO", method: m.method, differenceCents: m.differenceCents ?? 0, legs: { create: m.legIds.map((transactionId) => ({ transactionId })) } },
     });
     for (const id of m.legIds) {
       matchedIds.add(id);

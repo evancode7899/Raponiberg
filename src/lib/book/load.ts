@@ -160,6 +160,8 @@ export type BookDocument = {
 export type BookTransferMatch = {
   id: string;
   status: string;
+  /** How it was paired (TransferMatch.method); FUND_NOTICE: a fund contribution by its notices, whose difference is their interest. */
+  method?: string;
   differenceCents: number;
   legs: { transactionId: string; accountId: string; date: string; amountCents: number }[];
 };
@@ -339,6 +341,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       select: {
         id: true,
         status: true,
+        method: true,
         differenceCents: true,
         legs: { select: { transaction: { select: { id: true, accountId: true, date: true, amountCents: true } } } },
       },
@@ -405,6 +408,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
   const bookMatches: BookTransferMatch[] = matches.map((m) => ({
     id: m.id,
     status: m.status,
+    method: m.method,
     differenceCents: m.differenceCents,
     legs: m.legs.map((l) => ({ transactionId: l.transaction.id, accountId: l.transaction.accountId, date: iso(l.transaction.date), amountCents: l.transaction.amountCents })),
   }));

@@ -6,7 +6,7 @@ import { bookBill, type BillRowBooking, type BillStatement } from "./billBooking
 import { declaredClosure, readClosedAccounts } from "./closedAccounts.ts";
 import { getMergeDate } from "./householdSettings.ts";
 import { buildTimeline, type AccountTimeline, type SegmentInput } from "./timeline.ts";
-import { billAccountIds, transferDifferenceAdjustments } from "./transferFees.ts";
+import { billAccountIds, FUND_NOTICE, transferDifferenceAdjustments } from "./transferFees.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -117,12 +117,13 @@ export async function loadLedger(db: Db, opts: { today: string }): Promise<Ledge
   const today = opts.today;
 
   const lossy = await db.transferMatch.findMany({
-    where: { status: "CONFIRMED", differenceCents: { not: 0 } },
-    select: { differenceCents: true, legs: { select: { transaction: { select: { id: true, amountCents: true, accountId: true } } } } },
+    // The pairings whose legs may differ (transferFees.ts carriesDifference).
+    where: { OR: [{ status: "CONFIRMED" }, { method: FUND_NOTICE }], differenceCents: { not: 0 } },
+    select: { differenceCents: true, method: true, legs: { select: { transaction: { select: { id: true, amountCents: true, accountId: true } } } } },
   });
   const bills = billAccountIds(accounts);
   const transferFees = transferDifferenceAdjustments(
-    lossy.map((m) => ({ differenceCents: m.differenceCents, legs: m.legs.map((l) => l.transaction) })),
+    lossy.map((m) => ({ differenceCents: m.differenceCents, method: m.method, legs: m.legs.map((l) => l.transaction) })),
     bills,
   );
   // The bank payments that paid each bill row, so the bill books them on the bank's days.
@@ -166,7 +167,8 @@ export async function loadLedger(db: Db, opts: { today: string }): Promise<Ledge
       continue;
     }
     // A lossy transfer's shortfall leaves the transfer flow and becomes a fee (or
-    // growth, if positive) on the sending account; the segment still ties out.
+    // growth, if positive) on the sending account; the segment still ties out. The
+    // interest a fund's notices paid a contribution with becomes growth on the fund.
     let growthCents = s.growthCents;
     let feesCents = s.feesCents;
     const flows = s.transactions.map((t) => {
