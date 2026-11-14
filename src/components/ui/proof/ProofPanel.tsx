@@ -7,6 +7,8 @@ import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
 import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue, Rederivation } from "@/lib/book/proof/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, formatUsdFromCents, usd0 } from "@/lib/formatMoney";
+import { QUALITY_TEXT } from "@/lib/ledger/qualityText";
+import type { Quality } from "@/lib/ledger/timeline";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProofEntry } from "./ProofProvider";
@@ -55,7 +57,7 @@ export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofE
           ← Back{prev.proof ? ` to ${prev.proof.describes}` : ""}
         </button>
       )}
-      {top?.clearance && <ClearanceNote c={top.clearance} />}
+      {top?.clearance && <ClearanceNote c={top.clearance} quality={top.quality} />}
       {top?.error && <ErrorNote>{top.error}</ErrorNote>}
       {top?.target && !p && !top.error && <Loading label="Adding up the parts…" />}
       {top?.target && p && <ProofBody key={stack.length} p={p} shownCents={top.target.shownCents} perMonths={top.target.perMonths} onFollow={onFollow} />}
@@ -75,12 +77,20 @@ const WITHHELD_TITLE: Record<WithheldReason, string> = {
 };
 
 /** Whether the page may show the figure, and why not (clearance.ts): what its dash means. */
-function ClearanceNote({ c }: { c: Clearance }) {
+function ClearanceNote({ c, quality }: { c: Clearance; quality?: Quality }) {
+  // The data quality the page knows the figure by: said here, never as a mark on the page.
+  const q = quality && quality !== "EXACT" ? QUALITY_TEXT[quality] : undefined;
   return (
     <div className="mb-4" data-proof-clearance={c.state === "withheld" ? `withheld:${c.reason}` : c.state}>
       {c.state === "cleared" ? (
         <Callout tone="good">
           Cleared: the proof sweep of this data held it to its proof{c.basis === "estimate" ? ", and it rests on an estimate (listed below)" : c.basis === "accepted" ? ", resting on an exception you accepted (listed below)" : ""}.
+          {q && (
+            <span data-proof-quality={quality}>
+              {" "}
+              {q.label}: {q.help}
+            </span>
+          )}
         </Callout>
       ) : c.state === "verifying" ? (
         <Callout tone="info">Checking: the proof sweep of this data is still running. The figure shows meanwhile, and is withheld the moment the sweep finds a problem with it.</Callout>

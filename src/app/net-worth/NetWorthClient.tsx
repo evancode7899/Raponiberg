@@ -4,7 +4,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { builtDerived, netWorthDerived } from "@/lib/book/derived/netWorth";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
-import { QualityBadge, ApiSecretField } from "@/components/ledger/LedgerBits";
+import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { chartChrome, groupColor, groupRank, useChartPalette } from "@/components/shell/chartPalette";
 import { compositeOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
@@ -213,11 +213,10 @@ function Overview({ r }: { r: NetWorthReport }) {
         <StatCell
           label="Net worth"
           value={shown(usd0(r.current.totalCents), cur)}
-          proof={balanceProof(r.current.asOf, r.current.totalCents)} blockers={cur}
+          proof={balanceProof(r.current.asOf, r.current.totalCents)} blockers={cur} quality={r.current.quality}
           sub={
             <>
               as of {r.current.asOf}
-              <QualityBadge quality={r.current.quality} />
             </>
           }
         />
@@ -324,8 +323,7 @@ function Overview({ r }: { r: NetWorthReport }) {
                           <BlockedValue blockers={forAccount(cur, a.id)} />
                         ) : (
                           <>
-                            <ProofValue proof={balanceProof(r.current.asOf, a.currentCents, { accountIds: [a.id] })}>{usd0(a.currentCents)}</ProofValue>
-                            <QualityBadge quality={a.currentQuality} asOf={a.currentAsOf} />
+                            <ProofValue proof={balanceProof(r.current.asOf, a.currentCents, { accountIds: [a.id] })} quality={a.currentQuality}>{usd0(a.currentCents)}</ProofValue>
                           </>
                         )}
                       </td>
@@ -478,7 +476,6 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                       <td className={`${table.td} whitespace-nowrap font-medium`}>
                         <span className="text-faint" data-audit-drill={p.label}>{isOpen ? "▾" : "▸"}</span>{" "}
                         <ProofValue proof={changeProof(granularity, p.start, p.end, h.closingCents - h.openingCents)} drawn="words">{p.label}</ProofValue>
-                        <QualityBadge quality={h.closingQuality} />
                       </td>
                       <td className={table.tdR}>
                         <ProofValue proof={balanceProof(addDays(p.start, -1), h.openingCents)}>{usd0(h.openingCents)}</ProofValue>
@@ -499,7 +496,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                       </td>
                       <td className={`${table.tdR} text-muted`}>{cell(`${p.start}:transit`, "household", usd0(h.transferResidualCents + h.unexplainedCents))}</td>
                       <td className={`${table.tdR} font-semibold`}>
-                        <ProofValue proof={balanceProof(p.end, h.closingCents)}>{usd0(h.closingCents)}</ProofValue>
+                        <ProofValue proof={balanceProof(p.end, h.closingCents)} quality={h.closingQuality}>{usd0(h.closingCents)}</ProofValue>
                       </td>
                       <td className={table.tdR}>{h.portfolioReturn == null ? "—" : cell(`${p.start}:return`, "household", formatPercentRatio(h.portfolioReturn, 1))}</td>
                     </tr>
@@ -524,7 +521,6 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                                 <tr key={a.accountId} className={table.tr}>
                                   <td className={table.td}>
                                     {names.get(a.accountId)}
-                                    <QualityBadge quality={a.closingQuality} />
                                   </td>
                                   <td className={table.tdR}>
                                     {a.newlyTrackedCents ? <span title="Balance already in the account when its first statement on file begins">{cell(`${p.start}:first-on-file`, a.accountId, usd0(a.newlyTrackedCents))} (first on file)</span> : <ProofValue proof={balanceProof(addDays(p.start, -1), a.openingCents, { accountIds: [a.accountId] })}>{usd0(a.openingCents)}</ProofValue>}
@@ -538,7 +534,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                                   <td className={`${table.tdR} text-muted`}>{cell(`${p.start}:fees`, a.accountId, usd0(a.feesCents))}</td>
                                   <td className={`${table.tdR} text-muted`}>{cell(`${p.start}:unexplained`, a.accountId, usd0(a.unexplainedCents))}</td>
                                   <td className={`${table.tdR} font-medium`}>
-                                    <ProofValue proof={balanceProof(p.end, a.closingCents, { accountIds: [a.accountId] })}>{usd0(a.closingCents)}</ProofValue>
+                                    <ProofValue proof={balanceProof(p.end, a.closingCents, { accountIds: [a.accountId] })} quality={a.closingQuality}>{usd0(a.closingCents)}</ProofValue>
                                   </td>
                                   <td className={table.tdR}>{a.returnRatio == null ? "—" : cell(`${p.start}:return`, a.accountId, formatPercentRatio(a.returnRatio, 1))}</td>
                                 </tr>

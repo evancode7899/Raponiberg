@@ -1,6 +1,5 @@
 "use client";
 
-import { QualityBadge } from "@/components/ledger/LedgerBits";
 import { Card, NotFigure, StatementTable, type TableRow } from "@/components/ui/kit";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import { rollTotalValue, rollValue, shownRollLines, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
@@ -132,13 +131,9 @@ function AccountCard({ a, currentYear, derived }: { a: AccountRollforward; curre
     total: true,
     cells: ys.map((x) =>
       cell(x, {
-        text: (
-          <>
-            {usd(x.closing)}
-            <QualityBadge quality={x.quality} />
-          </>
-        ),
+        text: usd(x.closing),
         proof: rollP(a, x, "closing"),
+        quality: x.quality,
       }),
     ),
   });

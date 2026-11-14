@@ -6,6 +6,7 @@ import { clearanceOf, isUnswept, NO_SWEEP, noFigure, type Clearance, type SweepS
 import type { CompositeDescriptor, CompositeOp } from "@/lib/book/proof/composite";
 import type { ProofValue } from "@/lib/book/proof/types";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
+import type { Quality } from "@/lib/ledger/timeline";
 import { createContext, useContext } from "react";
 
 export { unswept, type Unswept } from "@/lib/book/proof/clearance";
@@ -44,8 +45,12 @@ export const targetOf = (f: Figure): ProofTarget => ({
   ...(f.perMonths ? { perMonths: f.perMonths } : {}),
 });
 
-/** Opens the proof drawer: on a figure's proof, or (a figure with no proof) only on why it's withheld. */
-export type OpenProof = (t: ProofTarget | null, clearance?: Clearance) => void;
+/**
+ * Opens the proof drawer: on a figure's proof, or (a figure with no proof) only on why it's
+ * withheld. `quality` is the data quality the page knows the figure by: the drawer says it,
+ * the page never does.
+ */
+export type OpenProof = (t: ProofTarget | null, clearance?: Clearance, quality?: Quality) => void;
 export const ProofContext = createContext<OpenProof | null>(null);
 
 /** The proof sweep's verdicts (clearance.ts). Outside the app shell there is none, and every figure is withheld. */
