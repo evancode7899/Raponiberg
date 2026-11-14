@@ -9,6 +9,7 @@ import type { ReturnLine } from "../../taxdocs/lines";
 import { federalSummary, stateSummary } from "../../taxdocs/returns";
 import type { FiledReturn, TaxDoc, TaxDocsFile } from "../../taxdocs/types";
 import type { Book, BookAccount, BookBrokerage, BookRow, BookStub } from "../load";
+import { expectedK1 } from "../../tax/k1";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
 import type { FiledJurisdiction } from "./filedReturnProof";
 import { evalChain, splitForecastBonus, type TaxEstimateDescriptor } from "./taxEstimateProof";
@@ -393,4 +394,87 @@ describe("a finished year short of its December statements (SSOT F · A)", () =>
     const r = buildTaxReport(makeBook("2026-02-10", { horizon: { cashFlow: "2026-01-31", netWorth: "2026-01-31" } }), 2025);
     expect(r.blocked).toBeFalsy();
   });
+});
+
+describe("a finished year with partnership K-1s (2025, seen from 2026)", () => {
+  // Every name and figure is made up. Pat is a general partner who works in the business;
+  // Sam holds two limited-partner interests, one at a loss.
+  const EIN = { partners: "00-1111111", fund: "00-2222222", realty: "00-3333333" };
+  const k1 = (id: string, partner: string, form: Record<string, unknown>) => ({
+    id,
+    file: `2025/${id}.pdf`,
+    duplicates: [],
+    year: 2025,
+    kind: "K1" as const,
+    superseded: null,
+    names: [partner],
+    warnings: [],
+    parsed: { kind: "K1" as const, k1: { ...expectedK1(null, "", "00-0000000", {}), partner, ...form } as never },
+  });
+  const taxDocs: Book["taxDocs"] = {
+    version: 4,
+    scannedAt: "2026-05-01T00:00:00.000Z",
+    folder: "Example tax folder",
+    errors: [],
+    docs: [
+      k1("k1-partners", PROFILE.persons[0]!.match[0]!, { partnership: "EXAMPLE PARTNERS LP", ein: EIN.partners, limitedPartner: false, generalPartner: true, ordinaryBusiness: 3_000_000, guaranteedPayments: 500_000, interest: 120_000, longTermGain: 4_000_000, collectibles28: 300_000, unrecaptured1250: 500_000, foreignTax: 90_000 }),
+      k1("k1-fund", PROFILE.persons[1]!.match[0]!, { partnership: "EXAMPLE FUND LP", ein: EIN.fund, ordinaryBusiness: 400_000, ordinaryDividends: 600_000, qualifiedDividends: 500_000, royalties: 70_000 }),
+      k1("k1-realty", PROFILE.persons[1]!.match[0]!, { partnership: "EXAMPLE REALTY LP", ein: EIN.realty, rentalRealEstate: -900_000 }),
+    ],
+  };
+  const line = (box: string, code: string, cents: number, treatment: string, state?: string) => ({ box, code, label: `Example ${box}${code}`, cents, treatment, ...(state ? { state } : {}) });
+  const k1Details = {
+    version: 1,
+    k1s: [
+      {
+        ein: EIN.partners,
+        year: 2025,
+        activity: "OPERATING",
+        passive: false,
+        lines: [
+          line("14", "A", 3_500_000, "SE_EARNINGS"),
+          line("20", "Z", 3_000_000, "QBI_INCOME"),
+          line("20", "Z", 800_000, "QBI_W2_WAGES"),
+          line("13", "H", 200_000, "INVESTMENT_INTEREST_EXPENSE"),
+          line("11", "C", 1_000_000, "SECTION_1256"),
+          line("11", "A", 100_000, "ORDINARY_PORTFOLIO"),
+          line("K3", "", 400_000, "FOREIGN_SOURCE_PASSIVE"),
+          line("17", "A", 50_000, "AMT_ADJUSTMENT"),
+          line("STATE", "", 70_000, "PTE_TAX_CREDIT", "CT"),
+        ],
+      },
+    ],
+  } as Book["k1Details"];
+  const book = makeBook("2026-05-15", { taxDocs, k1Details });
+
+  it("puts each K-1's items where the return takes them, the passive loss limited across the household", () => {
+    const r = buildTaxReport(book, 2025);
+    if (r.blocked) throw new Error("withheld");
+    const [pat, sam] = r.people;
+    expect(pat!.k1s[0]!.adds).toMatchObject({ partnershipIncome: 3_500_000, seEarnings: 3_500_000, investmentInterestExpense: 200_000, portfolioOtherIncome: 100_000, shortTermGain: 400_000, longTermGain: 4_600_000, foreignTaxSourced: 90_000, ctPeCredit: 70_000 });
+    expect(pat!.k1s[0]!.passive).toBeNull();
+    // Sam's $9,000 rental loss is allowed only against the fund's $4,000 of passive income.
+    expect(sam!.k1s.map((k) => k.passive)).toEqual([{ carryIn: 0, allowed: 400_000, suspended: 0 }, { carryIn: 0, allowed: -400_000, suspended: 500_000 }]);
+    const f = r.scenarios.mfj.federal;
+    expect(f.scheduleE).toBe(3_500_000 + 70_000);
+    expect(f.selfEmploymentTax).toBeGreaterThan(0);
+    expect(f.qbi.business).toBeGreaterThan(0);
+    expect(f.rateGain).toMatchObject({ unrecaptured1250: 500_000, collectibles: 300_000 });
+    expect(r.scenarios.mfj.ct.peCredit).toBe(70_000);
+    expect(r.assumptions.some((a) => /EXAMPLE REALTY LP.*carried forward/.test(a))).toBe(true);
+  });
+
+  it("proves every worksheet line with them on the return", async () => {
+    const emitted = [...(await sweep(book, 2025, "projected")), ...(await sweep(book, 2025, "ytd"))];
+    expect(emitted.length).toBeGreaterThan(200);
+  }, 120_000);
+
+  it("carries the suspended loss into the year in progress, where last year's K-1s repeat as estimates", async () => {
+    const r = buildTaxReport(book, 2026);
+    if (r.blocked) throw new Error("withheld");
+    const realty = r.people[1]!.k1s.find((k) => k.partnership === "EXAMPLE REALTY LP")!;
+    expect(realty).toMatchObject({ basis: "REPEATED", estimate: true, passive: { carryIn: 500_000, allowed: -400_000, suspended: 1_000_000 } });
+    await sweep(book, 2026, "projected");
+    await sweep(book, 2026, "ytd");
+  }, 120_000);
 });

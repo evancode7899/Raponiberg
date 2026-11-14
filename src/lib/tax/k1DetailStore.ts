@@ -30,8 +30,6 @@ export const K1_TREATMENTS = [
   "UNRECAPTURED_1250_GAIN",
   /** Form 4952: deductible only against net investment income, and only when itemizing. */
   "INVESTMENT_INTEREST_EXPENSE",
-  /** Other investment expenses that reduce net investment income (Form 8960) but not taxable income. */
-  "INVESTMENT_EXPENSE_NII_ONLY",
   /** Portfolio deductions that are no longer deductible (2% miscellaneous): shown, never used. */
   "PORTFOLIO_DEDUCTION_NOT_DEDUCTIBLE",
   "SE_EARNINGS",

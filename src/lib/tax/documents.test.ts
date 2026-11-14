@@ -238,7 +238,8 @@ describe("the model against the filed return", () => {
 
 describe("a K-1 the filed return left off", () => {
   type Use = TaxReport["people"][number]["k1s"][number];
-  const k1 = (partnership: string, id: string, over: Partial<Use["figures"]>): Use => ({
+  /** A K-1 by what it adds to its owner's return (tax/k1.ts k1Adds); `activity` is its box 1–3 net before the passive-loss limit. */
+  const k1 = (partnership: string, id: string, adds: Use["adds"], activity = adds.partnershipIncome ?? 0): Use => ({
     partnership,
     doc: { id, file: `2025/${id}.pdf` },
     estimate: false,
@@ -246,20 +247,17 @@ describe("a K-1 the filed return left off", () => {
     form: {} as Use["form"],
     detail: null,
     gaps: [],
-    figures: { interest: 0, ordinaryDividends: 0, qualifiedDividends: 0, shortTermGain: 0, longTermGain: 0, otherIncome: 0, passive: 0, foreignTax: 0, ...over },
-    suspendedLoss: 0,
+    items: { activity, royalties: 0, guaranteedPayments: 0 } as Use["items"],
+    passive: null,
+    adds,
+    qbi: null,
   });
   const base = { taxableInterest: $(1_000), ordinaryDividends: $(2_000), qualifiedDividends: $(1_500), longTermGain: $(3_000) };
   /** The person's return with these K-1s on it, as buildTaxReport adds them. */
   const withK1s = (k1s: Use[]) => {
-    const sum = (f: keyof Use["figures"]) => k1s.reduce((s, k) => s + k.figures[f], 0);
-    return person({
-      taxableInterest: base.taxableInterest + sum("interest"),
-      ordinaryDividends: base.ordinaryDividends + sum("ordinaryDividends"),
-      qualifiedDividends: base.qualifiedDividends + sum("qualifiedDividends"),
-      longTermGain: base.longTermGain + sum("longTermGain"),
-      otherIncome: sum("otherIncome") + sum("passive"),
-    });
+    const out = person(base) as unknown as Record<string, number>;
+    for (const k of k1s) for (const [field, cents] of Object.entries(k.adds)) out[field] = (out[field] ?? 0) + cents;
+    return out as unknown as PersonIncome;
   };
   const returnOf = (k1s: Use[]) => computeReturn({ params: P25, filingStatus: "MFJ", people: [withK1s(k1s)], dependents: [] });
   const check = (onFile: Use[], onReturn: Use[], o: { scheduleE?: boolean; form?: string } = {}) => {
@@ -268,8 +266,8 @@ describe("a K-1 the filed return left off", () => {
     const d = docs({ ...filed(returnOf(onReturn)), form: o.form ?? "1040", otherIncome: [], lines: o.scheduleE ? [{ form: "SE", page: 1, line: "32", label: "", values: [1] }] : [] } as FiledReturn);
     return checkFiled(r, d);
   };
-  const fund = k1("EXAMPLE FUND LP", "fund", { interest: $(4_000), ordinaryDividends: $(6_000), qualifiedDividends: $(5_000), longTermGain: $(20_000) });
-  const business = k1("EXAMPLE PARTNERS LP", "business", { passive: $(15_000), interest: $(500) });
+  const fund = k1("EXAMPLE FUND LP", "fund", { taxableInterest: $(4_000), ordinaryDividends: $(6_000), qualifiedDividends: $(5_000), longTermGain: $(20_000) });
+  const business = k1("EXAMPLE PARTNERS LP", "business", { partnershipIncome: $(15_000), partnershipNii: $(15_000), taxableInterest: $(500) });
 
   it("says what amending would change, and checks the other lines without it", () => {
     const c = check([fund], []);
@@ -298,7 +296,7 @@ describe("a K-1 the filed return left off", () => {
   });
 
   it("goes by the Schedule E when the lines can't tell: a K-1 whose loss is suspended moves none of them", () => {
-    const loss = { ...k1("EXAMPLE REALTY LP", "realty", { passive: -$(9_000) }), suspendedLoss: $(9_000) };
+    const loss = { ...k1("EXAMPLE REALTY LP", "realty", {}, -$(9_000)), passive: { carryIn: 0, allowed: 0, suspended: $(9_000) } };
     const r = (scheduleE: boolean) => {
       const rep = report(withK1s([]));
       rep.people[0]!.k1s = [loss];

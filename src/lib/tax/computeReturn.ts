@@ -90,7 +90,53 @@ export type PersonIncome = {
    */
   nySourceIncome?: number | null;
   estimatedNy?: number;
+  // ---- Partnership K-1s (tax/k1.ts), after the passive-loss limit (tax/passive.ts). All
+  // absent on a return with none. Their interest, dividends, gains and foreign tax are in
+  // the lines above with everything else's.
+  /** Schedule E page 2: the partnerships' business and rental income the year allows, and guaranteed payments. */
+  partnershipIncome?: number;
+  /** The part of it that is investment income for the 3.8% tax: passive activities and funds that trade for their own account. */
+  partnershipNii?: number;
+  /** Schedule E page 1. */
+  royalties?: number;
+  /** Other portfolio income (Schedule 1 line 8z): ordinary, and investment income. */
+  portfolioOtherIncome?: number;
+  /** Parts of the long-term gain above taxed at no more than 28% and 25% (Schedule D Tax Worksheet). */
+  collectiblesGain?: number;
+  unrecaptured1250Gain?: number;
+  /** Form 4952: deductible up to net investment income, and only when itemizing. */
+  investmentInterestExpense?: number;
+  /** Net earnings from self-employment before the 92.35% factor (K-1 box 14). */
+  seEarnings?: number;
+  /** Each trade or business for the 20% deduction (Form 8995-A). */
+  qbiBusinesses?: QbiBusiness[];
+  /** Foreign-source taxable income, and the part of foreignTaxPaid it belongs to (Form 1116 limits that part). */
+  foreignSourceIncome?: number;
+  foreignTaxSourced?: number;
+  /** Form 6251 adjustments passed through (K-1 box 17). */
+  amtAdjustments?: number;
+  /** Connecticut's pass-through entity tax credit (Schedule CT-PE → CT-1040 line 20c): a payment. */
+  ctPeCredit?: number;
+  /** New York's pass-through entity tax credit (IT-653): a payment, and added back to New York income. */
+  nyPtetCredit?: number;
 };
+
+/** One trade or business for the qualified business income deduction. */
+export type QbiBusiness = {
+  name: string;
+  /** Qualified business income (a loss is negative). */
+  income: number;
+  w2Wages: number;
+  /** Unadjusted basis immediately after acquisition of qualified property. */
+  ubia: number;
+  /** A specified service trade or business: phased out above the threshold. */
+  sstb: boolean;
+  /** The owner materially participates (the minimum deduction, from 2026, is for these). */
+  active: boolean;
+};
+
+/** A person's other income as 1040 line 8 has it: typed and other income, with the K-1s' Schedule E and other portfolio income. */
+export const additionalIncome = (p: PersonIncome): number => p.otherIncome + (p.partnershipIncome ?? 0) + (p.royalties ?? 0) + (p.portfolioOtherIncome ?? 0);
 
 export type Dependent = { name: string; age: number };
 
@@ -114,17 +160,36 @@ export type FederalResult = {
   capitalGainAllowed: number;
   capitalLossCarryover: number;
   retirementTaxable: number;
+  /** 1040 line 8: Schedule E and every other kind of additional income. */
   otherIncome: number;
+  /** Schedule 1 line 5, inside otherIncome: partnership income and royalties. */
+  scheduleE: number;
   totalIncome: number;
+  /** Adjustments, the deduction for half of self-employment tax included. */
   adjustments: number;
+  /** Schedule SE: the tax (Schedule 2 line 4) and the half deducted (Schedule 1 line 15). */
+  selfEmploymentTax: number;
+  selfEmploymentDeduction: number;
+  /** Net earnings from self-employment (92.35%), which the Additional Medicare tax counts after wages. */
+  selfEmploymentNet: number;
   agi: number;
   standardDeduction: number;
+  /** Form 4952: investment interest paid, and the part the year's investment income allows (deducted only when itemizing). */
+  investmentInterest: { paid: number; investmentIncome: number; allowed: number };
+  /** The long-term gain taxed at up to 25% and 28%, and the tax on it (inside preferentialTax). */
+  rateGain: { unrecaptured1250: number; collectibles: number; tax: number };
+  /** Form 8995-A: the business component and the REIT dividend component, before the taxable-income cap. */
+  qbi: { business: number; reit: number; cap: number };
+  /** Foreign tax paid, and the most the year lets it credit (Form 1116; null: not limited). */
+  foreignTax: { paid: number; limit: number | null };
   itemized: {
     saltPaid: number;
     saltCap: number;
     salt: number;
     mortgageInterest: number;
     charitable: number;
+    /** Investment interest (Form 4952), inside `other`'s neighbour on Schedule A line 9. */
+    investmentInterest: number;
     other: number;
     limitation37: number;
     total: number;
@@ -185,6 +250,8 @@ export type CtResult = {
   totalTax: number;
   withholding: number;
   estimatedPayments: number;
+  /** Pass-through entity tax credit (CT-1040 line 20c). */
+  peCredit: number;
   totalPayments: number;
   balanceDue: number;
 };
@@ -230,6 +297,8 @@ export type NyResult = {
   withholding: number;
   cityWithholding: number;
   estimatedPayments: number;
+  /** Pass-through entity tax credit (IT-653): added to New York income, then credited as paid. */
+  ptetCredit: number;
   totalPayments: number;
   /** Positive: owe at filing; negative: refund. */
   balanceDue: number;
@@ -339,17 +408,83 @@ export function taxWithPreferential(
   preferential: number,
   fp: FederalParams,
   fs: FilingStatus,
-): { ordinaryTax: number; preferentialTax: number } {
+  /** Schedule D Tax Worksheet: the parts of the preferential income taxed at ordinary rates up to 25% and 28%. */
+  rateGain: { unrecaptured1250: number; collectibles: number } = { unrecaptured1250: 0, collectibles: 0 },
+): { ordinaryTax: number; preferentialTax: number; rateGainTax: number } {
   const pref = Math.min(pos(preferential), pos(taxable));
   const ordinary = taxable - pref;
+  // The 25% and 28% gains sit right on top of ordinary income; the 0% / 15% / 20% income stacks above them.
+  const at25 = Math.min(pos(rateGain.unrecaptured1250), pref);
+  const at28 = Math.min(pos(rateGain.collectibles), pref - at25);
+  const below = ordinary + at25 + at28;
+  const rest = pref - at25 - at28;
   const { zeroMax, fifteenMax } = fp.capitalGains[fs];
-  const atZero = pos(Math.min(taxable, zeroMax) - ordinary);
-  const atFifteen = pos(Math.min(taxable, fifteenMax) - Math.max(ordinary, zeroMax));
-  const atTwenty = pref - Math.min(pref, atZero) - Math.min(pref, atFifteen);
+  const atZero = Math.min(rest, pos(Math.min(taxable, zeroMax) - below));
+  const atFifteen = Math.min(rest - atZero, pos(Math.min(taxable, fifteenMax) - Math.max(below, zeroMax)));
+  const atTwenty = rest - atZero - atFifteen;
+  const b = fp.brackets[fs];
+  const rateGainTax = cappedBracketTax(ordinary, ordinary + at25, b, RATE_GAIN_MAX.unrecaptured1250) + cappedBracketTax(ordinary + at25, below, b, RATE_GAIN_MAX.collectibles);
   return {
-    ordinaryTax: bracketTax(ordinary, fp.brackets[fs]),
-    preferentialTax: r(Math.min(pref, atFifteen) * fp.preferentialRates.fifteen + pos(atTwenty) * fp.preferentialRates.twenty),
+    ordinaryTax: bracketTax(ordinary, b),
+    preferentialTax: r(atFifteen * fp.preferentialRates.fifteen + atTwenty * fp.preferentialRates.twenty) + rateGainTax,
+    rateGainTax,
   };
+}
+
+/** The most unrecaptured section 1250 gain and collectibles gain are taxed at (section 1(h)). */
+export const RATE_GAIN_MAX = { unrecaptured1250: 0.25, collectibles: 0.28 } as const;
+
+/** Foreign tax up to this is credited without Form 1116 (section 904(j); never indexed). */
+export const FOREIGN_TAX_NO_FORM = { joint: 60_000, other: 30_000 } as const;
+
+/** Schedule SE's factor on net earnings (the employer-equivalent half comes off first), and the least it taxes. */
+export const SE_FACTOR = 0.9235;
+export const SE_MINIMUM = 40_000;
+
+/** Tax on the income between `from` and `to` at the bracket rates, none above `cap`. */
+export function cappedBracketTax(from: number, to: number, upperBounds: number[], cap: number): number {
+  let tax = 0;
+  let lower = 0;
+  for (let i = 0; i < FEDERAL_RATES.length; i++) {
+    const upper = upperBounds[i] ?? Infinity;
+    tax += pos(Math.min(to, upper) - Math.max(from, lower)) * Math.min(FEDERAL_RATES[i]!, cap);
+    lower = upper;
+  }
+  return r(tax);
+}
+
+/** Schedule SE for one person: net earnings (92.35%), and the tax (12.4% up to what the wage base leaves after W-2 wages, 2.9% on all). */
+function selfEmployment(fp: FederalParams, p: PersonIncome): { net: number; tax: number } {
+  const net = r(pos(p.seEarnings ?? 0) * SE_FACTOR);
+  if (net < SE_MINIMUM) return { net: 0, tax: 0 };
+  const room = pos(fp.socialSecurity.wageBase - sum(p.w2s.map((w) => w.box3SsWages)));
+  return { net, tax: r(Math.min(net, room) * fp.socialSecurity.rate * 2) + r(net * fp.medicareRate * 2) };
+}
+
+/**
+ * Form 8995-A, business by business: 20% of its income; above the threshold, no more than
+ * the greater of 50% of its W-2 wages or 25% of them plus 2.5% of its property, the cut
+ * phased in across the range; a specified service business phased out across it. A
+ * business's loss reduces the others' income in proportion. `minimum` is the least the
+ * deduction can be (from 2026, with enough income from businesses the owner works in).
+ */
+export function qbiBusinessComponent(fp: FederalParams, fs: FilingStatus, taxableBefore: number, businesses: QbiBusiness[]): { component: number; minimum: number } {
+  const gains = businesses.filter((b) => b.income > 0);
+  const loss = -sum(businesses.filter((b) => b.income < 0).map((b) => b.income));
+  const gainTotal = sum(gains.map((b) => b.income));
+  const keep = gainTotal > 0 ? pos(1 - loss / gainTotal) : 0;
+  const over = fp.qbiPhaseIn[fs] > 0 ? Math.min(1, pos(taxableBefore - fp.qbiThreshold[fs]) / fp.qbiPhaseIn[fs]) : taxableBefore > fp.qbiThreshold[fs] ? 1 : 0;
+  let component = 0;
+  for (const b of gains) {
+    // A service business counts only for the share of the range not yet passed.
+    const share = b.sstb ? 1 - over : 1;
+    const twenty = 0.2 * b.income * keep * share;
+    const limit = Math.max(0.5 * b.w2Wages, 0.25 * b.w2Wages + 0.025 * b.ubia) * share;
+    component += over === 0 || limit >= twenty ? twenty : twenty - (twenty - limit) * over;
+  }
+  const active = sum(businesses.filter((b) => b.active).map((b) => b.income));
+  const minimum = fp.qbiMinimum && active >= fp.qbiMinimum.activeIncome ? fp.qbiMinimum.deduction : 0;
+  return { component: r(component), minimum };
 }
 
 function computeFederal(
@@ -369,9 +504,17 @@ function computeFederal(
   const capitalGainNet = shortTerm + longTerm;
   const capitalGainAllowed = Math.max(capitalGainNet, -fp.capitalLossLimit[fs]);
   const retirementTaxable = total(people, (p) => p.retirementTaxable);
-  const otherIncome = total(people, (p) => p.otherIncome + p.businessIncome);
+  // Partnership K-1s: Schedule E (business, rental and royalty income) and other portfolio income.
+  const royalties = total(people, (p) => p.royalties ?? 0);
+  const scheduleE = total(people, (p) => p.partnershipIncome ?? 0) + royalties;
+  const portfolioOther = total(people, (p) => p.portfolioOtherIncome ?? 0);
+  const otherIncome = total(people, (p) => p.otherIncome + p.businessIncome) + scheduleE + portfolioOther;
   const totalIncome = wages + interest + ordinaryDividends + capitalGainAllowed + retirementTaxable + otherIncome;
-  const adjustments = total(people, (p) => p.adjustments);
+  // Schedule SE, person by person: 92.35% of net earnings, Social Security up to what the wage base leaves after W-2 wages.
+  const se = people.map((p) => selfEmployment(fp, p));
+  const selfEmploymentTax = sum(se.map((x) => x.tax));
+  const selfEmploymentDeduction = sum(se.map((x) => r(x.tax / 2)));
+  const adjustments = total(people, (p) => p.adjustments) + selfEmploymentDeduction;
   const agi = totalIncome - adjustments;
 
   // Itemized deductions (Schedule A).
@@ -385,7 +528,13 @@ function computeFederal(
   const charitableGiven = total(people, (p) => p.charitableCash + p.charitableOther);
   const charitable = pos(charitableGiven - r(fp.charitableAgiFloor * pos(agi)));
   const otherItemized = total(people, (p) => p.otherItemized);
-  const itemizedBefore = salt + mortgageInterest + charitable + otherItemized;
+  // Form 4952: investment interest, up to the year's investment income. Qualified dividends
+  // and net capital gain stay out of it (no election to give up their lower rates).
+  const netCapitalGain = pos(Math.min(longTerm, capitalGainNet));
+  const investmentInterestPaid = total(people, (p) => p.investmentInterestExpense ?? 0);
+  const investmentIncome4952 = pos(interest + ordinaryDividends - qualifiedDividends + portfolioOther + pos(capitalGainNet) - netCapitalGain);
+  const investmentInterestAllowed = Math.min(investmentInterestPaid, investmentIncome4952);
+  const itemizedBefore = salt + mortgageInterest + charitable + investmentInterestAllowed + otherItemized;
   const top = fp.brackets[fs].at(-1)!;
   const limitation37 = fp.itemizedLimitation37 ? r((2 / 37) * Math.min(itemizedBefore, pos(agi - top))) : 0;
   const itemizedTotal = itemizedBefore - limitation37;
@@ -402,15 +551,21 @@ function computeFederal(
   // taxable income less net capital gain.
   const tiBeforeQbi = pos(agi - deduction);
   const qbiBase = total(people, (p) => p.section199aDividends) + (tiBeforeQbi <= fp.qbiThreshold[fs] ? total(people, (p) => p.businessIncome) : 0);
-  const qbiDeduction = r(Math.min(0.2 * pos(qbiBase), 0.2 * pos(tiBeforeQbi - preferentialBase)));
+  // Each K-1 business by Form 8995-A (wage and property limit, phased in above the threshold).
+  const qbiBusiness = qbiBusinessComponent(fp, fs, tiBeforeQbi, people.flatMap((p) => p.qbiBusinesses ?? []));
+  const qbiCap = r(0.2 * pos(tiBeforeQbi - preferentialBase));
+  const qbiDeduction = Math.max(r(Math.min(0.2 * pos(qbiBase) + qbiBusiness.component, qbiCap)), Math.min(qbiBusiness.minimum, tiBeforeQbi));
   const taxableIncome = pos(tiBeforeQbi - qbiDeduction);
 
   const preferentialIncome = Math.min(preferentialBase, taxableIncome);
-  const { ordinaryTax, preferentialTax } = taxWithPreferential(taxableIncome, preferentialIncome, fp, fs);
+  // Schedule D Tax Worksheet: of the long-term gain, unrecaptured section 1250 gain is taxed at no more than 25% and collectibles gain at no more than 28%.
+  const unrecaptured1250 = Math.min(pos(total(people, (p) => p.unrecaptured1250Gain ?? 0)), netCapitalGainForRates);
+  const collectibles = Math.min(pos(total(people, (p) => p.collectiblesGain ?? 0)), netCapitalGainForRates - unrecaptured1250);
+  const { ordinaryTax, preferentialTax, rateGainTax } = taxWithPreferential(taxableIncome, preferentialIncome, fp, fs, { unrecaptured1250, collectibles });
   const regularTax = ordinaryTax + preferentialTax;
 
-  // AMT (Form 6251, simplified): add back the standard deduction or the SALT deduction.
-  const amti = taxableIncome + (itemizes ? salt : standardDeduction);
+  // AMT (Form 6251, simplified): add back the standard deduction or the SALT deduction, and the K-1s' own adjustments.
+  const amti = taxableIncome + (itemizes ? salt : standardDeduction) + total(people, (p) => p.amtAdjustments ?? 0);
   const exemption = pos(fp.amt.exemption[fs] - r(fp.amt.phaseoutRate * pos(amti - fp.amt.phaseoutStart[fs])));
   const amtBase = pos(amti - exemption);
   const amtPref = Math.min(preferentialIncome, amtBase);
@@ -429,7 +584,16 @@ function computeFederal(
   const ctcShare = ctcTentative > 0 ? (kids * fp.childTaxCredit.perChild) / ctcTentative : 0;
 
   const dependentCareCredit = fs === "MFS" || kids === 0 ? 0 : careCredit(fp, fs, agi, people, Math.min(kids, 2));
-  const foreignTaxCredit = total(people, (p) => p.foreignTaxPaid);
+  // Foreign tax credit. Up to $300 ($600 joint) is credited in full without Form 1116. Above
+  // that, the tax whose foreign-source income is known (the K-1s', from Schedule K-3) is
+  // limited to US tax × foreign-source ÷ total taxable income; the rest (a brokerage 1099
+  // prints the tax but not its income) is credited as paid.
+  const foreignTaxPaid = total(people, (p) => p.foreignTaxPaid);
+  const foreignTaxSourced = Math.min(foreignTaxPaid, total(people, (p) => p.foreignTaxSourced ?? 0));
+  const foreignSourceIncome = pos(total(people, (p) => p.foreignSourceIncome ?? 0));
+  const foreignLimited = foreignTaxSourced > 0 && foreignTaxPaid > FOREIGN_TAX_NO_FORM[fs === "MFJ" ? "joint" : "other"];
+  const foreignLimit = foreignLimited ? r(regularTax * (taxableIncome > 0 ? Math.min(1, foreignSourceIncome / taxableIncome) : 0)) : null;
+  const foreignTaxCredit = foreignLimit == null ? foreignTaxPaid : Math.min(foreignTaxSourced, foreignLimit) + (foreignTaxPaid - foreignTaxSourced);
 
   let taxLeft = regularTax + amt;
   const take = (n: number) => {
@@ -453,12 +617,15 @@ function computeFederal(
 
   // Additional Medicare (Form 8959) and NIIT (Form 8960).
   const medicareWages = sum(w2s.map((w) => w.box5MedicareWages));
-  const additionalMedicareTax = r(fp.additionalMedicareRate * pos(medicareWages - fp.surtaxThreshold[fs]));
+  // Form 8959 counts self-employment earnings after wages toward the same threshold.
+  const additionalMedicareTax = r(fp.additionalMedicareRate * pos(medicareWages + sum(se.map((x) => x.net)) - fp.surtaxThreshold[fs]));
   const additionalMedicareWithheld = sum(w2s.map((w) => pos(w.medicareWithheld - r(w.box5MedicareWages * fp.medicareRate))));
-  const netInvestmentIncome = pos(interest + ordinaryDividends + capitalGainAllowed);
+  // Form 8960: with royalties, other portfolio income, and partnership income from passive
+  // activities and trading funds; less the investment interest deducted.
+  const netInvestmentIncome = pos(interest + ordinaryDividends + capitalGainAllowed + royalties + portfolioOther + total(people, (p) => p.partnershipNii ?? 0) - (itemizes ? investmentInterestAllowed : 0));
   const niit = r(fp.niitRate * Math.min(netInvestmentIncome, pos(agi - fp.surtaxThreshold[fs])));
 
-  const totalTax = incomeTaxAfterCredits + additionalMedicareTax + niit;
+  const totalTax = incomeTaxAfterCredits + selfEmploymentTax + additionalMedicareTax + niit;
   const withholding = sum(w2s.map((w) => w.federalWithheld));
   const excessSsCredit = sum(
     people.map((p) => (p.w2s.length > 1 ? pos(sum(p.w2s.map((w) => w.ssWithheld)) - r(fp.socialSecurity.wageBase * fp.socialSecurity.rate)) : 0)),
@@ -476,11 +643,19 @@ function computeFederal(
     capitalLossCarryover: capitalGainNet - capitalGainAllowed,
     retirementTaxable,
     otherIncome,
+    scheduleE,
     totalIncome,
     adjustments,
+    selfEmploymentTax,
+    selfEmploymentDeduction,
+    selfEmploymentNet: sum(se.map((x) => x.net)),
     agi,
     standardDeduction,
-    itemized: { saltPaid, saltCap, salt, mortgageInterest, charitable, other: otherItemized, limitation37, total: itemizedTotal },
+    investmentInterest: { paid: investmentInterestPaid, investmentIncome: investmentIncome4952, allowed: investmentInterestAllowed },
+    rateGain: { unrecaptured1250, collectibles, tax: rateGainTax },
+    qbi: { business: qbiBusiness.component, reit: r(0.2 * pos(qbiBase)), cap: qbiCap },
+    foreignTax: { paid: foreignTaxPaid, limit: foreignLimit },
+    itemized: { saltPaid, saltCap, salt, mortgageInterest, charitable, investmentInterest: investmentInterestAllowed, other: otherItemized, limitation37, total: itemizedTotal },
     itemizes,
     charitableNonItemizer,
     deduction,
@@ -620,7 +795,9 @@ function ctTax(
   const totalTax = taxBeforeCredits - otherStateCredit - childTaxCredit;
   const withholding = total(people, (p) => sum(p.w2s.map((w) => w.stateWithheld)));
   const estimatedPayments = total(people, (p) => p.estimatedCt);
-  const totalPayments = withholding + estimatedPayments;
+  // Schedule CT-PE → CT-1040 line 20c: the pass-through entity tax a partnership paid for its members.
+  const peCredit = total(people, (p) => p.ctPeCredit ?? 0);
+  const totalPayments = withholding + estimatedPayments + peCredit;
   return {
     federalAgi,
     additions,
@@ -644,6 +821,7 @@ function ctTax(
     totalTax,
     withholding,
     estimatedPayments,
+    peCredit,
     totalPayments,
     balanceDue: totalTax - totalPayments,
   };
@@ -714,7 +892,9 @@ export function nycTax(np: NyParams, fs: FilingStatus, ti: number): number {
 function computeNy(np: NyParams, fs: FilingStatus, people: PersonIncome[], dependents: Dependent[], federal: FederalResult, filing: NyFiling): NyResult {
   const federalAgi = federal.agi;
   const subtractions = total(people, (p) => p.usObligationIncome);
-  const nyAgi = federalAgi - subtractions;
+  // IT-653: the pass-through entity tax credit claimed is added back to income (IT-225), then credited as paid.
+  const ptetCredit = total(people, (p) => p.nyPtetCredit ?? 0);
+  const nyAgi = federalAgi - subtractions + ptetCredit;
   const standardDeduction = np.standardDeduction[fs];
   const dependentExemption = np.dependentExemption * dependents.length;
   const taxableIncome = pos(whole(nyAgi) - standardDeduction - dependentExemption);
@@ -751,7 +931,7 @@ function computeNy(np: NyParams, fs: FilingStatus, people: PersonIncome[], depen
   const withholding = total(people, (p) => sum(p.w2s.map((w) => w.nyWithheld ?? 0)));
   const cityWithholding = total(people, (p) => sum(p.w2s.map((w) => w.nycWithheld ?? 0)));
   const estimatedPayments = total(people, (p) => p.estimatedNy ?? 0);
-  const totalPayments = withholding + cityWithholding + estimatedPayments + (city ? city.schoolCredit + city.schoolRateReduction : 0);
+  const totalPayments = withholding + cityWithholding + estimatedPayments + ptetCredit + (city ? city.schoolCredit + city.schoolRateReduction : 0);
   // The next dollar: the bracket reached (the worksheets make it the flat rate once phased in), plus the City's.
   const stateRate = np.brackets[fs].find(([u]) => taxableIncome <= u)?.[1] ?? 0;
   const cityRate = city ? (np.nyc.brackets[fs].find(([u]) => city!.taxableIncome <= u)?.[1] ?? 0) : 0;
@@ -775,6 +955,7 @@ function computeNy(np: NyParams, fs: FilingStatus, people: PersonIncome[], depen
     withholding,
     cityWithholding,
     estimatedPayments,
+    ptetCredit,
     totalPayments,
     balanceDue: totalTax - totalPayments,
     marginalRate: stateRate * (incomePercentage ?? 1) + cityRate,
