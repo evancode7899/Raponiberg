@@ -1,6 +1,8 @@
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
 import { yearDocs } from "../../tax/documents.ts";
 import { documentTies } from "../../tax/filedCheck.ts";
+import { k1Gaps } from "../../tax/k1.ts";
+import { k1DetailFor } from "../../tax/k1DetailStore.ts";
 import { TAX_YEARS } from "../../tax/params.ts";
 import { money } from "../coverage.ts";
 import type { Book } from "../load.ts";
@@ -24,7 +26,7 @@ export function checkTaxDocuments(book: Book, c: Collector) {
   const years = [...new Set((book.taxDocs?.docs ?? []).map((d) => d.year).filter((y): y is number => y != null))].filter((y) => y < currentYear && TAX_YEARS[y]).sort();
   for (const year of years) {
     const docs = yearDocs(book.taxDocs, year, book.taxProfile.persons);
-    if (!docs.w2s.length && !docs.brokerage.length && !docs.ints.length && !docs.federal && !docs.ct) continue;
+    if (!docs.w2s.length && !docs.brokerage.length && !docs.ints.length && !docs.k1s.length && !docs.federal && !docs.ct) continue;
     const report = buildTaxReport(book, year, { estimatePriorYear: false });
     if (report.blocked) continue;
     // Statements never print the qualified share of dividends: the ledger side of that line
@@ -52,5 +54,49 @@ export function checkTaxDocuments(book: Book, c: Collector) {
         scope,
       });
     }
+  }
+}
+
+/**
+ * Every K-1 on file is read in full (tax/k1.ts k1Gaps): its lettered boxes and the
+ * statements attached to it are in the K-1 details file, adding up to what its face prints.
+ * A K-1 not yet read is missing data and is listed, but withholds nothing: the year's tax
+ * shows without that box, and Taxes says so beside the figure it bears on.
+ */
+export function checkK1Details(book: Book, c: Collector) {
+  const file = book.k1Details;
+  if (file && "error" in file) {
+    c.add({
+      id: "tax.k1-details:file",
+      check: "tax.k1-details",
+      status: "MISSING",
+      title: "The K-1 details file can't be read",
+      detail: file.error,
+      fix: "Restore data/k1-details.json from a backup, or ask Claude to read the K-1s' statements into it again.",
+      scope: { from: `${book.today.slice(0, 4)}-01-01`, to: book.today, affects: [] },
+    });
+    return;
+  }
+  for (const d of book.taxDocs?.docs ?? []) {
+    if (d.parsed.kind !== "K1" || d.superseded || d.year == null) continue;
+    const k = d.parsed.k1;
+    // A scan from before the reader kept the lettered boxes says nothing either way (ledger.freshness asks for the rescan).
+    if (!Array.isArray(k.coded)) continue;
+    const scope: FindingScope = { from: `${d.year}-01-01`, to: `${d.year}-12-31`, affects: [] };
+    const who = k.partnership || d.file;
+    const gaps = k1Gaps(k, k1DetailFor(file, k.ein, d.year));
+    if (!gaps.length) {
+      c.pass("tax.k1-details", { subject: `${d.year} K-1 from ${who}`, ...scope });
+      continue;
+    }
+    c.add({
+      id: `tax.k1-details:${d.year}:${k.ein ?? d.id}`,
+      check: "tax.k1-details",
+      status: "MISSING",
+      title: `${d.year}: the K-1 from ${who} isn't read in full`,
+      detail: gaps.map((g) => g.why).join(" "),
+      fix: `Ask Claude to read this K-1's attached statements (${d.file} in the tax documents folder) into the K-1 details file (data/k1-details.json).`,
+      scope,
+    });
   }
 }

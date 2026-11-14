@@ -11,7 +11,8 @@ import { EstimateValue, formatDate, lawLabel, NumberTable, pct, usd, type Row } 
 import { NotFigure } from "@/components/ui/kit";
 import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
-import { ACCOUNT_ROWS, accountRow, employerRow, lineRow, showsChet, showsIraMoves, showsProjectedW2, W2_ROWS, w2Value, type W2Row } from "@/lib/tax/incomeExtras";
+import { ACCOUNT_ROWS, accountRow, employerRow, k1Row, lineRow, showsChet, showsIraMoves, showsProjectedW2, W2_ROWS, w2Value, type W2Row } from "@/lib/tax/incomeExtras";
+import { k1Rows } from "@/lib/tax/k1";
 
 /** A cell of the year's income figures (lib/tax/incomeExtras), drawn as its figure. */
 type Cell = (row: string, col: string, cents: number) => ReactNode;
@@ -37,6 +38,7 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
       {r.people.map((p) => (
         <PersonIncome key={p.id} p={p} year={r.year} isCurrentYear={r.isCurrentYear} cell={cell} />
       ))}
+      {r.people.map((p) => p.k1s.map((_, i) => <K1Card key={`${p.id}:${i}`} p={p} index={i} cell={cell} />))}
       {r.children.map((c) => (
         <ChildIncomeCard key={c.name} c={c} showProjected={r.isCurrentYear} cell={cell} />
       ))}
@@ -95,6 +97,30 @@ const CHILD_RULE: Record<ChildIncome["rule"], (c: ChildIncome) => string> = {
   KIDDIE_TAX: (c) =>
     `Over ${usd(c.limits.threshold)}: kiddie tax. ${c.name}'s return (Form 8615) taxes the first ${usd(c.limits.exempt)} at 0, the next ${usd(c.limits.threshold - c.limits.exempt)} at ${c.name}'s rate, and the rest at your rate.`,
 };
+
+const K1_BASIS: Record<PersonReport["k1s"][number]["basis"], string> = {
+  DOCUMENT: "as the K-1 prints it",
+  EXPECTED: "the partnership's expected figures, an estimate until the K-1 comes",
+  REPEATED: "last year's K-1 again, an estimate until this year's comes",
+  ANNUALIZED: "last year's part-year K-1 at a full year's rate, an estimate until this year's comes",
+};
+
+/** One partnership K-1: every box with an amount, each statement line read into the K-1 details file, and where each lands on the return. */
+function K1Card({ p, index, cell }: { p: PersonReport; index: number; cell: Cell }) {
+  const k = p.k1s[index]!;
+  const rows = k1Rows(k.form, k.detail);
+  const kind = [k.form.limitedPartner ? "limited partner" : k.form.generalPartner ? "general partner" : null, k.form.final ? "final K-1" : null, k.form.k3Attached ? "Schedule K-3 attached" : null].filter(Boolean).join(" · ");
+  return (
+    <Card title={`${p.name} — K-1 from ${k.partnership}`} subtitle={`${K1_BASIS[k.basis]}${kind ? ` · ${kind}` : ""}`}>
+      <NumberTable columns={["Amount", "On the return"]} rows={rows.map((row) => ({ label: row.label, values: [cell(k1Row(p, index, row.id), "amount", row.cents), row.where] }))} />
+      {k.gaps.length > 0 && (
+        <p className="mt-2 text-xs text-warn" title={k.gaps.map((g) => g.why).join(" ")}>
+          Not read in full yet: {k.gaps.length === 1 ? "one lettered box" : "some lettered boxes"} on this K-1 {k.gaps.length === 1 ? "is" : "are"} missing from the K-1 details file, so the return leaves {k.gaps.length === 1 ? "it" : "them"} out.
+        </p>
+      )}
+    </Card>
+  );
+}
 
 /** A child's custodial (UTMA/UGMA) income: theirs, so not on the parents' return. */
 function ChildIncomeCard({ c, showProjected, cell }: { c: ChildIncome; showProjected: boolean; cell: Cell }) {

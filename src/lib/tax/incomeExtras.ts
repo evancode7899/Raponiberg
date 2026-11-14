@@ -1,5 +1,6 @@
 import type { ProofValue } from "../book/proof/types.ts";
 import type { AccountIncome, PersonReport, TaxReport } from "./buildTaxReport.ts";
+import { k1Rows } from "./k1.ts";
 
 /**
  * Taxes › Income & W-2 beyond its estimate lines, as numbers: Connecticut's bracket lines,
@@ -104,6 +105,9 @@ export const showsIraMoves = (p: Pick<PersonReport, "retirement" | "accounts">) 
 /** Whether Income & W-2 draws a person's CHET 529 contributions: only with a CHET account. */
 export const showsChet = (p: Pick<PersonReport, "accounts">) => p.accounts.some((a) => a.isChet);
 
+/** A row of a person's K-1 (Income & W-2 › Partnership K-1s). */
+export const k1Row = (p: Pick<PersonReport, "id">, index: number, row: string) => `k1:${p.id}:${index}:${row}`;
+
 export function incomeCells(r: TaxReport): IncomeCell[] {
   const out: IncomeCell[] = [];
   const add = (row: string, col: string, describes: string, cents: number) => out.push({ row, col, describes, value: { cents } });
@@ -146,6 +150,9 @@ export function incomeCells(r: TaxReport): IncomeCell[] {
       add(`ira:${p.id}:taxable`, "joint", `${p.name}: IRA taxable`, ira.taxable);
     }
     if (showsChet(p)) add(`chet:${p.id}`, "joint", `${p.name}: CHET 529 contributions this year`, p.income.ctChetContributions);
+    p.k1s.forEach((k, i) => {
+      for (const row of k1Rows(k.form, k.detail)) add(k1Row(p, i, row.id), "amount", `${p.name}, K-1 from ${k.partnership}: ${row.label}`, row.cents);
+    });
   }
   for (const c of r.children) {
     add(`child:${c.name}`, "ytd", `${c.name}: custodial unearned income, year to date`, c.ytd);

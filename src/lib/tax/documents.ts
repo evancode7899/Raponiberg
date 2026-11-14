@@ -1,5 +1,6 @@
 import type { Brokerage1099, FiledReturn, Int1099, K1Form, R1099, TaxDoc, TaxDocsFile, W2Form } from "../taxdocs/types.ts";
 import type { W2Boxes } from "./facts/payroll.ts";
+import { completeK1 } from "./k1.ts";
 import type { TaxPerson } from "./profile.ts";
 
 /**
@@ -59,9 +60,9 @@ export function yearDocs(file: TaxDocsFile | null, year: number, persons: TaxPer
     brokerage: owned("1099_BROKERAGE", (d) => (d.parsed.kind === "1099_BROKERAGE" ? d.parsed.f1099 : null)),
     ints: owned("1099_INT", (d) => (d.parsed.kind === "1099_INT" ? d.parsed.int : null)),
     rs: owned("1099_R", (d) => (d.parsed.kind === "1099_R" ? d.parsed.r : null)),
-    k1s: owned("K1", (d) => (d.parsed.kind === "K1" ? d.parsed.k1 : null)),
+    k1s: owned("K1", (d) => (d.parsed.kind === "K1" ? completeK1(d.parsed.k1) : null)),
     other: all
-      .filter((d) => d.superseded || ["OTHER", "FOREIGN", "5498_SA"].includes(d.kind))
+      .filter((d) => d.superseded || ["OTHER", "FOREIGN", "5498_SA", "K1_STATE"].includes(d.kind))
       .map((d) => ({ doc: ref(d), kind: d.kind, superseded: d.superseded, warnings: d.warnings })),
     all,
   };

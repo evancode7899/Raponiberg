@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { parseBrokerage1099, parseInt1099, parseK1, parseR1099, parseSa5498 } from "./forms.ts";
+import { parseBrokerage1099, parseInt1099, parseK1, parseR1099, parseSa5498, parseStateK1 } from "./forms.ts";
 import { readPdf } from "./pdf.ts";
 import { parseReturns } from "./returns.ts";
 import { readTaxDocs, TAX_DOCS_VERSION, taxDocsDir, writeTaxDocs } from "./store.ts";
@@ -32,6 +32,8 @@ export function classify(text: string, file: string): TaxDocKind | "RETURN" {
   if (/U\.S\. Individual Income Tax Return|CT-1040|IT-201|IT-203\b/.test(text) && /adjusted gross income/i.test(text)) return "RETURN";
   if (/Wage and Tax Statement/i.test(text) && /W-2/.test(text)) return "W2";
   if (/TAX REPORTING STATEMENT/.test(text) && /1099-DIV/.test(text)) return "1099_BROKERAGE";
+  // A state's own K-1 on its own (the federal form's OMB number is what a federal K-1 package carries).
+  if (/Schedule CT K-1|IT-204-IP/.test(text) && !/OMB No\. 1545-0123/.test(text)) return "K1_STATE";
   if (/Schedule K-1/.test(text) && /Form 1065|Partner/.test(text)) return "K1";
   if (/Form 5498-SA/.test(text)) return "5498_SA";
   if (/FORM 1099-R|Form 1099-R/.test(text)) return "1099_R";
@@ -92,6 +94,7 @@ async function parseFile(buffer: Buffer, rel: string): Promise<Parsed[]> {
     const { k1, warnings } = parseK1(pdf.rows, pdf.text);
     return [{ parsed: { kind, k1 }, names: [k1.partner], warnings, suffix: "" }];
   }
+  if (kind === "K1_STATE") return [{ parsed: { kind, stateK1: parseStateK1(pdf.rows, pdf.text) }, names: [], warnings: [], suffix: "" }];
   return [{ parsed: { kind: kind as "FOREIGN" | "OTHER" }, names: [], warnings: [], suffix: "" }];
 }
 
@@ -149,6 +152,11 @@ export async function scanTaxDocs(folder: string, previous: TaxDocsFile | null =
 function markSuperseded(docs: TaxDoc[]) {
   for (const d of docs) {
     if (/reject/i.test(d.file)) d.superseded = "Rejected e-file; the accepted return is filed separately.";
+  }
+  // An amended K-1 replaces the partnership's earlier one for the year (same EIN, same partner).
+  const k1s = docs.flatMap((d) => (d.parsed.kind === "K1" && !d.superseded ? [{ d, k: d.parsed.k1 }] : []));
+  for (const a of k1s.filter((x) => x.k.amended && x.k.ein)) {
+    for (const o of k1s) if (o !== a && !o.k.amended && o.d.year === a.d.year && o.k.ein === a.k.ein && o.k.partner === a.k.partner) o.d.superseded = "Replaced by the partnership's amended K-1.";
   }
   const returns = docs.filter((d) => d.parsed.kind.startsWith("RETURN_") && !d.superseded);
   const groups = new Map<string, TaxDoc[]>();

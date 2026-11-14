@@ -5,7 +5,7 @@ import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import { chetYear, excessDeferral, excessDeferralMessage, iraYear, k401Limit, statementContributionsYtd, taxableConversion, type ChetYear, type ExcessDeferral } from "../book/taxAdvantaged.ts";
 import { taxRows } from "../book/taxPayments.ts";
 import type { TaxForecastLink } from "../forecast/forecast.ts";
-import type { FiledReturn, TaxDoc } from "../taxdocs/types.ts";
+import type { FiledReturn, K1Form, TaxDoc } from "../taxdocs/types.ts";
 import { computeReturn, safeHarbor, type NyFiling, type PersonIncome, type ReturnResult, type SafeHarbor, type W2 } from "./computeReturn.ts";
 import {
   ctResidentShares,
@@ -23,6 +23,8 @@ import { ACCOUNT_KIND_LABEL, CHILD_KINDS, type AccountTaxKind, type Distribution
 import { taxPaymentsFrom, type FiledBalances, type TaxPaymentRow } from "./facts/payments.ts";
 import { amountsFromLines, projectPayroll, w2FromAmounts, ZERO_AMOUNTS, type PayrollAmounts, type PayrollProjection, type W2Boxes } from "./facts/payroll.ts";
 import { checkFiled, type FiledCheck } from "./filedCheck.ts";
+import { annualizedK1, expectedK1, k1Gaps, type K1Gap } from "./k1.ts";
+import { k1DetailFor, type K1Detail } from "./k1DetailStore.ts";
 import { TAX_YEARS, taxYearParams, type TaxYearParams } from "./params.ts";
 import { bestSeparate, type MfsResult } from "./scenarios.ts";
 import { ageAtYearEnd, EXTRA_FIELDS, yearInputs, type NyResidency, type PayForecast, type Residency, type TaxPerson, type TaxProfile, type YearInputs } from "./profile.ts";
@@ -112,6 +114,13 @@ export type K1Use = {
   partnership: string;
   doc: DocRef;
   estimate: boolean;
+  /** Where a year in progress gets it: the partnership's expected figures (K-1 details file), or last year's K-1 again, scaled to twelve months when it covered fewer. */
+  basis: "DOCUMENT" | "EXPECTED" | "REPEATED" | "ANNUALIZED";
+  /** The K-1 as read (or as expected), and what its attached statements say (the K-1 details file). */
+  form: K1Form;
+  detail: K1Detail | null;
+  /** What of it hasn't been read yet (tax/k1.ts k1Gaps): its lettered boxes with no line in the details file. */
+  gaps: K1Gap[];
   figures: ReturnType<typeof k1Income>;
   /** A net passive loss with no passive income to absorb it: carried forward (Form 8582), not deducted. */
   suspendedLoss: number;
@@ -334,7 +343,11 @@ export function buildTaxReport(
   const useDocs = !isForecast;
   // A K-1 whose partner name is no one's in the household (a trust, an entity, a misread
   // name) would otherwise drop out of the return without a word.
-  for (const k of (useDocs ? docs : lastYearDocs).k1s.filter((x) => x.personId == null && !(isForecast && x.form.final)))
+  // A scan from before the reader kept a K-1's lettered boxes can't say what is still unread.
+  const staleK1Scan = (book.taxDocs?.version ?? 4) < 4;
+  // The K-1 details file can say whose it is where the partner's name doesn't.
+  const k1Owner = (k: { personId: string | null; form: K1Form }, y: number) => k1DetailFor(book.k1Details, k.form.ein, y)?.owner ?? k.personId;
+  for (const k of (useDocs ? docs : lastYearDocs).k1s.filter((x) => k1Owner(x, useDocs ? year : year - 1) == null && !(isForecast && x.form.final)))
     warnings.push(`The K-1 from ${k.form.partnership || "a partnership"} (${k.doc.file}) names a partner the app can't match to anyone in the household, so its income isn't on this return. Check the partner's name against Inputs.`);
   // A finished year whose statements don't reach December 31st yet (the spring, before every
   // account's December statement is on file) would show part of a year as the whole: it
@@ -536,16 +549,44 @@ export function buildTaxReport(
     // Partnership K-1s: a finished year's forms; for the year in progress, last year's again
     // (an estimate) for any partnership that didn't mark its K-1 final.
     const k1s: K1Use[] = [];
-    const k1Forms = useDocs ? docs.k1s : isForecast ? lastYearDocs.k1s.filter((k) => !k.form.final) : [];
-    for (const k of k1Forms.filter((k) => k.personId === person.id)) {
-      const figures = k1Income(k.form);
-      k1s.push({ partnership: k.form.partnership, doc: k.doc, estimate: !useDocs, figures, suspendedLoss: k.form.limitedPartner && figures.passive < 0 ? -figures.passive : 0 });
+    const countK1 = (form: K1Form, doc: DocRef, detail: K1Detail | null, basis: K1Use["basis"]) => {
+      const figures = k1Income(form);
+      k1s.push({ partnership: form.partnership, doc, estimate: basis !== "DOCUMENT", basis, form, detail, gaps: basis !== "DOCUMENT" ? [] : staleK1Scan ? [{ box: "", code: "", why: "It was scanned before the reader kept the lettered boxes: scan the tax documents folder again (Statements)." }] : k1Gaps(form, detail), figures, suspendedLoss: form.limitedPartner && figures.passive < 0 ? -figures.passive : 0 });
+    };
+    if (useDocs) {
+      for (const k of docs.k1s.filter((k) => k1Owner(k, year) === person.id)) countK1(k.form, k.doc, k1DetailFor(book.k1Details, k.form.ein, year), "DOCUMENT");
+    } else if (isForecast) {
+      const repeated = lastYearDocs.k1s.filter((k) => !k.form.final && k1Owner(k, year - 1) === person.id);
+      for (const k of repeated) {
+        const lastDetail = k1DetailFor(book.k1Details, k.form.ein, year - 1);
+        const now = k1DetailFor(book.k1Details, k.form.ein, year);
+        // What the partnership says to expect beats last year again; a K-1 that covered part of last year is scaled to a full one.
+        if (now?.expected) {
+          countK1(expectedK1(k.form, k.form.partnership, k.form.ein!, now.expected), k.doc, now, "EXPECTED");
+          continue;
+        }
+        const full = annualizedK1(k.form);
+        if (!full) {
+          countK1(k.form, k.doc, lastDetail, "REPEATED");
+          continue;
+        }
+        const scale = (c: number) => Math.round((c * 365) / full.days);
+        countK1(full.form, k.doc, lastDetail && { ...lastDetail, lines: lastDetail.lines.map((l) => ({ ...l, cents: scale(l.cents) })) }, "ANNUALIZED");
+        assumptions.push(`${person.name}'s ${year - 1} K-1 from ${k.form.partnership} covered ${full.days} days; ${year} counts it at the same rate for the full year, as an estimate, until the partnership's expected figures or the ${year} K-1 are on file.`);
+      }
+      // A partnership joined this year: only its expected figures exist.
+      const file = book.k1Details && !("error" in book.k1Details) ? book.k1Details : null;
+      for (const d of file?.k1s ?? []) {
+        if (d.year !== year || !d.expected || d.owner !== person.id || lastYearDocs.k1s.some((k) => k.form.ein === d.ein)) continue;
+        const name = d.partnership ?? `the partnership ${d.ein}`;
+        countK1(expectedK1(null, name, d.ein, d.expected), { id: `k1-expected:${d.ein}:${year}`, file: "the K-1 details file" }, d, "EXPECTED");
+      }
     }
     const k1 = (f: keyof ReturnType<typeof k1Income>) => k1s.reduce((s, k) => s + k.figures[f], 0);
     const k1Passive = k1s.reduce((s, k) => s + (k.suspendedLoss ? 0 : k.figures.passive), 0);
     for (const k of k1s.filter((k) => k.suspendedLoss)) {
       assumptions.push(
-        `${person.name}'s K-1 from ${k.partnership}${k.estimate ? ` (last year's, as an estimate)` : ""} has a ${usd(k.suspendedLoss)} passive loss (boxes 1–3). As a limited partner with no passive income to offset, it's carried forward on Form 8582, not deducted.`,
+        `${person.name}'s K-1 from ${k.partnership}${k.basis === "EXPECTED" ? " (its expected figures)" : k.estimate ? ` (last year's, as an estimate)` : ""} has a ${usd(k.suspendedLoss)} passive loss (boxes 1–3). As a limited partner with no passive income to offset, it's carried forward on Form 8582, not deducted.`,
       );
     }
 

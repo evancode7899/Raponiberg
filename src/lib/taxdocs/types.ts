@@ -18,6 +18,7 @@ export type TaxDocKind =
   | "1099_R"
   | "5498_SA"
   | "K1"
+  | "K1_STATE"
   /** Canadian slips and returns (T4, T1): kept for the record, not modeled. */
   | "FOREIGN"
   /** Pay stubs, bank statements, worksheets and anything else in the folder. */
@@ -33,6 +34,7 @@ export const TAX_DOC_KIND_LABEL: Record<TaxDocKind, string> = {
   "1099_R": "1099-R",
   "5498_SA": "5498-SA (HSA)",
   K1: "Schedule K-1",
+  K1_STATE: "State K-1",
   FOREIGN: "Foreign tax slip",
   OTHER: "Other",
 };
@@ -131,7 +133,43 @@ export type K1Form = {
   longTermGain: number;
   section1231: number;
   foreignTax: number;
+  /** Boxes 4b, 4c, 6c, 9b, 9c. */
+  guaranteedCapital: number;
+  guaranteedTotal: number;
+  dividendEquivalents: number;
+  collectibles28: number;
+  unrecaptured1250: number;
+  /** Boxes 11, 13, 14, 15, 17, 18, 19 and 20: each lettered entry as printed. */
+  coded: K1Coded[];
+  k3Attached: boolean;
+  amended: boolean;
+  generalPartner: boolean;
+  publiclyTraded: boolean;
+  /** Box 23: more than one activity for the passive-loss rules (the statements say which). */
+  multipleActivities: boolean;
+  /** Item J, ending percentages as fractions (null where not printed). */
+  share: { profit: number | null; loss: number | null; capital: number | null };
+  /** Item L, the capital account (null where not printed). Withdrawals are positive. */
+  capital: { beginning: number | null; contributed: number | null; netIncome: number | null; withdrawals: number | null; ending: number | null };
 };
+
+/**
+ * One lettered entry of a K-1 box. The letters' meanings change from year to year and the
+ * amounts often sit on an attached statement, so the reader keeps what the face prints and
+ * no more: what each entry is comes from the K-1 details file (tax/k1DetailStore.ts).
+ */
+export type K1Coded = {
+  box: string;
+  /** The letter code ("A", "ZZ"); empty when the face prints only "see statement". */
+  code: string;
+  /** Cents; null when the face prints no amount (it's on the statement). */
+  cents: number | null;
+  /** Marked with an asterisk or "SEE STMT": an attached statement says more. */
+  statement: boolean;
+};
+
+/** A state's own K-1 (Schedule CT K-1, New York IT-204-IP): kept with its partnership, its figures typed from it. */
+export type K1StateForm = { state: "CT" | "NY"; partnership: string; ein: string | null };
 
 /** The figures the checks compare, from a filed return's lines (cents; null when not printed). */
 export type FederalReturnSummary = Record<FederalKey, number | null>;
@@ -219,6 +257,7 @@ export type TaxDocParsed =
   | { kind: "1099_R"; r: R1099 }
   | { kind: "5498_SA"; sa: Sa5498 }
   | { kind: "K1"; k1: K1Form }
+  | { kind: "K1_STATE"; stateK1: K1StateForm }
   | { kind: "FOREIGN" | "OTHER" };
 
 export type TaxDoc = {

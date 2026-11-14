@@ -38,6 +38,7 @@ export type CheckId =
   | "tax.brokerage-coverage"
   | "tax.params"
   | "tax.documents-tie"
+  | "tax.k1-details"
   | "networth.reconciles";
 
 export type CheckDef = { id: CheckId; title: string; description: string };
@@ -304,6 +305,12 @@ export const CHECKS: CheckDef[] = [
     title: "Tax documents agree with the ledger",
     description:
       "Every finished year's W-2 boxes equal what its pay stubs add up to, each 1099's dividends, interest and gains equal the statements' figures, each 1099-INT equals the bank's interest rows, and the filed return's estimated payments, balance and refund equal what the bank paid or received — to the dollar. A document the ledger can't corroborate (no stubs or statements for it) is missing data.",
+  },
+  {
+    id: "tax.k1-details",
+    title: "Every K-1 is read in full",
+    description:
+      "Each partnership K-1's lettered boxes (11, 13, 14, 15, 17, 18, 19, 20) and the statements attached to it are in the K-1 details file, and the lines there add up to what the K-1's face prints. A box not yet read is missing data: the year's tax still shows, without that box.",
   },
   {
     id: "tax.params",

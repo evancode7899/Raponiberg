@@ -737,6 +737,38 @@ describe("tax documents agree with the ledger", () => {
   });
 });
 
+describe("every K-1 is read in full (tax.k1-details)", () => {
+  const checking = { id: "chk", name: "Springfield Bank ••1234", subtype: "CHECKING", segs: [{ start: "2025-01-01", end: "2025-12-31", open: 0, close: 0 }] };
+  const k1 = { partnership: "EXAMPLE FUND LP", ein: "00-1234567", partner: "PAT EXAMPLE", limitedPartner: true, interest: 10_000, coded: [{ box: "11", code: "A", cents: null, statement: true }, { box: "20", code: "A", cents: 6_100, statement: false }] };
+  const docs: TaxDocsFile = {
+    version: TAX_DOCS_VERSION,
+    scannedAt: "2026-03-01T00:00:00.000Z",
+    folder: "Example tax folder",
+    errors: [],
+    docs: [{ id: "k1", file: "2025/example-k1.pdf", duplicates: [], year: 2025, kind: "K1", superseded: null, names: ["PAT EXAMPLE"], warnings: [], parsed: { kind: "K1", k1: k1 as never } }],
+  };
+  const book = (k1Details?: Book["k1Details"]) => makeBook({ accounts: [checking], today: "2026-03-01", horizon: { cashFlow: "2025-12-31", netWorth: "2025-12-31" }, taxDocs: docs, before: (b) => void (b.k1Details = k1Details) });
+  const found = (b: Book) => b.integrity.findings.filter((x) => x.check === "tax.k1-details");
+
+  it("a lettered box with no line in the details file is missing data that withholds nothing", () => {
+    const b = book();
+    expect(found(b)).toEqual([expect.objectContaining({ id: "tax.k1-details:2025:00-1234567", status: "MISSING", scope: { from: "2025-01-01", to: "2025-12-31", affects: [] } })]);
+    expect(found(b)[0]!.detail).toMatch(/Box 11 code A.*Box 20 code A/);
+    expect(blockersFor(b, { affects: "TAX", from: "2025-01-01", to: "2025-12-31" }).some((x) => x.check === "tax.k1-details")).toBe(false);
+  });
+
+  it("passes once every lettered box has its lines", () => {
+    const line = (box: string, cents: number) => ({ box, code: "A", label: "Example", cents, treatment: "INFORMATION_ONLY" as const });
+    const b = book({ version: 1, k1s: [{ ein: "00-1234567", year: 2025, lines: [line("11", 90_000), line("20", 6_100)] }] });
+    expect(found(b)).toEqual([]);
+    expect(b.passes.filter((p) => p.check === "tax.k1-details").map((p) => p.subject)).toEqual(["2025 K-1 from EXAMPLE FUND LP"]);
+  });
+
+  it("a damaged details file is said, not read as nothing to read", () => {
+    expect(found(book({ error: "The K-1 details file is damaged (not valid JSON)." })).map((f) => f.id)).toEqual(["tax.k1-details:file"]);
+  });
+});
+
 describe("holdings.ties", () => {
   const book = () =>
     makeBook({ accounts: [{ id: "brk", name: "Brokerage ••5678", subtype: "BROKERAGE", institution: "Bank", idents: ["5678"], segs: [{ start: "2025-01-01", end: "2025-03-31", open: 0, close: 1_000_000 }] }] });
