@@ -1,7 +1,7 @@
 import type { FederalKey, StateKey } from "../taxdocs/types.ts";
 import type { TaxReport } from "./buildTaxReport.ts";
 import { computeReturn, type FederalResult, type CtResult, type NyResult, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
-import { ownerOf, type YearDocs } from "./documents.ts";
+import { ownerOf, type DocRef, type YearDocs } from "./documents.ts";
 import { taxYearParams } from "./params.ts";
 
 /**
@@ -50,7 +50,7 @@ export type FiledCheck = {
   sources: SourceCheck[];
   suggestions: Suggestion[];
   /** Income on documents that the filed return left out (a K-1 that came late): what amending would change. */
-  amendment: { reason: string; federal: number; ct: number; ny: number } | null;
+  amendment: { reason: string; federal: number; ct: number; ny: number; k1s: { partnership: string; doc: DocRef }[]; partial: boolean } | null;
   summary: { federal: CheckStatus | null; ct: CheckStatus | null; ny: CheckStatus | null; differences: number };
 };
 
@@ -512,8 +512,8 @@ function paymentChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[], su
 
 /**
  * The model on the filed return's basis. A K-1 on file whose income isn't on the return
- * (no Schedule E — it came after filing) is left out, so every other line can be checked
- * to the dollar; what amending for it would change is reported separately.
+ * (it came after filing) is left out, so every other line can be checked to the dollar;
+ * what amending for it would change is reported separately.
  */
 /**
  * The joint return as the Filed return tab compares it: in whole dollars, and without a K-1
@@ -525,13 +525,15 @@ export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResu
   // Returns are filed in whole dollars, each W-2 box and 1099 amount rounded before it's added.
   const ny = report.ny?.filing ?? null;
   const filedWay = (people: PersonIncome[]) => computeReturn({ params, filingStatus: report.filingStatus, people: people.map(wholeDollars), dependents: report.dependents, ny });
-  const k1s = report.people.flatMap((p) => p.k1s.filter((k) => !k.estimate));
-  if (!k1s.length || !docs.federal || docs.federal.lines.some((l) => l.form === "SE" || l.form === "8582")) {
-    return { result: filedWay(report.people.map((p) => p.income)), exact: full, amendment: null };
-  }
-  const without: PersonIncome[] = report.people.map((p) => {
-    const mine = p.k1s.filter((k) => !k.estimate);
-    const sum = (f: keyof (typeof k1s)[number]["figures"]) => mine.reduce((s, k) => s + k.figures[f], 0);
+  const all = report.people.flatMap((p) => p.k1s.filter((k) => !k.estimate));
+  const asIs = () => ({ result: filedWay(report.people.map((p) => p.income)), exact: full, amendment: null });
+  const filed = docs.federal?.federal;
+  // More K-1s than can be tried one by one never happens in a household; the return is then read as it stands.
+  if (!all.length || !docs.federal || !filed || all.length > 10) return asIs();
+  type Use = (typeof all)[number];
+  const withoutK1s = (left: Set<Use>): PersonIncome[] => report.people.map((p) => {
+    const mine = p.k1s.filter((k) => left.has(k));
+    const sum = (f: keyof Use["figures"]) => mine.reduce((s, k) => s + k.figures[f], 0);
     const passive = mine.filter((k) => !k.suspendedLoss).reduce((s, k) => s + k.figures.passive, 0);
     const i = p.income;
     const out: PersonIncome = {
@@ -558,19 +560,51 @@ export function asFiled(report: TaxReport, docs: YearDocs): { result: ReturnResu
     }
     return out;
   });
-  const before = computeReturn({ params, filingStatus: report.filingStatus, people: without, dependents: report.dependents, ny });
-  const names = [...new Set(k1s.map((k) => k.partnership))].join(", ");
+
+  // Which K-1s the return left out: every combination is tried, and the one whose income
+  // lines match the filed return best is what was filed. Each K-1 is judged on its own, so
+  // one that came late is found even when another was filed on time.
+  const hasScheduleE = docs.federal.lines.some((l) => l.form === "SE" || l.form === "8582");
+  const lineScore = (r: ReturnResult) =>
+    FED_ROWS.filter(([key]) => K1_LINES.includes(key)).filter(([key, , , model]) => {
+      const m = model(r.federal);
+      return compare(filed[key] ?? (m === 0 ? null : 0), m, 2) === "MATCH";
+    }).length;
+  let best: { left: Set<Use>; result: ReturnResult; score: number[] } | null = null;
+  for (let mask = 0; mask < 1 << all.length; mask++) {
+    const left = new Set(all.filter((_, i) => mask & (1 << i)));
+    const result = filedWay(withoutK1s(left));
+    // Where the lines can't tell (the K-1 moves none of them, or they differ either way), a
+    // K-1 with business or rental income is on the return only if it has a Schedule E or
+    // Form 8582; failing that, a K-1 counts as filed.
+    const evidence = all.filter((k) => k.figures.passive !== 0 && left.has(k) === !hasScheduleE).length;
+    const score = [lineScore(result), evidence, -left.size];
+    // Scores rank in order: the first that differs decides.
+    const at = best ? score.findIndex((s, i) => s !== best!.score[i]) : 0;
+    if (!best || (at >= 0 && score[at]! > best.score[at]!)) best = { left, result, score };
+  }
+  if (!best || !best.left.size) return asIs();
+  const left = all.filter((k) => best.left.has(k));
+  const before = computeReturn({ params, filingStatus: report.filingStatus, people: withoutK1s(best.left), dependents: report.dependents, ny });
+  const names = [...new Set(left.map((k) => k.partnership))].join(", ");
+  const many = left.length > 1;
   return {
-    result: filedWay(without),
+    result: best.result,
     exact: before,
     amendment: {
-      reason: `The K-1 from ${names} isn't on the filed return (it has no Schedule E), so the lines here are checked without it. Amending (Form 1040-X, and the state returns) would add its income.`,
+      reason: `The K-1${many ? "s" : ""} from ${names} ${many ? "aren't" : "isn't"} on the filed return, so the lines here are checked without ${many ? "them" : "it"}. Amending (Form 1040-X, and the state returns) would add ${many ? "their" : "its"} income.`,
       federal: full.federal.totalTax - before.federal.totalTax,
       ct: full.ct.totalTax - before.ct.totalTax,
       ny: (full.ny?.totalTax ?? 0) - (before.ny?.totalTax ?? 0),
+      k1s: left.map((k) => ({ partnership: k.partnership, doc: k.doc })),
+      // A K-1 the reader couldn't take in whole (a box that points to an attached statement) leaves the change short.
+      partial: left.some((k) => (docs.all.find((d) => d.id === k.doc.id)?.warnings.length ?? 0) > 0),
     },
   };
 }
+
+/** The 1040 lines a K-1's income lands on: what tells a filed K-1 from one left out. */
+const K1_LINES: FederalKey[] = ["taxableInterest", "qualifiedDividends", "ordinaryDividends", "capitalGain", "additionalIncome", "otherCredits"];
 
 const dollar = (c: number) => Math.round(c / 100) * 100;
 

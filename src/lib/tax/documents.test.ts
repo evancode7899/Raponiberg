@@ -236,6 +236,75 @@ describe("the model against the filed return", () => {
   });
 });
 
+describe("a K-1 the filed return left off", () => {
+  type Use = TaxReport["people"][number]["k1s"][number];
+  const k1 = (partnership: string, id: string, over: Partial<Use["figures"]>): Use => ({
+    partnership,
+    doc: { id, file: `2025/${id}.pdf` },
+    estimate: false,
+    figures: { interest: 0, ordinaryDividends: 0, qualifiedDividends: 0, shortTermGain: 0, longTermGain: 0, otherIncome: 0, passive: 0, foreignTax: 0, ...over },
+    suspendedLoss: 0,
+  });
+  const base = { taxableInterest: $(1_000), ordinaryDividends: $(2_000), qualifiedDividends: $(1_500), longTermGain: $(3_000) };
+  /** The person's return with these K-1s on it, as buildTaxReport adds them. */
+  const withK1s = (k1s: Use[]) => {
+    const sum = (f: keyof Use["figures"]) => k1s.reduce((s, k) => s + k.figures[f], 0);
+    return person({
+      taxableInterest: base.taxableInterest + sum("interest"),
+      ordinaryDividends: base.ordinaryDividends + sum("ordinaryDividends"),
+      qualifiedDividends: base.qualifiedDividends + sum("qualifiedDividends"),
+      longTermGain: base.longTermGain + sum("longTermGain"),
+      otherIncome: sum("otherIncome") + sum("passive"),
+    });
+  };
+  const returnOf = (k1s: Use[]) => computeReturn({ params: P25, filingStatus: "MFJ", people: [withK1s(k1s)], dependents: [] });
+  const check = (onFile: Use[], onReturn: Use[], o: { scheduleE?: boolean; form?: string; warnings?: Record<string, string[]> } = {}) => {
+    const r = report(withK1s(onFile));
+    r.people[0]!.k1s = onFile;
+    const d = docs({ ...filed(returnOf(onReturn)), form: o.form ?? "1040", otherIncome: [], lines: o.scheduleE ? [{ form: "SE", page: 1, line: "32", label: "", values: [1] }] : [] } as FiledReturn);
+    d.all = Object.entries(o.warnings ?? {}).map(([id, warnings]) => ({ id, warnings })) as YearDocs["all"];
+    return checkFiled(r, d);
+  };
+  const fund = k1("EXAMPLE FUND LP", "fund", { interest: $(4_000), ordinaryDividends: $(6_000), qualifiedDividends: $(5_000), longTermGain: $(20_000) });
+  const business = k1("EXAMPLE PARTNERS LP", "business", { passive: $(15_000), interest: $(500) });
+
+  it("says what amending would change, and checks the other lines without it", () => {
+    const c = check([fund], []);
+    expect(c.amendment).toMatchObject({ k1s: [{ partnership: "EXAMPLE FUND LP" }], partial: false });
+    expect(c.amendment!.federal).toBe(returnOf([fund]).federal.totalTax - returnOf([]).federal.totalTax);
+    expect(c.summary.federal).toBe("MATCH");
+  });
+
+  it("finds the late one when another K-1 was filed on time (the return has a Schedule E)", () => {
+    const c = check([business, fund], [business], { scheduleE: true });
+    expect(c.amendment!.k1s.map((k) => k.partnership)).toEqual(["EXAMPLE FUND LP"]);
+    expect(c.summary.federal).toBe("MATCH");
+  });
+
+  it("asks for nothing when a K-1 of portfolio income alone is on the return, which needs no Schedule E", () => {
+    expect(check([fund], [fund]).amendment).toBeNull();
+  });
+
+  it("is settled once the amended return (1040-X) with the K-1 is on file", () => {
+    expect(check([business, fund], [business, fund], { scheduleE: true, form: "1040X" }).amendment).toBeNull();
+  });
+
+  it("says the change is short while part of the K-1 is on a statement the reader couldn't take in", () => {
+    expect(check([fund], [], { warnings: { fund: ["Box 11 (other income) refers to a statement; check the supporting schedule."] } }).amendment!.partial).toBe(true);
+  });
+
+  it("goes by the Schedule E when the lines can't tell: a K-1 whose loss is suspended moves none of them", () => {
+    const loss = { ...k1("EXAMPLE REALTY LP", "realty", { passive: -$(9_000) }), suspendedLoss: $(9_000) };
+    const r = (scheduleE: boolean) => {
+      const rep = report(withK1s([]));
+      rep.people[0]!.k1s = [loss];
+      return checkFiled(rep, docs({ ...filed(returnOf([])), otherIncome: [], lines: scheduleE ? [{ form: "8582", page: 1, line: "1", label: "", values: [1] }] : [] } as FiledReturn)).amendment;
+    };
+    expect(r(false)!.k1s).toHaveLength(1);
+    expect(r(true)).toBeNull();
+  });
+});
+
 describe("a brokerage 1099 against the statements", () => {
   const figures = (o: Partial<Record<string, number>>) => ({ ordinaryDividends: 0, qualifiedDividends: 0, moneyMarketDividends: 0, interest: 0, capGainDistShort: 0, capGainDistLong: 0, shortTermGain: 0, longTermGain: 0, ...o });
   const form = (o: { fees?: number; payments: { date: string; amount: number }[] }) => ({ doc: { id: "b", file: "2023/1099.pdf" }, form: { proceedsInvestmentExpenses: o.fees ?? 0, dividendPayments: o.payments } });

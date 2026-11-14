@@ -83,6 +83,8 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
         </Callout>
       )}
 
+      <AmendNote r={r} onGo={onGo} />
+
       <AtFiling r={r} />
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -479,6 +481,29 @@ function Calendar({ r }: { r: TaxResponse }) {
   );
 }
 
+const signed = (cents: number) => `${cents >= 0 ? "+" : "−"}${usd(Math.abs(cents))}`;
+
+/** A K-1 that came after the return was filed: the return needs amending, and by how much (the Filed return tab's own figures). */
+function AmendNote({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
+  const cell = useCells(r);
+  const a = r.documents?.check?.amendment;
+  if (!a) return null;
+  const many = a.k1s.length > 1;
+  return (
+    <Callout tone="warn" title={`Amend the ${r.year} return`}>
+      <p>
+        The K-1{many ? "s" : ""} from {a.k1s.map((k) => k.partnership).join(", ")} {many ? "are" : "is"} in the tax documents folder but not on the return you filed. Amending (Form 1040-X, and the state returns) would change federal tax by{" "}
+        {cell("overview", "amendment", "federal", signed(a.federal))}, Connecticut tax by {cell("overview", "amendment", "ct", signed(a.ct))}
+        {a.ny ? <> and New York tax by {cell("overview", "amendment", "ny", signed(a.ny))}</> : ""}.
+      </p>
+      {a.partial && <p className="mt-1">Part of {many ? "a" : "the"} K-1 is on an attached statement the app hasn&apos;t read, so the change is not complete yet.</p>}
+      <button type="button" className={`${buttonSecondary} mt-2`} onClick={() => onGo("filed")}>
+        Open filed return
+      </button>
+    </Callout>
+  );
+}
+
 function FiledVerdict({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
   const c = r.documents?.check;
   const filed = r.documents?.filed;
@@ -528,6 +553,7 @@ function FiledVerdict({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void })
           );
         })}
       </ul>
+      {c.amendment && <p className="mt-3 text-xs text-muted">Checked without the K-1{c.amendment.k1s.length > 1 ? "s" : ""} the return left off; amending would add {c.amendment.k1s.length > 1 ? "them" : "it"}.</p>}
       {c.suggestions.length > 0 && <p className="mt-3 text-xs text-muted">{c.suggestions.length} suggested input{c.suggestions.length === 1 ? "" : "s"} would close the gaps — apply them on the Filed return tab.</p>}
     </Card>
   );

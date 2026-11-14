@@ -332,6 +332,10 @@ export function buildTaxReport(
   const docs = yearDocs(book.taxDocs, year, profile.persons);
   const lastYearDocs = yearDocs(book.taxDocs, year - 1, profile.persons);
   const useDocs = !isForecast;
+  // A K-1 whose partner name is no one's in the household (a trust, an entity, a misread
+  // name) would otherwise drop out of the return without a word.
+  for (const k of (useDocs ? docs : lastYearDocs).k1s.filter((x) => x.personId == null && !(isForecast && x.form.final)))
+    warnings.push(`The K-1 from ${k.form.partnership || "a partnership"} (${k.doc.file}) names a partner the app can't match to anyone in the household, so its income isn't on this return. Check the partner's name against Inputs.`);
   // A finished year whose statements don't reach December 31st yet (the spring, before every
   // account's December statement is on file) would show part of a year as the whole: it
   // waits for them, unless its filed return is on file as the year's figures of record.
@@ -610,7 +614,7 @@ export function buildTaxReport(
       capitalGainDistributions: invY.capGainDistLong,
       shortTermGain: invY.shortTermGain - extras.capitalLossCarryover + (useDocs ? k1("shortTermGain") : 0),
       longTermGain: invY.longTermGain + (useDocs ? k1("longTermGain") : 0),
-      foreignTaxPaid: invY.foreignTax,
+      foreignTaxPaid: invY.foreignTax + (useDocs ? k1("foreignTax") : 0),
       otherIncome: extras.otherIncome + (useDocs ? k1("otherIncome") + k1Passive : 0) + k401Excess.ytd,
       estimatedFederal: half(estFederalToDate) + extras.estimatedFederalExtra,
       estimatedCt: half(estCtToDate) + extras.estimatedCtExtra,
