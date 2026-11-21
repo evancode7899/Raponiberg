@@ -103,8 +103,9 @@ function dataFiles(): string[] {
     // password; no figure reads either (lib/pageInputs.ts, lib/appPassword.ts), nor the
     // HSA receipts log (lib/hsa/store.ts: the HSA page joins it to the Book per request),
     // nor the insurance documents read from the folder (lib/insurance/store.ts, same), nor
-    // the rewards read from card statements (lib/cardPerks/rewardsScan.ts, same).
-    const unread = new Set(["page-inputs.json", "app-password.json", "hsa-expenses.json", "insurance-documents.json", "card-rewards.json"]);
+    // the rewards read from card statements (lib/cardPerks/rewardsScan.ts, same), nor the
+    // EOBs and health plans (lib/medical/store.ts and plans.ts, same).
+    const unread = new Set(["page-inputs.json", "app-password.json", "hsa-expenses.json", "insurance-documents.json", "card-rewards.json", "medical-documents.json", "medical-plans.json"]);
     json = readdirSync(dir).filter((f) => f.endsWith(".json") && !unread.has(f)).sort().map((f) => path.join(dir, f));
   } catch (e) {
     // No data folder yet holds no files; any other failure would leave every file out of the stamp.

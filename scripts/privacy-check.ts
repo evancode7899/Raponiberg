@@ -24,7 +24,11 @@
  *     receipts and policy summaries as read): policy numbers, receipt confirmation numbers,
  *     the insured, owner and agent, and each face amount that isn't a round multiple of
  *     $2,500; and the
- *     beneficiaries typed in on the Insurance page (a saved setting).
+ *     beneficiaries typed in on the Insurance page (a saved setting);
+ *   - data/medical-documents.json (the explanations of benefits as read) and
+ *     data/medical-plans.json (the health plans' terms): patients, providers and the
+ *     providers paid (two words or more), claim IDs, group numbers and sponsors, and each
+ *     claim's billed amount, plan payment and share as an exact amount with cents ($250 and up).
  *
  * Usage: npm run privacy:check [-- --dir <exported copy>]
  */
@@ -38,6 +42,8 @@ import { defaultHomeBudgetInputs } from "../src/lib/home-budget/homeBudgetModel.
 import { hsaFilePath } from "../src/lib/hsa/store.ts";
 import { INSURANCE_NOTES_KEY } from "../src/lib/insurance/notes.ts";
 import { readInsuranceDocs } from "../src/lib/insurance/store.ts";
+import { readHealthPlans } from "../src/lib/medical/plans.ts";
+import { readMedicalDocs } from "../src/lib/medical/store.ts";
 import { defaultInputs as defaultMortgageInputs } from "../src/lib/mortgage/inputs.ts";
 import { pageInputsFilePath } from "../src/lib/pageInputs.ts";
 import { normalizeProfile, TAX_PROFILE_KEY } from "../src/lib/tax/profile.ts";
@@ -249,6 +255,25 @@ for (const e of Object.values(readInsuranceDocs()?.files ?? {})) {
     for (const face of new Set([d.faceCents, ...d.schedule.map((r) => r.faceCents)])) dollars(face / 100);
   }
 }
+
+// ---- the explanations of benefits and health plans as read
+const twoWords = (v: string | null | undefined) => {
+  if (v && /Ss+S/.test(v.trim())) word(v);
+};
+for (const e of Object.values(readMedicalDocs()?.files ?? {})) {
+  const d = e.doc;
+  if (d?.kind !== "EOB") continue;
+  twoWords(d.sponsor);
+  if (d.group) word(d.group);
+  for (const c of d.claims) {
+    word(c.patient);
+    twoWords(c.provider);
+    word(c.id);
+    for (const v of [c.totals.billedCents, c.totals.planCents, c.totals.yourShareCents]) exact(v);
+  }
+  for (const p of d.payments) [p.provider, p.sentTo].forEach(twoWords);
+}
+for (const p of readHealthPlans().plans) twoWords(p.sponsor);
 
 // ---- the bonus award letters: employers, and every salary, bonus and comp figure
 if (existsSync(awardsFilePath())) {

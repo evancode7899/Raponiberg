@@ -1,6 +1,7 @@
 import type { CardPerksReport, CardScore, PerkPeriod } from "../../cardPerks/types.ts";
 import type { HsaReport } from "../../hsa/report.ts";
 import type { PolicyView } from "../../insurance/report.ts";
+import type { ClaimView } from "../../medical/report.ts";
 import type { DerivedFigure } from "../derived/types.ts";
 import type { Book } from "../load.ts";
 import { centsRoute, ratioRoute, rederiveList } from "../proof/independence.ts";
@@ -188,6 +189,42 @@ export function rederiveInsurance(book: Book, views: PolicyView[], figures: read
     if (f.figure === "paid") return [centsRoute("the Book's rows, re-added", f.value, v.payments.reduce((s, x) => s - (book.rowById.get(x.rowId)?.amountCents ?? 0), 0), "each premium row's amount as its statement prints it")];
     if (f.figure === "years-paid") return { none: "A count of the policy years the payee matching found a premium for: a verdict, not a sum." };
     return { none: "As the policy, its schedule or the insurer's summary prints it." };
+  });
+}
+
+/**
+ * Medical: what you owe and what the plan paid, re-added from each claim's service lines
+ * rather than its totals row (a claim's coordination-of-benefits figure stands for its lines,
+ * which print "See below"). Balances and the plan's limits are as the EOB and the plan print them.
+ */
+export function rederiveMedical(claims: readonly ClaimView[], figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const lineSum = (x: ClaimView, col: "yourShareCents" | "planCents" | "billedCents") => (x.cob && col !== "billedCents" ? (col === "yourShareCents" ? x.cob.yourShareCents : x.cob.planAfterCobCents) : x.lines.reduce((s, l) => s + l[col], 0));
+  const COL: Record<string, "yourShareCents" | "planCents" | "billedCents"> = { you: "yourShareCents", plan: "planCents", billed: "billedCents", owe: "yourShareCents", paid: "planCents" };
+  const byId = new Map(claims.map((x) => [x.id, x]));
+  const ROUTE = "each claim's service lines, re-added";
+  const WHY = "As the EOB prints it: the insurer's own balance, or the plan's documents (Statements › Checks holds the plan's limits to the EOBs').";
+  return rederiveList(figures, (f) => {
+    const key = f.key ?? "";
+    const col = COL[f.figure.split("-").at(-1)!];
+    if (f.figure.startsWith("claim-") && col) {
+      const x = byId.get(key);
+      return x ? [centsRoute(ROUTE, f.value, lineSum(x, col), "the claim's lines as its EOB prints them, not its totals row")] : null;
+    }
+    const [coverage, year, ...rest] = key.split("|");
+    const name = rest.join("|");
+    const pick = (x: ClaimView) => x.coverage === coverage && String(x.year) === year;
+    const of: Record<string, (x: ClaimView) => boolean> = {
+      person: (x) => x.patient === name,
+      provider: (x) => (x.provider || "Provider not printed") === name,
+      kind: (x) => x.kind === name,
+    };
+    const scope = f.figure.split("-")[0]!;
+    if (col && (of[scope] || f.figure === "you-owe" || f.figure === "plan-paid" || f.figure === "billed")) {
+      const xs = claims.filter((x) => pick(x) && (of[scope]?.(x) ?? true));
+      return [centsRoute(ROUTE, f.value, xs.reduce((s, x) => s + lineSum(x, col), 0), "every claim's lines as its EOB prints them, not the claims' totals rows")];
+    }
+    if (f.figure === "claims") return { none: "A count of claims (an adjustment replaces the version before it): a verdict, not a sum." };
+    return { none: WHY };
   });
 }
 

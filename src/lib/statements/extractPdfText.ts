@@ -23,7 +23,8 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
   return text;
 }
 
-async function positionedItems(buffer: Buffer): Promise<PositionedItem[]> {
+/** Every text item with its page and position (the EOB reader assigns amounts to columns by it). */
+export async function positionedItems(buffer: Buffer): Promise<PositionedItem[]> {
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // verbosity 0: text extraction doesn't need the standard font files pdf.js warns about.
   const doc = await getDocument({ data: new Uint8Array(buffer), verbosity: 0 }).promise;

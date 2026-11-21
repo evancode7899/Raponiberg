@@ -700,6 +700,7 @@ const DERIVED_PAGE_NAME: Record<DerivedPage, string> = {
   calendar: "Calendar",
   "lp-funds": "Investments › Private funds",
   insurance: "Insurance",
+  medical: "Medical",
   taxes: "Taxes",
   forecast: "Forecast",
 };
