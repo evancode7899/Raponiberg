@@ -5,6 +5,8 @@ import { carDerived } from "./car.ts";
 import { cashFlowDerived } from "./cashFlow.ts";
 import { insuranceDerived } from "./insurance.ts";
 import { loadInsurancePage } from "../../insurance/page.ts";
+import { medicalDerived } from "./medical.ts";
+import { loadMedicalPage } from "../../medical/page.ts";
 import { fundsDerived } from "./funds.ts";
 import { loadFundsPage } from "../../funds/page.ts";
 import { accountLimitsDerived, calendarDerived, hsaPageDerived } from "./planning.ts";
@@ -43,7 +45,7 @@ import { rederiveCashFlow } from "../rederive/cashFlow.ts";
 import { rederiveNetWorth, rederiveRollforwards } from "../rederive/netWorth.ts";
 import { rederiveInvestments } from "../rederive/investments.ts";
 import { rederiveCar } from "../rederive/car.ts";
-import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance } from "../rederive/pages.ts";
+import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical } from "../rederive/pages.ts";
 
 /**
  * Each page's derived figures, from its report built as the page's route builds it, once
@@ -139,6 +141,12 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const { policies } = await loadInsurancePage(db, book);
     const figures = insuranceDerived(policies);
     return { figures, rederived: rederiveInsurance(book, policies, figures), scope: null, through: book.horizon.cashFlow };
+  },
+  medical: async ({ book, db }) => {
+    const page = await loadMedicalPage(db, book);
+    const figures = medicalDerived(page);
+    // The EOBs are their own source, apart from the Book: the page is complete through the latest one.
+    return { figures, rederived: rederiveMedical(page.claims, figures), scope: null, through: page.statements[0]?.statementDate ?? book.today };
   },
 };
 

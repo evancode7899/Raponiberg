@@ -82,6 +82,14 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     keywords: ["insurance", "life insurance", "term life", "policy", "premium", "death benefit", "face amount", "beneficiary", "conversion", "rider", "coverage"],
   },
   {
+    mnemonic: "MED",
+    href: "/medical",
+    label: "Medical",
+    description: "Medical, dental and vision care from the insurers' explanations of benefits: every claim, what you owe and what the plan paid, deductibles, out-of-pocket limits and annual maximums, how often each service is covered, and what each plan covers.",
+    group: "Money",
+    keywords: ["medical", "health", "health insurance", "eob", "explanation of benefits", "claims", "deductible", "out of pocket", "coinsurance", "copay", "aetna", "doctor", "provider", "dental", "vision", "coverage", "plan", "hdhp"],
+  },
+  {
     mnemonic: "PERK",
     href: "/card-perks",
     label: "Card perks",

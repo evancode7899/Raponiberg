@@ -18,6 +18,7 @@ export const SWEEP_PAGE_OF_ROUTE: Readonly<Record<string, string>> = {
   "/bonuses": "Bonuses",
   "/car": "Car",
   "/insurance": "Insurance",
+  "/medical": "Medical",
   "/card-perks": "Card perks",
   "/annual": "Annual",
   "/forecast": "Forecast",

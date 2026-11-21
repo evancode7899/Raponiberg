@@ -9,6 +9,8 @@ import { commitDocument, type CommitResult } from "./commitDocument.ts";
 import { householdPatterns } from "../household/householdFile.ts";
 import { insuranceKind } from "../insurance/parse.ts";
 import { insuranceHashes } from "../insurance/store.ts";
+import { eobCoverage, planDocument } from "../medical/parse.ts";
+import { medicalHashes } from "../medical/store.ts";
 import { PARSER_VERSIONS, parseStatementText } from "./parsers/index.ts";
 import type { ParsedDocument } from "./types.ts";
 
@@ -65,6 +67,12 @@ export async function importStatementFiles(
     if (!result.ok && result.reason === "UNRECOGNIZED" && insuranceKind(text)) {
       // A policy packet or premium notice: the Insurance page reads it from the folder; it has no place in the ledger.
       outcomes.push({ fileName: file.fileName, ok: false, reason: "INSURANCE", message: "A life insurance document: it is read on the Insurance page, not imported as a statement." });
+      continue;
+    }
+    if (!result.ok && result.reason === "UNRECOGNIZED" && (eobCoverage(text) || planDocument(text))) {
+      // An insurer's Explanation of Benefits or a plan document: the Medical page reads it from the folder; it moves no money, so it has no place in the ledger.
+      const what = eobCoverage(text) ? "A health insurance Explanation of Benefits" : "A health plan document";
+      outcomes.push({ fileName: file.fileName, ok: false, reason: "MEDICAL", message: `${what}: it is read on the Medical page, not imported as a statement.` });
       continue;
     }
     if (!result.ok) {
@@ -149,7 +157,7 @@ export async function dropOutdatedReading(db: PrismaClient, bytes: Buffer, doc: 
 /**
  * PDFs in the statements folder (recursively) to import: those whose exact bytes aren't
  * imported yet, and those imported by an older version of their parser (read again, see
- * dropOutdatedReading). Life insurance documents the Insurance page has read are left out. Files are named by their path relative to the folder, e.g.
+ * dropOutdatedReading). Life insurance documents the Insurance page has read, and EOBs the Medical page has read, are left out. Files are named by their path relative to the folder, e.g.
  * "1. Chase/2026-08.pdf".
  */
 export async function findNewFolderFiles(
@@ -170,12 +178,13 @@ export async function findNewFolderFiles(
   });
   const stored = new Map(known.map((k) => [k.fileHash, k]));
   const insurance = insuranceHashes();
+  const medical = medicalHashes();
   const isOutdated = (hash: string) => {
     const k = stored.get(hash);
     return !!k && k.parserVersion < (PARSER_VERSIONS[k.parserId] ?? k.parserVersion);
   };
   const files = all
-    .filter((f) => (opts.outdatedOnly ? false : !stored.has(f.hash) && !insurance.has(f.hash)) || isOutdated(f.hash))
+    .filter((f) => (opts.outdatedOnly ? false : !stored.has(f.hash) && !insurance.has(f.hash) && !medical.has(f.hash)) || isOutdated(f.hash))
     .sort((a, b) => a.fileName.localeCompare(b.fileName));
   return {
     folder,
@@ -185,7 +194,7 @@ export async function findNewFolderFiles(
   };
 }
 
-/** Which of these content hashes are imported documents (the Insurance page skips them unread). */
+/** Which of these content hashes are imported documents (the Insurance and Medical pages skip them unread). */
 export async function importedHashes(db: Pick<PrismaClient, "sourceDocument">, hashes: string[]): Promise<Set<string>> {
   if (!hashes.length) return new Set();
   const known = await db.sourceDocument.findMany({ where: { fileHash: { in: hashes } }, select: { fileHash: true } });
