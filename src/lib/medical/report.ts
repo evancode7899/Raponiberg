@@ -289,18 +289,28 @@ export function statementChecks(file: string, s: EobStatement): MedicalCheck[] {
     }
   const owed = (c: EobClaim) => (c.cob ? c.cob.yourShareCents : c.totals.yourShareCents);
   const summary = new Map<string, number>();
-  for (const p of s.payments) summary.set(`${p.patient}|${p.provider}`, (summary.get(`${p.patient}|${p.provider}`) ?? 0) + p.yourShareCents);
+  // Keyed by patient and provider; each key's words are kept beside it, so a name is never split back out of a key.
+  const label = new Map<string, string>();
+  const keyOf = (patient: string, provider: string) => {
+    const k = JSON.stringify([patient, provider]);
+    label.set(k, `${patient} at ${provider}`);
+    return k;
+  };
+  for (const p of s.payments) {
+    const k = keyOf(p.patient, p.provider);
+    summary.set(k, (summary.get(k) ?? 0) + p.yourShareCents);
+  }
   const fromClaims = new Map<string, number>();
   for (const c of s.claims) {
     const row = s.payments.find((p) => p.patient === c.patient && p.provider === c.provider) ?? s.payments.find((p) => p.patient === c.patient && !!c.provider && p.provider.startsWith(c.provider));
-    const key = row ? `${row.patient}|${row.provider}` : `${c.patient}|${c.provider}`;
+    const key = row ? keyOf(row.patient, row.provider) : keyOf(c.patient, c.provider);
     fromClaims.set(key, (fromClaims.get(key) ?? 0) + owed(c));
   }
   const tie: string[] = [];
   for (const k of new Set([...summary.keys(), ...fromClaims.keys()])) {
     const a = summary.get(k) ?? 0;
     const b = fromClaims.get(k) ?? 0;
-    if (a !== b) tie.push(`${k.replace("|", " at ")}: the summary says ${a / 100}, the claims ${b / 100}`);
+    if (a !== b) tie.push(`${label.get(k)}: the summary says ${a / 100}, the claims ${b / 100}`);
   }
   return [
     { id: `medical.lines:${file}`, ok: !off.length, subject, file, detail: off.length ? off.join("; ") : `Each of its ${s.claims.length} claims' service lines add up to the claim's totals.` },

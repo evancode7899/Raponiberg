@@ -167,6 +167,12 @@ describe("MetLife dental EOB", () => {
     expect(wrong.find((x) => x.id.startsWith("medical.summary"))).toMatchObject({ ok: true });
   });
 
+  it("names a mismatched provider whole, even one with a pipe in its name", () => {
+    const s = parseMetLifeDentalEob(DENTAL_B);
+    const odd = { ...s, claims: s.claims.map((c) => ({ ...c, provider: "Example | Dental | Group" })), payments: s.payments.map((p) => ({ ...p, provider: "Example | Dental | Group", yourShareCents: 1 })) };
+    expect(statementChecks("b.pdf", odd)[1]!.detail).toBe("Sam at Example | Dental | Group: the summary says 0.01, the claims 0");
+  });
+
   it("refuses a covered line whose paid and owed amounts don't add to the allowed amount", () => {
     expect(() => parseMetLifeDentalEob(DENTAL_B.replace("$90.00 100% $90.00 $0.00", "$90.00 100% $80.00 $0.00"))).toThrow(/don't add to the allowed amount/);
   });
