@@ -399,6 +399,8 @@ export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
   const out = [f({ account: "steps", figure: "room" }, r.pretax.roomCents), f({ account: "chet", figure: "used" }, r.household.chet.contributed), f({ account: "chet", figure: "limit" }, r.household.chet.deductionLimit)];
   if (chetStep) out.push(f({ account: "chet", figure: "room" }, chetStep.roomCents));
   if (r.pretax.taxSavedCents != null) out.push(f({ account: "steps", figure: "tax-saved" }, r.pretax.taxSavedCents));
+  // Each open 401(k), match and HSA step's own "Filling it saves ≈…" note beside its account.
+  for (const st of r.steps) if (/^(k401|match|hsa)-/.test(st.id) && st.pretax && !st.done && st.taxSavedCents) out.push(f({ account: "steps", figure: "tax-saved", step: st.id }, st.taxSavedCents));
   // A year-to-date amount, and its projection where the page draws one (it differs).
   const amount = (x: Omit<AccountLimitsDescriptor, "report" | "year" | "figure">, a: { ytd: number; projected: number }) => [
     f({ ...x, figure: "used" }, a.ytd),
@@ -421,6 +423,23 @@ export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
     );
     if (p.k401.excess) out.push(f({ account: "k401", personId, figure: "excess" }, p.k401.excess));
     for (const e of p.k401.employers) out.push(...amount({ account: "k401", personId, employer: e.employer, part: "employee" }, e.employee), ...amount({ account: "k401", personId, employer: e.employer, part: "employer" }, e.employer$));
+    // The card's notes, each as the page draws it (tax-accounts/TaxAccountsClient.tsx Person).
+    const r$ = (x: Omit<AccountLimitsDescriptor, "report" | "year" | "ratio">, ratio: number): PageFigure => ({ page: "Account limits", descriptor: { report: "account-limits", year: r.year, ...x }, shown: { ratio } });
+    if (!p.k401.excess && p.k401.room && p.k401.perPaycheckToMax) out.push(f({ account: "k401", personId, figure: "per-paycheck" }, p.k401.perPaycheckToMax));
+    if (p.k401.match) {
+      out.push(f({ account: "k401", personId, figure: "match-deferral" }, p.k401.match.fullMatchDeferral));
+      if (p.k401.match.shortfall) out.push(f({ account: "k401", personId, figure: "match-short" }, p.k401.match.shortfall));
+    }
+    if (p.k401.excessNote && p.k401.excessDeferral?.returned) out.push(f({ account: "k401", personId, figure: "returned" }, p.k401.excessDeferral.returned.cents));
+    for (const c of p.ira.contributions) out.push(f({ account: "ira", personId, figure: "contributed", item: c.account }, c.cents));
+    if (p.ira.rothDirectShare > 0 && p.ira.rothDirectShare < 1) out.push(r$({ account: "ira", personId, figure: "roth-share" }, p.ira.rothDirectShare));
+    if (p.ira.deductibleShare > 0 && p.ira.deductibleShare < 1) out.push(r$({ account: "ira", personId, figure: "deductible-share" }, p.ira.deductibleShare));
+    out.push(
+      f({ account: "backdoor", personId, figure: "converted" }, p.backdoor.conversions),
+      f({ account: "backdoor", personId, figure: "basis" }, p.backdoor.basis),
+      f({ account: "backdoor", personId, figure: "taxable" }, p.backdoor.taxableConversion),
+    );
+    if (p.backdoor.pretaxIraCents > 0) for (const a of p.backdoor.pretaxAccounts) out.push(f({ account: "backdoor", personId, figure: "pretax", item: a.name }, a.cents));
   }
   return out;
 }

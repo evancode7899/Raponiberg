@@ -10,6 +10,9 @@ import { chetYear, excessDeferral, excessDeferralMessage, iraYear, k401Limit, ta
 import type { CheckId } from "../types.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import type { TaxForecastLink } from "../../forecast/forecast.ts";
+import { medicalReportOf } from "../../medical/book.ts";
+import { hsaPlanYear, sameProvider } from "../../medical/links.ts";
+import type { HealthPlan } from "../../medical/plans.ts";
 
 /**
  * Room left in each tax-advantaged account for a year, per person, from the Book. Pay
@@ -63,6 +66,8 @@ export type PersonAccounts = {
     excess: number;
     /** Whether the plan returned the excess, and the statements that show it. */
     excessDeferral: ExcessDeferral | null;
+    /** The excess in words (notices or warnings hold `text`; a page drawing its amounts as figures uses `tail`). */
+    excessNote: { ok: boolean; text: string; tail: string } | null;
     room: number;
     perPaycheckToMax: number | null;
     employers: EmployerPlan[];
@@ -70,7 +75,14 @@ export type PersonAccounts = {
     match: { rate: number; upTo: number; fullMatchDeferral: number; shortfall: number } | null;
     rothCatchUpRequired: boolean;
   };
-  hsa: { coverage: HsaCoverage; assumed: boolean; limit: number; employee: Amount; employer: Amount; outsidePayroll: number; total: Amount; room: number };
+  hsa: {
+    coverage: HsaCoverage;
+    /** Neither typed on Inputs nor shown by a plan on file: guessed from the stubs. */
+    assumed: boolean;
+    coverageSource: "INPUT" | "PLAN" | "STUBS";
+    /** The HSA-eligible medical plan on file that sets the coverage, and the months of the year it covers (12 under the last-month rule). */
+    plan: { name: string; eligibleMonths: number; december: boolean; fullLimit: number } | null;
+    limit: number; employee: Amount; employer: Amount; outsidePayroll: number; total: Amount; room: number };
   ira: {
     limit: number;
     /** Per IRA, with the ledger rows that count (book/taxAdvantaged.ts iraYear). */
@@ -158,6 +170,13 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
   const tax = buildTaxReport(book, year, { forecast });
   const prior = tax.blocked && TAX_YEAR_EXISTS(year - 1) ? buildTaxReport(book, year - 1) : null;
 
+  // The medical plans on file (Medical page): an HSA-eligible plan sets who's covered, and how.
+  const med = medicalReportOf(book);
+  const hsaPlans = med.plans.length
+    ? { plans: med.plans, patientsOf: (p: HealthPlan) => med.claims.filter((c) => c.coverage === p.coverage && c.firstDate >= p.coverageFrom && c.firstDate <= p.coverageTo).map((c) => c.patient) }
+    : null;
+  const ineligiblePay = med.checks.find((c) => c.id === "medical.hsa-eligible" && !c.ok);
+  if (ineligiblePay) warnings.push(ineligiblePay.detail);
   const people: PersonAccounts[] = book.persons.map((person) => {
     const inputs = settings.people[person.id] ?? EMPTY_PERSON;
     const birthYear = book.birthYears?.[person.id];
@@ -227,10 +246,8 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
     // The excess (and whether it was returned) is the Taxes page's, which counts it as income.
     const excessDeferred = taxPerson ? taxPerson.k401.excessDeferral : excessDeferral(book, person.id, year, pos(total.projected - limit));
     const excess = excessDeferred?.excess ?? 0;
-    if (excessDeferred) {
-      const m = excessDeferralMessage(person.name, year, limit, total.projected, excessDeferred);
-      (m.ok ? notices : warnings).push(m.text);
-    }
+    const excessNote = excessDeferred ? excessDeferralMessage(person.name, year, limit, total.projected, excessDeferred) : null;
+    if (excessNote) (excessNote.ok ? notices : warnings).push(excessNote.text);
     const room = pos(limit - total.projected);
 
     // Prior-year FICA wages from this employer decide whether catch-ups must be Roth (2026+).
@@ -261,9 +278,23 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
     const hsaEmployee = empRows.reduce((s, e) => add(s, e.hsa), ZERO);
     const hsaEmployer = empRows.reduce((s, e) => add(s, e.employerHsa), ZERO);
     const outsidePayroll = extrasFor(person.id)?.hsaOutsidePayroll ?? 0;
-    const assumed = inputs.hsaCoverage == null;
-    const coverage: HsaCoverage = inputs.hsaCoverage ?? (hsaEmployee.ytd + hsaEmployer.ytd > 0 ? (book.taxProfile.dependents.length ? "FAMILY" : "SELF") : "NONE");
-    const hsaLimit = coverage === "NONE" ? 0 : (coverage === "FAMILY" ? fp.limits.hsaFamily : fp.limits.hsaSelf) + (age != null && age >= 55 ? lim.hsaCatchUp55 : 0);
+    // Coverage: as typed on Inputs, else as the medical plans on file say (an HSA-eligible plan, and
+    // who it covers), else assumed from the stubs (HSA money means a plan, family with dependents).
+    const hasHsaPay = hsaEmployee.ytd + hsaEmployer.ytd > 0;
+    const planYear = hsaPlans ? hsaPlanYear(hsaPlans.plans, year, hsaPlans.patientsOf) : null;
+    // The plan sets the coverage of its member (whose employer sponsors it) and, for a family
+    // plan, of anyone else in the household putting HSA money in from pay.
+    const sponsors = !!planYear?.plan.sponsor && emps.some((e) => sameProvider(e.employer, planYear.plan.sponsor!));
+    const fromPlan: HsaCoverage | null = planYear && planYear.eligibleMonths > 0 && planYear.coverage && (sponsors || (planYear.coverage === "FAMILY" && hasHsaPay)) ? planYear.coverage : null;
+    const coverageSource: "INPUT" | "PLAN" | "STUBS" = inputs.hsaCoverage != null ? "INPUT" : fromPlan ? "PLAN" : "STUBS";
+    const assumed = coverageSource === "STUBS";
+    const coverage: HsaCoverage = inputs.hsaCoverage ?? fromPlan ?? (hasHsaPay ? (book.taxProfile.dependents.length ? "FAMILY" : "SELF") : "NONE");
+    const fullLimit = coverage === "NONE" ? 0 : (coverage === "FAMILY" ? fp.limits.hsaFamily : fp.limits.hsaSelf) + (age != null && age >= 55 ? lim.hsaCatchUp55 : 0);
+    // Months the plans on file show no HSA-eligible plan cut the limit pro rata, unless one covers
+    // December 1 (the last-month rule: the full limit, if eligible through the next year's testing period).
+    const eligibleMonths = coverageSource === "PLAN" && planYear && !planYear.december && planYear.ineligibleMonths > 0 ? 12 - planYear.ineligibleMonths : 12;
+    const hsaLimit = Math.round((fullLimit * eligibleMonths) / 12);
+    const hsaPlan = coverageSource === "PLAN" && planYear ? { name: planYear.plan.name, eligibleMonths, december: planYear.december, fullLimit } : null;
     const hsaTotal = add(add(hsaEmployee, hsaEmployer), { ytd: outsidePayroll, projected: outsidePayroll });
 
     // ---------------------------------------------------------- IRAs
@@ -298,13 +329,14 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
         total,
         excess,
         excessDeferral: excessDeferred,
+        excessNote,
         room,
         perPaycheckToMax: remainingPaychecks ? Math.ceil(room / remainingPaychecks) : null,
         employers: empRows,
         match,
         rothCatchUpRequired,
       },
-      hsa: { coverage, assumed, limit: hsaLimit, employee: hsaEmployee, employer: hsaEmployer, outsidePayroll, total: hsaTotal, room: pos(hsaLimit - hsaTotal.projected) },
+      hsa: { coverage, assumed, coverageSource, plan: hsaPlan, limit: hsaLimit, employee: hsaEmployee, employer: hsaEmployer, outsidePayroll, total: hsaTotal, room: pos(hsaLimit - hsaTotal.projected) },
       ira: { limit: iraLimit, contributions, total: iraTotal, room: pos(iraLimit - iraTotal), rothDirectShare: 1, deductibleShare: 1, coveredByPlan },
       backdoor: { conversions, basis, pretaxIraCents, pretaxAccounts, taxableConversion: taxableConv },
     };
@@ -415,7 +447,7 @@ function buildSteps(people: PersonAccounts[], h: TaxAccountsReport["household"],
         benefit: "Deductible going in, grows tax-free, tax-free out for medical costs. Through payroll it also skips Social Security and Medicare tax.",
         taxSavedCents: saved(p.hsa.room),
         done: p.hsa.room === 0,
-        caution: p.hsa.assumed ? `Coverage assumed ${p.hsa.coverage.toLowerCase()} — confirm it on the Inputs.` : null,
+        caution: p.hsa.assumed ? `Coverage assumed ${p.hsa.coverage.toLowerCase()} — confirm it on the Inputs, or add the medical plan's documents on the Medical page.` : null,
       });
     }
     const backdoor = p.ira.rothDirectShare < 1;

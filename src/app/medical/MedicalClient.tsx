@@ -111,7 +111,7 @@ export function MedicalClient({ requiresApiSecret }: { requiresApiSecret: boolea
             ) : (
               <>
                 {tab === "overview" && (year ? <Overview y={year} fig={fig} /> : <NoClaims coverage={coverage} />)}
-                {tab === "claims" && (year ? <Claims y={year} claims={claims} fig={fig} /> : <NoClaims coverage={coverage} />)}
+                {tab === "claims" && (year ? <Claims y={year} claims={claims} fig={fig} inHsaLog={data.inHsaLog} /> : <NoClaims coverage={coverage} />)}
                 {tab === "providers" && (year ? <Providers y={year} fig={fig} /> : <NoClaims coverage={coverage} />)}
                 {tab === "plan" && <Plans plans={data.plans.filter((p) => p.coverage === coverage)} uses={data.planLimits} problems={data.planProblems} fig={fig} coverage={coverage} />}
               </>
@@ -224,6 +224,26 @@ function Overview({ y, fig }: { y: YearView; fig: Fig }) {
         {T.otherPlanCents ? <StatCell proof={fig("other-paid", k)} label="Other plan paid" value={money(T.otherPlanCents)} sub="Paid first (coordination of benefits)" /> : <StatCell proof={fig("claims", k)} label="Claims" value={String(T.claims)} sub="An adjusted claim counts once" />}
       </StatGrid>
 
+      {(y.money.premiumCents > 0 || T.yourShareCents > 0) && (
+        <Card
+          title="Paying for it"
+          subtitle="Premiums are the pay stubs' pre-tax deductions for this cover. What you owe is matched to the card, bank or HSA payment of exactly that amount, from a payee that names the provider or is plainly medical care."
+        >
+          <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 lg:grid-cols-5">
+            <StatCell proof={fig("premiums", k)} label="Premiums from pay" value={money(y.money.premiumCents)} sub={y.money.premiums.length ? plural(y.money.premiums.length, "paycheck deduction") : "None on the year's stubs"} />
+            <StatCell proof={fig("cost", k)} label="Cost of care" value={money(y.money.costCents)} sub="Premiums plus what you owe" />
+            <StatCell proof={fig("owed-card", k)} label="Paid by card or bank" value={money(y.money.paidCents)} sub="Of what you owe" />
+            <StatCell proof={fig("owed-hsa", k)} label="Paid by the HSA" value={money(y.money.fromHsaCents)} sub="Its card or bill pay, to the provider" />
+            <StatCell
+              proof={fig("owed-unfound", k)}
+              label="No payment found"
+              value={money(y.money.notFoundCents)}
+              sub={y.money.notFound ? `${plural(y.money.notFound, "claim")}: paid in cash, from an account not imported, or still due` : "Every claim's share is paid"}
+            />
+          </div>
+        </Card>
+      )}
+
       {y.balances && (
         <Card
           title={[...new Set(inNet.map((r) => BALANCE_LABEL[r.kind]))].join(" and ").replace(/^./, (c) => c.toUpperCase())}
@@ -316,7 +336,37 @@ function SliceTable({ y, rows, kind, fig, name }: { y: YearView; rows: Slice[]; 
 
 // ---------------------------------------------------------------------------- claims
 
-function Claims({ y, claims, fig }: { y: YearView; claims: ClaimView[]; fig: Fig }) {
+/** How a claim's share was paid, in words: the row that paid it, and whether the HSA log has it. */
+function PaidCell({ c, log }: { c: ClaimView; log: MedicalPage["inHsaLog"][string] | undefined }) {
+  const p = c.payment;
+  return (
+    <td className={`${table.td} whitespace-nowrap text-xs`}>
+      <NotFigure why="Where the claim's share was paid from, and the HSA log's entry for it">
+        {c.yourShareCents <= 0 ? (
+          <span className="text-muted">Nothing owed</span>
+        ) : p ? (
+          <span title={`${p.payee}${p.claimIds.length > 1 ? ` · one payment for ${p.claimIds.length} claims` : ""}`}>
+            {p.fromHsa ? "HSA" : p.account} · {shortDate(p.date)}
+          </span>
+        ) : (
+          <span className="text-warn" title="No card, bank or HSA payment of exactly this amount was found: paid in cash, from an account not imported, or still due.">
+            Not found
+          </span>
+        )}
+        {log && (
+          <>
+            {" "}
+            <Badge tone={log.over ? "warn" : "info"} title={log.over ? "The HSA log has this visit for more than the EOB says you owed." : log.reimbursed ? "In the HSA receipts log, reimbursed." : "In the HSA receipts log, not reimbursed yet."}>
+              {log.over ? "HSA log: over" : log.reimbursed ? "HSA: reimbursed" : "HSA log"}
+            </Badge>
+          </>
+        )}
+      </NotFigure>
+    </td>
+  );
+}
+
+function Claims({ y, claims, fig, inHsaLog }: { y: YearView; claims: ClaimView[]; fig: Fig; inHsaLog: MedicalPage["inHsaLog"] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [who, setWho] = useState<string>("all");
   const shown = who === "all" ? claims : claims.filter((c) => c.patient === who);
@@ -338,6 +388,7 @@ function Claims({ y, claims, fig }: { y: YearView; claims: ClaimView[]; fig: Fig
               <th className={table.thR}>Billed</th>
               <th className={table.thR}>Plan paid</th>
               <th className={table.thR}>You owe</th>
+              <th className={table.th}>Paid</th>
             </tr>
           </thead>
           <tbody>
@@ -379,10 +430,11 @@ function Claims({ y, claims, fig }: { y: YearView; claims: ClaimView[]; fig: Fig
                   <td className={`${table.tdR} font-medium`} onClick={(e) => e.stopPropagation()}>
                     <Amt fig={fig} figure="claim-you" k={c.id} cents={c.yourShareCents} />
                   </td>
+                  <PaidCell c={c} log={inHsaLog[c.id]} />
                 </tr>
                 {open === c.id && (
                   <tr className="bg-surface-2">
-                    <td colSpan={7} className="px-3 py-2 text-xs text-fg-2">
+                    <td colSpan={8} className="px-3 py-2 text-xs text-fg-2">
                       <ClaimDetail c={c} />
                     </td>
                   </tr>
@@ -734,7 +786,8 @@ function Documents({ data, coverage, fig }: { data: MedicalPage; coverage: Cover
   const planDocs = data.planDocs.filter((d) => d.coverage === coverage);
   const pending = data.pending.filter((d) => d.coverage === coverage);
   const files = new Set([...statements.map((s) => s.file), ...planDocs.map((d) => d.file)]);
-  const checks = data.checks.filter((c) => !c.file || files.has(c.file));
+  // A statement's checks with its coverage; premiums by the cover they pay for; HSA eligibility with medical.
+  const checks = data.checks.filter((c) => (c.file ? files.has(c.file) : c.id.startsWith("medical.premiums:") ? c.id.endsWith(`:${coverage}`) : c.id !== "medical.hsa-eligible" || coverage === "MEDICAL"));
   const failing = checks.filter((c) => !c.ok);
   const unread = planDocs.filter((d) => !d.read);
   return (
@@ -752,7 +805,7 @@ function Documents({ data, coverage, fig }: { data: MedicalPage; coverage: Cover
         </Callout>
       )}
 
-      <Card title="Checks" subtitle="Each EOB held to itself (lines add to each claim's totals; the payment summary is its claims) and each plan's limits to the ones its EOBs count against.">
+      <Card title="Checks" subtitle="Each EOB held to itself (lines add to each claim's totals; the payment summary is its claims), each plan's limits to the ones its EOBs count against, the pay stubs' premiums to the plans on file, and HSA money from pay to an HSA-eligible plan. The same checks run in Statements › Checks.">
         {checks.length === 0 ? (
           <p className="text-sm text-muted">No documents to check yet.</p>
         ) : (

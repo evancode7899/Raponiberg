@@ -9,6 +9,7 @@ import { checkCustodianContributions } from "./custodian.ts";
 import { checkFreshness } from "./freshness.ts";
 import { checkHoldings } from "./holdings.ts";
 import { checkHsaContributions } from "./hsa.ts";
+import { checkMedical } from "./medical.ts";
 import { checkNetWorth } from "./networth.ts";
 import { checkPay } from "./pay.ts";
 import { checkReadable } from "./readable.ts";
@@ -35,6 +36,7 @@ export function runChecksWithPasses(book: Book, exceptions: StandingException[] 
   checkPay(book, c);
   checkRetirement(book, c);
   checkHsaContributions(book, c);
+  checkMedical(book, c);
   checkCustodianContributions(book, c);
   checkHoldings(book, c);
   checkBonusLetters(book, c);

@@ -73,7 +73,7 @@ export function SettingsTab({ r, send }: { r: HsaReport; send: Send }) {
       }
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="HSA opened on" hint={`Expenses before this can't be reimbursed: they're flagged and left out of the totals and suggestions. Blank: ${r.hsa.openedFrom === "STATEMENTS" ? `${r.hsa.openedOn}, when its first statement opens at $0` : "unknown (the statements on file don't reach back to the opening)"}.`}>
+        <Field label="HSA opened on" hint={`Expenses before this can't be reimbursed: they're flagged and left out of the totals and suggestions. Blank: ${r.hsa.openedFrom === "STATEMENTS" ? `${r.hsa.openedOn}, when its first statement opens empty` : "unknown (the statements on file don't reach back to the opening)"}.`}>
           <input type="date" className={inputCls} value={f.opened} onChange={set("opened")} />
         </Field>
         <Field

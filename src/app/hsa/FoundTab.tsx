@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, btn, Card, EmptyState, Field, selectCls, table } from "@/components/ui/kit";
+import { Badge, btn, Card, EmptyState, Field, NotFigure, selectCls, table } from "@/components/ui/kit";
 import { formatUsdCents } from "@/lib/formatMoney";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { chargesSum } from "./derived";
@@ -46,8 +46,8 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
       expenses: list.map((s) => ({
         date: s.date,
         amountCents: s.amountCents,
-        provider: providerName(s),
-        patient,
+        provider: s.provider ?? providerName(s),
+        patient: s.patient || patient,
         kind: kinds[key(s)] ?? s.kind,
         notes: s.tier === "CHECK" ? "From a drug-store charge: check the receipt for the medical items" : "",
         receipt: false,
@@ -147,7 +147,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
                       <td className={`${table.td} min-w-[14rem]`}>
                         <div className="text-fg">{s.payee}</div>
                         <div className="text-[11px] text-muted">
-                          {s.account} · {s.reason}
+                          {s.account} · <NotFigure why="Why it looks like qualified care: an EOB's own figures are proven on the Medical page">{s.reason}</NotFigure>
                         </div>
                       </td>
                       <td className={table.td}>

@@ -47,7 +47,6 @@ function claimFigures(x: ClaimView): DerivedFigure[] {
         ? [ln("Your share after the other plan paid, as the EOB's COB facts print it", c(x.yourShareCents), undefined, PRINTED)]
         : byLine((l) => l.yourShareCents, x.yourShareCents, "Your share, as the claim's totals print it"),
     ),
-    ...(x.cob ? [add("claim-other", "what the other plan paid first", x.otherPlanCents, [ln("Other plan(s) paid, as the EOB's COB facts print it", c(x.otherPlanCents), undefined, PRINTED)])] : []),
   ];
 }
 
@@ -55,7 +54,7 @@ function sliceFigures(y: YearView, s: Slice, kind: "person" | "provider" | "kind
   const key = sliceKey(y, s.key);
   const xs = claims.filter((x) => x.coverage === y.coverage && x.year === y.year && of(x) === s.key);
   const add = (figure: string, describes: string, cents: number, pick: (x: ClaimView) => number): DerivedFigure => ({ figure, key, describes: `${y.year} ${s.key}: ${describes}`, value: c(cents), lines: claimChain(xs, pick, cents, describes[0]!.toUpperCase() + describes.slice(1)) });
-  return [add(`${kind}-you`, "what you owe", s.yourShareCents, (x) => x.yourShareCents), add(`${kind}-plan`, "what the plan paid", s.planCents, (x) => x.planCents), ...(kind === "kind" || kind === "provider" ? [add(`${kind}-billed`, "billed", s.billedCents, (x) => x.billedCents)] : [])];
+  return [add(`${kind}-you`, "what you owe", s.yourShareCents, (x) => x.yourShareCents), ...(kind !== "kind" ? [add(`${kind}-plan`, "what the plan paid", s.planCents, (x) => x.planCents)] : []), ...(kind === "kind" || kind === "provider" ? [add(`${kind}-billed`, "billed", s.billedCents, (x) => x.billedCents)] : [])];
 }
 
 export const BALANCE_LABEL = { DEDUCTIBLE: "deductible", OUT_OF_POCKET: "out-of-pocket limit", ANNUAL_MAXIMUM: "annual maximum" } as const;
@@ -63,13 +62,17 @@ export const BALANCE_LABEL = { DEDUCTIBLE: "deductible", OUT_OF_POCKET: "out-of-
 function balanceFigures(y: YearView): DerivedFigure[] {
   const b = y.balances;
   if (!b) return [];
-  return b.rows.flatMap((row) => {
+  // The page draws the in-network balances, and what's left only of one not yet met.
+  return b.rows.filter((row) => row.inNetwork).flatMap((row) => {
     const key = balanceKey(y, row);
     const what = `${row.person ?? "the family"}'s ${row.inNetwork ? "in-network" : "out-of-network"} ${BALANCE_LABEL[row.kind]}`;
     const src = `As the EOB of ${row.asOf} prints it (balances ${b.from} to ${b.to}${row.includesPharmacy ? ", medical and pharmacy" : ""})`;
     return [
       { figure: "balance-used", key, describes: `${y.year}: ${what}, used`, value: c(row.usedCents), lines: [ln("Used", c(row.usedCents), undefined, { source: "proven", note: src })] },
       { figure: "balance-limit", key, describes: `${y.year}: ${what}`, value: c(row.limitCents), lines: [ln("Annual limit", c(row.limitCents), undefined, { source: "proven", note: src })] },
+      ...(row.usedCents >= row.limitCents
+        ? []
+        : [
       {
         figure: "balance-left",
         key,
@@ -77,6 +80,7 @@ function balanceFigures(y: YearView): DerivedFigure[] {
         value: c(row.remainingCents),
         lines: [ln("Annual limit", c(row.limitCents), undefined, PRINTED), ln("Used", c(row.usedCents), "−", PRINTED), ln("Left", c(row.limitCents - row.usedCents), "=", { note: src })],
       },
+          ]),
     ];
   });
 }
@@ -92,7 +96,8 @@ function yearFigures(y: YearView, claims: readonly ClaimView[]): DerivedFigure[]
     add("you-owe", "what you owe providers, by the EOBs", c(T.yourShareCents), byPerson((s) => s.yourShareCents, "You owe"), claimParts((x) => x.yourShareCents)),
     add("plan-paid", "what the plan paid", c(T.planCents), byPerson((s) => s.planCents, "Plan paid"), claimParts((x) => x.planCents)),
     add("billed", "billed by providers", c(T.billedCents), byPerson((s) => s.billedCents, "Billed"), claimParts((x) => x.billedCents)),
-    add("other-paid", "paid first by another plan", c(T.otherPlanCents), claimChain(xs.filter((x) => x.otherPlanCents), (x) => x.otherPlanCents, T.otherPlanCents, "Other plans paid")),
+    // Drawn only in a year another plan paid first.
+    ...(T.otherPlanCents === 0 ? [] : [add("other-paid", "paid first by another plan", c(T.otherPlanCents), claimChain(xs.filter((x) => x.otherPlanCents), (x) => x.otherPlanCents, T.otherPlanCents, "Other plans paid"))]),
     add("write-off", "network discounts and charges you don't owe", c(T.writeOffCents), [
       ln("Billed", c(T.billedCents)),
       ln("Plan paid", c(T.planCents), "−"),
@@ -100,7 +105,9 @@ function yearFigures(y: YearView, claims: readonly ClaimView[]): DerivedFigure[]
       ln("You owe", c(T.yourShareCents), "−"),
       ln("Discounts and charges you don't owe", c(T.writeOffCents), "="),
     ]),
-    add("claims", "claims processed", t(String(T.claims)), [ln("Claims (an adjusted claim counts once)", t(String(T.claims)))]),
+    // The count takes the fifth cell only in a year no other plan paid first.
+    ...(T.otherPlanCents ? [] : [add("claims", "claims processed", t(String(T.claims)), [ln("Claims (an adjusted claim counts once)", t(String(T.claims)))])]),
+    ...moneyFigures(y, xs, add),
     ...balanceFigures(y),
     ...y.people.flatMap((s) => sliceFigures(y, s, "person", claims, (x) => x.patient)),
     ...y.providers.flatMap((s) => sliceFigures(y, s, "provider", claims, (x) => x.provider || "Provider not printed")),
@@ -108,8 +115,33 @@ function yearFigures(y: YearView, claims: readonly ClaimView[]): DerivedFigure[]
   ];
 }
 
+/** Which of the year's claims each "what you owed, by how it was paid" figure counts. */
+export const OWED_BY: Record<"owed-card" | "owed-hsa" | "owed-unfound", (x: ClaimView) => boolean> = {
+  "owed-card": (x) => x.yourShareCents > 0 && !!x.payment && !x.payment.fromHsa,
+  "owed-hsa": (x) => x.yourShareCents > 0 && !!x.payment?.fromHsa,
+  "owed-unfound": (x) => x.yourShareCents > 0 && !x.payment,
+};
+
+/** The year's premiums from pay, its cost of care, and what you owed by how it was paid. */
+function moneyFigures(y: YearView, xs: readonly ClaimView[], add: (figure: string, describes: string, value: DerivedFigure["value"], lines: DerivedFigure["lines"], parts?: DerivedFigure["parts"]) => DerivedFigure): DerivedFigure[] {
+  const M = y.money;
+  const paidBy = (x: ClaimView) => (x.payment ? `${x.payment.fromHsa ? "the HSA" : x.payment.account} ${x.payment.date}, ${x.payment.payee}` : "no payment found");
+  const owedChain = (figure: keyof typeof OWED_BY, label: string, cents: number) => {
+    const cs = xs.filter(OWED_BY[figure]);
+    return [...cs.map((x, i) => ln(`${claimLabel(x)}: ${paidBy(x)}`, c(x.yourShareCents), i ? "+" : undefined, PRINTED)), ln(label, c(cents), "=")];
+  };
+  const premiumChain = [...M.premiums.map((p, i) => ln(`${p.payDate} ${p.line} (${p.employer}, ${p.stub})`, c(p.cents), i ? "+" : undefined, { source: "proven" as const, note: "As the pay stub prints this paycheck's deduction" })), ln("Premiums from pay", c(M.premiumCents), "=")];
+  return [
+    add("premiums", `${y.coverage.toLowerCase()} premiums taken from pay`, c(M.premiumCents), M.premiums.length ? premiumChain : [ln("No premium deductions for this cover on the year's pay stubs", c(0))]),
+    add("cost", "premiums plus what you owe providers", c(M.costCents), [ln("Premiums from pay", c(M.premiumCents)), ln("What you owe providers, by the EOBs", c(y.totals.yourShareCents), "+"), ln("Cost of care", c(M.costCents), "=")]),
+    add("owed-card", "what you owed, paid by card or bank", c(M.paidCents), owedChain("owed-card", "Paid by card or bank", M.paidCents)),
+    add("owed-hsa", "what you owed, paid by the HSA directly", c(M.fromHsaCents), owedChain("owed-hsa", "Paid by the HSA", M.fromHsaCents)),
+    add("owed-unfound", "what you owed with no payment found in the statements", c(M.notFoundCents), owedChain("owed-unfound", "No payment found", M.notFoundCents)),
+  ];
+}
+
 function planFigures(p: HealthPlan): DerivedFigure[] {
-  const src = { source: "proven" as const, note: `As the plan's documents print it (${p.sources.map((s) => s.title).join("; ") || "data/medical-plans.json"}); held to the EOBs' own limits by Statements › Checks.` };
+  const src = { source: "proven" as const, note: `As the plan's documents print it (${p.sources.map((s) => s.title).join("; ") || "data/medical-plans.json"}); held to the EOBs' own limits by Statements › Checks (medical.plan-limits).` };
   const one = (figure: string, network: "in" | "out", who: "individual" | "family", cents: number | null | undefined, what: string): DerivedFigure[] =>
     cents == null ? [] : [{ figure, key: planLimitKey(p, network, who), describes: `${p.name}: ${network === "in" ? "in-network" : "out-of-network"} ${who} ${what}`, value: c(cents), lines: [ln(`${who === "family" ? "Family" : "Individual"} ${what}, ${network === "in" ? "in" : "out of"} network`, c(cents), undefined, src)] }];
   const both = (figure: string, n: NetworkAmounts | null, what: string) => [

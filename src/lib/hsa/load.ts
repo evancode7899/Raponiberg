@@ -12,6 +12,8 @@ import { w2FromAmounts } from "../tax/facts/payroll.ts";
 import type { TaxForecastLink } from "../forecast/forecast.ts";
 import { buildTaxReport, incomeTaxMarginal } from "../tax/buildTaxReport.ts";
 import { TAX_YEARS, taxYearParams, type FederalParams } from "../tax/params.ts";
+import { hsaEob } from "../medical/book.ts";
+import type { HsaEobIn } from "../medical/links.ts";
 import { payrollTaxSaved, type HsaAccountIn, type LedgerAccountIn, type LedgerRowIn, type PayrollHsaIn, type TaxMarginalIn } from "./report.ts";
 
 /** What the HSA page needs from the Book; cached with it (it changes only when the Book does). */
@@ -25,6 +27,8 @@ export type HsaLedger = {
   openedOn: string | null;
   /** What withholds the balance, and the rows the receipts are matched to (report.ts ReportInput.blockers). */
   blockers: { balance: BlockerRef[]; rows: BlockerRef[] };
+  /** The EOBs' claims and the rows that paid them (Medical page): what each expense and HSA card swipe was for. */
+  eob: HsaEobIn;
 };
 
 /**
@@ -118,6 +122,7 @@ export function hsaLedger(book: Book): HsaLedger {
   return {
     openedOn,
     blockers,
+    eob: hsaEob(book),
     rows: book.rows.map((r) => ({
       id: r.id,
       date: r.date,
