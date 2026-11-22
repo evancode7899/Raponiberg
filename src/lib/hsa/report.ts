@@ -147,6 +147,8 @@ export type Suggestion = LedgerRef & {
   /** The EOB claims this charge paid, when it paid what an EOB says you owed: their provider names the expense. */
   claims?: ClaimLite[];
   provider?: string;
+  /** What of this charge the EOBs say you owed: what can be reimbursed (a desk payment above it comes back from the provider). */
+  eobCents?: number;
 };
 
 /**
@@ -345,6 +347,11 @@ function eobQualification(cs: readonly ClaimLite[]): Qualification {
   return { tier: "LIKELY", kind: EOB_KIND[c.coverage], reason };
 }
 
+/** What of one charge the EOBs say you owed: each claim's part of it, never more than that claim's share. */
+export function eobOwedOf(pay: ClaimPayment, claims: readonly ClaimLite[]): number {
+  return pay.shares.reduce((s, x) => s + Math.min(x.cents, claims.find((c) => c.id === x.claimId)?.yourShareCents ?? 0), 0);
+}
+
 export function buildHsaReport(input: ReportInput): HsaReport {
   const { today, file } = input;
   const settings = file.settings;
@@ -537,7 +544,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       kind: q.kind,
       reason: q.reason,
       patient: [...new Set(paidClaims.map((c) => c.patient))].length === 1 ? paidClaims[0]!.patient : "",
-      ...(paidClaims.length ? { claims: paidClaims, provider: paidClaims[0]!.provider || undefined } : {}),
+      ...(pay && paidClaims.length ? { claims: paidClaims, provider: paidClaims[0]!.provider || undefined, eobCents: eobOwedOf(pay, paidClaims) } : {}),
     });
   }
   suggestions.sort((a, b) => (a.tier === b.tier ? b.date.localeCompare(a.date) : a.tier === "LIKELY" ? -1 : 1));

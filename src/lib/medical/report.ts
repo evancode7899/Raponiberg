@@ -1,3 +1,4 @@
+import { addDays } from "../dates/isoDate.ts";
 import { careKind, codeCounts, type CareKind } from "./codes.ts";
 import { medicalPlansOn, type ClaimPayment, type PremiumLine } from "./links.ts";
 import { planOn, ROLLING_MONTHS, type HealthPlan, type PlanAmounts, type ServiceLimit } from "./plans.ts";
@@ -37,8 +38,14 @@ export type ClaimView = Omit<EobClaim, "totals"> & {
   kind: CareKind;
   /** Earlier versions this one replaced. */
   earlier: { id: string; file: string; statementDate: string; yourShareCents: number; planCents: number }[];
-  /** The card, bank or HSA row that paid what you owe (lib/medical/links.ts), when one is found. */
+  /** The card, bank or HSA row that paid what you owe (lib/medical/links.ts), when one is found: the first, when several did. */
   payment: ClaimPayment | null;
+  /** Every row that paid toward it (a desk payment and the later balance), oldest first. */
+  payments: ClaimPayment[];
+  /** What those rows put toward this claim (its share of a bill for several claims), null when none did. */
+  paidCents: number | null;
+  /** Nothing paid it yet and the statements in end too soon after its EOB to show the bill being paid. */
+  awaiting: boolean;
 };
 
 export type Totals = { claims: number; billedCents: number; planCents: number; otherPlanCents: number; yourShareCents: number; writeOffCents: number; deductibleCents: number; coinsuranceCents: number; copayCents: number };
@@ -87,6 +94,8 @@ export type YearMoney = {
   fromHsaCents: number;
   notFoundCents: number;
   notFound: number;
+  /** Of those not found, the claims whose bills would come after the statements in end. */
+  awaiting: number;
 };
 
 /** One check over the documents; `date` is the day it is about (the statement, the plan's start, the first premium or paycheck it judges). */
@@ -161,6 +170,9 @@ function claimView(c: EobClaim, s: EobStatement, file: string): ClaimView {
     kind: [...byKind].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Other",
     earlier: [],
     payment: null,
+    payments: [],
+    paidCents: null,
+    awaiting: false,
   };
 }
 
@@ -214,6 +226,33 @@ function limitUse(l: ServiceLimit, claims: readonly ClaimView[], year: number, p
   };
 }
 
+/** What one row put toward one claim. */
+export const paidToward = (p: ClaimPayment, claimId: string) => p.shares.find((x) => x.claimId === claimId)?.cents ?? 0;
+
+/**
+ * Which versions of one claim stand. Versions printed on the same EOB are parts of the claim
+ * (the payment summary adds them: "00" and "01" for one visit's two bills). A version on a
+ * later EOB is the insurer reprocessing an earlier one and replaces it: the one whose plan
+ * payment it says was already made, else the highest still standing.
+ */
+export function standingVersions(vs: readonly ClaimView[]): { claim: ClaimView; replaced: ClaimView[] }[] {
+  const sorted = [...vs].sort((a, b) => a.statementDate.localeCompare(b.statementDate) || a.version - b.version);
+  const stand: { claim: ClaimView; replaced: ClaimView[] }[] = [];
+  for (const v of sorted) {
+    const before = stand.filter((x) => x.claim.statementDate < v.statementDate);
+    if (!before.length) {
+      stand.push({ claim: v, replaced: [] });
+      continue;
+    }
+    const target = (v.alreadyPaidCents > 0 ? before.find((x) => x.claim.planCents === v.alreadyPaidCents) : undefined) ?? before.reduce((m, x) => (x.claim.version > m.claim.version ? x : m));
+    stand.splice(stand.indexOf(target), 1, { claim: v, replaced: [...target.replaced, target.claim] });
+  }
+  return stand;
+}
+
+/** A provider's bill for what the EOB says you owe usually comes and is paid within this long of the EOB. */
+const BILL_DAYS = 45;
+
 /** Builds the report from every EOB read (by file) and the plans on file. */
 export function buildMedicalReport(input: {
   statements: { file: string; statement: EobStatement }[];
@@ -221,8 +260,10 @@ export function buildMedicalReport(input: {
   planDocs?: { file: string; doc: PlanDocument }[];
   plans: HealthPlan[];
   today: string;
-  /** What paid each claim (links.ts matchClaimPayments over the Book's rows), by claim id. */
-  payments?: ReadonlyMap<string, ClaimPayment>;
+  /** Every row that paid toward each claim (links.ts matchClaimPayments allByClaim over the Book's rows), by claim id. */
+  payments?: ReadonlyMap<string, readonly ClaimPayment[]>;
+  /** The last day the statements are in through: a claim with no payment whose bill would come after it is awaited, not missing. */
+  statementsThrough?: string | null;
   /** Health premiums on the pay stubs (links.ts premiumLines). */
   premiums?: readonly PremiumLine[];
   /** HSA money on the pay stubs, by pay date: held to the medical plan in force (hsaEligibilityChecks). */
@@ -241,15 +282,19 @@ export function buildMedicalReport(input: {
       return true;
     });
 
-  // Every claim version; the highest version of a claim (then the latest statement) stands.
+  // Every claim version (standingVersions: which stand, and what each replaced).
   const versions = statements.flatMap(({ file, statement: s }) => s.claims.map((c) => claimView(c, s, file)));
   const byBase = new Map<string, ClaimView[]>();
   for (const v of versions) byBase.set(`${v.coverage}|${v.baseId}`, [...(byBase.get(`${v.coverage}|${v.baseId}`) ?? []), v]);
   const claims = [...byBase.values()]
-    .map((vs) => {
-      const sorted = [...vs].sort((a, b) => a.version - b.version || a.statementDate.localeCompare(b.statementDate));
-      const last = sorted.at(-1)!;
-      return { ...last, earlier: sorted.slice(0, -1).map((e) => ({ id: e.id, file: e.file, statementDate: e.statementDate, yourShareCents: e.yourShareCents, planCents: e.planCents })), payment: input.payments?.get(last.id) ?? null };
+    .flatMap(standingVersions)
+    .map(({ claim: last, replaced }) => {
+      const payments = [...(input.payments?.get(last.id) ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+      // What each row put toward this claim (its share of a bill for several).
+      const paidCents = payments.length ? payments.reduce((s, p) => s + paidToward(p, last.id), 0) : null;
+      const through = input.statementsThrough;
+      const awaiting = !payments.length && last.yourShareCents > 0 && !!through && addDays(last.statementDate, BILL_DAYS) > through;
+      return { ...last, earlier: replaced.map((e) => ({ id: e.id, file: e.file, statementDate: e.statementDate, yourShareCents: e.yourShareCents, planCents: e.planCents })), payment: payments[0] ?? null, payments, paidCents, awaiting };
     })
     .sort((a, b) => b.firstDate.localeCompare(a.firstDate) || b.id.localeCompare(a.id));
 
@@ -323,6 +368,7 @@ function yearMoney(cs: readonly ClaimView[], premiums: PremiumLine[]): YearMoney
     fromHsaCents: sum(owed.filter((c) => c.payment?.fromHsa), (c) => c.yourShareCents),
     notFoundCents: sum(notFound, (c) => c.yourShareCents),
     notFound: notFound.length,
+    awaiting: notFound.filter((c) => c.awaiting).length,
   };
 }
 

@@ -125,7 +125,8 @@ export const OWED_BY: Record<"owed-card" | "owed-hsa" | "owed-unfound", (x: Clai
 /** The year's premiums from pay, its cost of care, and what you owed by how it was paid. */
 function moneyFigures(y: YearView, xs: readonly ClaimView[], add: (figure: string, describes: string, value: DerivedFigure["value"], lines: DerivedFigure["lines"], parts?: DerivedFigure["parts"]) => DerivedFigure): DerivedFigure[] {
   const M = y.money;
-  const paidBy = (x: ClaimView) => (x.payment ? `${x.payment.fromHsa ? "the HSA" : x.payment.account} ${x.payment.date}, ${x.payment.payee}` : "no payment found");
+  const paidBy = (x: ClaimView) =>
+    x.payments.length ? x.payments.map((p) => `${p.fromHsa ? "the HSA" : p.account} ${p.date}, ${p.payee}`).join(" + ") : x.awaiting ? "no payment yet, statements not in" : "no payment found";
   const owedChain = (figure: keyof typeof OWED_BY, label: string, cents: number) => {
     const cs = xs.filter(OWED_BY[figure]);
     return [...cs.map((x, i) => ln(`${claimLabel(x)}: ${paidBy(x)}`, c(x.yourShareCents), i ? "+" : undefined, PRINTED)), ln(label, c(cents), "=")];

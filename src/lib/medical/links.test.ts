@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildHsaReport } from "../hsa/report.ts";
+import { buildHsaReport, eobOwedOf } from "../hsa/report.ts";
 import { EMPTY_SETTINGS, type HsaExpense, type HsaFile } from "../hsa/store.ts";
 import { hsaPlanYear, linkExpenses, matchClaimPayments, premiumCoverage, premiumLines, sameProvider, type ClaimLite, type PaymentRowIn } from "./links.ts";
 import type { HealthPlan } from "./plans.ts";
-import { hsaEligibilityChecks, premiumChecks } from "./report.ts";
+import { hsaEligibilityChecks, premiumChecks, standingVersions, type ClaimView } from "./report.ts";
 
 const claim = (id: string, o: Partial<ClaimLite> = {}): ClaimLite => ({
   id,
@@ -78,6 +78,149 @@ describe("matchClaimPayments", () => {
     expect(byClaim.get("B")?.rowId).toBe("bill");
     expect(byClaim.get("A")?.how).toBe("GROUP");
     expect(byClaim.has("C")).toBe(false);
+  });
+});
+
+describe("matchClaimPayments: the EOB names the clinician, the card the billing office", () => {
+  // A therapist whose visits are billed by the practice, and paid at the desk on the day.
+  const pt = (id: string, date: string, owed: number) => claim(id, { provider: "Morgan Q Ellery", firstDate: date, lastDate: date, statementDate: addDays(date, 10), yourShareCents: owed });
+  const desk = (id: string, date: string, cents: number, o: Partial<PaymentRowIn> = {}) => row(id, { date, amountCents: -cents, payee: "BRIGHTWAY PHYSICAL THERAPY ELMTON ST", medical: true, ...o });
+  function addDays(d: string, n: number) {
+    const t = new Date(`${d}T00:00:00Z`);
+    t.setUTCDate(t.getUTCDate() + n);
+    return t.toISOString().slice(0, 10);
+  }
+
+  it("learns the billing name from a match of exactly the share, then ties the desk payments of other visits", () => {
+    const cs = [pt("A", "2025-05-01", 3_300), pt("B", "2025-05-08", 1_160), pt("C", "2025-05-15", 1_160)];
+    const rows = [desk("exact", "2025-05-20", 3_300), desk("v1", "2025-05-08", 1_200), desk("v2", "2025-05-15", 1_200)];
+    const { byClaim, billingNames } = matchClaimPayments(cs, rows);
+    expect(byClaim.get("A")).toMatchObject({ rowId: "exact", how: "MEDICAL" });
+    expect(byClaim.get("B")).toMatchObject({ rowId: "v1", how: "VISIT", amountCents: 1_200 });
+    expect(byClaim.get("C")).toMatchObject({ rowId: "v2", how: "VISIT" });
+    expect(billingNames.get("MORGAN Q ELLERY")).toEqual([["BRIGHTWAY", "ELMTON", "PHYSICAL", "THERAPY"]]);
+  });
+
+  it("never takes a payee sharing only its town with a learned billing name", () => {
+    const cs = [pt("A", "2025-05-01", 3_300), pt("B", "2025-05-08", 1_160)];
+    // Not medical and weeks after the visit: only a billing name could tie it.
+    const rows = [desk("exact", "2025-05-20", 3_300), desk("town", "2025-06-20", 1_160, { payee: "ELMTON HARDWARE ELMTON ST", medical: false })];
+    expect(matchClaimPayments(cs, rows).byClaim.has("B")).toBe(false);
+  });
+
+  it("ties a rounded bill from the provider's billing name, never an unnamed one", () => {
+    const cs = [pt("A", "2025-05-01", 3_300), pt("B", "2025-06-02", 125_040)];
+    const named = matchClaimPayments(cs, [desk("exact", "2025-05-20", 3_300), desk("bill", "2025-07-01", 125_000)]);
+    expect(named.byClaim.get("B")).toMatchObject({ rowId: "bill", how: "NEAR" });
+    const unnamed = matchClaimPayments([claim("Z", { yourShareCents: 5_610 })], [row("strips", { payee: "NASAL STRIPS CO", medical: true, amountCents: -5_640 })]);
+    expect(unnamed.byClaim.has("Z")).toBe(false);
+  });
+
+  it("ties a same-day desk copay from an unnamed office, and the balance billed after", () => {
+    const c = claim("A", { provider: "Riley P Ostrander", yourShareCents: 3_480, firstDate: "2025-06-10", lastDate: "2025-06-10" });
+    const rows = [row("copay", { date: "2025-06-10", amountCents: -3_000, payee: "OBGYN ASSOCIATES ELMTON", medical: true }), row("rest", { date: "2025-07-05", amountCents: -480, payee: "WOMENS CARE ONLINE", medical: true })];
+    const { allByClaim } = matchClaimPayments([c], rows);
+    expect(allByClaim.get("A")?.map((p) => [p.rowId, p.how])).toEqual([
+      ["copay", "VISIT"],
+      ["rest", "BALANCE"],
+    ]);
+  });
+
+  it("never ties a pharmacy or shop charge on the day of care, nor a row naming another visit that day", () => {
+    const c = claim("A", { provider: "Riley P Ostrander", yourShareCents: 2_750, firstDate: "2025-06-10", lastDate: "2025-06-10" });
+    const pharmacy = matchClaimPayments([c], [row("rx", { date: "2025-06-10", amountCents: -1_650, payee: "CVS/PHARMACY #0001", medical: true })]);
+    expect(pharmacy.byClaim.has("A")).toBe(false);
+    const other = claim("B", { yourShareCents: 1_040, firstDate: "2025-06-10", lastDate: "2025-06-10" });
+    const theirs = matchClaimPayments([c, other], [row("lk", { date: "2025-06-10", amountCents: -1_280, payee: "LAKESIDE FAMILY MED", medical: true })]);
+    expect(theirs.byClaim.get("B")?.rowId).toBe("lk");
+    expect(theirs.byClaim.has("A")).toBe(false);
+  });
+
+  it("ties a hospital bill to its claims and the same patient's doctors seen there, adding up exactly", () => {
+    const cs = [
+      claim("H", { provider: "Elmton Hospital", yourShareCents: 61_000, firstDate: "2025-04-01", lastDate: "2025-04-01" }),
+      claim("D", { provider: "Casey R Wu", yourShareCents: 7_350, firstDate: "2025-04-01", lastDate: "2025-04-01" }),
+      claim("X", { provider: "Casey R Wu", patient: "Rowan", yourShareCents: 7_350, firstDate: "2025-04-01", lastDate: "2025-04-01" }),
+    ];
+    const { allByClaim } = matchClaimPayments(cs, [row("bill", { date: "2025-05-01", amountCents: -68_350, payee: "ELMTON HOSPITAL PATIENT PMT", medical: true })]);
+    expect(allByClaim.get("H")?.[0]).toMatchObject({ rowId: "bill", how: "GROUP", claimIds: ["H", "D"] });
+    expect(allByClaim.has("X")).toBe(false);
+  });
+
+  it("never lets a shop in the hospital's town pay its claims together", () => {
+    const cs = [claim("H", { provider: "Elmton Hospital", yourShareCents: 4_200 }), claim("D", { provider: "Casey R Wu", yourShareCents: 1_310 })];
+    const { byClaim } = matchClaimPayments(cs, [row("shop", { amountCents: -5_510, payee: "GROCER #12 ELMTON ST", medical: false })]);
+    expect(byClaim.size).toBe(0);
+  });
+});
+
+describe("matchClaimPayments: bills paid in parts, before a reprocess, or not in full", () => {
+  it("ties a bill to the claim's two parts on one EOB and the doctors seen that day", () => {
+    const cs = [
+      claim("H0", { provider: "Elmton Hospital", yourShareCents: 41_200 }),
+      claim("H1", { provider: "Elmton Hospital", yourShareCents: 3_310 }),
+      claim("D1", { provider: "Casey R Wu", yourShareCents: 233 }),
+      claim("D2", { provider: "Jo B Park", yourShareCents: 187 }),
+    ];
+    const { allByClaim } = matchClaimPayments(cs, [row("bill", { amountCents: -44_930, payee: "ELMTON HOSPITAL PATIENT PMT", medical: true })]);
+    for (const id of ["H0", "H1", "D1", "D2"]) expect(allByClaim.get(id)?.[0]?.rowId).toBe("bill");
+  });
+
+  it("ties a bill paid at what a claim said before the insurer reprocessed it", () => {
+    const cs = [claim("A", { yourShareCents: 0, earlierShares: [6_420] }), claim("B", { yourShareCents: 2_710 })];
+    const { allByClaim } = matchClaimPayments(cs, [row("bill", { amountCents: -9_130, medical: true })]);
+    const pay = allByClaim.get("A")?.[0];
+    expect(pay).toMatchObject({ rowId: "bill", how: "GROUP" });
+    expect(pay?.shares).toEqual(expect.arrayContaining([{ claimId: "A", cents: 6_420 }, { claimId: "B", cents: 2_710 }]));
+    // Only what the EOBs say now was owed can be reimbursed: the reprocessed part is the provider's to refund.
+    expect(eobOwedOf(pay!, cs)).toBe(2_710);
+  });
+
+  it("ties installments to one office adding up to the claim, starting at the visit", () => {
+    const c = claim("A", { provider: "Dana K Moss", yourShareCents: 31_150, firstDate: "2025-03-03", lastDate: "2025-03-03" });
+    const pt = (id: string, date: string, cents: number) => row(id, { date, amountCents: -cents, payee: "PT *RIVERBEND CLINIC 0001 ELMTON ST", medical: true });
+    const { allByClaim } = matchClaimPayments([c], [pt("i1", "2025-03-03", 3_000), pt("i2", "2025-04-10", 21_300), pt("i3", "2025-07-01", 6_850)]);
+    expect([...(allByClaim.get("A") ?? [])].sort((a, b) => a.date.localeCompare(b.date)).map((p) => [p.rowId, p.how])).toEqual([
+      ["i1", "INSTALLMENT"],
+      ["i2", "INSTALLMENT"],
+      ["i3", "INSTALLMENT"],
+    ]);
+  });
+
+  it("ties a provider's payment for less than the claim as part of it, to the latest EOB before it", () => {
+    const cs = [claim("A", { yourShareCents: 52_000, statementDate: "2025-03-20" }), claim("B", { yourShareCents: 8_000, firstDate: "2025-04-01", lastDate: "2025-04-01", statementDate: "2025-04-20" })];
+    const { allByClaim } = matchClaimPayments(cs, [row("p", { date: "2025-04-25", amountCents: -5_000, medical: true })]);
+    expect(allByClaim.get("B")?.[0]).toMatchObject({ rowId: "p", how: "PARTIAL" });
+    expect(allByClaim.has("A")).toBe(false);
+  });
+
+  it("takes a health-filed payee for exactly the share, never an insurer's", () => {
+    const c = claim("A", { provider: "Morgan Q Ellery", yourShareCents: 2_390 });
+    expect(matchClaimPayments([c], [row("u", { payee: "UNIV MED SCHOOL WEB", health: true })]).byClaim.size).toBe(0);
+    expect(matchClaimPayments([c], [row("u", { payee: "UNIV MED SCHOOL WEB", health: true, amountCents: -2_390 })]).byClaim.get("A")?.how).toBe("MEDICAL");
+    expect(matchClaimPayments([c], [row("i", { payee: "ACME AUTO INSURANCE", health: true, amountCents: -2_390 })]).byClaim.size).toBe(0);
+  });
+
+  it("takes all of one office's charges on the day of care, never the hospital garage", () => {
+    const c = claim("A", { provider: "", yourShareCents: 70_000, firstDate: "2025-05-01", lastDate: "2025-05-01" });
+    const eye = (id: string, cents: number) => row(id, { date: "2025-05-02", amountCents: -cents, payee: "Card: Elmton Eye Associates, ST", fromHsa: true });
+    const { allByClaim } = matchClaimPayments([c], [eye("e1", 41_000), eye("e2", 12_000), row("park", { date: "2025-05-01", amountCents: -300, payee: "SELF PARKING 1 HOSPITAL PLAZA", medical: true })]);
+    expect(allByClaim.get("A")?.map((p) => p.rowId).sort()).toEqual(["e1", "e2"]);
+  });
+});
+
+describe("standingVersions", () => {
+  const v = (id: string, version: number, statementDate: string, o: Partial<ClaimView> = {}) => ({ id, version, statementDate, planCents: 0, alreadyPaidCents: 0, yourShareCents: 0, ...o }) as ClaimView;
+  it("keeps versions on one EOB as parts, and lets a later one replace the version it reprocessed", () => {
+    const out = standingVersions([v("X00", 0, "2025-02-01", { planCents: 7_700, yourShareCents: 6_420 }), v("X01", 1, "2025-02-01", { yourShareCents: 2_710 }), v("X02", 2, "2025-06-01", { alreadyPaidCents: 7_700 })]);
+    expect(out.map((x) => [x.claim.id, x.replaced.map((r) => r.id)])).toEqual([
+      ["X02", ["X00"]],
+      ["X01", []],
+    ]);
+  });
+  it("replaces the latest version when the reprocess doesn't say which", () => {
+    const out = standingVersions([v("Y00", 0, "2025-02-01"), v("Y01", 1, "2025-05-01")]);
+    expect(out.map((x) => x.claim.id)).toEqual(["Y01"]);
   });
 });
 

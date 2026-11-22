@@ -15,6 +15,9 @@ import type { EobStatement, PendingEob, PlanDocument } from "./types.ts";
 
 const memo = new WeakMap<object, MedicalReport>();
 
+/** The spending category care is filed under (with insurance, salons and the like). */
+const HEALTH = /health/i;
+
 /** The rows that could have paid a provider: card and bank spending, and the HSA paying one directly. */
 export function paymentRows(book: Pick<Book, "rows" | "accounts">): PaymentRowIn[] {
   const accounts = new Map(book.accounts.map((a) => [a.id, a]));
@@ -24,7 +27,7 @@ export function paymentRows(book: Pick<Book, "rows" | "accounts">): PaymentRowIn
     const hsa = a?.group === "Health savings";
     if (hsa ? withdrawalKind(r) !== "DIRECT" : r.lane !== "EXPENSE") return [];
     const medical = !hsa && qualifyPayee(r.payee, r.detail, { category: r.category, byOwner: ownerFiled(r.classifiedBy) }) != null;
-    return [{ id: r.id, date: r.date, amountCents: r.amountCents, payee: r.payee, account: a?.name ?? "", fromHsa: hsa, medical }];
+    return [{ id: r.id, date: r.date, amountCents: r.amountCents, payee: r.payee, account: a?.name ?? "", fromHsa: hsa, medical, health: HEALTH.test(r.category) }];
   });
 }
 
@@ -48,14 +51,16 @@ export function medicalReportOf(book: Book): MedicalReport {
   const plans = book.medical?.plans ?? [];
   // Claims first without payments, to know what to match; then the report with them.
   const bare = buildMedicalReport({ statements, pending, planDocs, plans, today: book.today });
-  const { byClaim } = matchClaimPayments(bare.claims.map(claimLite), statements.length ? paymentRows(book) : []);
+  const { allByClaim } = matchClaimPayments(bare.claims.map(claimLite), statements.length ? paymentRows(book) : []);
   const report = buildMedicalReport({
     statements,
     pending,
     planDocs,
     plans,
     today: book.today,
-    payments: byClaim,
+    payments: allByClaim,
+    // A test's partial Book may have no edge: then nothing counts as awaited.
+    statementsThrough: book.horizon?.netWorth ?? null,
     premiums: premiumLines(book.stubs),
     hsaPay: book.stubs.map((s) => {
       const a = amountsFromLines(s.lines, "current");
@@ -77,10 +82,11 @@ export const claimLite = (c: MedicalReport["claims"][number]): ClaimLite => ({
   file: c.file,
   yourShareCents: c.yourShareCents,
   planCents: c.planCents,
+  earlierShares: c.earlier.map((e) => e.yourShareCents),
 });
 
 export function hsaEob(book: Book): HsaEobIn {
   const r = medicalReportOf(book);
-  const payments = [...new Map(r.claims.flatMap((c) => (c.payment ? [[c.payment.rowId, c.payment] as const] : []))).values()];
+  const payments = [...new Map(r.claims.flatMap((c) => c.payments.map((p) => [p.rowId, p] as const))).values()];
   return { claims: r.claims.map(claimLite), payments };
 }
