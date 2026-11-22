@@ -89,12 +89,12 @@ export function TaxAccountsClient({ requiresApiSecret }: { requiresApiSecret: bo
             </div>
             {r.warnings.map((w) => (
               <Callout key={w} tone="bad" title="Check this">
-                {w}
+                {excessCallout(r, w) ?? w}
               </Callout>
             ))}
             {r.notices.map((n) => (
               <Callout key={n} tone="good" title="Settled">
-                {n}
+                {excessCallout(r, n) ?? n}
               </Callout>
             ))}
             {r.people.map((p) => (
@@ -158,6 +158,27 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
   );
 }
 
+/** An excess-deferral message with its amounts drawn as figures (deferrals, excess, limit, the withdrawal), or null for any other message. */
+function excessCallout(r: TaxAccountsReport, text: string): ReactNode {
+  const p = r.people.find((x) => x.k401.excessNote?.text === text);
+  if (!p) return null;
+  const k = (d: Omit<AccountLimitsDescriptor, "report" | "year" | "account" | "personId">, cents: number) => lim(r, { account: "k401", personId: p.id, ...d }, cents);
+  const t = p.k401.total;
+  const deferred = t.projected !== t.ytd ? k({ figure: "projected" }, t.projected) : k({ figure: "used" }, t.ytd);
+  const back = p.k401.excessDeferral?.returned;
+  return (
+    <>
+      {p.name}&apos;s {r.year} 401(k) deferrals (<Fig proof={deferred} cents={t.projected} />) were <Fig proof={k({ figure: "excess" }, p.k401.excess)} cents={p.k401.excess} /> over the{" "}
+      <Fig proof={k({ figure: "limit" }, p.k401.limit)} cents={p.k401.limit} /> limit. {p.k401.excessNote!.tail}
+      {back && (
+        <>
+          {" "}Withdrawn: <Fig proof={k({ figure: "returned" }, back.cents)} cents={back.cents} />.
+        </>
+      )}
+    </>
+  );
+}
+
 /** " Filling it saves ≈$X of tax." for an open pre-tax limit, when a marginal rate is known: the step's own proof (room × the rate). */
 const savesNote = (r: TaxAccountsReport, id: string) => {
   const s = r.steps.find((x) => x.id === id);
@@ -215,6 +236,10 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
   const h = (d: Omit<AccountLimitsDescriptor, "report" | "year" | "account" | "personId">, cents: number) => lim(r, { account: "hsa", personId: p.id, ...d }, cents);
   const i = (d: Omit<AccountLimitsDescriptor, "report" | "year" | "account" | "personId">, cents: number) => lim(r, { account: "ira", personId: p.id, ...d }, cents);
   const room = <Fig proof={k({ figure: "room" }, p.k401.room)} cents={p.k401.room} />;
+  const b = (d: Omit<AccountLimitsDescriptor, "report" | "year" | "account" | "personId">, cents: number) => lim(r, { account: "backdoor", personId: p.id, ...d }, cents);
+  const share = (figure: "roth-share" | "deductible-share", ratio: number) => (
+    <ProofValue proof={{ descriptor: { report: "account-limits", year: r.year, account: "ira", personId: p.id, figure }, shownCents: null, shown: { ratio } }}>{formatPercentRatio(ratio, 0)}</ProofValue>
+  );
   return (
     <Card
       title={
@@ -244,7 +269,7 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
                 <>
                   {p.k401.room && p.k401.perPaycheckToMax ? (
                     <>
-                      {room} short of the limit: about {usd0(p.k401.perPaycheckToMax)} more per paycheck fills it.
+                      {room} short of the limit: about <Fig proof={k({ figure: "per-paycheck" }, p.k401.perPaycheckToMax)} cents={p.k401.perPaycheckToMax} /> more per paycheck fills it.
                     </>
                   ) : p.k401.room ? (
                     <>{room} of room.</>
@@ -274,7 +299,14 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
             proofs={{ used: i({ figure: "used" }, p.ira.total), limit: i({ figure: "limit" }, p.ira.limit) }}
             sub={
               <>
-                {p.ira.contributions.map((c) => `${c.account}: ${usd0(c.cents)}`).join(" · ") || "None this year."} <Fig proof={i({ figure: "room" }, p.ira.room)} cents={p.ira.room} /> of room.
+                {p.ira.contributions.length
+                  ? p.ira.contributions.map((c, n) => (
+                      <span key={c.account}>
+                        {n > 0 && " · "}
+                        {c.account}: <Fig proof={i({ figure: "contributed", item: c.account }, c.cents)} cents={c.cents} />
+                      </span>
+                    ))
+                  : "None this year."} <Fig proof={i({ figure: "room" }, p.ira.room)} cents={p.ira.room} /> of room.
               </>
             }
           />
@@ -304,7 +336,16 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
           </div>
           {p.k401.match && (
             <p className="text-[11px] text-muted">
-              Match: {usd0(p.k401.match.fullMatchDeferral)} of deferrals earns all of it{p.k401.match.shortfall ? ` — ${usd0(p.k401.match.shortfall)} short` : " — captured"}.{savesNote(r, `match-${p.id}`)}
+              Match: <Fig proof={k({ figure: "match-deferral" }, p.k401.match.fullMatchDeferral)} cents={p.k401.match.fullMatchDeferral} /> of deferrals earns all of it
+              {p.k401.match.shortfall ? (
+                <>
+                  {" — "}
+                  <Fig proof={k({ figure: "match-short" }, p.k401.match.shortfall)} cents={p.k401.match.shortfall} /> short
+                </>
+              ) : (
+                " — captured"
+              )}
+              .{savesNote(r, `match-${p.id}`)}
             </p>
           )}
           <div className="rounded-md border border-line p-3">
@@ -314,8 +355,8 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
                 ? "Direct Roth contributions allowed in full."
                 : p.ira.rothDirectShare === 0
                   ? `Household MAGI is above the direct Roth limit — use the backdoor (non-deductible traditional, then convert).`
-                  : `Direct Roth limited to ${formatPercentRatio(p.ira.rothDirectShare, 0)} of the limit at this MAGI.`}{" "}
-              Traditional IRA deduction: {p.ira.deductibleShare === 1 ? "full" : p.ira.deductibleShare === 0 ? "none (covered by a workplace plan)" : formatPercentRatio(p.ira.deductibleShare, 0)}.
+                  : <>Direct Roth limited to {share("roth-share", p.ira.rothDirectShare)} of the limit at this MAGI.</>}{" "}
+              Traditional IRA deduction: {p.ira.deductibleShare === 1 ? "full" : p.ira.deductibleShare === 0 ? "none (covered by a workplace plan)" : share("deductible-share", p.ira.deductibleShare)}.
             </p>
           </div>
           <div className="rounded-md border border-line p-3">
@@ -324,9 +365,21 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
               {p.backdoor.pretaxIraCents > 0 ? <Badge tone="warn">pro-rata risk</Badge> : <Badge tone="pos">clean</Badge>}
             </div>
             <p className="text-muted">
-              Converted {usd0(p.backdoor.conversions)} on {usd0(p.backdoor.basis)} of after-tax basis; ≈{usd0(p.backdoor.taxableConversion)} taxable.{" "}
+              Converted <Fig proof={b({ figure: "converted" }, p.backdoor.conversions)} cents={p.backdoor.conversions} /> on <Fig proof={b({ figure: "basis" }, p.backdoor.basis)} cents={p.backdoor.basis} /> of after-tax basis; ≈
+              <Fig proof={b({ figure: "taxable" }, p.backdoor.taxableConversion)} cents={p.backdoor.taxableConversion} /> taxable.{" "}
               {p.backdoor.pretaxIraCents > 0
-                ? `Pre-tax IRA money (${p.backdoor.pretaxAccounts.map((a) => `${a.name} ${usd0(a.cents)}`).join(", ")}) on ${r.isCurrentYear ? "the latest statement" : "December 31"} makes part of any conversion taxable — rolling it into the 401(k) before year end avoids that.`
+                ? (
+                    <>
+                      Pre-tax IRA money (
+                      {p.backdoor.pretaxAccounts.map((a, n) => (
+                        <span key={a.name}>
+                          {n > 0 && ", "}
+                          {a.name} <Fig proof={b({ figure: "pretax", item: a.name }, a.cents)} cents={a.cents} />
+                        </span>
+                      ))}
+                      ) on {r.isCurrentYear ? "the latest statement" : "December 31"} makes part of any conversion taxable — rolling it into the 401(k) before year end avoids that.
+                    </>
+                  )
                 : `No pre-tax IRA money ${r.isCurrentYear ? "on the latest statements" : "on December 31"}, so conversions are taxed only on growth before converting.`}
             </p>
           </div>

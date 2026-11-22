@@ -147,23 +147,31 @@ export function excessDeferral(book: Book, personId: string, year: number, exces
  * is left to do (returned on time); the excess is income for the year it was deferred
  * either way, and the Taxes page counts it.
  */
-export function excessDeferralMessage(name: string, year: number, limit: number, deferred: number, e: ExcessDeferral): { ok: boolean; text: string } {
+/**
+ * What an excess deferral means, in words. `text` is the whole message; `tail` is what
+ * follows its opening sentence with no amount in it (the withdrawal's amount is left out),
+ * for a page that draws the deferrals, excess, limit and withdrawal as figures of their own.
+ */
+export function excessDeferralMessage(name: string, year: number, limit: number, deferred: number, e: ExcessDeferral): { ok: boolean; text: string; tail: string } {
   const head = `${name}'s ${year} 401(k) deferrals (${dollars(deferred)}) were ${dollars(e.excess)} over the ${dollars(limit)} limit.`;
   const taxed = `The excess counts as ${year} income, in other income on the Taxes page.`;
   const r = e.returned;
-  const proof = r
-    ? `${r.account} shows a ${dollars(r.cents)} withdrawal (statement ${r.statement.start} to ${r.statement.end})${r.deposit ? `, deposited to ${r.deposit.account} on ${r.deposit.date}` : ", but no bank deposit of that amount was found"}.`
-    : "";
-  switch (e.status) {
-    case "RETURNED":
-      return { ok: true, text: `${head} It was returned before ${e.deadline}: ${proof} ${taxed}` };
-    case "RETURNED_LATE":
-      return { ok: false, text: `${head} It was returned, but not provably by ${e.deadline}: ${proof} If it came out after the deadline it's taxed again in the year withdrawn. ${taxed}` };
-    case "AWAITING":
-      return { ok: false, text: `${head} No corrective withdrawal is on the plan statements yet; ask the plan to return it by ${e.deadline}, or it's taxed again when withdrawn. ${taxed}` };
-    case "NOT_RETURNED":
-      return { ok: false, text: `${head} The plan statements through ${e.deadline} show no corrective withdrawal, so it's taxed again when it's eventually withdrawn. ${taxed}` };
-  }
+  const proofOf = (amount: string) =>
+    r ? `${r.account} shows a ${amount}withdrawal (statement ${r.statement.start} to ${r.statement.end})${r.deposit ? `, deposited to ${r.deposit.account} on ${r.deposit.date}` : ", but no bank deposit of that amount was found"}.` : "";
+  const rest = (proof: string): { ok: boolean; tail: string } => {
+    switch (e.status) {
+      case "RETURNED":
+        return { ok: true, tail: `It was returned before ${e.deadline}: ${proof} ${taxed}` };
+      case "RETURNED_LATE":
+        return { ok: false, tail: `It was returned, but not provably by ${e.deadline}: ${proof} If it came out after the deadline it's taxed again in the year withdrawn. ${taxed}` };
+      case "AWAITING":
+        return { ok: false, tail: `No corrective withdrawal is on the plan statements yet; ask the plan to return it by ${e.deadline}, or it's taxed again when withdrawn. ${taxed}` };
+      case "NOT_RETURNED":
+        return { ok: false, tail: `The plan statements through ${e.deadline} show no corrective withdrawal, so it's taxed again when it's eventually withdrawn. ${taxed}` };
+    }
+  };
+  const full = rest(proofOf(r ? `${dollars(r.cents)} ` : ""));
+  return { ok: full.ok, text: `${head} ${full.tail}`, tail: rest(proofOf("")).tail };
 }
 
 // ---------------------------------------------------------------------------- IRAs

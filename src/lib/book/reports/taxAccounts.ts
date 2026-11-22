@@ -66,6 +66,8 @@ export type PersonAccounts = {
     excess: number;
     /** Whether the plan returned the excess, and the statements that show it. */
     excessDeferral: ExcessDeferral | null;
+    /** The excess in words (notices or warnings hold `text`; a page drawing its amounts as figures uses `tail`). */
+    excessNote: { ok: boolean; text: string; tail: string } | null;
     room: number;
     perPaycheckToMax: number | null;
     employers: EmployerPlan[];
@@ -244,10 +246,8 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
     // The excess (and whether it was returned) is the Taxes page's, which counts it as income.
     const excessDeferred = taxPerson ? taxPerson.k401.excessDeferral : excessDeferral(book, person.id, year, pos(total.projected - limit));
     const excess = excessDeferred?.excess ?? 0;
-    if (excessDeferred) {
-      const m = excessDeferralMessage(person.name, year, limit, total.projected, excessDeferred);
-      (m.ok ? notices : warnings).push(m.text);
-    }
+    const excessNote = excessDeferred ? excessDeferralMessage(person.name, year, limit, total.projected, excessDeferred) : null;
+    if (excessNote) (excessNote.ok ? notices : warnings).push(excessNote.text);
     const room = pos(limit - total.projected);
 
     // Prior-year FICA wages from this employer decide whether catch-ups must be Roth (2026+).
@@ -329,6 +329,7 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
         total,
         excess,
         excessDeferral: excessDeferred,
+        excessNote,
         room,
         perPaycheckToMax: remainingPaychecks ? Math.ceil(room / remainingPaychecks) : null,
         employers: empRows,

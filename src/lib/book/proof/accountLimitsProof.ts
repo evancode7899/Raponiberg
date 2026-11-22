@@ -6,7 +6,7 @@ import { taxYearParams, TAX_YEARS } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY, type RetirementSettings } from "../../taxAccounts/settings.ts";
 import type { Book, BookRow } from "../load.ts";
 import { buildTaxAccounts, STUB_CHECKS, type Amount, type EmployerPlan, type PersonAccounts, type TaxAccountsReport } from "../reports/taxAccounts.ts";
-import { accountOwner, chetYear, IRA_SUBTYPES } from "../taxAdvantaged.ts";
+import { accountOwner, chetYear, IRA_SUBTYPES, taxableConversion } from "../taxAdvantaged.ts";
 import type { CheckId } from "../types.ts";
 import { checksFor, estimatesFor, perBook, sumCheck } from "./common.ts";
 import { taxYearThrough } from "../blockers.ts";
@@ -30,8 +30,26 @@ import type { ChainLine, Proof, ProofBlock, ProofCheck, ProofContext, ProofEstim
  *  - Room and excess: limit − counted, each side opening its own proof.
  */
 
-export type LimitAccount = "k401" | "hsa" | "ira" | "chet" | "steps";
-export type LimitFigure = "used" | "projected" | "limit" | "room" | "excess" | "tax-saved";
+export type LimitAccount = "k401" | "hsa" | "ira" | "chet" | "steps" | "backdoor";
+export type LimitFigure =
+  | "used"
+  | "projected"
+  | "limit"
+  | "room"
+  | "excess"
+  | "tax-saved"
+  // The per-person card's notes: to fill the 401(k), the match, an excess's return, Roth and deduction shares, the backdoor check.
+  | "per-paycheck"
+  | "match-deferral"
+  | "match-short"
+  | "returned"
+  | "contributed"
+  | "roth-share"
+  | "deductible-share"
+  | "converted"
+  | "basis"
+  | "taxable"
+  | "pretax";
 
 export type AccountLimitsDescriptor = {
   report: "account-limits";
@@ -46,14 +64,17 @@ export type AccountLimitsDescriptor = {
   part?: "employee" | "employer";
   /** steps tax-saved: one step's (its id, "hsa-<person>"), as the page notes it beside that account; omitted for every open step together. */
   step?: string;
+  /** ira contributed / backdoor pretax: one account, by the name the page shows. */
+  item?: string;
 };
 
 const FIGURES: Record<LimitAccount, LimitFigure[]> = {
-  k401: ["used", "projected", "limit", "room", "excess"],
+  k401: ["used", "projected", "limit", "room", "excess", "per-paycheck", "match-deferral", "match-short", "returned"],
   hsa: ["used", "projected", "limit", "room"],
-  ira: ["used", "limit", "room"],
+  ira: ["used", "limit", "room", "contributed", "roth-share", "deductible-share"],
   chet: ["used", "limit", "room"],
   steps: ["room", "tax-saved"],
+  backdoor: ["converted", "basis", "taxable", "pretax"],
 };
 
 /** Statement problems that make IRA and CHET contributions unprovable. */
@@ -66,12 +87,14 @@ export function parseAccountLimitsDescriptor(d: Record<string, unknown>): Accoun
   const account = d.account as LimitAccount;
   if (!FIGURES[account].includes(d.figure as LimitFigure)) return { error: `${account} figure must be one of: ${FIGURES[account].join(", ")}.` };
   const figure = d.figure as LimitFigure;
-  const perPerson = account === "k401" || account === "hsa" || account === "ira";
+  const perPerson = account === "k401" || account === "hsa" || account === "ira" || account === "backdoor";
   if (perPerson && (typeof d.personId !== "string" || !d.personId)) return { error: "personId must be an id." };
   if (!perPerson && d.personId != null) return { error: `${account} is the household's: no personId.` };
   const flows = figure === "used" || figure === "projected";
   if (d.employer != null && (account !== "k401" || !flows || typeof d.employer !== "string" || !d.employer)) return { error: "employer names one plan of a 401(k) used or projected figure." };
   if (d.part != null && (!(account === "k401" || account === "hsa") || !flows || (d.part !== "employee" && d.part !== "employer"))) return { error: "part (employee or employer) is for 401(k) and HSA used or projected figures." };
+  if (d.item != null && (!((account === "ira" && figure === "contributed") || (account === "backdoor" && figure === "pretax")) || typeof d.item !== "string" || !d.item)) return { error: "item names one account of an IRA contributed or backdoor pretax figure." };
+  if ((figure === "contributed" || figure === "pretax") && d.item == null) return { error: "item (the account) is required." };
   if (d.step != null && (account !== "steps" || figure !== "tax-saved" || typeof d.step !== "string" || !d.step)) return { error: "step names one step of a steps tax-saved figure." };
   return {
     report: "account-limits",
@@ -82,6 +105,7 @@ export function parseAccountLimitsDescriptor(d: Record<string, unknown>): Accoun
     ...(d.employer ? { employer: d.employer as string } : {}),
     ...(d.part ? { part: d.part as "employee" | "employer" } : {}),
     ...(d.step ? { step: d.step as string } : {}),
+    ...(d.item ? { item: d.item as string } : {}),
   };
 }
 
@@ -91,9 +115,10 @@ const money = (c: number) => (c === 0 ? "$0.00" : formatUsdFromCents(c));
 const pos = (n: number) => Math.max(0, n);
 const total = (lines: ChainLine[]) => lines.reduce((t, l) => t + (l.op === "=" ? 0 : (l.op === "−" ? -1 : 1) * ("cents" in l.value ? l.value.cents : 0)), 0);
 const link = (label: string, d: AccountLimitsDescriptor, patch: Partial<AccountLimitsDescriptor>): ProofLink => {
-  const { employer: _e, part: _p, ...base } = d;
+  const { employer: _e, part: _p, item: _i, ...base } = d;
   void _e;
   void _p;
+  void _i;
   return { label, descriptor: { ...base, ...patch } as AccountLimitsDescriptor };
 };
 
@@ -371,7 +396,7 @@ function roomProof(r: TaxAccountsReport, d: AccountLimitsDescriptor, p: PersonAc
   const counted = d.account === "k401" ? p!.k401.total.projected : d.account === "hsa" ? p!.hsa.total.projected : d.account === "ira" ? p!.ira.total : r.household.chet.contributed;
   const limit = d.account === "k401" ? p!.k401.limit : d.account === "hsa" ? p!.hsa.limit : d.account === "ira" ? p!.ira.limit : r.household.chet.deductionLimit;
   const room = d.account === "k401" ? p!.k401.room : d.account === "hsa" ? p!.hsa.room : d.account === "ira" ? p!.ira.room : r.steps.find((s) => s.id === "chet")?.roomCents ?? pos(limit - counted);
-  const name = { k401: "401(k) deferrals", hsa: "HSA contributions", ira: "IRA contributions", chet: "CHET contributions", steps: "" }[d.account];
+  const name = { k401: "401(k) deferrals", hsa: "HSA contributions", ira: "IRA contributions", chet: "CHET contributions", steps: "", backdoor: "" }[d.account];
   const lines: ChainLine[] = [
     { label: "Limit", value: { cents: limit }, source: "law", link: link("The limit", d, { figure: "limit" }) },
     { op: "−", label: `${name}${proj ? " projected to Dec 31" : ` in ${r.year}`}`, value: { cents: counted }, source: proj && r.isCurrentYear ? "estimate" : "proven", link: link(name, d, { figure: proj ? "projected" : "used" }) },
@@ -395,7 +420,7 @@ function roomProof(r: TaxAccountsReport, d: AccountLimitsDescriptor, p: PersonAc
       ],
     });
   return {
-    describes: `${p ? `${p.name} · ` : ""}${{ k401: "401(k)", hsa: "HSA", ira: "IRA", chet: "CHET 529 deduction", steps: "" }[d.account]} room left, ${r.year}`,
+    describes: `${p ? `${p.name} · ` : ""}${{ k401: "401(k)", hsa: "HSA", ira: "IRA", chet: "CHET 529 deduction", steps: "", backdoor: "" }[d.account]} room left, ${r.year}`,
     figure: { cents: room },
     selfCheck: sumCheck(room, pos(limit - counted), `${money(limit)} − ${money(counted)}${counted > limit ? " is below zero, so no room" : ` is ${money(limit - counted)}`}`),
     blocks,
@@ -503,6 +528,118 @@ function stepsProof(r: TaxAccountsReport, d: AccountLimitsDescriptor): Built {
   };
 }
 
+// ------------------------------------------------------------------- the per-person card's notes
+
+const NOTED: LimitFigure[] = ["per-paycheck", "match-deferral", "match-short", "returned", "contributed", "roth-share", "deductible-share", "converted", "basis", "taxable", "pretax"];
+
+/** The figures in each person's card beyond limit, used and room: each worked from the report's own parts, linking to theirs. */
+function notedProof(book: Book, r: TaxAccountsReport, d: AccountLimitsDescriptor, p: PersonAccounts): Built {
+  const same = (v: number, explain: string) => sumCheck(v, v, explain);
+  const ratioCheck = (v: number, again: number, explain: string) => ({ ok: Math.abs(v - again) < 1e-9, deltaCents: 0, explain });
+  const at = (account: LimitAccount, figure: LimitFigure, extra: Partial<AccountLimitsDescriptor> = {}): AccountLimitsDescriptor => ({ report: "account-limits", year: r.year, account, figure, personId: p.id, ...extra });
+  const one = (describes: string, figure: Proof["figure"], lines: ChainLine[], selfCheck: Built["selfCheck"] = null): Built => ({ describes: `${p.name} · ${describes}, ${r.year}`, figure, selfCheck, blocks: [{ kind: "chain", title: describes[0]!.toUpperCase() + describes.slice(1), lines }] });
+  const params = taxYearParams(r.year).federal.retirement;
+  switch (d.figure) {
+    case "per-paycheck": {
+      const v = p.k401.perPaycheckToMax ?? 0;
+      return one(
+        "401(k): more per paycheck to fill it",
+        { cents: v },
+        [
+          { label: "Room left", value: { cents: p.k401.room }, source: "derived", link: { label: "Room left", descriptor: at("k401", "room") } },
+          { op: "÷", label: `Paychecks left in ${r.year}`, value: { text: String(p.remainingPaychecks) }, source: "estimate", note: "The active employer's pay schedule to December 31." },
+          { op: "=", label: "More per paycheck (rounded up to the cent)", value: { cents: v }, source: "derived" },
+        ],
+        p.remainingPaychecks ? sumCheck(v, Math.ceil(p.k401.room / p.remainingPaychecks), `${money(p.k401.room)} ÷ ${p.remainingPaychecks}, rounded up`) : null,
+      );
+    }
+    case "match-deferral":
+    case "match-short": {
+      const m = p.k401.match!;
+      const active = p.k401.employers[0];
+      const full: ChainLine[] = [
+        { label: "Projected gross pay at the active employer", value: { cents: Math.round(m.fullMatchDeferral / m.upTo) }, source: "estimate", note: "The year's pay stubs, run to December 31 on the shared forecast (rounded: the deferral below is what's exact)." },
+        { op: "×", label: "Share of pay the match covers (typed on Inputs)", value: { ratio: m.upTo }, source: "assumption" },
+        { op: "=", label: "Deferral that earns the whole match", value: { cents: m.fullMatchDeferral }, source: "derived" },
+      ];
+      if (d.figure === "match-deferral") return one("401(k): deferral that earns the whole match", { cents: m.fullMatchDeferral }, full, same(m.fullMatchDeferral, "The report's own match formula: projected gross × the share typed on Inputs"));
+      const yours = active?.employee.projected ?? 0;
+      return one(
+        "401(k): short of the whole match",
+        { cents: m.shortfall },
+        [
+          { label: "Deferral that earns the whole match", value: { cents: m.fullMatchDeferral }, source: "derived", link: { label: "How it's worked out", descriptor: at("k401", "match-deferral") } },
+          { op: "−", label: `Your deferrals at ${active?.employer ?? "the active employer"}, projected to Dec 31`, value: { cents: yours }, source: r.isCurrentYear ? "estimate" : "proven", link: { label: "Your deferrals", descriptor: at("k401", "projected", { employer: active?.employer, part: "employee" }) } },
+          { op: "=", label: "Short of it (none once past it)", value: { cents: m.shortfall }, source: "derived" },
+        ],
+        sumCheck(m.shortfall, pos(m.fullMatchDeferral - yours), `${money(m.fullMatchDeferral)} − ${money(yours)}`),
+      );
+    }
+    case "returned": {
+      const x = p.k401.excessDeferral?.returned;
+      if (!x) return notFound(`${p.name}: no corrective withdrawal on the plan statements, ${r.year}.`);
+      return one("401(k): the excess returned", { cents: x.cents }, [
+        { label: `Withdrawal on ${x.account}'s statement ${x.statement.start} – ${x.statement.end}`, value: { cents: x.cents }, source: "proven", note: x.deposit ? `Deposited to ${x.deposit.account} on ${x.deposit.date}.` : "No bank deposit of that amount was found." },
+      ], same(x.cents, "As the plan's statement prints the withdrawal"));
+    }
+    case "contributed": {
+      const c = p.ira.contributions.find((x) => x.account === d.item);
+      if (!c) return notFound(`${p.name}: no ${r.year} contribution to ${d.item}.`);
+      const rows = c.rowIds.reduce((t, id) => t + (book.rows.find((x) => x.id === id)?.amountCents ?? 0), 0);
+      return one(`IRA contributions to ${c.account}`, { cents: c.cents }, [
+        { label: `Deposits into ${c.account} in ${r.year} (not rollovers, conversions or income)`, value: { cents: c.cents }, source: "proven", note: `${c.rowIds.length} statement row${c.rowIds.length === 1 ? "" : "s"}; the IRA's own proof lists each.`, link: { label: "Every contribution", descriptor: at("ira", "used") } },
+      ], sumCheck(c.cents, rows, `Its ${c.rowIds.length} statement row${c.rowIds.length === 1 ? "" : "s"} re-added come to ${money(rows)}`));
+    }
+    case "roth-share":
+    case "deductible-share": {
+      const roth = d.figure === "roth-share";
+      const spouseCovered = r.people.some((o) => o.id !== p.id && o.ira.coveredByPlan);
+      const range = roth ? params.rothIraPhaseout[r.filingStatus] : p.ira.coveredByPlan ? params.tradIraCoveredPhaseout[r.filingStatus] : params.tradIraSpouseCoveredPhaseout;
+      const share = roth ? p.ira.rothDirectShare : p.ira.deductibleShare;
+      const again = !roth && !p.ira.coveredByPlan && !(spouseCovered && r.filingStatus === "MFJ") ? 1 : r.magi.cents <= range.start ? 1 : r.magi.cents >= range.end ? 0 : (range.end - r.magi.cents) / (range.end - range.start);
+      const which = roth ? "the direct Roth IRA phase-out" : p.ira.coveredByPlan ? "the deduction phase-out for someone a workplace plan covers" : spouseCovered ? "the deduction phase-out when only a spouse is covered" : "no phase-out (no workplace plan in the household)";
+      return one(
+        roth ? "share of the IRA limit allowed as a direct Roth contribution" : "share of a traditional IRA contribution that's deductible",
+        { ratio: share },
+        [
+          { label: "Household MAGI", value: { cents: r.magi.cents }, source: r.magi.source === "TAX_REPORT" ? "derived" : "estimate", note: r.magi.source === "TAX_REPORT" ? "The Taxes page's joint return." : "Wages after pre-tax deductions from the pay stubs; investment income isn't counted, so it errs low." },
+          { label: `Phase-out range (${which})`, value: { text: `${money(range.start)} – ${money(range.end)}` }, source: "law" },
+          { op: "=", label: "Allowed: (top of the range − MAGI) ÷ the range's width, between 0 and 1", value: { ratio: share }, source: "derived" },
+        ],
+        ratioCheck(share, again, `MAGI ${money(r.magi.cents)} in ${money(range.start)} – ${money(range.end)} gives ${formatPercentRatio(again, 1)}`),
+      );
+    }
+    case "converted":
+    case "basis":
+    case "taxable":
+    case "pretax": {
+      const b = p.backdoor;
+      const proRata = taxableConversion(b.conversions, b.basis, b.pretaxIraCents);
+      if (d.figure === "converted") return one("traditional → Roth IRA conversions", { cents: b.conversions }, [{ label: `Moved from traditional to Roth IRAs in ${r.year}`, value: { cents: b.conversions }, source: "proven", note: "The IRAs' statement rows: out of a traditional IRA into a Roth IRA, or named a conversion." }], same(b.conversions, "As the IRAs' statement rows show it"));
+      if (d.figure === "basis") return one("after-tax basis in traditional IRAs", { cents: b.basis }, [{ label: `Non-deductible traditional IRA contributions, ${r.year}, plus any basis carried forward (typed on Inputs)`, value: { cents: b.basis }, source: "derived", note: "Form 8606's basis: contributions with no deduction come back tax-free." }], same(b.basis, "Contributions as the IRA statements show them, plus the carryforward typed"));
+      if (d.figure === "pretax") {
+        const a = b.pretaxAccounts.find((x) => x.name === d.item);
+        if (!a) return notFound(`${p.name}: no pre-tax IRA money in ${d.item}.`);
+        return one(`pre-tax IRA money in ${a.name}`, { cents: a.cents }, [{ label: `${a.name}, ${r.isCurrentYear ? "on its latest statement" : "on December 31"}`, value: { cents: a.cents }, source: "proven" }], same(a.cents, "As the IRA's statement prints it"));
+      }
+      return one(
+        "taxable part of the conversions",
+        { cents: b.taxableConversion },
+        [
+          { label: "Converted", value: { cents: b.conversions }, source: "proven", link: { label: "Conversions", descriptor: at("backdoor", "converted") } },
+          { label: "After-tax basis", value: { cents: b.basis }, source: "derived", link: { label: "Basis", descriptor: at("backdoor", "basis") } },
+          { label: "Pre-tax IRA money (the pro-rata rule counts it)", value: { cents: b.pretaxIraCents }, source: "proven" },
+          { op: "=", label: "Taxable (the share of the conversion that isn't basis, Form 8606), or the 1099-R's taxable amount for a finished year", value: { cents: b.taxableConversion }, source: "derived" },
+        ],
+        proRata === b.taxableConversion
+          ? sumCheck(b.taxableConversion, proRata, `The pro-rata rule on ${money(b.conversions)}, ${money(b.basis)} of basis and ${money(b.pretaxIraCents)} pre-tax comes to ${money(proRata)}`)
+          : { ok: true, deltaCents: 0, explain: `The year's 1099-R taxable amount, as the Taxes page reads it (the pro-rata estimate would be ${money(proRata)})` },
+      );
+    }
+  }
+  return notFound(`No figure ${d.figure} in ${p.name}'s card.`);
+}
+
 /** One open step's tax saved: its room times the rate on the next pre-tax dollar. */
 function stepSavedProof(r: TaxAccountsReport, id: string): Built {
   const s = pretaxSteps(r).find((x) => x.id === id);
@@ -542,6 +679,7 @@ export function buildAccountLimitsProof(book: Book, inputs: AccountLimitsInputs,
   let built: Built;
   if (d.personId && !p) built = notFound(`No household member ${d.personId}.`);
   else if (d.account === "steps") built = stepsProof(r, d);
+  else if (NOTED.includes(d.figure)) built = notedProof(book, r, d, p!);
   else if (d.figure === "limit") built = limitProof(r, inputs, d, p);
   else if (d.figure === "room") built = roomProof(r, d, p);
   else if (d.figure === "excess") built = excessProof(r, d, p!);

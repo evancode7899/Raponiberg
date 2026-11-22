@@ -104,6 +104,10 @@ describe("401(k) excess deferrals", () => {
     const m = excessDeferralMessage("Pat", 2025, $(23_500), $(24_500.5), e);
     expect(m.ok).toBe(true);
     expect(m.text).toMatch(/returned before 2026-04-15.*counts as 2025 income/);
+    // The tail is the words after the opening sentence with no amount: a page draws those as figures.
+    expect(m.text).toContain("It was returned before 2026-04-15");
+    expect(m.tail).not.toContain("$");
+    expect(m.tail).toContain("shows a withdrawal (statement 2026-01-01 to 2026-03-31)");
   });
 
   it("are awaited until statements cover the deadline, then reported as not returned", () => {

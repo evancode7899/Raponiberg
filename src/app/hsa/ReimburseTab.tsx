@@ -21,6 +21,11 @@ const reimbursable = (r: HsaReport) => r.expenses.filter((e) => !e.reimbursement
  * Oldest-first expenses that fit within `target` without going over: oldest first so the
  * receipts most likely to go missing are cleared first, skipping any that would overshoot.
  */
+/** A withdrawal's amount: its statement row, opening that row's proof (the HSA statement it's on). */
+function RowAmount({ w }: { w: HsaReport["withdrawals"][number] }) {
+  return w.rowId ? <ProofValue proof={{ descriptor: { report: "row", rowId: w.rowId }, shownCents: -w.amountCents }}>{formatUsdCents(w.amountCents)}</ProofValue> : <>{formatUsdCents(w.amountCents)}</>;
+}
+
 export function planWithdrawal(list: ExpenseView[], target: number): ExpenseView[] {
   const out: ExpenseView[] = [];
   let left = target;
@@ -158,7 +163,9 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
                     <td className={table.td}>
                       {w.payee} <span className="text-xs text-muted">· {w.account}</span>
                     </td>
-                    <td className={table.tdR}>{formatUsdCents(w.amountCents)}</td>
+                    <td className={table.tdR}>
+                      <RowAmount w={w} />
+                    </td>
                     <td className={`${table.td} text-xs`}>
                       {w.linkedIds.length ? (
                         <span className="flex flex-wrap items-center gap-2">
@@ -228,7 +235,9 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
                         </div>
                       )}
                     </td>
-                    <td className={table.tdR}>{formatUsdCents(w.amountCents)}</td>
+                    <td className={table.tdR}>
+                      <RowAmount w={w} />
+                    </td>
                     <td className={`${table.td} text-xs`}>
                       {w.linkedIds.length > 0 && (
                         <span className="flex flex-wrap items-center gap-2">
