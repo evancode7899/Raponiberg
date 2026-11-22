@@ -102,7 +102,7 @@ export function checkNetWorth(book: Book, c: Collector) {
       status: "FAIL",
       title: `${p.label}: net worth doesn't reconcile`,
       detail: problems.join("; ") + ".",
-      fix: "A row is in the wrong lane (e.g. an own-account transfer filed as spending), or a lossy transfer needs confirming on Review → Transfers.",
+      fix: "A row is in the wrong lane (e.g. an own-account transfer filed as spending), or a lossy transfer needs confirming on Statements › Transfers.",
       scope: { from: p.start, to: end, affects: ["NET_WORTH", "CASH_FLOW"] },
     });
   }

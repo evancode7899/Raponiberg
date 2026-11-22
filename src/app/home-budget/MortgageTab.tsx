@@ -13,7 +13,7 @@ import { withLinks, type LinkedKey } from "@/lib/mortgage/inputs";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { BalancesChart, GapChart, INVEST, NetWorthChart, OpportunityChart, PREPAY, SensitivityChart, type YearPoint } from "./MortgageCharts";
 import { MortgageInputsPanel } from "./MortgageInputsPanel";
-import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, RETIRED_KEYS, STORAGE_KEY, toPlan, type MortgageInputs } from "./inputs";
+import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, RETIRED_KEYS, STORAGE_KEY, toPlan, type MortgageInputs } from "./mortgageInputs";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 /** The linked figures (api/mortgage/links): each with where it comes from. */
@@ -29,7 +29,8 @@ const span = (months: number) => {
   return y && m ? `${y}y ${m}m` : y ? `${y} yr` : `${m} mo`;
 };
 
-export function MortgageClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
+/** Home & mortgage › Prepay vs invest (was its own page, /mortgage). */
+export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
   const chart = useChartPalette();
   const [ins, setIns, notSaved] = useSavedState<MortgageInputs>(STORAGE_KEY, defaultInputs);

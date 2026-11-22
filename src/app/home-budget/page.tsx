@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { HomeBudgetClient } from "./HomeBudgetClient";
 
 export const metadata: Metadata = {
-  title: "Home budget",
-  description: "Home affordability and rent vs buy",
+  title: "Home & mortgage",
+  description: "Home affordability, rent vs buy, and prepaying the mortgage vs investing",
 };
 
 export const dynamic = "force-dynamic";

@@ -164,7 +164,7 @@ export function TxnList({ api, query, onChanged }: { api: Api; query: TxnQuery; 
           {total?.count ?? rows.length} transactions · net{" "}
           <ProofValue proof={rowsTotal(rows, "net", rows.length === (total?.count ?? rows.length)).proof}>{usd0(rows.reduce((t, r) => t + r.amountCents, 0))}</ProofValue>
         </span>
-        <Link href={`/transactions?${key}`} className={btn.link}>
+        <Link href={`/statements?tab=transactions&${key}`} className={btn.link}>
           Open in Transactions →
         </Link>
       </div>

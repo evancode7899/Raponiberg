@@ -87,7 +87,7 @@ export function checkDecisions(book: Book, c: Collector) {
       status: "FAIL",
       title: `A pairing you rejected is paired again: ${d.legs.map(describe).join(" ↔ ")}`,
       detail: `You rejected it on ${d.rejectedAt.slice(0, 10)}, but the ledger pairs those rows.`,
-      fix: "Refresh the ledger (Settings → Data → Re-run classifier); if it's still paired, unpair it on Review → Transfers.",
+      fix: "Refresh the ledger (Settings → Data → Re-run classifier); if it's still paired, unpair it on Statements › Transfers.",
       scope: scopeOf(d.legs),
     });
   }

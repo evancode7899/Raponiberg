@@ -106,7 +106,7 @@ export function checkTransfers(book: Book, c: Collector) {
           : {
               title: `${nameOf(r.accountId)}: the ${r.date} payment of ${money(r.amountCents)} isn't on a bank statement`,
               detail: `The bill prints "${r.payee}", but no bank rent payment of that amount is within a few days of it. A credit from money paid before the bills on file (a move-in payment, already counted as housing) looks like this.`,
-              fix: "If it came out of money already counted, reclassify it as Housing on Review; otherwise add the statement of the account that paid it.",
+              fix: "If it came out of money already counted, reclassify it as Housing on Statements › Categorize; otherwise add the statement of the account that paid it.",
             }),
         scope,
         date: r.date,
@@ -125,7 +125,7 @@ export function checkTransfers(book: Book, c: Collector) {
         fix:
           candidates.length === 0
             ? "On Review, reclassify it (a payment to an untracked card is spending; money to or from someone else is external), or add that account's statements."
-            : "Pair it by hand on Review → Transfers, or reclassify it if it isn't a transfer between your own accounts (e.g. a payment to a card that isn't tracked is spending).",
+            : "Pair it by hand on Statements › Transfers, or reclassify it if it isn't a transfer between your own accounts (e.g. a payment to a card that isn't tracked is spending).",
         scope,
         date: r.date,
       });

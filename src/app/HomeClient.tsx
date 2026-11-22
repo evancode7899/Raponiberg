@@ -59,7 +59,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
           <Link href="/statements" className={btn.secondary}>
             Import statements
           </Link>
-          <Link href="/transactions" className={btn.secondary}>
+          <Link href="/statements?tab=transactions" className={btn.secondary}>
             Search transactions
           </Link>
         </div>
@@ -299,7 +299,7 @@ function Attention({ d }: { d: Summary }) {
       tone: "info",
       title: `${d.attention.needsReview.toLocaleString()} transactions to categorize`,
       body: "The classifier wasn't sure. One answer per merchant teaches every past and future row.",
-      href: "/review",
+      href: "/statements?tab=categorize",
       cta: "Review",
     });
   return (
@@ -375,7 +375,7 @@ function SpendingVsAverage({ cf }: { cf: Summary["cashFlow"] }) {
             >
               {/* The row opens the month's transactions; its amount opens the amount's proof. */}
               <Link
-                href={`/transactions?category=${encodeURIComponent(c.category)}&from=${lm.start}&to=${lm.end}`}
+                href={`/statements?tab=transactions&category=${encodeURIComponent(c.category)}&from=${lm.start}&to=${lm.end}`}
                 className="grid grid-cols-[minmax(0,11.5rem)_1fr] items-center gap-3 py-1.5 outline-none"
               >
                 <span className="truncate text-fg-2 group-hover:text-fg">{c.category}</span>

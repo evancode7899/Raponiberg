@@ -122,7 +122,7 @@ function AccountRow({
         </span>
       </div>
       <div className="flex items-center gap-2">
-        <Link href={`/transactions?accountId=${a.id}`} className={btn.ghost}>
+        <Link href={`/statements?tab=transactions&accountId=${a.id}`} className={btn.ghost}>
           Transactions
         </Link>
         {candidates.length > 0 && (

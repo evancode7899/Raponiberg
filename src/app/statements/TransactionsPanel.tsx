@@ -73,7 +73,8 @@ function readUrl(): Filters {
   };
 }
 
-export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
+/** Statements › Transactions (was its own page, /transactions): every row, searchable, with its filters in the URL. */
+export function TransactionsPanel({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
   const [f, setF] = useState<Filters | null>(null);
   const [qDraft, setQDraft] = useState("");
@@ -126,7 +127,11 @@ export function TransactionsClient({ requiresApiSecret }: { requiresApiSecret: b
   useEffect(() => {
     if (!query) return;
     const url = new URL(window.location.href);
-    url.search = query.toString();
+    // The filters are the whole query, except the Statements tab this panel sits on.
+    const sp = new URLSearchParams(query);
+    const tab = url.searchParams.get("tab");
+    if (tab) sp.set("tab", tab);
+    url.search = sp.toString();
     window.history.replaceState(null, "", url);
   }, [query]);
 

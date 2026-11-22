@@ -1,14 +1,7 @@
-import type { Metadata } from "next";
-import { ReviewClient } from "./ReviewClient";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Review",
-  description: "Categorize uncertain rows and settle transfers",
-};
-
-export const dynamic = "force-dynamic";
-
-export default function ReviewPage() {
-  const requiresApiSecret = Boolean(process.env.API_SECRET);
-  return <ReviewClient requiresApiSecret={requiresApiSecret} />;
+/** The review queue is on Statements now (its Categorize and Transfers tabs); old links and bookmarks land on the same tab. */
+export default async function ReviewRedirect({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const { tab } = await searchParams;
+  redirect(`/statements?tab=${tab === "transfers" ? "transfers" : "categorize"}`);
 }

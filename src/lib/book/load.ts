@@ -103,7 +103,7 @@ export type BookRow = {
   /**
    * The classifier wasn't sure (a wire out, a check, an unknown refund) or filed no lane.
    * The row counts as filed, and every figure that includes it says so (its proof, the
-   * page) until it's answered on Review.
+   * page) until it's answered on Statements › Categorize.
    */
   needsReview?: boolean;
   transferMatchId: string | null;

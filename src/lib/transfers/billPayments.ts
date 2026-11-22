@@ -17,7 +17,7 @@ type Db = PrismaClient | Prisma.TransactionClient;
  * exactly one set of them does; a printed payment with the one bank row of its amount
  * within a few days. Those bank rows then count as transfers, not spending: the spending
  * is the bill's charges. Anything else (more than one way to add up, or none) is left for
- * the owner, with the cycle's rent payments offered on Review; a difference they confirm
+ * the owner, with the cycle's rent payments offered on Statements › Transfers; a difference they confirm
  * is the landlord changing the bill without itemizing it, and is booked as housing.
  * Housing payments outside every bill's cycle are untouched: rent before the first bill
  * on file stays spending.

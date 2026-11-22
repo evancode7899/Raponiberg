@@ -161,7 +161,7 @@ function Feeds({ f, s, dirty, dp }: { f: Forecast; s: OutlookSeeds; dirty: boole
       <div className="grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-5 xl:divide-x">
         <Feed href="/fire" page="FIRE · FI year" value={fi ?? "60+ yrs"} sub={`${fi && f.plan.birthYear != null ? `age ${fi - f.plan.birthYear} · ` : ""}this path + withdrawal rules`} />
         <Feed href="/taxes" page={`Taxes · bonus to come ${cy}`} value={<ProofValue proof={dp("feed-bonus")}>{short(bonusLeft)}</ProofValue>} sub={basis} />
-        <Feed href="/home-budget" page={`Home budget · liquid Dec ${cy + 1}`} value={<ProofValue proof={dp("feed-liquid")}>{short(balancesAt(f, `${cy + 1}-12`).liquid)}</ProofValue>} sub="cash for a buy in any month" />
+        <Feed href="/home-budget" page={`Home & mortgage · liquid Dec ${cy + 1}`} value={<ProofValue proof={dp("feed-liquid")}>{short(balancesAt(f, `${cy + 1}-12`).liquid)}</ProofValue>} sub="cash for a buy in any month" />
         <Feed href="/goals" page="Goals · into liquid / mo" value={<ProofValue proof={dp("feed-liquid-monthly")}>{short(liquidPerMonth)}</ProofValue>} sub="average change, next 12 months" negative={liquidPerMonth < 0} />
         <Feed
           href="/fire"

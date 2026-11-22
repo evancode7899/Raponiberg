@@ -310,7 +310,7 @@ function Overview({ r }: { r: NetWorthReport }) {
                         {a.isInvestment ? (
                           a.name
                         ) : (
-                          <Link href={`/transactions?accountId=${a.id}`} className="hover:text-accent hover:underline">
+                          <Link href={`/statements?tab=transactions&accountId=${a.id}`} className="hover:text-accent hover:underline">
                             {a.name}
                           </Link>
                         )}
