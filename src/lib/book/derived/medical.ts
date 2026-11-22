@@ -47,7 +47,6 @@ function claimFigures(x: ClaimView): DerivedFigure[] {
         ? [ln("Your share after the other plan paid, as the EOB's COB facts print it", c(x.yourShareCents), undefined, PRINTED)]
         : byLine((l) => l.yourShareCents, x.yourShareCents, "Your share, as the claim's totals print it"),
     ),
-    ...(x.cob ? [add("claim-other", "what the other plan paid first", x.otherPlanCents, [ln("Other plan(s) paid, as the EOB's COB facts print it", c(x.otherPlanCents), undefined, PRINTED)])] : []),
   ];
 }
 
@@ -63,13 +62,17 @@ export const BALANCE_LABEL = { DEDUCTIBLE: "deductible", OUT_OF_POCKET: "out-of-
 function balanceFigures(y: YearView): DerivedFigure[] {
   const b = y.balances;
   if (!b) return [];
-  return b.rows.flatMap((row) => {
+  // The page draws the in-network balances, and what's left only of one not yet met.
+  return b.rows.filter((row) => row.inNetwork).flatMap((row) => {
     const key = balanceKey(y, row);
     const what = `${row.person ?? "the family"}'s ${row.inNetwork ? "in-network" : "out-of-network"} ${BALANCE_LABEL[row.kind]}`;
     const src = `As the EOB of ${row.asOf} prints it (balances ${b.from} to ${b.to}${row.includesPharmacy ? ", medical and pharmacy" : ""})`;
     return [
       { figure: "balance-used", key, describes: `${y.year}: ${what}, used`, value: c(row.usedCents), lines: [ln("Used", c(row.usedCents), undefined, { source: "proven", note: src })] },
       { figure: "balance-limit", key, describes: `${y.year}: ${what}`, value: c(row.limitCents), lines: [ln("Annual limit", c(row.limitCents), undefined, { source: "proven", note: src })] },
+      ...(row.usedCents >= row.limitCents
+        ? []
+        : [
       {
         figure: "balance-left",
         key,
@@ -77,6 +80,7 @@ function balanceFigures(y: YearView): DerivedFigure[] {
         value: c(row.remainingCents),
         lines: [ln("Annual limit", c(row.limitCents), undefined, PRINTED), ln("Used", c(row.usedCents), "−", PRINTED), ln("Left", c(row.limitCents - row.usedCents), "=", { note: src })],
       },
+          ]),
     ];
   });
 }
@@ -101,7 +105,8 @@ function yearFigures(y: YearView, claims: readonly ClaimView[]): DerivedFigure[]
       ln("You owe", c(T.yourShareCents), "−"),
       ln("Discounts and charges you don't owe", c(T.writeOffCents), "="),
     ]),
-    add("claims", "claims processed", t(String(T.claims)), [ln("Claims (an adjusted claim counts once)", t(String(T.claims)))]),
+    // The count takes the fifth cell only in a year no other plan paid first.
+    ...(T.otherPlanCents ? [] : [add("claims", "claims processed", t(String(T.claims)), [ln("Claims (an adjusted claim counts once)", t(String(T.claims)))])]),
     ...moneyFigures(y, xs, add),
     ...balanceFigures(y),
     ...y.people.flatMap((s) => sliceFigures(y, s, "person", claims, (x) => x.patient)),
