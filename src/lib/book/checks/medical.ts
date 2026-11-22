@@ -1,7 +1,7 @@
 import { medicalReportOf } from "../../medical/book.ts";
 import type { MedicalCheck } from "../../medical/report.ts";
 import type { Book } from "../load.ts";
-import type { CheckId, FindingStatus } from "../types.ts";
+import type { CheckId, FindingScope, FindingStatus } from "../types.ts";
 import type { Collector } from "./collector.ts";
 
 /**
@@ -10,7 +10,10 @@ import type { Collector } from "./collector.ts";
  * every other check): each EOB's lines add to its claims and its payment summary is its
  * claims; each plan's limits are the ones its EOBs count against; every health premium on
  * the pay stubs falls in a plan on file; and HSA money from pay falls in an HSA-eligible
- * medical plan. They withhold nothing elsewhere: the EOBs are the Medical page's own source.
+ * medical plan. Only that last withholds anything: HSA money put in without an eligible plan
+ * is taxable wages plus a 6% excise tax the tax engine doesn't model, so a failure withholds
+ * the tax figures of the years those paychecks fall in. The rest withhold nothing: the EOBs
+ * are the Medical page's own source.
  */
 
 const KIND: { prefix: string; check: CheckId; status: FindingStatus; title: (c: MedicalCheck) => string; fix: string }[] = [
@@ -26,7 +29,10 @@ export function checkMedical(book: Book, c: Collector) {
   for (const m of medicalReportOf(book).checks) {
     const k = KIND.find((x) => m.id.startsWith(x.prefix));
     if (!k) continue;
-    const scope = { from: m.date, to: m.date > book.today ? m.date : book.today, affects: [] as [] };
+    const tax = k.check === "medical.hsa-eligible";
+    const scope: FindingScope = tax
+      ? { from: `${m.date.slice(0, 4)}-01-01`, to: `${(m.dateTo ?? m.date).slice(0, 4)}-12-31`, affects: ["TAX"] }
+      : { from: m.date, to: m.date > book.today ? m.date : book.today, affects: [] };
     if (m.ok) c.pass(k.check, { subject: `${m.subject}: ${m.detail}`, ...scope });
     else c.add({ id: m.id, check: k.check, status: k.status, title: k.title(m), detail: m.detail, fix: k.fix, scope, date: m.date });
   }

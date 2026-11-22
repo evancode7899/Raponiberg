@@ -90,7 +90,7 @@ export type YearMoney = {
 };
 
 /** One check over the documents; `date` is the day it is about (the statement, the plan's start, the first premium or paycheck it judges). */
-export type MedicalCheck = { id: string; ok: boolean; subject: string; detail: string; file?: string; date: string };
+export type MedicalCheck = { id: string; ok: boolean; subject: string; detail: string; file?: string; date: string; /** The last day it is about, when it spans several (the last paycheck it fails). */ dateTo?: string };
 
 export type StatementView = { file: string; coverage: Coverage; insurer: string; statementDate: string; claims: number; planCents: number; yourShareCents: number };
 
@@ -373,6 +373,7 @@ export function hsaEligibilityChecks(hsaPay: readonly { payDate: string; employe
       id: "medical.hsa-eligible",
       ok: !bad.length,
       date: (bad[0] ?? judged[0]!).payDate,
+      dateTo: (bad.length ? bad : judged).at(-1)!.payDate,
       subject: "HSA money from pay and the medical plan",
       detail: bad.length
         ? `${bad.length} paycheck${bad.length === 1 ? "" : "s"} put money in the HSA while no medical plan on file in force is HSA-eligible (${bad.slice(0, 4).map((h) => `${h.payDate} at ${h.employer}: ${medicalPlansOn(plans, h.payDate).map((p) => p.name).join(", ")}`).join("; ")}${bad.length > 4 ? "; …" : ""}). Either the plan file's hsaEligible is wrong, or those contributions are excess (Form 8889).`

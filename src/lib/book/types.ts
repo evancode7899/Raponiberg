@@ -340,7 +340,7 @@ export const CHECKS: CheckDef[] = [
   {
     id: "medical.hsa-eligible",
     title: "HSA money from pay falls in an HSA-eligible plan",
-    description: "Each paycheck that puts money in the HSA is dated while an HSA-eligible medical plan on file is in force. Pay on days no plan on file covers isn't judged. Account limits reads the same plans for HSA coverage.",
+    description: "Each paycheck that puts money in the HSA is dated while an HSA-eligible medical plan on file is in force. Pay on days no plan on file covers isn't judged. A failure withholds the tax figures of the years those paychecks fall in: the contributions would be taxable wages plus an excise tax, which the tax estimate doesn't model. Account limits reads the same plans for HSA coverage.",
   },
   {
     id: "tax.params",
