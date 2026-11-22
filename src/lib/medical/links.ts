@@ -103,7 +103,16 @@ const GENERIC = new Set(
 const RETAIL = /\b(?:PARKING|GARAGE|UBER|LYFT|TAXI|CVS|WALGREENS?|DUANE ?READE|RITE ?AID|PHARM|DRUG|TARGET|WAL-?MART|AMAZON|AMZN|COSTCO|SHOPPERS)/i;
 
 /** The words of a name that could tell its provider apart ("RIVERSIDE PEDIATRICS PC" → RIVERSIDE, PEDIATRICS). */
-export function nameWords(name: string): Set<string> {
+export function nameWords(name: string): ReadonlySet<string> {
+  let w = WORDS.get(name);
+  if (!w) WORDS.set(name, (w = readWords(name)));
+  return w;
+}
+
+/** Each name's words, read once: matching compares thousands of rows to every claim. */
+const WORDS = new Map<string, ReadonlySet<string>>();
+
+function readWords(name: string): ReadonlySet<string> {
   return new Set(
     name
       .toUpperCase()
@@ -122,7 +131,20 @@ export function sameProvider(a: string, b: string): boolean {
   return false;
 }
 
-const inWindow = (c: ClaimLite, date: string) => date >= addDays(c.firstDate, -BEFORE_DAYS) && date <= addDays(c.statementDate > c.lastDate ? c.statementDate : c.lastDate, AFTER_DAYS);
+/** The days a claim's payments can fall on: from a few days before the care to well after the EOB; and the day of care itself, for a desk payment. */
+const claimDays = (c: ClaimLite) => ({
+  from: addDays(c.firstDate, -BEFORE_DAYS),
+  to: addDays(c.statementDate > c.lastDate ? c.statementDate : c.lastDate, AFTER_DAYS),
+  visitFrom: addDays(c.firstDate, -1),
+  visitTo: addDays(c.lastDate, 1),
+  deskFrom: addDays(c.firstDate, -VISIT_BEFORE_DAYS),
+  deskTo: addDays(c.lastDate, VISIT_AFTER_DAYS),
+});
+
+const inWindow = (c: ClaimLite, date: string) => {
+  const w = claimDays(c);
+  return date >= w.from && date <= w.to;
+};
 
 /** Billing names a provider's care was paid under (by the provider's name), learned from rows of exactly a claim's share. */
 export type BillingNames = ReadonlyMap<string, readonly (readonly string[])[]>;
@@ -189,7 +211,13 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
   const payments: ClaimPayment[] = [];
   const out = rows.filter((r) => r.amountCents < 0);
   /** 2: the payee names the provider; 1: it carries a billing name the provider's care was paid under; 0: neither. */
-  const named = (c: ClaimLite, r: PaymentRowIn) => (sameProvider(c.provider, r.payee) ? 2 : billedAs(billingNames, c.provider, r.payee) ? 1 : 0);
+  const namedMemo = new Map<string, number>();
+  const named = (c: ClaimLite, r: PaymentRowIn) => {
+    const k = `${c.provider}|${r.payee}`;
+    let n = namedMemo.get(k);
+    if (n === undefined) namedMemo.set(k, (n = sameProvider(c.provider, r.payee) ? 2 : billedAs(billingNames, c.provider, r.payee) ? 1 : 0));
+    return n;
+  };
   const medicalRow = (r: PaymentRowIn) => r.medical || r.fromHsa;
   const careRow = (r: PaymentRowIn) => medicalRow(r) && !RETAIL.test(r.payee);
   /** Exactly a claim's share: medical care, or anything filed under health that isn't an insurer or a salon. */
@@ -217,12 +245,29 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
   const billable = claims.filter((c) => billedAt(c).length).sort((a, b) => a.firstDate.localeCompare(b.firstDate) || a.id.localeCompare(b.id));
   const owed = billable.filter((c) => c.yourShareCents > 0);
   const open = (cs: readonly ClaimLite[] = billable) => cs.filter((c) => !byClaim.has(c.id));
+  // Each claim's days, and the rows inside its window (rows by date, cut by binary search): worked out once.
+  const daysOf = new Map(billable.map((c) => [c.id, claimDays(c)]));
+  const D = (c: ClaimLite) => daysOf.get(c.id)!;
+  const within = (c: ClaimLite, date: string) => date >= D(c).from && date <= D(c).to;
+  const byDate = [...out].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const firstOn = (date: string) => {
+    let lo = 0;
+    let hi = byDate.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (byDate[mid]!.date < date) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const windowRows = new Map(billable.map((c) => [c.id, byDate.slice(firstOn(D(c).from), firstOn(addDays(D(c).to, 1)))]));
+  const rowsFor = (c: ClaimLite) => windowRows.get(c.id)!;
   const days = (a: string, b: string) => Math.abs(daysBetween(a, b));
   const off = (r: PaymentRowIn, cents: number) => Math.abs(-r.amountCents - cents);
-  const free = (c: ClaimLite) => (r: PaymentRowIn) => !used.has(r.id) && inWindow(c, r.date);
+  const free = (c: ClaimLite) => (r: PaymentRowIn) => !used.has(r.id) && within(c, r.date);
   /** Care that day by another claim still unpaid names this row: it's that visit's. */
-  const namesOther = (c: ClaimLite, r: PaymentRowIn) => open().some((o) => o.id !== c.id && r.date >= addDays(o.firstDate, -1) && r.date <= addDays(o.lastDate, 1) && named(o, r) > 0);
-  const onVisitDay = (c: ClaimLite, r: PaymentRowIn) => r.date >= addDays(c.firstDate, -VISIT_BEFORE_DAYS) && r.date <= addDays(c.lastDate, VISIT_AFTER_DAYS);
+  const namesOther = (c: ClaimLite, r: PaymentRowIn) => open().some((o) => o.id !== c.id && r.date >= D(o).visitFrom && r.date <= D(o).visitTo && named(o, r) > 0);
+  const onVisitDay = (c: ClaimLite, r: PaymentRowIn) => r.date >= D(c).deskFrom && r.date <= D(c).deskTo;
 
   /**
    * The one row for a claim among those that `fit`: one naming the provider first, then the
@@ -230,7 +275,7 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
    * rows of different amounts equally close.
    */
   const pick = (c: ClaimLite, fit: (r: PaymentRowIn) => boolean, unnamedOk: (r: PaymentRowIn) => boolean, dist: (r: PaymentRowIn) => number) => {
-    const near = out
+    const near = rowsFor(c)
       .filter((r) => free(c)(r) && fit(r))
       .map((r) => ({ r, named: named(c, r) > 0, direct: named(c, r) === 2, dist: dist(r) }))
       .filter((x) => x.named || unnamedOk(x.r))
@@ -244,7 +289,7 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
 
   // 1. One claim, one row of exactly what it says you owe; never a row the provider's office
   // took on the day of another visit of its own (that's the other visit's desk payment).
-  const otherVisits = (c: ClaimLite, r: PaymentRowIn) => !onVisitDay(c, r) && owed.some((o) => o.id !== c.id && r.date >= addDays(o.firstDate, -1) && r.date <= addDays(o.lastDate, 1) && named(o, r) > 0);
+  const otherVisits = (c: ClaimLite, r: PaymentRowIn) => !onVisitDay(c, r) && owed.some((o) => o.id !== c.id && r.date >= D(o).visitFrom && r.date <= D(o).visitTo && named(o, r) > 0);
   for (const c of owed) {
     const best = pick(c, (r) => off(r, c.yourShareCents) === 0 && !otherVisits(c, r), exactRow, (r) => days(c.firstDate, r.date));
     if (best) record(best.r, [{ c, cents: c.yourShareCents }], best.direct ? "NAME" : "MEDICAL");
@@ -254,7 +299,7 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
   // to one of them, adding up to it exactly (each at what it says now or said before a reprocess).
   for (const r of out) {
     if (used.has(r.id)) continue;
-    const left = open().filter((c) => inWindow(c, r.date));
+    const left = open().filter((c) => within(c, r.date));
     const anchors = new Set(left.filter((c) => named(c, r) > 0));
     if (!anchors.size) continue;
     const pool = left.filter((c) => anchors.has(c) || [...anchors].some((a) => samePatient(a.patient, c.patient) && days(a.firstDate, c.firstDate) <= GROUP_NEAR_DAYS));
@@ -280,7 +325,7 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
   // naming the provider, or one paid at the visit that no other visit that day names.
   for (const c of open()) {
     const rowsOf = new Map<string, PaymentRowIn[]>();
-    for (const r of out) if (free(c)(r) && careRow(r) && r.date >= addDays(c.firstDate, -VISIT_BEFORE_DAYS)) rowsOf.set(payeeKey(r), [...(rowsOf.get(payeeKey(r)) ?? []), r]);
+    for (const r of rowsFor(c)) if (free(c)(r) && careRow(r) && r.date >= D(c).deskFrom) rowsOf.set(payeeKey(r), [...(rowsOf.get(payeeKey(r)) ?? []), r]);
     const found: PaymentRowIn[][] = [];
     for (const rs of rowsOf.values()) {
       if (rs.length < 2) continue;
@@ -314,13 +359,13 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
       let desk = pick(c, fit, () => false, dist);
       if (!desk && unnamed) {
         // Unnamed: the only office that took care money that day (its several charges are one visit).
-        const cands = out.filter((r) => free(c)(r) && fit(r) && !namesOther(c, r)).sort((a, b) => dist(a) - dist(b));
+        const cands = rowsFor(c).filter((r) => free(c)(r) && fit(r) && !namesOther(c, r)).sort((a, b) => dist(a) - dist(b));
         const one = cands.length && cands.every((r) => r.date === cands[0]!.date && payeeKey(r) === payeeKey(cands[0]!));
         if (one) desk = { r: cands[0]!, named: false, direct: false, dist: 0 };
       }
       if (!desk) continue;
       // The office's other charges that day are the same visit's, up to the cap.
-      const sameDay = out.filter((r) => r !== desk.r && free(c)(r) && fit(r) && r.date === desk.r.date && payeeKey(r) === payeeKey(desk.r));
+      const sameDay = rowsFor(c).filter((r) => r !== desk.r && free(c)(r) && fit(r) && r.date === desk.r.date && payeeKey(r) === payeeKey(desk.r));
       const takes = [desk.r];
       for (const r of sameDay) if (takes.reduce((s, x) => s - x.amountCents, 0) - r.amountCents <= visitCap(c.yourShareCents)) takes.push(r);
       for (const r of takes) record(r, [{ c, cents: -r.amountCents }], "VISIT");
@@ -333,7 +378,7 @@ function matchRound(claims: readonly ClaimLite[], rows: readonly PaymentRowIn[],
 
   // 7. Part of a claim: a row from a payee naming the provider, for less than is still owed,
   // after the EOB that billed it (the latest such EOB of that provider's, when several are open).
-  for (const r of [...out].sort((a, b) => a.date.localeCompare(b.date))) {
+  for (const r of byDate) {
     if (used.has(r.id) || !careRow(r)) continue;
     const due = owed.filter((c) => free(c)(r) && named(c, r) > 0 && !otherVisits(c, r) && c.statementDate <= r.date && -r.amountCents < c.yourShareCents - (paidOn.get(c.id) ?? 0));
     if (!due.length) continue;
