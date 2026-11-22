@@ -19,7 +19,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Browser, Page } from "playwright-core";
+import type { Browser, Locator, Page } from "playwright-core";
 import { auditRender, BYPASS_PENDING, drawerStrays, figureFamily, pageOf, UNDRAWN_PENDING, type DrawnView, type RenderProblem, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -352,6 +352,20 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
    * Options the control names in data-audit-view are left alone (it says why in
    * data-audit-skip-why).
    */
+  /**
+   * Clicks an option and waits for the control to show it picked. The control and the view
+   * are drawn from the same state, so once it does, the new option's render has landed.
+   * Without this, a slow runner can settle on the previous option's view, which then reads
+   * as a repeat and the option is never audited.
+   */
+  const pick = async (radio: Locator) => {
+    await radio.click();
+    await radio
+      .and(page.locator('[aria-checked="true"]'))
+      .waitFor({ timeout: SETTLE_MS })
+      .catch(() => {});
+  };
+
   const explore = async (name: string, from = 0, depth = 0) => {
     const controls = page.locator('[data-audit-view]:not([role="dialog"] *)');
     const count = await controls.count();
@@ -386,10 +400,10 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
         for (let j = 0; j < n; j++) if ((await radios.nth(j).getAttribute("aria-checked")) === "true") on = j;
         for (let j = 0; j < n; j++) {
           if (j === on || skip.has((await radios.nth(j).getAttribute("data-value")) ?? "")) continue;
-          await radios.nth(j).click();
+          await pick(radios.nth(j));
           await show((await radios.nth(j).innerText()).trim());
         }
-        if (on >= 0) await radios.nth(on).click();
+        if (on >= 0) await pick(radios.nth(on));
       }
       await settle(page);
     }
