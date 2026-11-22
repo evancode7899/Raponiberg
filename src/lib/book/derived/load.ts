@@ -138,9 +138,9 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     return { figures, rederived: declared(FUNDS_WHY)(figures), scope: null, through: book.horizon.netWorth };
   },
   insurance: async ({ book, db }) => {
-    const { policies } = await loadInsurancePage(db, book);
-    const figures = insuranceDerived(policies);
-    return { figures, rederived: rederiveInsurance(book, policies, figures), scope: null, through: book.horizon.cashFlow };
+    const page = await loadInsurancePage(db, book);
+    const figures = insuranceDerived(page);
+    return { figures, rederived: rederiveInsurance(book, page, figures), scope: null, through: book.horizon.cashFlow };
   },
   medical: async ({ book, db }) => {
     const page = await loadMedicalPage(db, book);
