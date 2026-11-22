@@ -60,7 +60,7 @@ function workOutChecks(book: Book, q: BlockerQuery | BlockerQuery[], ids: CheckI
 /**
  * What a past figure genuinely can't read off a printed line: partial inferences about the
  * listed rows or accounts (money known from one source only), rows the classifier wasn't
- * sure of (counted as filed until answered on Review), and the provisional days of a card
+ * sure of (counted as filed until answered on Statements › Categorize), and the provisional days of a card
  * cycle with no statement (a payment could still turn up on the next bank statement).
  *
  * Not estimates (owner's rule, 2026-11-01): an idle card cycle the paying bank's statements
@@ -102,7 +102,7 @@ export function unreviewedEstimate(rows: { amountCents: number; category: string
   return {
     id: "review:unanswered",
     title: `${rows.length} row${rows.length === 1 ? "" : "s"} awaiting review counted as filed (${(cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })})`,
-    detail: `The classifier wasn't sure of ${rows.length === 1 ? "this row" : "these rows"} (${[...new Set(rows.map((r) => r.category))].join(", ")}). Answer ${rows.length === 1 ? "it" : "them"} on Review to settle the figure.`,
+    detail: `The classifier wasn't sure of ${rows.length === 1 ? "this row" : "these rows"} (${[...new Set(rows.map((r) => r.category))].join(", ")}). Answer ${rows.length === 1 ? "it" : "them"} on Statements › Categorize to settle the figure.`,
   };
 }
 

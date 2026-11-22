@@ -501,22 +501,23 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Sticky tab strip at the top of a page's scroll area. */
+/** Sticky tab strip at the top of a page's scroll area. `sep` draws a thin divider before a tab, to cluster a long strip. */
 export function Tabs<T extends string>({
   tabs,
   value,
   onChange,
 }: {
-  tabs: { id: T; label: ReactNode; count?: number | null }[];
+  tabs: { id: T; label: ReactNode; count?: number | null; sep?: boolean }[];
   value: T;
   onChange: (id: T) => void;
 }) {
   return (
     <div className="sticky top-0 z-20 border-b border-line bg-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-canvas/80">
-      <div role="tablist" className="mx-auto flex w-full max-w-[96rem] gap-1 overflow-x-auto px-4 sm:px-6">
+      <div role="tablist" className="mx-auto flex w-full max-w-[96rem] items-center gap-1 overflow-x-auto px-4 sm:px-6">
         {tabs.map((t) => {
           const on = t.id === value;
-          return (
+          return [
+            t.sep ? <span key={`${t.id}-sep`} aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-strong" /> : null,
             <button
               key={t.id}
               type="button"
@@ -533,8 +534,8 @@ export function Tabs<T extends string>({
                 <span className={`num rounded-full px-1.5 text-[10px] font-semibold ${on ? "bg-accent text-accent-fg" : "bg-surface-3 text-fg-2"}`}>{t.count}</span>
               )}
               <span aria-hidden className={`absolute inset-x-1 -bottom-px h-0.5 rounded-full ${on ? "bg-accent" : "bg-transparent"}`} />
-            </button>
-          );
+            </button>,
+          ];
         })}
       </div>
     </div>

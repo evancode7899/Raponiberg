@@ -10,11 +10,12 @@ import { defaultFunds, linkHome, type FundsBook, type FundsConfig, type HomeLink
 import { useEffect, useMemo, useState } from "react";
 import { AffordTab } from "./AffordTab";
 import { InputsPanel } from "./InputsPanel";
+import { MortgageTab } from "./MortgageTab";
 import { PriceTab } from "./PriceTab";
 import { RentVsBuyTab } from "./RentVsBuyTab";
 import { SensitivityTab } from "./SensitivityTab";
 
-const TABS = ["afford", "price", "rent", "sensitivity"] as const;
+const TABS = ["afford", "price", "rent", "sensitivity", "mortgage"] as const;
 export type HomeTab = (typeof TABS)[number];
 
 export type { FundsBook, FundsConfig, LinkedRate } from "@/lib/home-budget/homeLinked";
@@ -92,63 +93,69 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
           { id: "price", label: "Test a price" },
           { id: "rent", label: "Rent vs buy" },
           { id: "sensitivity", label: "Sensitivity" },
+          // An owned home: once its own page (/mortgage), with its own saved inputs.
+          { id: "mortgage", label: "Prepay vs invest", sep: true },
         ]}
         value={tab}
         onChange={setTab}
       />
-      <PageBody>
-        <ApiSecretField api={api} />
-        {notSaved && <ErrorNote>{notSaved}</ErrorNote>}
-        {error && <ErrorNote>Couldn&apos;t load net worth for the cash default: {error}. Using the fixed amount instead.</ErrorNote>}
-        {tab === "afford" || tab === "price" ? (
-          <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
-            <InputsPanel
-              ins={ins}
-              patch={patch}
-              funds={funds}
-              onReset={reset}
-              focus={
-                tab === "afford"
-                  ? { price: max.impliedMaxHomeValue, loan: max.impliedMaxLoan, label: "your max" }
-                  : { price: ins.budgetHomePrice, loan: ins.budgetHomePrice * (1 - ins.budgetDownPaymentPct), label: "this price" }
-              }
-              home={
-                tab === "price"
-                  ? {
-                      priceSpec: {
-                        min: 100_000,
-                        max: Math.max(2_500_000, Math.ceil((at(0.43) * 1.3) / 100_000) * 100_000),
-                        step: 5_000,
-                        unit: "usd",
-                        band: [Math.round(Math.min(at(0.28), max.impliedMaxHomeValue)), Math.round(max.impliedMaxHomeValue)],
-                        sides: ["Conservative", "Aggressive"],
-                      },
-                      markers: [
-                        { value: max.impliedMaxHomeValue, label: "Your max" },
-                        { value: lenderMax.impliedMaxHomeValue, label: "Lender max" },
-                      ],
-                      allCashDownPct,
-                    }
-                  : undefined
-              }
-            />
-            {tab === "afford" ? (
-              <AffordTab ins={ins} patch={patch} proof={proof} testPrice={testPrice} lender={lender} lenderMax={lenderMax} spending={book?.spending ?? null} />
-            ) : (
-              <PriceTab ins={ins} patch={patch} maxPrice={max.impliedMaxHomeValue} lenderMaxPrice={lenderMax.impliedMaxHomeValue} allCashDownPct={allCashDownPct} spendMonthly={spendMonthly} proof={proof} />
-            )}
-          </div>
-        ) : (
-          <>
-            {tab === "rent" ? <RentVsBuyTab ins={ins} patch={patch} goToBudget={() => setTab("price")} funds={funds} /> : <SensitivityTab ins={ins} proof={proof} salaryLinked={funds.buy.salaryLinked} />}
-            <div className="flex justify-end">
-              <button type="button" className={btn.ghost} onClick={reset} title="Every input back to its default, cash linked to net worth again">
-                Reset all inputs
-              </button>
+      {tab === "mortgage" ? (
+        <MortgageTab requiresApiSecret={requiresApiSecret} />
+      ) : (
+        <PageBody>
+          <ApiSecretField api={api} />
+          {notSaved && <ErrorNote>{notSaved}</ErrorNote>}
+          {error && <ErrorNote>Couldn&apos;t load net worth for the cash default: {error}. Using the fixed amount instead.</ErrorNote>}
+          {tab === "afford" || tab === "price" ? (
+            <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
+              <InputsPanel
+                ins={ins}
+                patch={patch}
+                funds={funds}
+                onReset={reset}
+                focus={
+                  tab === "afford"
+                    ? { price: max.impliedMaxHomeValue, loan: max.impliedMaxLoan, label: "your max" }
+                    : { price: ins.budgetHomePrice, loan: ins.budgetHomePrice * (1 - ins.budgetDownPaymentPct), label: "this price" }
+                }
+                home={
+                  tab === "price"
+                    ? {
+                        priceSpec: {
+                          min: 100_000,
+                          max: Math.max(2_500_000, Math.ceil((at(0.43) * 1.3) / 100_000) * 100_000),
+                          step: 5_000,
+                          unit: "usd",
+                          band: [Math.round(Math.min(at(0.28), max.impliedMaxHomeValue)), Math.round(max.impliedMaxHomeValue)],
+                          sides: ["Conservative", "Aggressive"],
+                        },
+                        markers: [
+                          { value: max.impliedMaxHomeValue, label: "Your max" },
+                          { value: lenderMax.impliedMaxHomeValue, label: "Lender max" },
+                        ],
+                        allCashDownPct,
+                      }
+                    : undefined
+                }
+              />
+              {tab === "afford" ? (
+                <AffordTab ins={ins} patch={patch} proof={proof} testPrice={testPrice} lender={lender} lenderMax={lenderMax} spending={book?.spending ?? null} />
+              ) : (
+                <PriceTab ins={ins} patch={patch} maxPrice={max.impliedMaxHomeValue} lenderMaxPrice={lenderMax.impliedMaxHomeValue} allCashDownPct={allCashDownPct} spendMonthly={spendMonthly} proof={proof} />
+              )}
             </div>
-          </>
-        )}
-      </PageBody>
+          ) : (
+            <>
+              {tab === "rent" ? <RentVsBuyTab ins={ins} patch={patch} goToBudget={() => setTab("price")} funds={funds} /> : <SensitivityTab ins={ins} proof={proof} salaryLinked={funds.buy.salaryLinked} />}
+              <div className="flex justify-end">
+                <button type="button" className={btn.ghost} onClick={reset} title="Every input back to its default, cash linked to net worth again">
+                  Reset all inputs
+                </button>
+              </div>
+            </>
+          )}
+        </PageBody>
+      )}
     </>
   );
 }

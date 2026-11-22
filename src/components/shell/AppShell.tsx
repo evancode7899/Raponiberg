@@ -152,8 +152,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const badges: Record<string, number | undefined> = {
-    "/review": attention?.needsReview,
-    "/statements": attention ? attention.integrityFailing + attention.integrityMissing : undefined,
+    // Statements holds the review queue too (its Categorize tab), so its badge counts both.
+    "/statements": attention ? attention.needsReview + attention.integrityFailing + attention.integrityMissing : undefined,
   };
 
   return (

@@ -134,7 +134,7 @@ export function checkConsistency(book: Book, c: Collector) {
       status: "FAIL",
       title: `Transfer pairing ${label} is broken`,
       detail: `The pairing is stored, but ${problems.join("; ")}.`,
-      fix: "Unpair it on Review → Transfers and pair the right rows (or reclassify the leg back to a transfer).",
+      fix: "Unpair it on Statements › Transfers and pair the right rows (or reclassify the leg back to a transfer).",
       scope: { from: addDays(first, -3), to: addDays(last, 3), affects: ["CASH_FLOW", "NET_WORTH"] },
     });
   }

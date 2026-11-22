@@ -1,16 +1,16 @@
 "use client";
 
 import { YearInput } from "@/app/forecast/forecastUi";
-import { Group } from "@/app/home-budget/parts";
-import { fmtValue, RangeSlider } from "@/app/home-budget/RangeSlider";
+import { Group } from "./parts";
+import { fmtValue, RangeSlider } from "./RangeSlider";
 import { LINKED_KEYS, type LinkedKey } from "@/lib/mortgage/inputs";
-import type { MortgageLinks } from "./MortgageClient";
+import type { MortgageLinks } from "./MortgageTab";
 import { btn, Card, MoneyInput, NotFigure, Segmented, selectCls, WhatIf } from "@/components/ui/kit";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatUsd } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
-import { defaultInputs, fromHomeBudget, MONTHS, SPECS, type LumpRow, type MortgageInputs } from "./inputs";
+import { defaultInputs, fromHomeBudget, MONTHS, SPECS, type LumpRow, type MortgageInputs } from "./mortgageInputs";
 
 const DEF = defaultInputs();
 

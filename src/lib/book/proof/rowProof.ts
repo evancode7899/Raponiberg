@@ -185,7 +185,7 @@ export function buildRowProof(book: Book, d: RowDescriptor): Proof {
     r.needsReview
       ? {
           label: "Sure?",
-          text: "No: the classifier asked for your answer. It counts as filed until you answer it on Review.",
+          text: "No: the classifier asked for your answer. It counts as filed until you answer it on Statements › Categorize.",
           tone: "warn",
         }
       : { label: "Sure?", text: "Yes", tone: "good" },
@@ -265,7 +265,7 @@ export function buildRowProof(book: Book, d: RowDescriptor): Proof {
       kind: "facts",
       title: "How the app files it",
       items: filed,
-      note: "Change it on Transactions (this row, or every row from the merchant) or answer it on Review.",
+      note: "Change it on Statements › Transactions (this row, or every row from the merchant) or answer it on Statements › Categorize.",
     },
   ];
 

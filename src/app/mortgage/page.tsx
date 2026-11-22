@@ -1,12 +1,6 @@
-import type { Metadata } from "next";
-import { MortgageClient } from "./MortgageClient";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Mortgage",
-  description: "Prepay the mortgage or invest the difference",
-};
-
-export default function MortgagePage() {
-  const requiresApiSecret = Boolean(process.env.API_SECRET);
-  return <MortgageClient requiresApiSecret={requiresApiSecret} />;
+/** Prepay vs invest is a tab of Home & mortgage now; old links and bookmarks land on it. */
+export default function MortgageRedirect() {
+  redirect("/home-budget?tab=mortgage");
 }

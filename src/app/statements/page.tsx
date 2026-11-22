@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Statements",
-  description: "Import statements, check coverage, manage documents and accounts",
+  description: "Import statements, search and categorize rows, settle transfers, check coverage, manage documents and accounts",
 };
 
 export default function StatementsPage() {

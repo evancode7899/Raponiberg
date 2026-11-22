@@ -1,4 +1,4 @@
-import type { SliderSpec } from "@/app/home-budget/RangeSlider";
+import type { SliderSpec } from "./RangeSlider";
 import { fetchSavedInputs } from "@/components/ui/kit";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import type { LumpRow, MortgageInputs } from "@/lib/mortgage/inputs";

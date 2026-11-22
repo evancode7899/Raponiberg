@@ -199,7 +199,7 @@ function Row({
         <LaneBadge lane={r.lane} />
         {r.needsReview && (
           <span className="ml-1">
-            <Badge tone="warn" title="The classifier wasn't sure — confirm it on Review">
+            <Badge tone="warn" title="The classifier wasn't sure — confirm it on Statements › Categorize">
               ?
             </Badge>
           </span>

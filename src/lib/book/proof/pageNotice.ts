@@ -9,8 +9,13 @@ import { BLOCKING_KINDS, type SweepState } from "./clearance.ts";
  * statement or an open finding is the documents', and stays on Statements.
  */
 
-/** Each route and the name the sweep files its figures under (figures.ts `page`): that name, or that name and more ("Taxes 2025", "FIRE › Plan"). */
-export const SWEEP_PAGE_OF_ROUTE: Readonly<Record<string, string>> = {
+/**
+ * Each route and the names the sweep files its figures under (figures.ts `page`): each name,
+ * or that name and more ("Taxes 2025", "FIRE › Plan"). A route lists several when a page took
+ * in another as a tab (Mortgage on Home & mortgage, Transactions on Statements) and the sweep
+ * still files the tab under its old name.
+ */
+export const SWEEP_PAGE_OF_ROUTE: Readonly<Record<string, string | readonly string[]>> = {
   "/": "Home",
   "/net-worth": "Net worth",
   "/cash-flow": "Cash flow",
@@ -28,10 +33,8 @@ export const SWEEP_PAGE_OF_ROUTE: Readonly<Record<string, string>> = {
   "/tax-accounts": "Account limits",
   "/hsa": "HSA",
   "/goals": "Goals",
-  "/home-budget": "Home budget",
-  "/mortgage": "Mortgage",
-  "/statements": "Statements",
-  "/transactions": "Transactions",
+  "/home-budget": ["Home budget", "Mortgage"],
+  "/statements": ["Statements", "Transactions"],
 };
 
 const routeOf = (pathname: string): string | null =>
@@ -55,11 +58,11 @@ export type PageNotice = {
 export function pageNotice(s: SweepState, pathname: string): PageNotice | null {
   const route = routeOf(pathname);
   if (!route || s.status !== "ready") return null;
-  const name = SWEEP_PAGE_OF_ROUTE[route]!;
+  const names = [SWEEP_PAGE_OF_ROUTE[route]!].flat();
   const by = new Map<string, number>();
   let example = "";
   for (const problems of Object.values(s.problems)) {
-    const p = problems.find((x) => BLOCKING_KINDS.includes(x.kind) && isPage(x.page, name));
+    const p = problems.find((x) => BLOCKING_KINDS.includes(x.kind) && names.some((name) => isPage(x.page, name)));
     if (!p) continue;
     by.set(p.page, (by.get(p.page) ?? 0) + 1);
     example ||= p.detail;

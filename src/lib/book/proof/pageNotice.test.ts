@@ -34,6 +34,16 @@ describe("pageNotice", () => {
     expect(pageNotice(s, "/tax-accounts")?.figures).toBe(1);
   });
 
+  it("counts a tab that was once its own page on the page that took it in", () => {
+    const s = sweep({ a: [problem("CHAIN", "Mortgage")], b: [problem("REDERIVE", "Transactions")], c: [problem("CHAIN", "Home budget")] });
+    expect(pageNotice(s, "/home-budget")?.parts).toEqual([
+      { page: "Home budget", figures: 1 },
+      { page: "Mortgage", figures: 1 },
+    ]);
+    expect(pageNotice(s, "/statements")?.figures).toBe(1);
+    expect(pageNotice(s, "/mortgage")).toBeNull();
+  });
+
   it("waits for the sweep's verdicts", () => {
     expect(pageNotice(sweep({ a: [problem("CHAIN", "Taxes 2025")] }, "pending"), "/taxes")).toBeNull();
   });

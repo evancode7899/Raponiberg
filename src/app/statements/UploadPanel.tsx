@@ -4,7 +4,6 @@ import type { Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, ErrorNote } from "@/components/ui/kit";
 import { formatUsdFromCents } from "@/lib/formatMoney";
 import type { FileOutcome } from "@/lib/ingest/importFiles";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TaxDocsCard } from "./TaxDocsCard";
 
@@ -21,7 +20,7 @@ const isUnrecognized = (o: FileOutcome) => !o.ok && o.reason === "UNRECOGNIZED";
 const isInsurance = (o: FileOutcome) => !o.ok && o.reason === "INSURANCE";
 const isMedical = (o: FileOutcome) => !o.ok && o.reason === "MEDICAL";
 
-export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () => void; onGo: (tab: "issues" | "documents") => void }) {
+export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () => void; onGo: (tab: "issues" | "documents" | "categorize") => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [hold, setHold] = useState(false);
   const [busy, setBusy] = useState<"upload" | "scan" | null>(null);
@@ -233,9 +232,9 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
               <button type="button" className={btn.secondary} onClick={() => onGo("issues")}>
                 See what&apos;s still open
               </button>
-              <Link href="/review" className={btn.secondary}>
+              <button type="button" className={btn.secondary} onClick={() => onGo("categorize")}>
                 Review new rows
-              </Link>
+              </button>
             </>
           }
         >
