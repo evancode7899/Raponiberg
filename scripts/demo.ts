@@ -145,7 +145,9 @@ try {
     if (!dev && !existsSync(path.join(ROOT, dir, "BUILD_ID"))) throw new Error(`No production build in ${dir}: run npm run build first, or use npm run demo -- --dev.`);
     console.log(`\nDemo on http://127.0.0.1:${PORT} (data: ${path.relative(ROOT, DEMO_DIR)})`);
     const next = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
-    const child = spawn(process.execPath, [next, dev ? "dev" : "start", "-H", "127.0.0.1", "-p", PORT], {
+    // --webpack: a worktree's junctioned node_modules is outside Turbopack's root.
+    const bundler = dev && process.argv.includes("--webpack") ? ["--webpack"] : [];
+    const child = spawn(process.execPath, [next, dev ? "dev" : "start", ...bundler, "-H", "127.0.0.1", "-p", PORT], {
       cwd: ROOT,
       env: { ...env, NEXT_BUILD_DIR: dir } as Record<string, string | undefined> as NodeJS.ProcessEnv,
       stdio: "inherit",

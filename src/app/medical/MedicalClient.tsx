@@ -112,7 +112,7 @@ export function MedicalClient({ requiresApiSecret }: { requiresApiSecret: boolea
               <>
                 {tab === "overview" && (year ? <Overview y={year} fig={fig} /> : <NoClaims coverage={coverage} />)}
                 {tab === "claims" && (year ? <Claims y={year} claims={claims} fig={fig} inHsaLog={data.inHsaLog} /> : <NoClaims coverage={coverage} />)}
-                {tab === "providers" && (year ? <Providers y={year} fig={fig} /> : <NoClaims coverage={coverage} />)}
+                {tab === "providers" && (year ? <Providers y={year} fig={fig} accounts={data.accounts.filter((a) => a.coverage === coverage)} /> : <NoClaims coverage={coverage} />)}
                 {tab === "plan" && <Plans plans={data.plans.filter((p) => p.coverage === coverage)} uses={data.planLimits} problems={data.planProblems} fig={fig} coverage={coverage} />}
               </>
             )}
@@ -358,7 +358,7 @@ function PaidCell({ c, log }: { c: ClaimView; log: MedicalPage["inHsaLog"][strin
   const diff = c.paidCents == null ? 0 : c.paidCents - c.yourShareCents;
   const paidTitle = [
     ...c.payments.map((x) => `${HOW[x.how]}: ${money(x.amountCents)} on ${x.date}, ${x.payee} (${x.fromHsa ? "the HSA" : x.account})${x.claimIds.length > 1 ? ` · one payment for ${x.claimIds.length} claims` : ""}`),
-    diff > 0 ? `Paid ${money(diff)} more than the EOB says you owe: the provider owes you that back (a refund or a credit on the next visit).` : diff < 0 ? `${money(-diff)} of what the EOB says you owe isn't paid yet in the statements.` : "",
+    diff > 0 ? `Paid ${money(diff)} more than the EOB says you owe: a credit with the office, netted on a later visit or refunded (Providers › Balances with providers).` : diff < 0 ? `${money(-diff)} of what the EOB says you owe isn't paid yet in the statements.` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -514,16 +514,78 @@ function ClaimDetail({ c }: { c: ClaimView }) {
 
 // ---------------------------------------------------------------------------- providers & care
 
-function Providers({ y, fig }: { y: YearView; fig: Fig }) {
+function Providers({ y, fig, accounts }: { y: YearView; fig: Fig; accounts: MedicalPage["accounts"] }) {
   return (
     <>
       <Card title="Providers" subtitle={`Every provider with a ${y.year} claim, by what you owe`}>
         <SliceTable y={y} rows={y.providers} kind="provider" fig={fig} name="Provider" />
       </Card>
+      {accounts.length > 0 && (
+        <Card
+          title="Balances with providers"
+          subtitle="Each office over all years: what its EOBs say you owed against what card, bank and HSA rows paid it"
+        >
+          <AccountTable accounts={accounts} fig={fig} />
+        </Card>
+      )}
       <Card title="Kinds of care" subtitle="Grouped by each claim's procedure codes (most of its billed amount)">
         <SliceTable y={y} rows={y.kinds} kind="kind" fig={fig} name="Care" />
       </Card>
     </>
+  );
+}
+
+function AccountTable({ accounts, fig }: { accounts: MedicalPage["accounts"]; fig: Fig }) {
+  const rows = [...accounts].sort((a, b) => Math.abs(b.balanceCents) - Math.abs(a.balanceCents) || b.lastDate.localeCompare(a.lastDate));
+  return (
+    <div className={table.wrap}>
+      <table className={table.table}>
+        <thead>
+          <tr className={table.head}>
+            <th className={table.th}>Office</th>
+            <th className={table.thR}>Visits</th>
+            <th className={table.thR}>EOBs say you owed</th>
+            <th className={table.thR}>Paid</th>
+            <th className={table.thR}>Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => {
+            const name = a.payees[0] ?? a.providers[0] ?? "Provider";
+            return (
+              <tr key={a.key} className={table.tr}>
+                <td className={`${table.td} max-w-[18rem] truncate`} title={[`Billed as ${a.payees.join(", ") || "—"}`, `EOBs name ${a.providers.join(", ") || "no provider"}`, `${a.firstDate} to ${a.lastDate}`].join("\n")}>
+                  {name}
+                  {a.providers.length > 0 && <span className="text-faint"> · {a.providers.join(", ")}</span>}
+                </td>
+                <td className={table.tdR}>{a.visits}</td>
+                <td className={table.tdR}>
+                  <Amt fig={fig} figure="account-owed" k={a.key} cents={a.owedCents} />
+                </td>
+                <td className={table.tdR}>
+                  <Amt fig={fig} figure="account-paid" k={a.key} cents={a.paidCents} />
+                </td>
+                <td className={`${table.tdR} whitespace-nowrap`}>
+                  {a.balanceCents === 0 ? (
+                    <span className="text-pos" title="Everything its EOBs say you owed is paid, no more and no less.">
+                      <Amt fig={fig} figure="account-balance" k={a.key} cents={0} /> settled
+                    </span>
+                  ) : a.balanceCents < 0 ? (
+                    <span title="Paid it more in all than its EOBs say you owed: a credit it holds, for a later visit or a refund. Until then that much isn't reimbursable from the HSA.">
+                      <Amt fig={fig} figure="account-balance" k={a.key} cents={-a.balanceCents} /> credit
+                    </span>
+                  ) : (
+                    <span className="text-muted" title="What its EOBs say you owed beyond what the statements show paid: bills not in yet, paid in cash or from an account not imported, or still due.">
+                      <Amt fig={fig} figure="account-balance" k={a.key} cents={a.balanceCents} /> not found paid
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

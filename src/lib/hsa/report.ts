@@ -1,7 +1,7 @@
 import type { BlockerRef } from "../book/reports/blockerRef.ts";
 import { daysBetween } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
-import { linkExpenses, type ClaimLite, type ClaimPayment, type ExpenseClaims, type HsaEobIn } from "../medical/links.ts";
+import { linkExpenses, providerAccounts, type ClaimLite, type ClaimPayment, type ExpenseClaims, type HsaEobIn } from "../medical/links.ts";
 import { ownerFiled, providerKey, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
 import { matchReceipts, onFile, type ReceiptFileFacts, type ReceiptMatch } from "./receipts.ts";
 import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store.ts";
@@ -147,7 +147,11 @@ export type Suggestion = LedgerRef & {
   /** The EOB claims this charge paid, when it paid what an EOB says you owed: their provider names the expense. */
   claims?: ClaimLite[];
   provider?: string;
-  /** What of this charge the EOBs say you owed: what can be reimbursed (a desk payment above it comes back from the provider). */
+  /**
+   * What of this charge can be reimbursed: what the EOBs say you owed, plus what it paid above
+   * that which the provider's office put toward your other care (all of it, unless the office
+   * still holds a credit: it was paid more in all than all its EOBs say you owed).
+   */
   eobCents?: number;
 };
 
@@ -352,6 +356,12 @@ export function eobOwedOf(pay: ClaimPayment, claims: readonly ClaimLite[]): numb
   return pay.shares.reduce((s, x) => s + Math.min(x.cents, claims.find((c) => c.id === x.claimId)?.yourShareCents ?? 0), 0);
 }
 
+/** What of one charge can be reimbursed: what the EOBs say you owed, and the rest unless the office keeps it as a credit (`creditHeldCents`: what it holds in all). */
+export function reimbursableOf(pay: ClaimPayment, claims: readonly ClaimLite[], creditHeldCents: number): number {
+  const owed = eobOwedOf(pay, claims);
+  return pay.amountCents - Math.min(Math.max(0, pay.amountCents - owed), Math.max(0, creditHeldCents));
+}
+
 export function buildHsaReport(input: ReportInput): HsaReport {
   const { today, file } = input;
   const settings = file.settings;
@@ -444,6 +454,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     input.eob?.payments ?? [],
   );
   const loggedClaims = new Set([...eobLinks.values()].flatMap((l) => l.claimIds));
+  const accountOf = providerAccounts(eobClaims, input.eob?.payments ?? []).byClaim;
 
   const expenses: ExpenseView[] = file.expenses.map((e) => {
     const paid = pinned.get(e.id) ?? auto.get(e.id) ?? null;
@@ -468,9 +479,12 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       flags.push("OVER_EOB");
       const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const what = eob.claims.map((c) => `${c.patient} at ${c.provider || "the provider"} on ${c.firstDate} (claim ${c.id})`).join("; ");
+      const says = `The EOB${eob.claims.length === 1 ? "" : "s"} for ${what} say${eob.claims.length === 1 ? "s" : ""} you owed ${usd(eob.owedCents)}${eob.planCents ? ` (the plan paid ${usd(eob.planCents)})` : ""}, not ${usd(e.amountCents)}.`;
       doubt =
         (doubt ? `${doubt} ` : "") +
-        `The EOB${eob.claims.length === 1 ? "" : "s"} for ${what} say${eob.claims.length === 1 ? "s" : ""} you owed ${usd(eob.owedCents)}${eob.planCents ? ` (the plan paid ${usd(eob.planCents)})` : ""}, not ${usd(e.amountCents)}. Only what you owed can be reimbursed.`;
+        (eob.heldCents
+          ? `${says} You've paid this office ${usd(eob.account!.paidCents)} against ${usd(eob.account!.owedCents)} its EOBs say you owed, so ${usd(eob.heldCents)} of this is a credit it still holds: reimbursable once it goes toward later care, or not at all if it's refunded.`
+          : `${says} Only what you owed can be reimbursed.`);
     }
     const tiedTo = e.reimbursement?.withdrawal ? hsaOut.find((w) => sameFp(w.fp, e.reimbursement!.withdrawal!)) : undefined;
     if (tiedTo?.kind === "DIRECT") {
@@ -544,7 +558,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       kind: q.kind,
       reason: q.reason,
       patient: [...new Set(paidClaims.map((c) => c.patient))].length === 1 ? paidClaims[0]!.patient : "",
-      ...(pay && paidClaims.length ? { claims: paidClaims, provider: paidClaims[0]!.provider || undefined, eobCents: eobOwedOf(pay, paidClaims) } : {}),
+      ...(pay && paidClaims.length ? { claims: paidClaims, provider: paidClaims[0]!.provider || undefined, eobCents: reimbursableOf(pay, paidClaims, -(accountOf.get(paidClaims[0]!.id)?.balanceCents ?? 0)) } : {}),
     });
   }
   suggestions.sort((a, b) => (a.tier === b.tier ? b.date.localeCompare(a.date) : a.tier === "LIKELY" ? -1 : 1));

@@ -161,8 +161,30 @@ function planFigures(p: HealthPlan): DerivedFigure[] {
   ];
 }
 
-export function medicalDerived(r: Pick<MedicalReport, "years" | "claims" | "statements" | "plans">): DerivedFigure[] {
+/** A provider account's figures: all its EOBs say you owed, all its rows paid toward that, and the balance. */
+function accountFigures(a: MedicalReport["accounts"][number], claims: readonly ClaimView[]): DerivedFigure[] {
+  const ids = new Set(a.claimIds);
+  const xs = claims.filter((x) => ids.has(x.id) && x.yourShareCents > 0).sort((p, q) => p.firstDate.localeCompare(q.firstDate) || p.id.localeCompare(q.id));
+  const rows = [...new Map(xs.flatMap((x) => x.payments.map((p) => [p.rowId, p] as const))).values()].sort((p, q) => p.date.localeCompare(q.date) || p.rowId.localeCompare(q.rowId));
+  const toward = (p: ClaimView["payments"][number]) => p.shares.filter((s) => ids.has(s.claimId)).reduce((t, s) => t + s.cents, 0);
+  const name = a.payees[0] ?? a.providers[0] ?? "Provider";
+  const add = (figure: string, describes: string, cents: number, lines: DerivedFigure["lines"]): DerivedFigure => ({ figure, key: a.key, describes: `${name}: ${describes}`, value: c(cents), lines });
+  const owedLines = [...xs.map((x, i) => ln(claimLabel(x), c(x.yourShareCents), i ? "+" : undefined, PRINTED)), ln("What its EOBs say you owed", c(a.owedCents), "=")];
+  const paidLines = rows.length
+    ? [...rows.map((p, i) => ln(`${p.date} ${p.payee} (${p.fromHsa ? "the HSA" : p.account})`, c(toward(p)), i ? "+" : undefined, { source: "proven" as const, note: "The statement row, as far as it paid this office's claims" })), ln("Paid toward them", c(a.paidCents), "=")]
+    : [ln("No payments found", c(0))];
   return [
+    add("account-owed", "what its EOBs say you owed", a.owedCents, owedLines),
+    add("account-paid", "what was paid toward it", a.paidCents, paidLines),
+    a.balanceCents < 0
+      ? add("account-balance", "credit the office holds", -a.balanceCents, [ln("Paid toward its claims", c(a.paidCents)), ln("What its EOBs say you owed", c(a.owedCents), "−"), ln("Paid beyond it: a credit the office holds", c(-a.balanceCents), "=")])
+      : add("account-balance", "not found paid yet", a.balanceCents, [ln("What its EOBs say you owed", c(a.owedCents)), ln("Paid toward them", c(a.paidCents), "−"), ln("Not found paid yet", c(a.balanceCents), "=")]),
+  ];
+}
+
+export function medicalDerived(r: Pick<MedicalReport, "years" | "claims" | "statements" | "plans"> & Partial<Pick<MedicalReport, "accounts">>): DerivedFigure[] {
+  return [
+    ...(r.accounts ?? []).flatMap((a) => accountFigures(a, r.claims)),
     ...r.years.flatMap((y) => yearFigures(y, r.claims)),
     ...r.claims.flatMap(claimFigures),
     ...r.statements.flatMap((s) => {

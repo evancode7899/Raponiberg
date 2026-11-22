@@ -45,7 +45,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
       op: "add",
       expenses: list.map((s) => ({
         date: s.date,
-        // Only what the EOBs say was owed can be reimbursed.
+        // What the EOBs say was owed, and any rest the office put toward other care: what can be reimbursed.
         amountCents: s.eobCents ?? s.amountCents,
         provider: s.provider ?? providerName(s),
         patient: s.patient || patient,
@@ -54,7 +54,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
           s.tier === "CHECK"
             ? "From a drug-store charge: check the receipt for the medical items"
             : s.eobCents != null && s.eobCents < s.amountCents
-              ? `Charge ${formatUsdCents(s.amountCents)}; the EOB says ${formatUsdCents(s.eobCents)} of it was owed (the rest is the provider's to refund)`
+              ? `Charge ${formatUsdCents(s.amountCents)}; ${formatUsdCents(s.eobCents)} of it can be reimbursed (the rest is a credit the provider still holds)`
               : "",
         receipt: false,
         receiptRef: "",
@@ -168,7 +168,7 @@ export function FoundTab({ r, send, onDone }: { r: HsaReport; send: Send; onDone
                           ))}
                         </select>
                       </td>
-                      <td className={table.tdR} title={s.eobCents != null && s.eobCents !== s.amountCents ? `The EOB says ${formatUsdCents(s.eobCents)} of this was owed: that's what gets logged and reimbursed.` : undefined}>
+                      <td className={table.tdR} title={s.eobCents != null && s.eobCents !== s.amountCents ? `${formatUsdCents(s.eobCents)} of this can be reimbursed (the rest is a credit the provider still holds): that's what gets logged.` : undefined}>
                         <ProofValue proof={chargesSum([s])}>{formatUsdCents(s.amountCents)}</ProofValue>
                       </td>
                       <td className={`${table.td} whitespace-nowrap`}>

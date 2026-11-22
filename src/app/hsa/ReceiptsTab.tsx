@@ -439,7 +439,7 @@ function ReceiptCell({ e, send }: { e: ExpenseView; send: Send }) {
   if (e.eob && !e.eob.over) {
     const cs = e.eob.claims;
     return (
-      <a href="/medical?tab=claims" className={`${cellBtn} text-pos hover:underline`} title={`The insurer's EOB says you owed exactly this: ${cs.map((c) => `${c.patient} at ${c.provider || "the provider"} on ${c.firstDate} (claim ${c.id}, EOB of ${c.statementDate})`).join("; ")}. Click for the claim on the Medical page.`}>
+      <a href="/medical?tab=claims" className={`${cellBtn} text-pos hover:underline`} title={`${e.eob.creditCents ? `The insurer's EOB says you owed ${formatUsdCents(e.eob.owedCents)}; the other ${formatUsdCents(e.eob.creditCents)} went toward your later care with that office (what you've paid it doesn't pass what its EOBs say you owed)` : "The insurer's EOB says you owed exactly this"}: ${cs.map((c) => `${c.patient} at ${c.provider || "the provider"} on ${c.firstDate} (claim ${c.id}, EOB of ${c.statementDate})`).join("; ")}. Click for the claim on the Medical page.`}>
         ✓ EOB
       </a>
     );

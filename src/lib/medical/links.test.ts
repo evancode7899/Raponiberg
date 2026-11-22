@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildHsaReport, eobOwedOf } from "../hsa/report.ts";
+import { buildHsaReport, eobOwedOf, reimbursableOf } from "../hsa/report.ts";
 import { EMPTY_SETTINGS, type HsaExpense, type HsaFile } from "../hsa/store.ts";
-import { hsaPlanYear, linkExpenses, matchClaimPayments, premiumCoverage, premiumLines, sameProvider, type ClaimLite, type PaymentRowIn } from "./links.ts";
+import { hsaPlanYear, linkExpenses, matchClaimPayments, premiumCoverage, providerAccounts, premiumLines, sameProvider, type ClaimLite, type PaymentRowIn } from "./links.ts";
 import type { HealthPlan } from "./plans.ts";
 import { hsaEligibilityChecks, premiumChecks, standingVersions, type ClaimView } from "./report.ts";
 
@@ -243,6 +243,57 @@ describe("linkExpenses", () => {
     expect(links.get("e3")).toMatchObject({ claimIds: ["C"], how: "VISIT", over: true, owedCents: 20_000 });
     // A different patient's claim of the same amount, already taken, backs nothing.
     expect(links.has("e4")).toBe(false);
+  });
+});
+
+describe("provider balances: a set charge at the desk, netted later", () => {
+  // A clinic charges $12.40 at each visit the EOB later says cost $12.00; the fourth visit's
+  // desk charge is $1.20 short, using up the three 40¢ credits.
+  const visit = (id: string, date: string) => claim(id, { provider: "Jordan Q Lee", firstDate: date, lastDate: date, statementDate: addDays(date, 3), yourShareCents: 1_200, planCents: 10_800 });
+  const desk = (id: string, date: string, cents: number) => row(id, { date, amountCents: -cents, payee: "HARBOR PHYSICAL THERAPY ANYTOWN", medical: true });
+  const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const cs = [visit("V1", "2025-06-02"), visit("V2", "2025-06-09"), visit("V3", "2025-06-16"), visit("V4", "2025-06-23")];
+  const rows = [desk("d1", "2025-06-02", 1_240), desk("d2", "2025-06-09", 1_240), desk("d3", "2025-06-16", 1_240), desk("d4", "2025-06-23", 1_080)];
+  const exp = (id: string, rowId: string, cents: number, date: string) => ({ id, date, amountCents: cents, patient: "", provider: "Harbor Physical Therapy", paidRowId: rowId });
+
+  it("puts one office's visits in one account, netting over- and underpaid visits", () => {
+    const { payments } = matchClaimPayments(cs, rows);
+    expect(payments.map((p) => p.how)).toEqual(["VISIT", "VISIT", "VISIT", "VISIT"]);
+    const { accounts } = providerAccounts(cs, payments);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ visits: 4, owedCents: 4_800, paidCents: 4_800, balanceCents: 0, providers: ["Jordan Q Lee"], payees: ["HARBOR PHYSICAL THERAPY ANYTOWN"] });
+  });
+
+  it("doesn't flag a visit paid over its EOB when the office put the extra toward later care", () => {
+    const { payments } = matchClaimPayments(cs, rows);
+    const links = linkExpenses([exp("e1", "d1", 1_240, "2025-06-02"), exp("e4", "d4", 1_080, "2025-06-23")], cs, payments);
+    expect(links.get("e1")).toMatchObject({ over: false, creditCents: 40, heldCents: 0, owedCents: 1_200 });
+    expect(links.get("e4")).toMatchObject({ over: false, creditCents: 0 });
+  });
+
+  it("flags only what the office still holds, on the latest visits paid over", () => {
+    const three = cs.slice(0, 3);
+    const { payments } = matchClaimPayments(three, rows.slice(0, 3));
+    const links = linkExpenses([exp("e1", "d1", 1_240, "2025-06-02"), exp("e2", "d2", 1_240, "2025-06-09"), exp("e3", "d3", 1_240, "2025-06-16")], three, payments);
+    // No later visit yet: all $1.20 is held, 40¢ on each.
+    expect([...links.values()].map((l) => [l.over, l.heldCents])).toEqual([[true, 40], [true, 40], [true, 40]]);
+    // A fourth visit charged in full (nothing netted yet) still owes $12.00 the credit can go toward.
+    const withNext = [...three, cs[3]!];
+    const later = linkExpenses([exp("e3", "d3", 1_240, "2025-06-16")], withNext, matchClaimPayments(withNext, rows.slice(0, 3)).payments);
+    expect(later.get("e3")).toMatchObject({ over: false, creditCents: 40 });
+  });
+
+  it("still flags an expense logged above the charge that paid it", () => {
+    const { payments } = matchClaimPayments(cs, rows);
+    expect(linkExpenses([exp("e1", "d1", 1_500, "2025-06-02")], cs, payments).get("e1")?.over).toBe(true);
+  });
+
+  it("suggests logging the whole desk charge when the office didn't keep the extra", () => {
+    const { payments } = matchClaimPayments(cs, rows);
+    const pay = payments.find((p) => p.rowId === "d1")!;
+    expect(eobOwedOf(pay, cs)).toBe(1_200);
+    expect(reimbursableOf(pay, cs, 0)).toBe(1_240);
+    expect(reimbursableOf(pay, cs, 25)).toBe(1_215);
   });
 });
 
