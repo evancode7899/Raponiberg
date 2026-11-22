@@ -1,4 +1,5 @@
 import { careKind, codeCounts, type CareKind } from "./codes.ts";
+import { medicalPlansOn, type ClaimPayment, type PremiumLine } from "./links.ts";
 import { planOn, ROLLING_MONTHS, type HealthPlan, type PlanAmounts, type ServiceLimit } from "./plans.ts";
 import type { BalanceKind, Coverage, EobBalance, EobClaim, EobLine, EobStatement, PendingEob, PlanDocument } from "./types.ts";
 
@@ -36,6 +37,8 @@ export type ClaimView = Omit<EobClaim, "totals"> & {
   kind: CareKind;
   /** Earlier versions this one replaced. */
   earlier: { id: string; file: string; statementDate: string; yourShareCents: number; planCents: number }[];
+  /** The card, bank or HSA row that paid what you owe (lib/medical/links.ts), when one is found. */
+  payment: ClaimPayment | null;
 };
 
 export type Totals = { claims: number; billedCents: number; planCents: number; otherPlanCents: number; yourShareCents: number; writeOffCents: number; deductibleCents: number; coinsuranceCents: number; copayCents: number };
@@ -69,9 +72,25 @@ export type YearView = {
   /** The plan in force at the end of the year (or today, for this year). */
   plan: HealthPlan | null;
   limits: LimitUse[];
+  /** The year's premiums for this cover on the pay stubs, and how what you owed was paid. */
+  money: YearMoney;
 };
 
-export type MedicalCheck = { id: string; ok: boolean; subject: string; detail: string; file?: string };
+/** Where the year's money for this cover came from: premiums from pay, and what paid what the EOBs say you owe. */
+export type YearMoney = {
+  premiums: PremiumLine[];
+  premiumCents: number;
+  /** Premiums + what you owe providers: the year's cost of being covered and cared for. */
+  costCents: number;
+  /** What you owe, by how it was paid: a card or bank row, the HSA directly, or nothing found yet. */
+  paidCents: number;
+  fromHsaCents: number;
+  notFoundCents: number;
+  notFound: number;
+};
+
+/** One check over the documents; `date` is the day it is about (the statement, the plan's start, the first premium or paycheck it judges). */
+export type MedicalCheck = { id: string; ok: boolean; subject: string; detail: string; file?: string; date: string };
 
 export type StatementView = { file: string; coverage: Coverage; insurer: string; statementDate: string; claims: number; planCents: number; yourShareCents: number };
 
@@ -141,6 +160,7 @@ function claimView(c: EobClaim, s: EobStatement, file: string): ClaimView {
     copayCents: totals.copayCents,
     kind: [...byKind].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Other",
     earlier: [],
+    payment: null,
   };
 }
 
@@ -195,8 +215,21 @@ function limitUse(l: ServiceLimit, claims: readonly ClaimView[], year: number, p
 }
 
 /** Builds the report from every EOB read (by file) and the plans on file. */
-export function buildMedicalReport(input: { statements: { file: string; statement: EobStatement }[]; pending: { file: string; doc: PendingEob }[]; planDocs?: { file: string; doc: PlanDocument }[]; plans: HealthPlan[]; today: string }): MedicalReport {
+export function buildMedicalReport(input: {
+  statements: { file: string; statement: EobStatement }[];
+  pending: { file: string; doc: PendingEob }[];
+  planDocs?: { file: string; doc: PlanDocument }[];
+  plans: HealthPlan[];
+  today: string;
+  /** What paid each claim (links.ts matchClaimPayments over the Book's rows), by claim id. */
+  payments?: ReadonlyMap<string, ClaimPayment>;
+  /** Health premiums on the pay stubs (links.ts premiumLines). */
+  premiums?: readonly PremiumLine[];
+  /** HSA money on the pay stubs, by pay date: held to the medical plan in force (hsaEligibilityChecks). */
+  hsaPay?: readonly { payDate: string; employer: string; cents: number }[];
+}): MedicalReport {
   const { plans, today } = input;
+  const premiums = input.premiums ?? [];
   // The same statement saved twice is one statement: the first file wins.
   const seen = new Set<string>();
   const statements = [...input.statements]
@@ -216,7 +249,7 @@ export function buildMedicalReport(input: { statements: { file: string; statemen
     .map((vs) => {
       const sorted = [...vs].sort((a, b) => a.version - b.version || a.statementDate.localeCompare(b.statementDate));
       const last = sorted.at(-1)!;
-      return { ...last, earlier: sorted.slice(0, -1).map((e) => ({ id: e.id, file: e.file, statementDate: e.statementDate, yourShareCents: e.yourShareCents, planCents: e.planCents })) };
+      return { ...last, earlier: sorted.slice(0, -1).map((e) => ({ id: e.id, file: e.file, statementDate: e.statementDate, yourShareCents: e.yourShareCents, planCents: e.planCents })), payment: input.payments?.get(last.id) ?? null };
     })
     .sort((a, b) => b.firstDate.localeCompare(a.firstDate) || b.id.localeCompare(a.id));
 
@@ -248,6 +281,7 @@ export function buildMedicalReport(input: { statements: { file: string; statemen
         balances: bal ? { asOf: bal.statement.statementDate, file: bal.file, from: bal.statement.balancesFrom!, to: bal.statement.balancesTo!, rows: latestBalances(withBalances) } : null,
         plan,
         limits: plan ? plan.limits.map((l) => limitUse(l, claims, year, plan, today)) : [],
+        money: yearMoney(cs, premiums.filter((p) => p.coverage === coverage && p.payDate.startsWith(y))),
       };
     })
     .sort((a, b) => b.year - a.year || a.coverage.localeCompare(b.coverage));
@@ -273,8 +307,78 @@ export function buildMedicalReport(input: { statements: { file: string; statemen
     plans,
     planDocs: (input.planDocs ?? []).map((d) => ({ ...d.doc, file: d.file, read: plans.some((p) => p.sources.some((s) => s.file === d.file)) })).sort((a, b) => a.coverage.localeCompare(b.coverage) || a.file.localeCompare(b.file)),
     planLimits: Object.fromEntries(plans.map((p) => [p.id, p.limits.map((l) => limitUse(l, claims, Number(today.slice(0, 4)), p, today))])),
-    checks: [...statements.flatMap(({ file, statement }) => statementChecks(file, statement)), ...planChecks(statements, plans)],
+    checks: [...statements.flatMap(({ file, statement }) => statementChecks(file, statement)), ...planChecks(statements, plans), ...premiumChecks(premiums, plans, today), ...hsaEligibilityChecks(input.hsaPay ?? [], plans)],
   };
+}
+
+function yearMoney(cs: readonly ClaimView[], premiums: PremiumLine[]): YearMoney {
+  const owed = cs.filter((c) => c.yourShareCents > 0);
+  const premiumCents = sum(premiums, (p) => p.cents);
+  const notFound = owed.filter((c) => !c.payment);
+  return {
+    premiums,
+    premiumCents,
+    costCents: premiumCents + sum(cs, (c) => c.yourShareCents),
+    paidCents: sum(owed.filter((c) => c.payment && !c.payment.fromHsa), (c) => c.yourShareCents),
+    fromHsaCents: sum(owed.filter((c) => c.payment?.fromHsa), (c) => c.yourShareCents),
+    notFoundCents: sum(notFound, (c) => c.yourShareCents),
+    notFound: notFound.length,
+  };
+}
+
+const COVER_WORD: Record<Coverage, string> = { MEDICAL: "medical", DENTAL: "dental", VISION: "vision" };
+
+/**
+ * Each health premium on the pay stubs falls in a plan on file for that cover: a premium
+ * outside every plan's coverage period means a plan year whose documents aren't on file
+ * (a renewal, a new employer's plan). Only from the first plan of that cover on: pay
+ * before it predates the documents the owner keeps.
+ */
+export function premiumChecks(premiums: readonly PremiumLine[], plans: readonly HealthPlan[], today: string): MedicalCheck[] {
+  const out: MedicalCheck[] = [];
+  for (const coverage of ["MEDICAL", "DENTAL", "VISION"] as const) {
+    const ps = plans.filter((p) => p.coverage === coverage);
+    if (!ps.length) continue;
+    const first = ps.map((p) => p.coverageFrom).sort()[0]!;
+    const lines = premiums.filter((p) => p.coverage === coverage && p.payDate >= first && p.payDate <= today);
+    if (!lines.length) continue;
+    const outside = lines.filter((l) => !ps.some((p) => p.coverageFrom <= l.payDate && l.payDate <= p.coverageTo));
+    const months = [...new Set(outside.map((l) => l.payDate.slice(0, 7)))];
+    const word = COVER_WORD[coverage];
+    out.push({
+      id: `medical.premiums:${coverage}`,
+      ok: !outside.length,
+      date: (outside[0] ?? lines[0]!).payDate,
+      subject: `${word[0]!.toUpperCase()}${word.slice(1)} premiums on the pay stubs`,
+      detail: outside.length
+        ? `${outside.length} ${word} premium deduction${outside.length === 1 ? "" : "s"} (${outside.slice(0, 4).map((l) => `${l.line} ${l.payDate} at ${l.employer}`).join("; ")}${outside.length > 4 ? "; …" : ""}) fall outside every ${word} plan on file (${months.join(", ")}): that plan year's documents aren't in data/medical-plans.json yet.`
+        : `All ${lines.length} ${word} premium deductions since ${first} fall in a plan on file.`,
+    });
+  }
+  return out;
+}
+
+/**
+ * HSA money on the pay stubs needs an HSA-eligible medical plan: a paycheck putting money in
+ * the HSA on a day every medical plan on file in force isn't one is a contribution the
+ * household isn't eligible to make (taxable, plus a 6% excise tax, unless withdrawn).
+ * Pay on days no medical plan on file covers isn't judged.
+ */
+export function hsaEligibilityChecks(hsaPay: readonly { payDate: string; employer: string; cents: number }[], plans: readonly HealthPlan[]): MedicalCheck[] {
+  const judged = hsaPay.filter((h) => h.cents > 0 && medicalPlansOn(plans, h.payDate).length);
+  if (!judged.length) return [];
+  const bad = judged.filter((h) => !medicalPlansOn(plans, h.payDate).some((p) => p.hsaEligible));
+  return [
+    {
+      id: "medical.hsa-eligible",
+      ok: !bad.length,
+      date: (bad[0] ?? judged[0]!).payDate,
+      subject: "HSA money from pay and the medical plan",
+      detail: bad.length
+        ? `${bad.length} paycheck${bad.length === 1 ? "" : "s"} put money in the HSA while no medical plan on file in force is HSA-eligible (${bad.slice(0, 4).map((h) => `${h.payDate} at ${h.employer}: ${medicalPlansOn(plans, h.payDate).map((p) => p.name).join(", ")}`).join("; ")}${bad.length > 4 ? "; …" : ""}). Either the plan file's hsaEligible is wrong, or those contributions are excess (Form 8889).`
+        : `Each of the ${judged.length} paychecks with HSA money falls in an HSA-eligible medical plan on file.`,
+    },
+  ];
 }
 
 /** Each claim's lines add to its totals, and the payment summary is its claims, provider by provider. */
@@ -313,8 +417,8 @@ export function statementChecks(file: string, s: EobStatement): MedicalCheck[] {
     if (a !== b) tie.push(`${label.get(k)}: the summary says ${a / 100}, the claims ${b / 100}`);
   }
   return [
-    { id: `medical.lines:${file}`, ok: !off.length, subject, file, detail: off.length ? off.join("; ") : `Each of its ${s.claims.length} claims' service lines add up to the claim's totals.` },
-    { id: `medical.summary:${file}`, ok: !tie.length, subject, file, detail: tie.length ? tie.join("; ") : "What you owe in the payment summary is its claims, provider by provider." },
+    { id: `medical.lines:${file}`, ok: !off.length, subject, file, date: s.statementDate, detail: off.length ? off.join("; ") : `Each of its ${s.claims.length} claims' service lines add up to the claim's totals.` },
+    { id: `medical.summary:${file}`, ok: !tie.length, subject, file, date: s.statementDate, detail: tie.length ? tie.join("; ") : "What you owe in the payment summary is its claims, provider by provider." },
   ];
 }
 
@@ -344,7 +448,7 @@ export function planChecks(statements: { file: string; statement: EobStatement }
       }
     }
     const names = [...new Set(held)];
-    return [{ id: `medical.plan:${p.id}`, ok: !off.length, subject: p.name, file: last.file, detail: off.length ? off.join("; ") : names.length ? `Its ${names.join(", ")} ${names.length === 1 ? "is" : "are"} the ones its EOBs count against (latest ${last.statement.statementDate}).` : "Its EOBs print no limits to hold it to." }];
+    return [{ id: `medical.plan:${p.id}`, ok: !off.length, subject: p.name, file: last.file, date: p.coverageFrom, detail: off.length ? off.join("; ") : names.length ? `Its ${names.join(", ")} ${names.length === 1 ? "is" : "are"} the ones its EOBs count against (latest ${last.statement.statementDate}).` : "Its EOBs print no limits to hold it to." }];
   });
 }
 

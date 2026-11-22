@@ -44,6 +44,8 @@ export type AccountLimitsDescriptor = {
   employer?: string;
   /** k401 / hsa used/projected: your money (default for the 401(k)) or the employer's. Omitted for the HSA: everything that counts. */
   part?: "employee" | "employer";
+  /** steps tax-saved: one step's (its id, "hsa-<person>"), as the page notes it beside that account; omitted for every open step together. */
+  step?: string;
 };
 
 const FIGURES: Record<LimitAccount, LimitFigure[]> = {
@@ -70,6 +72,7 @@ export function parseAccountLimitsDescriptor(d: Record<string, unknown>): Accoun
   const flows = figure === "used" || figure === "projected";
   if (d.employer != null && (account !== "k401" || !flows || typeof d.employer !== "string" || !d.employer)) return { error: "employer names one plan of a 401(k) used or projected figure." };
   if (d.part != null && (!(account === "k401" || account === "hsa") || !flows || (d.part !== "employee" && d.part !== "employer"))) return { error: "part (employee or employer) is for 401(k) and HSA used or projected figures." };
+  if (d.step != null && (account !== "steps" || figure !== "tax-saved" || typeof d.step !== "string" || !d.step)) return { error: "step names one step of a steps tax-saved figure." };
   return {
     report: "account-limits",
     year: d.year,
@@ -78,6 +81,7 @@ export function parseAccountLimitsDescriptor(d: Record<string, unknown>): Accoun
     ...(perPerson ? { personId: d.personId as string } : {}),
     ...(d.employer ? { employer: d.employer as string } : {}),
     ...(d.part ? { part: d.part as "employee" | "employer" } : {}),
+    ...(d.step ? { step: d.step as string } : {}),
   };
 }
 
@@ -239,12 +243,26 @@ function limitProof(r: TaxAccountsReport, inputs: AccountLimitsInputs, d: Accoun
     lines.push({
       label: "HSA coverage",
       value: { text: c === "NONE" ? "No HSA-eligible plan" : c === "FAMILY" ? "Family" : "Self-only" },
-      source: p.hsa.assumed ? "derived" : "assumption",
-      note: p.hsa.assumed ? "Assumed from the stubs: HSA money on them means a plan, family when the household has dependents. Set it on Inputs." : "Chosen on Inputs.",
+      source: p.hsa.coverageSource === "INPUT" ? "assumption" : p.hsa.coverageSource === "PLAN" ? "proven" : "derived",
+      note:
+        p.hsa.coverageSource === "INPUT" ? "Chosen on Inputs."
+        : p.hsa.coverageSource === "PLAN" && p.hsa.plan ? `From the medical plan on file (${p.hsa.plan.name}): HSA-eligible, and who it covers. Its documents are on the Medical page.`
+        : "Assumed from the stubs: HSA money on them means a plan, family when the household has dependents. Set it on Inputs, or add the medical plan's documents on the Medical page.",
     });
     if (c !== "NONE") {
       lines.push({ op: "+", label: `${c === "FAMILY" ? "Family" : "Self-only"} HSA limit, ${r.year}`, value: { cents: c === "FAMILY" ? fp.limits.hsaFamily : fp.limits.hsaSelf }, source: "law" }, ...ageLines(r, p, inputs.birthYears, 55, "HSA"));
       if (p.age != null && p.age >= 55) lines.push({ op: "+", label: "Catch-up at 55 and over", value: { cents: lim.hsaCatchUp55 }, source: "law" });
+      const plan = p.hsa.plan;
+      if (plan && plan.eligibleMonths < 12)
+        lines.push({
+          op: "−",
+          label: `Months without an HSA-eligible plan (${12 - plan.eligibleMonths} of 12)`,
+          value: { cents: plan.fullLimit - p.hsa.limit },
+          source: "proven",
+          note: "Eligibility counts month by month, on the first of each month (Publication 969); the medical plans on file show no HSA-eligible plan in those months. Not on December 1, so the last-month rule doesn't apply.",
+        });
+      else if (plan?.december && plan.eligibleMonths === 12)
+        lines.push({ label: "Covered on December 1", value: { text: "full year's limit" }, source: "law", note: "The last-month rule: covered by an HSA-eligible plan on December 1 allows the full limit, if you stay eligible through the following year (the testing period)." });
     }
     figure = p.hsa.limit;
     describes = `${p.name} · HSA limit, ${r.year}`;
@@ -430,6 +448,7 @@ function stepLink(r: TaxAccountsReport, id: string): ProofLink | undefined {
 const MATCH_NOTE = "The deferral that earns the whole match (projected gross × the match's share of pay you typed on Inputs) less your projected deferrals.";
 
 function stepsProof(r: TaxAccountsReport, d: AccountLimitsDescriptor): Built {
+  if (d.step) return stepSavedProof(r, d.step);
   const steps = pretaxSteps(r);
   const rate = r.marginalRate.rate;
   // With no rate known the tax saved is unknown: the room is listed, the rate says what's missing.
@@ -481,6 +500,33 @@ function stepsProof(r: TaxAccountsReport, d: AccountLimitsDescriptor): Built {
     selfCheck: unknown ? null : sumCheck(figure, parts, `The ${n} below add up to ${money(parts)}`),
     blocks,
     estimates: saved && steps.length ? [{ id: "account-limits:tax-saved", title: "Tax saved at one marginal rate", detail: "Each dollar of room times the rate on the next dollar; a large amount could cross a bracket." }] : [],
+  };
+}
+
+/** One open step's tax saved: its room times the rate on the next pre-tax dollar. */
+function stepSavedProof(r: TaxAccountsReport, id: string): Built {
+  const s = pretaxSteps(r).find((x) => x.id === id);
+  const rate = r.marginalRate.rate;
+  if (!s || s.taxSavedCents == null || rate == null) return notFound(`No open pre-tax step ${id} with a known rate, ${r.year}.`);
+  const l = stepLink(r, s.id);
+  const match = s.id.startsWith("match-");
+  const lines: ChainLine[] = [
+    { label: `${s.title}: room left`, value: { cents: s.roomCents }, source: match ? "assumption" : "derived", ...(match ? { note: MATCH_NOTE } : {}), ...(l ? { link: l } : {}) },
+    {
+      op: "×",
+      label: "Income tax (federal + state + city) on the next pre-tax dollar",
+      value: { ratio: rate },
+      source: r.marginalRate.source === "SETTING" ? "assumption" : "derived",
+      note: r.marginalRate.source === "SETTING" ? "Typed on Inputs." : r.marginalRate.source === "PRIOR_YEAR" ? `${r.year - 1}'s tax estimate (this year's isn't provable yet).` : "The tax estimate's marginal rates: federal (with the Medicare surtax) + Connecticut + New York.",
+    },
+    { op: "=", label: "Tax it would save", value: { cents: s.taxSavedCents }, source: "estimate" },
+  ];
+  return {
+    describes: `${s.title}: tax filling it would save, ${r.year} (at ${formatPercentRatio(rate, 1)})`,
+    figure: { cents: s.taxSavedCents },
+    selfCheck: sumCheck(s.taxSavedCents, Math.round(s.roomCents * rate), `${money(s.roomCents)} × ${formatPercentRatio(rate, 1)} comes to ${money(Math.round(s.roomCents * rate))}`),
+    blocks: [{ kind: "chain", title: "Room × the rate", lines }],
+    estimates: [{ id: "account-limits:tax-saved", title: "Tax saved at one marginal rate", detail: "Each dollar of room times the rate on the next dollar; a large amount could cross a bracket." }],
   };
 }
 

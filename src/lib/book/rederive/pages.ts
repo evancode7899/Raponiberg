@@ -2,6 +2,7 @@ import type { CardPerksReport, CardScore, PerkPeriod } from "../../cardPerks/typ
 import type { HsaReport } from "../../hsa/report.ts";
 import type { PolicyView } from "../../insurance/report.ts";
 import type { ClaimView } from "../../medical/report.ts";
+import { OWED_BY } from "../derived/medical.ts";
 import type { DerivedFigure } from "../derived/types.ts";
 import type { Book } from "../load.ts";
 import { centsRoute, ratioRoute, rederiveList } from "../proof/independence.ts";
@@ -202,7 +203,7 @@ export function rederiveMedical(claims: readonly ClaimView[], figures: readonly 
   const COL: Record<string, "yourShareCents" | "planCents" | "billedCents"> = { you: "yourShareCents", plan: "planCents", billed: "billedCents", owe: "yourShareCents", paid: "planCents" };
   const byId = new Map(claims.map((x) => [x.id, x]));
   const ROUTE = "each claim's service lines, re-added";
-  const WHY = "As the EOB prints it: the insurer's own balance, or the plan's documents (Statements › Checks holds the plan's limits to the EOBs').";
+  const WHY = "As the EOB prints it: the insurer's own balance, or the plan's documents (Statements › Checks, medical.plan-limits, holds the plan's limits to the EOBs').";
   return rederiveList(figures, (f) => {
     const key = f.key ?? "";
     const col = COL[f.figure.split("-").at(-1)!];
@@ -224,6 +225,14 @@ export function rederiveMedical(claims: readonly ClaimView[], figures: readonly 
       return [centsRoute(ROUTE, f.value, xs.reduce((s, x) => s + lineSum(x, col), 0), "every claim's lines as its EOB prints them, not the claims' totals rows")];
     }
     if (f.figure === "claims") return { none: "A count of claims (an adjustment replaces the version before it): a verdict, not a sum." };
+    const owedBy = OWED_BY[f.figure as keyof typeof OWED_BY];
+    if (owedBy) return [centsRoute(ROUTE, f.value, claims.filter((x) => pick(x) && owedBy(x)).reduce((s, x) => s + lineSum(x, "yourShareCents"), 0), "the lines of each claim paid that way, not the claims' totals rows")];
+    if (f.figure === "premiums") return { none: "As the pay stubs print each paycheck's deduction: the pay proofs re-add the stubs themselves." };
+    if (f.figure === "cost") {
+      const premiums = figures.find((g) => g.figure === "premiums" && g.key === key)?.value;
+      const owed = claims.filter(pick).reduce((s, x) => s + lineSum(x, "yourShareCents"), 0);
+      return premiums && "cents" in premiums ? [centsRoute(ROUTE, f.value, premiums.cents + owed, "premiums from pay plus every claim's lines, not the claims' totals rows")] : { none: WHY };
+    }
     return { none: WHY };
   });
 }

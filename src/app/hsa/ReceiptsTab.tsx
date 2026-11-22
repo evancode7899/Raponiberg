@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, btn, Callout, Card, downloadResponse, EmptyState, inputCls, Segmented, selectCls, table } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, downloadResponse, EmptyState, inputCls, NotFigure, Segmented, selectCls, table } from "@/components/ui/kit";
 import { apiSecretHeaders } from "@/components/ledger/useApi";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL } from "@/lib/hsa/qualify";
@@ -13,7 +13,7 @@ import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 
 type Status = "open" | "done" | "review" | "all";
 
-const needsReview = (e: ExpenseView) => e.flags.includes("NOT_MEDICAL") || e.flags.includes("BAD_TIE");
+const needsReview = (e: ExpenseView) => e.flags.includes("NOT_MEDICAL") || e.flags.includes("BAD_TIE") || e.flags.includes("OVER_EOB");
 
 const FLAG_BADGE: Record<string, { tone: "warn" | "neg" | "neutral"; label: string; title: string }> = {
   DUPLICATE: { tone: "warn", label: "duplicate?", title: "Another expense has the same date and amount. If it's the same bill logged twice, delete one." },
@@ -21,6 +21,7 @@ const FLAG_BADGE: Record<string, { tone: "warn" | "neg" | "neutral"; label: stri
   PAID_ROW_MISSING: { tone: "neutral", label: "row gone", title: "The statement row this was tied to is no longer in the ledger (re-imported or deleted)." },
   NOT_MEDICAL: { tone: "neg", label: "not medical?", title: "Added from a statement charge that doesn't look like medical care. Left out of the totals until you keep or remove it." },
   BAD_TIE: { tone: "neg", label: "wrong tie", title: "Marked reimbursed by an HSA card payment to a provider, which isn't a reimbursement." },
+  OVER_EOB: { tone: "neg", label: "over the EOB", title: "The insurer's EOB for this visit says you owed less than this. Only what you owed can be reimbursed: edit the amount, or keep it if the EOB is wrong." },
 };
 
 export function waitLabel(days: number): string {
@@ -435,6 +436,14 @@ function ReceiptCell({ e, send }: { e: ExpenseView; send: Send }) {
       </button>
     );
   }
+  if (e.eob && !e.eob.over) {
+    const cs = e.eob.claims;
+    return (
+      <a href="/medical?tab=claims" className={`${cellBtn} text-pos hover:underline`} title={`The insurer's EOB says you owed exactly this: ${cs.map((c) => `${c.patient} at ${c.provider || "the provider"} on ${c.firstDate} (claim ${c.id}, EOB of ${c.statementDate})`).join("; ")}. Click for the claim on the Medical page.`}>
+        ✓ EOB
+      </a>
+    );
+  }
   if (e.receipt) {
     return (
       <button
@@ -488,7 +497,11 @@ function Row({ e, dp, picked, toggle, send, onEdit }: { e: ExpenseView; dp: HsaD
           {KIND_LABEL[e.kind]}
           {e.notes && ` · ${e.notes}`}
         </div>
-        {e.doubt && <div className="text-[11px] text-warn">{e.doubt}</div>}
+        {e.doubt && (
+          <div className="text-[11px] text-warn">
+            <NotFigure why="What the EOB or the statement row says, beside the expense: each figure is proven on the Medical page">{e.doubt}</NotFigure>
+          </div>
+        )}
       </td>
       <td className={`${table.td} whitespace-nowrap text-fg-2`}>{e.patient || <span className="text-faint">—</span>}</td>
       <td className={`${table.td} max-w-[13rem] truncate whitespace-nowrap text-xs`}>

@@ -218,7 +218,16 @@ export function ReimburseTab({ r, onReimburse, send }: { r: HsaReport; onReimbur
                 {direct.map((w) => (
                   <tr key={`${w.rowId}`} className={table.tr}>
                     <td className={`${table.td} num whitespace-nowrap`}>{w.date}</td>
-                    <td className={table.td}>{w.payee}</td>
+                    <td className={table.td}>
+                      {w.payee}
+                      {w.claims.length > 0 && (
+                        <div className="text-[11px] text-muted">
+                          <NotFigure why="The EOB claims this swipe paid, as the Medical page matches them">
+                            Paid {w.claims.map((c) => `${c.patient}'s ${c.firstDate} visit (claim ${c.id})`).join(", ")}
+                          </NotFigure>
+                        </div>
+                      )}
+                    </td>
                     <td className={table.tdR}>{formatUsdCents(w.amountCents)}</td>
                     <td className={`${table.td} text-xs`}>
                       {w.linkedIds.length > 0 && (

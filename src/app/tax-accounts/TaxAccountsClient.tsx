@@ -158,10 +158,14 @@ function Accounts({ r }: { r: TaxAccountsReport }) {
   );
 }
 
-/** " Filling it saves ≈$X of tax." for an open pre-tax limit, when a marginal rate is known. */
+/** " Filling it saves ≈$X of tax." for an open pre-tax limit, when a marginal rate is known: the step's own proof (room × the rate). */
 const savesNote = (r: TaxAccountsReport, id: string) => {
   const s = r.steps.find((x) => x.id === id);
-  return s && !s.done && s.taxSavedCents ? ` Filling it saves ≈${usd0(s.taxSavedCents)} of tax.` : "";
+  return s && s.pretax && !s.done && s.taxSavedCents ? (
+    <>
+      {" "}Filling it saves ≈<Fig proof={lim(r, { account: "steps", figure: "tax-saved", step: id }, s.taxSavedCents)} cents={s.taxSavedCents} /> of tax.
+    </>
+  ) : null;
 };
 
 // ---------------------------------------------------------------------------- per person
@@ -253,7 +257,7 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
               )
             }
           />
-          <Meter label={`HSA (${p.hsa.coverage === "NONE" ? "not eligible" : `${p.hsa.coverage.toLowerCase()} coverage${p.hsa.assumed ? ", assumed" : ""}`})`} used={p.hsa.total.ytd} projected={p.hsa.total.projected} limit={p.hsa.limit}
+          <Meter label={`HSA (${p.hsa.coverage === "NONE" ? "not eligible" : `${p.hsa.coverage.toLowerCase()} coverage${p.hsa.assumed ? ", assumed" : p.hsa.coverageSource === "PLAN" ? ", per the plan on file" : ""}`})`} used={p.hsa.total.ytd} projected={p.hsa.total.projected} limit={p.hsa.limit}
             proofs={{ used: h({ figure: "used" }, p.hsa.total.ytd), projected: h({ figure: "projected" }, p.hsa.total.projected), limit: h({ figure: "limit" }, p.hsa.limit) }}
             sub={
               <>

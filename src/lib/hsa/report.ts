@@ -1,6 +1,7 @@
 import type { BlockerRef } from "../book/reports/blockerRef.ts";
 import { daysBetween } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
+import { linkExpenses, type ClaimLite, type ClaimPayment, type ExpenseClaims, type HsaEobIn } from "../medical/links.ts";
 import { ownerFiled, providerKey, qualifyPayee, type ExpenseKind, type Qualification, type Tier } from "./qualify.ts";
 import { matchReceipts, onFile, type ReceiptFileFacts, type ReceiptMatch } from "./receipts.ts";
 import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store.ts";
@@ -96,6 +97,8 @@ export type ReportInput = {
   blockers?: { balance: BlockerRef[]; rows: BlockerRef[] };
   /** The HSA's opening day as its first statement proves it (opening at $0), for when none is typed. */
   openedOn?: string | null;
+  /** The EOBs' claims and the rows that paid them (lib/medical/book.ts hsaEob): what each expense, suggestion and HSA card swipe was for. */
+  eob?: HsaEobIn | null;
 };
 
 export type LedgerRef = {
@@ -108,7 +111,10 @@ export type LedgerRef = {
   account: string;
 };
 
-export type ExpenseFlag = "DUPLICATE" | "BEFORE_OPEN" | "NO_RECEIPT" | "PAID_ROW_MISSING" | "NOT_MEDICAL" | "BAD_TIE";
+export type ExpenseFlag = "DUPLICATE" | "BEFORE_OPEN" | "NO_RECEIPT" | "PAID_ROW_MISSING" | "NOT_MEDICAL" | "BAD_TIE" | "OVER_EOB";
+
+/** The EOB claims behind a logged expense (lib/medical/links.ts linkExpenses). */
+export type ExpenseEob = ExpenseClaims & { claims: ClaimLite[] };
 
 export type ExpenseView = HsaExpense & {
   paid: LedgerRef | null;
@@ -126,11 +132,22 @@ export type ExpenseView = HsaExpense & {
   doubt: string | null;
   /** Its receipts in the receipts folder: tied by the owner, proven by amount, or only dated close (receipts.ts). */
   receiptFiles: ReceiptMatch[];
-  /** Ticked as saved, or a receipt for it is in the folder. */
+  /** Ticked as saved, a receipt for it is in the folder, or an EOB says you owed exactly it. */
   hasReceipt: boolean;
+  /** The EOB claims it's for, when the EOBs show them. */
+  eob: ExpenseEob | null;
 };
 
-export type Suggestion = LedgerRef & { merchant: string; tier: Tier; kind: ExpenseKind; reason: string; patient: string };
+export type Suggestion = LedgerRef & {
+  merchant: string;
+  tier: Tier;
+  kind: ExpenseKind;
+  reason: string;
+  patient: string;
+  /** The EOB claims this charge paid, when it paid what an EOB says you owed: their provider names the expense. */
+  claims?: ClaimLite[];
+  provider?: string;
+};
 
 /**
  * Money out of the HSA. DIRECT: the HSA paid a provider (its debit card, a bill pay):
@@ -145,6 +162,8 @@ export type Withdrawal = LedgerRef & {
   linkedIds: string[];
   /** DISTRIBUTION only: unreimbursed expenses whose amounts add up to it exactly (none when it's linked), for the owner to confirm. */
   exactMatch: string[] | null;
+  /** DIRECT only: the EOB claims this swipe paid (what you owed on them). */
+  claims: ClaimLite[];
 };
 
 export type YearRow = { year: number; count: number; totalCents: number; reimbursedCents: number; unreimbursedCents: number; reimbursedInYearCents: number };
@@ -313,6 +332,19 @@ export function exactSubset(items: { id: string; amountCents: number }[], target
   return go(0, target) ? [...pick] : null;
 }
 
+const EOB_KIND: Record<ClaimLite["coverage"], ExpenseKind> = { MEDICAL: "MEDICAL", DENTAL: "DENTAL", VISION: "VISION" };
+
+/** A charge that paid what EOBs say you owed: qualified care, said in the EOB's words. */
+function eobQualification(cs: readonly ClaimLite[]): Qualification {
+  const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const c = cs[0]!;
+  const reason =
+    cs.length === 1
+      ? `the EOB of ${c.statementDate} says ${c.patient} owed ${usd(c.yourShareCents)} to ${c.provider || "the provider"} for care on ${c.firstDate}`
+      : `it pays ${cs.length} claims the EOBs say you owed ${c.provider || "the provider"} (${cs.map((x) => `${x.patient} ${x.firstDate} ${usd(x.yourShareCents)}`).join(", ")})`;
+  return { tier: "LIKELY", kind: EOB_KIND[c.coverage], reason };
+}
+
 export function buildHsaReport(input: ReportInput): HsaReport {
   const { today, file } = input;
   const settings = file.settings;
@@ -394,10 +426,25 @@ export function buildHsaReport(input: ReportInput): HsaReport {
 
   const receiptMatches = matchReceipts(file.expenses, input.receipts?.files ?? []);
 
+  // The EOBs: what each claim says you owed, the row that paid it, and the logged expenses they back.
+  const eobClaims = input.eob?.claims ?? [];
+  const claimById = new Map(eobClaims.map((c) => [c.id, c]));
+  const payByRow = new Map<string, ClaimPayment>((input.eob?.payments ?? []).map((p) => [p.rowId, p]));
+  const claimsOf = (p: ClaimPayment) => p.claimIds.flatMap((id) => claimById.get(id) ?? []);
+  const eobLinks = linkExpenses(
+    file.expenses.map((e) => ({ id: e.id, date: e.date, amountCents: e.amountCents, patient: e.patient, provider: e.provider, paidRowId: (pinned.get(e.id) ?? auto.get(e.id))?.rowId ?? null })),
+    eobClaims,
+    input.eob?.payments ?? [],
+  );
+  const loggedClaims = new Set([...eobLinks.values()].flatMap((l) => l.claimIds));
+
   const expenses: ExpenseView[] = file.expenses.map((e) => {
     const paid = pinned.get(e.id) ?? auto.get(e.id) ?? null;
     const receiptFiles = receiptMatches.get(e.id) ?? [];
-    const hasReceipt = e.receipt || receiptFiles.some(onFile);
+    const link = eobLinks.get(e.id);
+    const eob: ExpenseEob | null = link ? { ...link, claims: link.claimIds.flatMap((id) => claimById.get(id) ?? []) } : null;
+    // An EOB that says you owed exactly this is its receipt (it names the patient, provider, date and amount).
+    const hasReceipt = e.receipt || receiptFiles.some(onFile) || (!!eob && !eob.over);
     const flags: ExpenseFlag[] = [];
     if ((dupCount.get(dupKey(e)) ?? 0) > 1) flags.push("DUPLICATE");
     if (openedOn && e.date < openedOn) flags.push("BEFORE_OPEN");
@@ -406,9 +453,17 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     let doubt: string | null = null;
     // Added from a statement row that doesn't pass today's rules: probably not medical at all.
     const paidRow = e.source === "LEDGER" && paid?.rowId ? rowById.get(paid.rowId) : undefined;
-    if (paidRow && !e.kept && !qualify(paidRow)) {
+    if (paidRow && !e.kept && !qualify(paidRow) && !payByRow.has(paidRow.id)) {
       flags.push("NOT_MEDICAL");
       doubt = `The charge it came from (${paidRow.payee}, filed under ${paidRow.category}) doesn't look like medical care.`;
+    }
+    if (eob?.over && !e.kept) {
+      flags.push("OVER_EOB");
+      const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const what = eob.claims.map((c) => `${c.patient} at ${c.provider || "the provider"} on ${c.firstDate} (claim ${c.id})`).join("; ");
+      doubt =
+        (doubt ? `${doubt} ` : "") +
+        `The EOB${eob.claims.length === 1 ? "" : "s"} for ${what} say${eob.claims.length === 1 ? "s" : ""} you owed ${usd(eob.owedCents)}${eob.planCents ? ` (the plan paid ${usd(eob.planCents)})` : ""}, not ${usd(e.amountCents)}. Only what you owed can be reimbursed.`;
     }
     const tiedTo = e.reimbursement?.withdrawal ? hsaOut.find((w) => sameFp(w.fp, e.reimbursement!.withdrawal!)) : undefined;
     if (tiedTo?.kind === "DIRECT") {
@@ -431,6 +486,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
       doubt,
       receiptFiles,
       hasReceipt,
+      eob,
     };
   });
 
@@ -463,14 +519,26 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     const merchant = r.merchantKey || r.payee;
     if (ignored.has(merchant.toUpperCase())) continue;
     const known = knownProviders.get(providerKey(r.payee) ?? "") ?? null;
-    const q = qualifyPayee(r.payee, r.detail, { category: r.category, byOwner: ownerFiled(r.classifiedBy) }, known);
+    // A charge that paid what an EOB says you owed is qualified care, whatever its name looks like.
+    const pay = payByRow.get(r.id);
+    const paidClaims = pay ? claimsOf(pay) : [];
+    if (paidClaims.some((c) => loggedClaims.has(c.id))) continue;
+    const q: Qualification | null = paidClaims.length ? eobQualification(paidClaims) : qualifyPayee(r.payee, r.detail, { category: r.category, byOwner: ownerFiled(r.classifiedBy) }, known);
     if (!q) continue;
     const refunded = refunds.some(
       (x) => x.accountId === r.accountId && x.amountCents === -r.amountCents && (x.merchantKey ?? x.payee) === merchant && daysBetween(r.date, x.date) >= 0 && daysBetween(r.date, x.date) <= REFUND_DAYS,
     );
     if (refunded) continue;
     if (unmatchedLogged.some((e) => e.amountCents === -r.amountCents && Math.abs(daysBetween(e.date, r.date)) <= AUTO_MATCH_DAYS)) continue;
-    suggestions.push({ ...refOf(r), merchant, tier: q.tier, kind: q.kind, reason: q.reason, patient: "" });
+    suggestions.push({
+      ...refOf(r),
+      merchant,
+      tier: q.tier,
+      kind: q.kind,
+      reason: q.reason,
+      patient: [...new Set(paidClaims.map((c) => c.patient))].length === 1 ? paidClaims[0]!.patient : "",
+      ...(paidClaims.length ? { claims: paidClaims, provider: paidClaims[0]!.provider || undefined } : {}),
+    });
   }
   suggestions.sort((a, b) => (a.tier === b.tier ? b.date.localeCompare(a.date) : a.tier === "LIKELY" ? -1 : 1));
 
@@ -480,7 +548,8 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     .map((w) => {
       const linkedIds = expenses.filter((e) => e.reimbursement?.withdrawal && sameFp(e.reimbursement.withdrawal, w.fp)).map((e) => e.id);
       const exactMatch = w.kind === "DISTRIBUTION" && !linkedIds.length ? exactSubset(unreimbursed.filter((e) => e.date <= w.date), w.amountCents) : null;
-      return { ...w, linkedIds, exactMatch };
+      const pay = w.kind === "DIRECT" && w.rowId ? payByRow.get(w.rowId) : undefined;
+      return { ...w, linkedIds, exactMatch, claims: pay ? claimsOf(pay) : [] };
     })
     .sort((a, b) => b.date.localeCompare(a.date));
 

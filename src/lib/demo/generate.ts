@@ -8,6 +8,9 @@ import { normalizeGarage, type GarageSettings } from "../car/settings.ts";
 import type { GoalSettings } from "../goals/settings.ts";
 import { EMPTY_SETTINGS, type HsaExpense, type HsaFile } from "../hsa/store.ts";
 import type { TaxProfile } from "../tax/profile.ts";
+import type { HealthPlansFile } from "../medical/plans.ts";
+import type { MedicalDocsFile } from "../medical/types.ts";
+import { demoMedical } from "./medical.ts";
 
 /**
  * The demo household: made up from scratch, never from the owner's ledger. One simulation
@@ -43,6 +46,8 @@ export type DemoData = {
   car: GarageSettings;
   /** Medical bills paid out of pocket and kept for the HSA (HSA page). */
   hsa: HsaFile;
+  /** The health plan and its explanations of benefits (Medical page; data/demo/medical-*.json). */
+  medical: { docs: MedicalDocsFile; plans: HealthPlansFile };
   /** Closing balance of every account in the last month, cents. */
   closing: Record<string, number>;
 };
@@ -621,7 +626,7 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
     ignoredMerchants: [],
     settings: { ...EMPTY_SETTINGS, openedOn: "2024-01-01" },
   };
-  return { documents, taxProfile, awards, budget, goals, car: demoCar(documents), hsa, closing: Object.fromEntries(Object.entries(balance)) };
+  return { documents, taxProfile, awards, budget, goals, car: demoCar(documents), hsa, medical: demoMedical(documents), closing: Object.fromEntries(Object.entries(balance)) };
 }
 
 /**

@@ -6,6 +6,8 @@ import { saveBudget } from "../budget/settings.ts";
 import { CAR_KEY, normalizeGarage } from "../car/settings.ts";
 import { GOALS_KEY, normalizeGoals } from "../goals/settings.ts";
 import { hsaFilePath } from "../hsa/store.ts";
+import { healthPlansFile } from "../medical/plans.ts";
+import { medicalDocsFile } from "../medical/store.ts";
 import { commitDocument } from "../ingest/commitDocument.ts";
 import { refreshDerived } from "../ledger/maintenance.ts";
 import { saveJsonSetting } from "../settingsStore.ts";
@@ -18,7 +20,8 @@ import { generateDemoData, type DemoOptions } from "./generate.ts";
  * resolution, reconciliation, classification), then the ledger-wide refresh pairs the
  * transfers and links the pay stubs to their deposits. The bonus letters go where the
  * Bonuses page reads them (data/demo/bonus-awards.json for the demo), the HSA receipts log
- * where the HSA page does (data/demo/hsa-expenses.json).
+ * where the HSA page does (data/demo/hsa-expenses.json), the health plan and EOBs where
+ * the Book reads them (data/demo/medical-plans.json, medical-documents.json).
  */
 export async function seedDemo(db: PrismaClient, opts: DemoOptions = {}): Promise<{ documents: number; transactions: number }> {
   const data = generateDemoData(opts);
@@ -29,6 +32,8 @@ export async function seedDemo(db: PrismaClient, opts: DemoOptions = {}): Promis
   mkdirSync(path.dirname(awardsFilePath()), { recursive: true });
   writeFileSync(awardsFilePath(), JSON.stringify(data.awards, null, 2) + "\n");
   writeFileSync(hsaFilePath(), JSON.stringify(data.hsa, null, 2) + "\n");
+  writeFileSync(medicalDocsFile(), JSON.stringify(data.medical.docs, null, 1) + "\n");
+  writeFileSync(healthPlansFile(), JSON.stringify(data.medical.plans, null, 2) + "\n");
   for (const doc of data.documents) {
     const text = JSON.stringify(doc);
     const r = await commitDocument(db, {

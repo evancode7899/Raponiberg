@@ -39,6 +39,11 @@ export type CheckId =
   | "tax.params"
   | "tax.documents-tie"
   | "tax.k1-details"
+  | "medical.eob-lines"
+  | "medical.eob-summary"
+  | "medical.plan-limits"
+  | "medical.premiums"
+  | "medical.hsa-eligible"
   | "networth.reconciles";
 
 export type CheckDef = { id: CheckId; title: string; description: string };
@@ -311,6 +316,31 @@ export const CHECKS: CheckDef[] = [
     title: "Every K-1 is read in full",
     description:
       "Each partnership K-1's lettered boxes (11, 13, 14, 15, 17, 18, 19, 20) and the statements attached to it are in the K-1 details file, and the lines there add up to what the K-1's face prints. A box not yet read is missing data: the year's tax still shows, without that box.",
+  },
+  {
+    id: "medical.eob-lines",
+    title: "Each EOB's service lines add to its claims",
+    description: "Every column of every claim (billed, deductible, copay, plan paid, coinsurance, your share) is the sum of its service lines, as the insurer prints them. A claim that doesn't add up was misread; the Medical page shows it with this failure. Withholds nothing elsewhere.",
+  },
+  {
+    id: "medical.eob-summary",
+    title: "Each EOB's payment summary is its claims",
+    description: "What the EOB's payment summary says you owe each provider is what its claims say, provider by provider. Withholds nothing elsewhere.",
+  },
+  {
+    id: "medical.plan-limits",
+    title: "Each health plan's limits are the ones its EOBs count against",
+    description: "The deductible, out-of-pocket limit and annual maximum in data/medical-plans.json (read from the plan's documents) are the limits the plan's own EOBs print in their balances. Withholds nothing elsewhere.",
+  },
+  {
+    id: "medical.premiums",
+    title: "Every health premium on the pay stubs falls in a plan on file",
+    description: "A medical, dental or vision premium taken from pay, from the first plan of that cover on file, is dated inside a plan's coverage period. One outside every plan is a plan year whose documents aren't on file yet: missing data, which withholds nothing.",
+  },
+  {
+    id: "medical.hsa-eligible",
+    title: "HSA money from pay falls in an HSA-eligible plan",
+    description: "Each paycheck that puts money in the HSA is dated while an HSA-eligible medical plan on file is in force. Pay on days no plan on file covers isn't judged. Account limits reads the same plans for HSA coverage.",
   },
   {
     id: "tax.params",

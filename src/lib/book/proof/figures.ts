@@ -399,6 +399,8 @@ export function accountLimitsFigures(r: TaxAccountsReport): PageFigure[] {
   const out = [f({ account: "steps", figure: "room" }, r.pretax.roomCents), f({ account: "chet", figure: "used" }, r.household.chet.contributed), f({ account: "chet", figure: "limit" }, r.household.chet.deductionLimit)];
   if (chetStep) out.push(f({ account: "chet", figure: "room" }, chetStep.roomCents));
   if (r.pretax.taxSavedCents != null) out.push(f({ account: "steps", figure: "tax-saved" }, r.pretax.taxSavedCents));
+  // Each open 401(k), match and HSA step's own "Filling it saves ≈…" note beside its account.
+  for (const st of r.steps) if (/^(k401|match|hsa)-/.test(st.id) && st.pretax && !st.done && st.taxSavedCents) out.push(f({ account: "steps", figure: "tax-saved", step: st.id }, st.taxSavedCents));
   // A year-to-date amount, and its projection where the page draws one (it differs).
   const amount = (x: Omit<AccountLimitsDescriptor, "report" | "year" | "figure">, a: { ytd: number; projected: number }) => [
     f({ ...x, figure: "used" }, a.ytd),

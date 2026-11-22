@@ -11,6 +11,9 @@ import { readTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.
 import { readProfileSettings } from "../profile/settings.ts";
 import { readAwards, type AwardsFile } from "../bonuses/awardStore.ts";
 import { readK1Details, type K1DetailsFile } from "../tax/k1DetailStore.ts";
+import { readHealthPlans, type HealthPlan } from "../medical/plans.ts";
+import { readMedicalDocs } from "../medical/store.ts";
+import type { MedicalDocsFile } from "../medical/types.ts";
 import { readTaxDocsChecked } from "../taxdocs/store.ts";
 import type { TaxDocsFile } from "../taxdocs/types.ts";
 import { readDecisions, type DecisionsFile } from "../transfers/decisionStore.ts";
@@ -220,6 +223,15 @@ export type Book = {
    * file is an error the check reports, never an empty list.
    */
   k1Details?: K1DetailsFile | { error: string };
+  /**
+   * The health coverage documents as last read from the statements folder
+   * (data/medical-documents.json: the EOBs parsed, never the PDFs) and the plans transcribed
+   * from their documents (data/medical-plans.json), as read with the rest of the Book: the
+   * Medical page, the HSA page, Account limits and the medical.* checks read this one copy
+   * (lib/medical/book.ts). The folder scan happens on the Medical page and the import; a scan
+   * that reads something new rewrites the file, which moves the Book on.
+   */
+  medical?: { docs: MedicalDocsFile | null; plans: HealthPlan[]; planProblems: { id: string; problem: string }[] };
   /** The tax documents folder as last scanned (lib/taxdocs): filed returns, W-2s, 1099s, K-1s. Null before the first scan. */
   taxDocs: TaxDocsFile | null;
   persons: TaxPerson[];
@@ -570,6 +582,10 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
       } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
       }
+    })(),
+    medical: (() => {
+      const { plans, problems } = readHealthPlans();
+      return { docs: readMedicalDocs(), plans, planProblems: problems };
     })(),
     unreadable,
     persons,
