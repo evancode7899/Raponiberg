@@ -1,6 +1,7 @@
 import type { CardPerksReport, CardScore, PerkPeriod } from "../../cardPerks/types.ts";
 import type { HsaReport } from "../../hsa/report.ts";
-import type { PolicyView } from "../../insurance/report.ts";
+import { overviewPolicies, paidInYear } from "../../insurance/cover.ts";
+import type { InsuranceInput } from "../derived/insurance.ts";
 import type { ClaimView } from "../../medical/report.ts";
 import { OWED_BY } from "../derived/medical.ts";
 import type { DerivedFigure } from "../derived/types.ts";
@@ -181,10 +182,25 @@ export function rederiveHsa(r: Pick<HsaReport, "growth"> & Partial<Pick<HsaRepor
   });
 }
 
-/** Insurance: premiums paid re-added from the Book's own rows; the rest is the policy as it prints. */
-export function rederiveInsurance(book: Book, views: PolicyView[], figures: readonly DerivedFigure[]): Record<string, Rederivation> {
-  const byKey = new Map(views.map((v) => [v.policy.policyNumber, v]));
+/**
+ * Insurance: premiums paid re-added from the Book's own rows (life, each home and auto
+ * term, and the Overview's year); the rest is the policy as its documents print it.
+ */
+export function rederiveInsurance(book: Book, page: InsuranceInput, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const byKey = new Map(page.policies.map((v) => [v.policy.policyNumber, v]));
+  const cover = new Map([...page.homes, ...page.autos].map((v) => [v.policy.policyNumber, v]));
+  const rowsCents = (ids: string[]) => ids.reduce((s, id) => s - (book.rowById.get(id)?.amountCents ?? 0), 0);
+  const ROWS = "each premium row's amount as its statement prints it";
+  const PRINTED = "As the policy, its declarations, its schedule or the insurer's letter prints it.";
   return rederiveList(figures, (f) => {
+    if (f.figure === "paid-year") return [centsRoute("the Book's rows, re-added", f.value, rowsCents(paidInYear(overviewPolicies(page.policies, page), page.through).map((x) => x.rowId)), ROWS)];
+    if (f.figure === "annual-total" || f.figure === "life-cover") return { none: "A sum of each policy's own figure (its premium for a year, its death benefit), each as its documents print it." };
+    if (f.figure === "annual" || f.figure === "renewal-change") return { none: `${PRINTED} Scaled to a year, or set against the prior premium, in the chain.` };
+    if (f.figure === "paid-term") {
+      const v = cover.get(f.key ?? "");
+      return v ? [centsRoute("the Book's rows, re-added", f.value, rowsCents(v.payments.filter((x) => x.term === v.policy.periodStart).map((x) => x.rowId)), ROWS)] : null;
+    }
+    if (["home-premium", "auto-premium", "limit", "coverage-premium", "discount", "discount-total", "term-premium"].includes(f.figure)) return { none: PRINTED };
     const v = byKey.get(f.key ?? "");
     if (!v) return null;
     if (f.figure === "paid") return [centsRoute("the Book's rows, re-added", f.value, v.payments.reduce((s, x) => s - (book.rowById.get(x.rowId)?.amountCents ?? 0), 0), "each premium row's amount as its statement prints it")];

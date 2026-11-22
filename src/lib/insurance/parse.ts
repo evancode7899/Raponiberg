@@ -1,21 +1,29 @@
 import { parseMoney, parseMonthNameDate, parseSlashDate } from "../ingest/text.ts";
 import { addYears } from "./report.ts";
+import { geicoKind, parseGeicoDeclarations, parseGeicoForm, parseGeicoRenewal } from "./geico.ts";
+import { isStateFarmHomeDeclarations, parseStateFarmHome } from "./stateFarm.ts";
 import type { BillingNotice, InsuranceDoc, PaymentReceipt, PolicyStatus, PremiumYear, TermPolicy } from "./types.ts";
+import { titleCase } from "./words.ts";
 
 /**
  * Reads a term life policy packet and the insurer's billing notices from their PDF text.
  * Written against the American General Life (Corebridge Financial) packet: a cover letter,
  * the delivery requirements, the contract with its policy schedule and table of premiums
  * and face amounts, the riders and the application. Protective Life's policy, policy
- * summary and emailed payment receipt have their own readers at the end. Other insurers
+ * summary and emailed payment receipt have their own readers at the end. Home and auto
+ * policies have readers of their own: State Farm's home declarations (stateFarm.ts) and
+ * GEICO's auto declarations, renewal letter and packet pages (geico.ts). Other insurers
  * print the same facts under other words; they come back as null (or the document as not insurance) rather
  * than guessed.
  */
 
 /** Bump when the reader changes what it reads: every insurance PDF is then read again. */
-export const INSURANCE_READER_VERSION = 2;
+export const INSURANCE_READER_VERSION = 3;
 
-export type InsuranceKind = "POLICY" | "BILL" | "RECEIPT" | "STATUS";
+export type InsuranceKind = "POLICY" | "BILL" | "RECEIPT" | "STATUS" | "PROPERTY" | "AUTO" | "AUTO_RENEWAL" | "FORM";
+
+/** Kinds read from the positioned layout (the scan appends it to the text): their plain text loses which value is on which row. */
+export const needsLayout = (kind: InsuranceKind | null) => kind === "PROPERTY";
 
 /**
  * Text with every space removed. Protective's PDFs break words at random ("Grace P eriod",
@@ -24,7 +32,7 @@ export type InsuranceKind = "POLICY" | "BILL" | "RECEIPT" | "STATUS";
 const squash = (s: string) => s.replace(/\s+/g, "");
 const isProtective = (squashed: string) => /ProtectiveLifeInsuranceCompany/i.test(squashed);
 
-/** Whether the text is a policy packet, a billing notice, a payment receipt or a policy summary, from words every one of them prints. */
+/** Whether the text is a life policy packet, a billing notice, a payment receipt, a policy summary, a home or auto declarations page, a renewal letter or a packet page, from words every one of them prints. */
 export function insuranceKind(text: string): InsuranceKind | null {
   if (/POLICY SCHEDULE/.test(text) && /TABLE OF PREMIUMS AND FACE AMOUNTS/i.test(text) && /Face Amount/i.test(text)) return "POLICY";
   if (/Notice of Payment Due/i.test(text) && /Policy Number/i.test(text) && /Insurance/i.test(text)) return "BILL";
@@ -32,7 +40,8 @@ export function insuranceKind(text: string): InsuranceKind | null {
   if (isProtective(sq) && /SCHEDULEOFGUARANTEEDANNUALPREMIUMSANDFACEAMOUNTS/i.test(sq)) return "POLICY";
   if (isProtective(sq) && /PolicySummary/.test(sq) && /PaidtoDateofPolicy:/i.test(sq)) return "STATUS";
   if (/@protective\.com/i.test(text) && /Thankyouforyourrecentpayment/i.test(sq) && /PolicyNumber:/.test(sq) && /PaymentAmount:/.test(sq)) return "RECEIPT";
-  return null;
+  if (isStateFarmHomeDeclarations(text)) return "PROPERTY";
+  return geicoKind(text);
 }
 
 const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, thirty: 30, sixty: 60 };
@@ -41,8 +50,6 @@ const money = (s: string | undefined) => (s == null ? null : parseMoney(s));
 const pct = (s: string | undefined) => (s == null ? null : Math.round(Number(s) * 100) / 10_000);
 const DATE = String.raw`[A-Z][a-z]+\.? \d{1,2}, \d{4}`;
 const AMOUNT = String.raw`\$[\d,]+\.\d{2}`;
-/** Title case for names printed in capitals ("PAT EXAMPLE" → "Pat Example"). */
-const titleCase = (s: string) => (s === s.toUpperCase() ? s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : s);
 
 function first(re: RegExp, text: string): string | undefined {
   return re.exec(text)?.[1]?.trim();
@@ -54,7 +61,11 @@ export function parseInsuranceDoc(text: string): InsuranceDoc {
   if (kind === "BILL") return parseBill(text);
   if (kind === "RECEIPT") return parseProtectiveReceipt(text);
   if (kind === "STATUS") return parseProtectiveSummary(text);
-  throw new Error("Not a life insurance policy or billing notice.");
+  if (kind === "PROPERTY") return parseStateFarmHome(text);
+  if (kind === "AUTO") return parseGeicoDeclarations(text);
+  if (kind === "AUTO_RENEWAL") return parseGeicoRenewal(text);
+  if (kind === "FORM") return parseGeicoForm(text);
+  throw new Error("Not an insurance policy, declarations page or billing notice.");
 }
 
 export function parsePolicy(text: string): TermPolicy {

@@ -2,16 +2,17 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { importedHashes, statementsFolder } from "../ingest/importFiles.ts";
-import { extractPdfText } from "../statements/extractPdfText.ts";
+import { extractPdfText, positionedItems } from "../statements/extractPdfText.ts";
 import { hashFile } from "../statements/hashFile.ts";
-import { INSURANCE_READER_VERSION, insuranceKind, parseInsuranceDoc } from "./parse.ts";
+import { renderLayout, rowsFromItems } from "../statements/pdfLayout.ts";
+import { INSURANCE_READER_VERSION, insuranceKind, needsLayout, parseInsuranceDoc } from "./parse.ts";
 import { readInsuranceDocs, writeInsuranceDocs } from "./store.ts";
 import type { InsuranceDocsFile, InsuranceFileEntry } from "./types.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
 /**
- * Finds the life insurance documents in the statements folder (STATEMENTS_DIR) and reads
+ * Finds the insurance documents (life, home, auto) in the statements folder (STATEMENTS_DIR) and reads
  * each one once into data/insurance-documents.json. A file unchanged since the last scan
  * (same modified time and size) isn't opened; a changed one is hashed, and only a PDF
  * that is neither an imported statement nor already read has its text read. So the first
@@ -57,9 +58,11 @@ async function scan(db: Db, folder: string): Promise<InsuranceDocsFile> {
     const entry: InsuranceFileEntry = { stamp: f.stamp, sha: f.sha, version: INSURANCE_READER_VERSION };
     if (!imported.has(f.sha)) {
       try {
-        const text = await extractPdfText(f.bytes);
-        if (insuranceKind(text)) {
+        let text = await extractPdfText(f.bytes);
+        const kind = insuranceKind(text);
+        if (kind) {
           try {
+            if (needsLayout(kind)) text = `${text}\n\n${renderLayout(rowsFromItems(await positionedItems(f.bytes, { unmirror: true })))}\n`;
             entry.doc = parseInsuranceDoc(text);
           } catch (e) {
             entry.error = e instanceof Error ? e.message : String(e);

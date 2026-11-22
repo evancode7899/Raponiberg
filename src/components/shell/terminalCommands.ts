@@ -158,7 +158,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     mnemonic: "INS",
     href: "/insurance",
     label: "Insurance",
-    description: "Each life insurance policy, read from its policy packet: coverage, premiums by year, key dates, terms and beneficiaries, with the premiums paid from the statements.",
+    description: "Every life, home and auto policy, read from its documents: coverage and limits, premiums, key dates, terms and beneficiaries, with the premiums paid from the statements.",
     group: "Income & expenses",
     keywords: ["insurance", "life insurance", "term life", "policy", "premium", "death benefit", "face amount", "beneficiary", "conversion", "rider", "coverage"],
   },

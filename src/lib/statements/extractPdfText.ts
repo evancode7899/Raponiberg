@@ -23,8 +23,14 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
   return text;
 }
 
-/** Every text item with its page and position (the EOB reader assigns amounts to columns by it). */
-export async function positionedItems(buffer: Buffer): Promise<PositionedItem[]> {
+/**
+ * Every text item with its page and position (the EOB reader assigns amounts to columns by it).
+ * `unmirror`: some PDFs draw right-aligned values mirrored (a negative horizontal scale, so
+ * "$1,000" comes out "000,1$"); with it, such a run is turned back round and placed where it
+ * shows on the page (it runs leftward from its origin). Off by default, so the layouts other
+ * readers rely on, and the fingerprints made from them, don't change.
+ */
+export async function positionedItems(buffer: Buffer, opts: { unmirror?: boolean } = {}): Promise<PositionedItem[]> {
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // verbosity 0: text extraction doesn't need the standard font files pdf.js warns about.
   const doc = await getDocument({ data: new Uint8Array(buffer), verbosity: 0 }).promise;
@@ -34,7 +40,8 @@ export async function positionedItems(buffer: Buffer): Promise<PositionedItem[]>
       const content = await (await doc.getPage(p)).getTextContent();
       for (const it of content.items) {
         if (!("str" in it)) continue;
-        out.push({ page: p, x: it.transform[4], y: it.transform[5], width: it.width, str: it.str });
+        const mirrored = opts.unmirror && it.transform[0] < 0;
+        out.push({ page: p, x: mirrored ? it.transform[4] - it.width : it.transform[4], y: it.transform[5], width: it.width, str: mirrored ? [...it.str].reverse().join("") : it.str });
       }
     }
     return out;
