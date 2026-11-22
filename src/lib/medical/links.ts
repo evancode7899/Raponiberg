@@ -80,12 +80,33 @@ export function nameWords(name: string): Set<string> {
 /** Two names share a word that tells a provider apart. */
 export function sameProvider(a: string, b: string): boolean {
   if (!a || !b) return false;
-  const x = nameWords(a);
-  for (const w of nameWords(b)) if (x.has(w)) return true;
+  return sharesWord(nameWords(a), nameWords(b));
+}
+
+function sharesWord(x: ReadonlySet<string>, y: ReadonlySet<string>): boolean {
+  const [small, big] = x.size <= y.size ? [x, y] : [y, x];
+  for (const w of small) if (big.has(w)) return true;
   return false;
 }
 
-const inWindow = (c: ClaimLite, date: string) => date >= addDays(c.firstDate, -BEFORE_DAYS) && date <= addDays(c.statementDate > c.lastDate ? c.statementDate : c.lastDate, AFTER_DAYS);
+/** sameProvider with each name's words read once: matching compares thousands of rows to every claim. */
+function providerMatcher(): (a: string, b: string) => boolean {
+  const memo = new Map<string, Set<string>>();
+  const words = (s: string) => {
+    let w = memo.get(s);
+    if (!w) memo.set(s, (w = nameWords(s)));
+    return w;
+  };
+  return (a, b) => !!a && !!b && sharesWord(words(a), words(b));
+}
+
+/** The days a payment for a claim can fall on, from a few days before the care to well after the EOB. */
+const claimWindow = (c: ClaimLite) => ({ from: addDays(c.firstDate, -BEFORE_DAYS), to: addDays(c.statementDate > c.lastDate ? c.statementDate : c.lastDate, AFTER_DAYS) });
+
+const inWindow = (c: ClaimLite, date: string) => {
+  const w = claimWindow(c);
+  return date >= w.from && date <= w.to;
+};
 
 /** Up to GROUP_MAX of `items` adding to exactly `target`, or null. */
 function subsetTo<T extends { yourShareCents: number }>(items: readonly T[], target: number): T[] | null {
@@ -119,12 +140,27 @@ export function matchClaimPayments(claims: readonly ClaimLite[], rows: readonly 
     for (const c of cs) byClaim.set(c.id, p);
   };
 
+  // Each name's words and each claim's window, worked out once (rows × claims comparisons below).
+  const same = providerMatcher();
+  const windows = new Map(claims.map((c) => [c.id, claimWindow(c)]));
+  const within = (c: ClaimLite, date: string) => {
+    const w = windows.get(c.id)!;
+    return date >= w.from && date <= w.to;
+  };
+  // Rows by what they paid, so a claim looks only at rows of its amount.
+  const byAmount = new Map<number, PaymentRowIn[]>();
+  for (const r of out) {
+    const list = byAmount.get(-r.amountCents);
+    if (list) list.push(r);
+    else byAmount.set(-r.amountCents, [r]);
+  }
+
   // One claim, one row of exactly what it says you owe.
   const owed = claims.filter((c) => c.yourShareCents > 0).sort((a, b) => a.firstDate.localeCompare(b.firstDate) || a.id.localeCompare(b.id));
   for (const c of owed) {
-    const near = out
-      .filter((r) => !used.has(r.id) && -r.amountCents === c.yourShareCents && inWindow(c, r.date))
-      .map((r) => ({ r, named: sameProvider(c.provider, r.payee), dist: Math.abs(daysBetween(c.firstDate, r.date)) }))
+    const near = (byAmount.get(c.yourShareCents) ?? [])
+      .filter((r) => !used.has(r.id) && within(c, r.date))
+      .map((r) => ({ r, named: same(c.provider, r.payee), dist: Math.abs(daysBetween(c.firstDate, r.date)) }))
       .filter((x) => x.named || x.r.medical || x.r.fromHsa)
       .sort((a, b) => Number(b.named) - Number(a.named) || a.dist - b.dist);
     const best = near[0];
@@ -137,7 +173,7 @@ export function matchClaimPayments(claims: readonly ClaimLite[], rows: readonly 
   // A bill for several visits: a row naming the provider that its open claims add up to.
   for (const r of out) {
     if (used.has(r.id)) continue;
-    const open = owed.filter((c) => !byClaim.has(c.id) && sameProvider(c.provider, r.payee) && inWindow(c, r.date));
+    const open = owed.filter((c) => !byClaim.has(c.id) && within(c, r.date) && same(c.provider, r.payee));
     if (open.length < 2) continue;
     const set = subsetTo(open, -r.amountCents);
     if (set) record(r, set, "GROUP");
