@@ -138,7 +138,8 @@ function overviewDerived(page: InsuranceInput): DerivedFigure[] {
     {
       figure: "paid-year",
       describes: `Premiums paid to the insurers in the year through ${page.through}, found in the statements`,
-      value: c(paidTotal),
+      // With no policy on file the Overview shows its empty state, not a zero: no figure to sweep.
+      value: all.length ? c(paidTotal) : null,
       lines: [...paid.map((x, i) => ln(`${x.date} · ${x.insurer}`, c(x.cents), i ? "+" : undefined, { source: "proven", link: { label: `${x.insurer}, ${x.date}`, descriptor: { report: "row", rowId: x.rowId } } })), ln("Paid in the year", c(paidTotal), "=")],
     },
     {

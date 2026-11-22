@@ -328,6 +328,9 @@ describe("home and auto cover report", () => {
     expect(val("paid-term", "99-Z9-Z999-9")).toEqual({ cents: 5_200 });
     expect(val("limit", "99-Z9-Z999-9|L0")).toEqual({ text: "$300,000" });
     expect(val("coverage-premium", "1111-22-33-44|4|1")).toEqual({ cents: 15_200 });
+    // No policy on file (the demo): the Overview draws its empty state, so it has no figure for the sweep to clear.
+    const none = insuranceDerived({ policies: [], homes: [], autos: [], through: "2026-02-28" });
+    expect(none.filter((f) => f.value != null).map((f) => f.figure)).toEqual([]);
     // Every figure the tabs draw has a unique key, so a proof always finds the one it shows.
     const keys = figs.map((f) => `${f.figure}|${f.key ?? ""}`);
     expect(new Set(keys).size).toBe(keys.length);
