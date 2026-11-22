@@ -227,7 +227,7 @@ function Overview({ y, fig }: { y: YearView; fig: Fig }) {
       {(y.money.premiumCents > 0 || T.yourShareCents > 0) && (
         <Card
           title="Paying for it"
-          subtitle="Premiums are the pay stubs' pre-tax deductions for this cover. What you owe is matched to the card, bank or HSA payment of exactly that amount, from a payee that names the provider or is plainly medical care."
+          subtitle="Premiums are the pay stubs' pre-tax deductions for this cover. What you owe is matched to the card, bank or HSA payments for it: a bill of that amount (or several claims' together), or what was paid at the desk on the day of care and the balance after, from a payee that names the provider, the office its care is billed under, or plainly medical care."
         >
           <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 lg:grid-cols-5">
             <StatCell proof={fig("premiums", k)} label="Premiums from pay" value={money(y.money.premiumCents)} sub={y.money.premiums.length ? plural(y.money.premiums.length, "paycheck deduction") : "None on the year's stubs"} />
@@ -238,7 +238,11 @@ function Overview({ y, fig }: { y: YearView; fig: Fig }) {
               proof={fig("owed-unfound", k)}
               label="No payment found"
               value={money(y.money.notFoundCents)}
-              sub={y.money.notFound ? `${plural(y.money.notFound, "claim")}: paid in cash, from an account not imported, or still due` : "Every claim's share is paid"}
+              sub={
+                y.money.notFound
+                  ? `${plural(y.money.notFound, "claim")}${y.money.awaiting ? `, ${y.money.awaiting} waiting on statements not in yet` : ""}: paid in cash, from an account not imported, or still due`
+                  : "Every claim's share is paid"
+              }
             />
           </div>
         </Card>
@@ -336,20 +340,44 @@ function SliceTable({ y, rows, kind, fig, name }: { y: YearView; rows: Slice[]; 
 
 // ---------------------------------------------------------------------------- claims
 
+/** How each row was tied to its claim, in words. */
+const HOW: Record<ClaimView["payments"][number]["how"], string> = {
+  NAME: "The bill",
+  MEDICAL: "The bill (matched by amount)",
+  GROUP: "One bill for several claims",
+  NEAR: "The bill (within a cent-rounding)",
+  VISIT: "Paid at the desk on the day of care",
+  BALANCE: "The balance after the desk payment",
+  INSTALLMENT: "One of the payments the bill was paid in",
+  PARTIAL: "Part of the bill (the rest isn't in the statements)",
+};
+
 /** How a claim's share was paid, in words: the row that paid it, and whether the HSA log has it. */
 function PaidCell({ c, log }: { c: ClaimView; log: MedicalPage["inHsaLog"][string] | undefined }) {
   const p = c.payment;
+  const diff = c.paidCents == null ? 0 : c.paidCents - c.yourShareCents;
+  const paidTitle = [
+    ...c.payments.map((x) => `${HOW[x.how]}: ${money(x.amountCents)} on ${x.date}, ${x.payee} (${x.fromHsa ? "the HSA" : x.account})${x.claimIds.length > 1 ? ` · one payment for ${x.claimIds.length} claims` : ""}`),
+    diff > 0 ? `Paid ${money(diff)} more than the EOB says you owe: the provider owes you that back (a refund or a credit on the next visit).` : diff < 0 ? `${money(-diff)} of what the EOB says you owe isn't paid yet in the statements.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
     <td className={`${table.td} whitespace-nowrap text-xs`}>
       <NotFigure why="Where the claim's share was paid from, and the HSA log's entry for it">
         {c.yourShareCents <= 0 ? (
           <span className="text-muted">Nothing owed</span>
         ) : p ? (
-          <span title={`${p.payee}${p.claimIds.length > 1 ? ` · one payment for ${p.claimIds.length} claims` : ""}`}>
+          <span title={paidTitle}>
             {p.fromHsa ? "HSA" : p.account} · {shortDate(p.date)}
+            {c.payments.length > 1 && ` + ${c.payments.length - 1} more`}
+          </span>
+        ) : c.awaiting ? (
+          <span className="text-muted" title="No payment found yet, and the statements in end too soon after this EOB to show the bill being paid. It is looked for again as statements come in.">
+            Statements not in yet
           </span>
         ) : (
-          <span className="text-warn" title="No card, bank or HSA payment of exactly this amount was found: paid in cash, from an account not imported, or still due.">
+          <span className="text-warn" title="No card, bank or HSA payment for this claim was found: not of its amount (alone or with the provider's other claims), and nothing paid at the desk that day. Paid in cash, from an account not imported, or still due.">
             Not found
           </span>
         )}
