@@ -409,6 +409,93 @@ function sumTo<T>(items: readonly T[], cents: (x: T) => number, target: number, 
   return go(0, target) ? [...pick] : null;
 }
 
+// ---------------------------------------------------------------------------- provider balances
+
+/**
+ * Your running balance with one provider's office: everything its EOBs say you owed, and
+ * everything paid it. An office charges a set amount at the desk and nets the difference on
+ * a later visit (a few cents over at each visit, then one charge short by their sum), so one visit's gap is
+ * often just a credit it already applied. Claims join one account when one row paid them,
+ * they name the same provider, or their rows share a payee (one billing office, several
+ * clinicians).
+ */
+export type ProviderAccount = {
+  /** The account's first claim id: stable while its history doesn't change. */
+  key: string;
+  coverage: Coverage;
+  /** The providers the EOBs name, and the payees its rows carry. */
+  providers: string[];
+  payees: string[];
+  claimIds: string[];
+  /** Claims you owed something on. */
+  visits: number;
+  /** What the EOBs say you owed, and what rows paid toward it. */
+  owedCents: number;
+  paidCents: number;
+  /** owed − paid: above 0 not found paid yet, below 0 a credit the office holds. */
+  balanceCents: number;
+  firstDate: string;
+  lastDate: string;
+};
+
+/** Each claim's provider account, and the accounts (by key). */
+export function providerAccounts(claims: readonly ClaimLite[], payments: readonly ClaimPayment[]): { accounts: ProviderAccount[]; byClaim: Map<string, ProviderAccount> } {
+  const parent = new Map(claims.map((c) => [c.id, c.id]));
+  const find = (id: string): string => {
+    let r = id;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    parent.set(id, r);
+    return r;
+  };
+  const join = (a: string, b: string) => {
+    if (!parent.has(a) || !parent.has(b)) return;
+    const [x, y] = [find(a), find(b)];
+    if (x !== y) parent.set(x > y ? x : y, x > y ? y : x);
+  };
+  const firstBy = new Map<string, string>();
+  const joinOn = (k: string, id: string) => {
+    const at = firstBy.get(k);
+    if (at) join(at, id);
+    else firstBy.set(k, id);
+  };
+  const byId = new Map(claims.map((c) => [c.id, c]));
+  for (const c of claims) if (c.provider) joinOn(`P|${c.coverage}|${providerKey(c.provider)}`, c.id);
+  for (const p of payments) {
+    const ids = p.claimIds.filter((id) => byId.has(id));
+    for (const id of ids.slice(1)) join(ids[0]!, id);
+    const k = [...nameWords(p.payee)].sort().join(" ");
+    if (k && ids[0]) joinOn(`R|${byId.get(ids[0])!.coverage}|${k}`, ids[0]);
+  }
+  const groups = new Map<string, ClaimLite[]>();
+  for (const c of claims) groups.set(find(c.id), [...(groups.get(find(c.id)) ?? []), c]);
+  const accounts: ProviderAccount[] = [];
+  const byClaim = new Map<string, ProviderAccount>();
+  for (const cs of groups.values()) {
+    const ids = new Set(cs.map((c) => c.id));
+    const ps = payments.filter((p) => p.claimIds.some((id) => ids.has(id)));
+    const owedCents = cs.reduce((s, c) => s + Math.max(0, c.yourShareCents), 0);
+    const paidCents = ps.reduce((s, p) => s + p.shares.filter((x) => ids.has(x.claimId)).reduce((t, x) => t + x.cents, 0), 0);
+    const sorted = [...cs].sort((a, b) => a.firstDate.localeCompare(b.firstDate) || a.id.localeCompare(b.id));
+    const a: ProviderAccount = {
+      key: [...ids].sort()[0]!,
+      coverage: sorted[0]!.coverage,
+      providers: [...new Set(cs.map((c) => c.provider).filter(Boolean))].sort(),
+      payees: [...new Set(ps.map((p) => p.payee))].sort(),
+      claimIds: sorted.map((c) => c.id),
+      visits: cs.filter((c) => c.yourShareCents > 0).length,
+      owedCents,
+      paidCents,
+      balanceCents: owedCents - paidCents,
+      firstDate: sorted[0]!.firstDate,
+      lastDate: sorted.reduce((m, c) => (c.lastDate > m ? c.lastDate : m), sorted[0]!.lastDate),
+    };
+    accounts.push(a);
+    for (const c of cs) byClaim.set(c.id, a);
+  }
+  accounts.sort((a, b) => a.firstDate.localeCompare(b.firstDate) || a.key.localeCompare(b.key));
+  return { accounts, byClaim };
+}
+
 // ---------------------------------------------------------------------------- HSA log
 
 /** What linking needs of a logged HSA expense (lib/hsa/store.ts HsaExpense). */
@@ -421,8 +508,17 @@ export type ExpenseClaims = {
   planCents: number;
   /** PAYMENT: the row that paid it paid these claims; AMOUNT: exactly what an EOB says the patient owed then; VISIT: the same patient, provider and day. */
   how: "PAYMENT" | "AMOUNT" | "VISIT";
-  /** The expense asks for more than the EOBs say was owed. */
+  /**
+   * The expense asks for more than can be reimbursed: more than the EOBs say was owed, beyond
+   * what the provider's office put toward your other care with it (`creditCents`).
+   */
   over: boolean;
+  /** Paid above what the EOBs say, and the office applied it to your other care with it: reimbursable. */
+  creditCents: number;
+  /** Paid above what the EOBs say, and the office still holds it as a credit: not care yet. */
+  heldCents: number;
+  /** The provider account the claims are in (providerAccounts). */
+  account: Pick<ProviderAccount, "key" | "owedCents" | "paidCents" | "balanceCents"> | null;
 };
 
 const samePatient = (a: string, b: string) => !a || !b || a.trim().split(/\s+/)[0]!.toUpperCase() === b.trim().split(/\s+/)[0]!.toUpperCase();
@@ -433,9 +529,20 @@ export function linkExpenses(expenses: readonly ExpenseIn[], claims: readonly Cl
   const byRow = new Map(payments.map((p) => [p.rowId, p]));
   const taken = new Set<string>();
   const out = new Map<string, ExpenseClaims>();
+  const { byClaim: accountOf } = providerAccounts(claims, payments);
   const link = (e: ExpenseIn, cs: ClaimLite[], how: ExpenseClaims["how"]) => {
     const owedCents = cs.reduce((s, c) => s + c.yourShareCents, 0);
-    out.set(e.id, { claimIds: cs.map((c) => c.id), owedCents, planCents: cs.reduce((s, c) => s + c.planCents, 0), how, over: e.amountCents > owedCents });
+    const a = cs.length ? accountOf.get(cs[0]!.id) : undefined;
+    out.set(e.id, {
+      claimIds: cs.map((c) => c.id),
+      owedCents,
+      planCents: cs.reduce((s, c) => s + c.planCents, 0),
+      how,
+      over: e.amountCents > owedCents,
+      creditCents: 0,
+      heldCents: 0,
+      account: a ? { key: a.key, owedCents: a.owedCents, paidCents: a.paidCents, balanceCents: a.balanceCents } : null,
+    });
     for (const c of cs) taken.add(c.id);
   };
   const sorted = [...expenses].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
@@ -457,6 +564,22 @@ export function linkExpenses(expenses: readonly ExpenseIn[], claims: readonly Cl
     if (out.has(e.id) || !e.patient) continue;
     const visit = claims.filter((c) => !taken.has(c.id) && samePatient(e.patient, c.patient) && sameProvider(c.provider, e.provider) && e.date >= addDays(c.firstDate, -3) && e.date <= addDays(c.lastDate, 3));
     if (visit.length && visit.reduce((s, c) => s + c.yourShareCents, 0) < e.amountCents) link(e, visit, "VISIT");
+  }
+  // Paid above the EOB by the very row that paid it: money the office has. It went to your
+  // other care with that office, except what the office still holds (paid in all beyond all
+  // it says you owed), and that is the latest overpayments' (an office uses credit oldest first).
+  const excess = sorted.flatMap((e) => {
+    const l = out.get(e.id);
+    const p = e.paidRowId ? byRow.get(e.paidRowId) : undefined;
+    return l?.how === "PAYMENT" && l.account && p && e.amountCents > l.owedCents && e.amountCents <= p.amountCents ? [{ e, l, cents: e.amountCents - l.owedCents }] : [];
+  });
+  const held = new Map<string, number>();
+  for (const x of [...excess].reverse()) {
+    const k = x.l.account!.key;
+    const left = held.has(k) ? held.get(k)! : Math.max(0, -x.l.account!.balanceCents);
+    const h = Math.min(left, x.cents);
+    held.set(k, left - h);
+    out.set(x.e.id, { ...x.l, over: h > 0, creditCents: x.cents - h, heldCents: h });
   }
   return out;
 }

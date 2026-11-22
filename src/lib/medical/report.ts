@@ -1,6 +1,6 @@
 import { addDays } from "../dates/isoDate.ts";
 import { careKind, codeCounts, type CareKind } from "./codes.ts";
-import { medicalPlansOn, type ClaimPayment, type PremiumLine } from "./links.ts";
+import { medicalPlansOn, providerAccounts, type ClaimPayment, type PremiumLine, type ProviderAccount } from "./links.ts";
 import { planOn, ROLLING_MONTHS, type HealthPlan, type PlanAmounts, type ServiceLimit } from "./plans.ts";
 import type { BalanceKind, Coverage, EobBalance, EobClaim, EobLine, EobStatement, PendingEob, PlanDocument } from "./types.ts";
 
@@ -117,6 +117,8 @@ export type MedicalReport = {
   /** Each plan's limits as used today (this calendar year, rolling windows to today), by plan id. */
   planLimits: Record<string, LimitUse[]>;
   checks: MedicalCheck[];
+  /** Your running balance with each provider's office that any row paid: all its EOBs say you owed, against all paid it. */
+  accounts: ProviderAccount[];
 };
 
 const sum = <T>(xs: readonly T[], f: (x: T) => number) => xs.reduce((s, x) => s + f(x), 0);
@@ -342,6 +344,7 @@ export function buildMedicalReport(input: {
     })),
     years,
     claims,
+    accounts: providerAccounts(claims, [...new Map(claims.flatMap((c) => c.payments.map((p) => [p.rowId, p] as const))).values()]).accounts.filter((a) => a.paidCents > 0),
     statements: statements
       .map(({ file, statement: s }) => {
         const vs = versions.filter((v) => v.file === file);
