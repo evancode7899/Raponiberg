@@ -90,9 +90,9 @@ export function Panel({
 
 /** Classes of a panel's table: tight rows, a head that stays, figures on the right. */
 export const grid = {
-  table: "w-full border-collapse text-[12px]",
-  th: "sticky top-0 z-[1] whitespace-nowrap border-b border-line bg-surface px-2 py-[3px] text-right text-[11px] font-medium text-muted first:text-left",
-  td: "num whitespace-nowrap border-b border-line/60 px-2 py-[2.5px] text-right first:text-left",
-  name: "w-full max-w-0 truncate border-b border-line/60 px-2 py-[2.5px] text-left",
+  table: "w-full border-collapse text-[12px] min-[1800px]:text-[13px]",
+  th: "sticky top-0 z-[1] whitespace-nowrap border-b border-line bg-surface px-2 py-[3px] text-right text-[11px] font-medium text-muted first:text-left min-[1800px]:text-[12px]",
+  td: "num whitespace-nowrap border-b border-line/60 px-2 py-[2.5px] text-right first:text-left min-[1800px]:py-[5px]",
+  name: "w-full max-w-0 truncate border-b border-line/60 px-2 py-[2.5px] text-left min-[1800px]:py-[5px]",
   row: "outline-none hover:bg-surface-2 focus:bg-accent-soft focus:shadow-[inset_2px_0_0_var(--accent)]",
 };

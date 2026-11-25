@@ -38,6 +38,8 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   const cut = (v: number) => (cap == null ? v : Math.max(-cap, Math.min(cap, v)));
   const rows = slice.months.map((m) => ({ label: m.label, income: cut(m.incomeCents / 100), spending: cut(m.spendingCents / 100), net: cut(m.netCents / 100), raw: { Income: m.incomeCents / 100, Spending: m.spendingCents / 100, Net: m.netCents / 100 } }));
   const over = pastScale(slice.months, cap);
+  // With a cut, the axis ends there: a nicer round number above it would leave the top empty.
+  const low = Math.floor(Math.min(0, ...rows.map((r) => r.net)) / 5000) * 5000;
   const last = slice.months.at(-1)!;
   const cats = mergeCategories(slice.months, (m) => m.spendingByCategory).filter((c) => c.cents > 0);
   const rest = slice.months.length > 1 ? slice.months.slice(0, -1) : slice.months;
@@ -103,7 +105,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                 </defs>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
-                <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={["auto", cap ?? "auto"]} />
+                <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={cap == null ? ["auto", "auto"] : [low, cap]} />
                 <Tooltip {...ui.tooltip} formatter={(v, n, item) => [formatUsd(Math.round((item?.payload as (typeof rows)[number] | undefined)?.raw[String(n) as "Income" | "Spending" | "Net"] ?? Number(v))), String(n)]} />
                 <Legend {...ui.legend} />
                 {cap != null && <ReferenceLine y={cap} stroke={chart.axisLine} strokeDasharray="2 3" />}

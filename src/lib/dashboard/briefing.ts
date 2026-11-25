@@ -16,7 +16,7 @@ import type { SpendingReport } from "../book/reports/spending.ts";
 import type { FireSettings } from "../book/proof/planningProof.ts";
 import { analyzeFire, fiLevers, firePlans, type FiLever } from "../fire/fire.ts";
 import type { Forecast } from "../forecast/forecast.ts";
-import { buildFeed, type FeedItem } from "../insights/feed.ts";
+import { buildFeed, highlightSegs, type FeedItem, type FeedSeg } from "../insights/feed.ts";
 import { classLabel } from "../investments/securities.ts";
 import type { AnnualProfileReport } from "../profile/buildAnnualProfile.ts";
 
@@ -57,6 +57,8 @@ export type Briefing = {
     changeCents: number;
     proofs: { opening: ProofRef; closing: ProofRef; change: ProofRef };
     steps: BriefingStep[];
+    /** Net worth › What changed's own sentences on the month, past the first (the feed's). */
+    notes: FeedSeg[][];
   } | null;
   due: BriefingDue[];
   goals: BriefingGoal[];
@@ -143,6 +145,7 @@ export function buildBriefing(x: BriefingInputs): Briefing {
       closingCents: last.closingCents,
       changeCents: last.changeCents,
       proofs: { opening: ref(last.proofs.opening, last.openingCents), closing: ref(last.proofs.closing, last.closingCents), change: ref(last.proofs.change, last.changeCents) },
+      notes: last.highlights.slice(1).map(highlightSegs),
       steps: last.steps.map((s) => {
         // Spending's own proof states what was spent; the bridge draws what it did to net worth.
         const spending = s.key === "spending";

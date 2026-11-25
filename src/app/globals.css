@@ -268,7 +268,8 @@ html[data-theme="terminal"] tbody tr:nth-child(even) > td {
 html[data-theme="terminal"] tbody tr:hover > td {
   background-color: var(--accent-soft);
 }
-html[data-theme="terminal"] [role="tab"][aria-selected="true"] {
+html[data-theme="terminal"] [role="tab"][aria-selected="true"],
+html[data-theme="terminal"] [role="tab"][aria-selected="true"] * {
   background: var(--accent);
   color: var(--accent-fg);
 }
@@ -298,6 +299,11 @@ body {
   background: var(--canvas);
   color: var(--fg);
   font-family: var(--ui-font);
+}
+
+/* A chart's legend reads as text: the swatch beside a name carries its color. */
+.recharts-legend-item-text {
+  color: var(--chart-legend) !important;
 }
 
 /* Numbers line up in every table and stat. */

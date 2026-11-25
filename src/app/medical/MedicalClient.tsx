@@ -229,7 +229,7 @@ function Overview({ y, fig }: { y: YearView; fig: Fig }) {
           title="Paying for it"
           subtitle="Premiums are the pay stubs' pre-tax deductions for this cover. What you owe is matched to the card, bank or HSA payments for it: a bill of that amount (or several claims' together), or what was paid at the desk on the day of care and the balance after, from a payee that names the provider, the office its care is billed under, or plainly medical care."
         >
-          <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-px overflow-hidden rounded-md border border-line bg-line">
             <StatCell proof={fig("premiums", k)} label="Premiums from pay" value={money(y.money.premiumCents)} sub={y.money.premiums.length ? plural(y.money.premiums.length, "paycheck deduction") : "None on the year's stubs"} />
             <StatCell proof={fig("cost", k)} label="Cost of care" value={money(y.money.costCents)} sub="Premiums plus what you owe" />
             <StatCell proof={fig("owed-card", k)} label="Paid by card or bank" value={money(y.money.paidCents)} sub="Of what you owe" />
@@ -253,7 +253,7 @@ function Overview({ y, fig }: { y: YearView; fig: Fig }) {
           title={[...new Set(inNet.map((r) => BALANCE_LABEL[r.kind]))].join(" and ").replace(/^./, (c) => c.toUpperCase())}
           subtitle={`${y.coverage === "MEDICAL" ? "In network, as the insurer counted them" : "As the insurer printed them, each person on their latest statement"}, through the EOB of ${shortDate(y.balances.asOf)} (${shortDate(y.balances.from)} – ${shortDate(y.balances.to)})${inNet.some((r) => r.includesPharmacy) ? "; both count medical and pharmacy" : ""}.`}
         >
-          <div className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-px overflow-hidden rounded-md border border-line bg-line">
             {family.map((r) => (
               <BalanceCell key={r.kind} y={y} row={r} fig={fig} label={`Family ${SHORT_KIND[r.kind]}`} />
             ))}

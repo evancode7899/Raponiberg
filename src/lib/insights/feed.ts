@@ -4,7 +4,7 @@ import type { ProofRef } from "../book/proof/compose.ts";
 import type { CalendarItem } from "../book/reports/moneyCalendar.ts";
 import type { GoalProgress } from "../book/reports/goals.ts";
 import type { NetWorthReport } from "../book/reports/netWorth.ts";
-import type { NetWorthChange } from "../book/reports/netWorthChanges.ts";
+import type { HighlightSeg, NetWorthChange } from "../book/reports/netWorthChanges.ts";
 import { sliceRange } from "../book/reports/cashFlowWindows.ts";
 import type { SpendingReport } from "../book/reports/spending.ts";
 import { formatDisplayDateFromYmd } from "../displayTime.ts";
@@ -103,6 +103,10 @@ export function records(nw: NetWorthReport): FeedItem[] {
   return out;
 }
 
+/** One of What changed's sentences, each number in it a figure with its proof. */
+export const highlightSegs = (h: HighlightSeg[]): FeedSeg[] =>
+  h.map((s): FeedSeg => (typeof s === "string" ? s : { text: s.text, proof: { descriptor: s.descriptor, shownCents: s.cents ?? null, ...(s.ratio != null ? { shown: { ratio: s.ratio } } : {}) } }));
+
 export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
   const items: FeedItem[] = [...records(x.netWorth)];
   if (x.change)
@@ -111,7 +115,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         id: `change:${x.change!.start}:${i}`,
         tone: x.change!.changeCents >= 0 ? "good" : "warn",
         area: "NW",
-        segs: h.map((s): Seg => (typeof s === "string" ? s : { text: s.text, proof: { descriptor: s.descriptor, shownCents: s.cents ?? null, ...(s.ratio != null ? { shown: { ratio: s.ratio } } : {}) } })),
+        segs: highlightSegs(h),
         href: "/net-worth?tab=changes",
         score: 8_000_00 + Math.min(4_000_00, Math.abs(x.change!.changeCents) / 100),
       }),

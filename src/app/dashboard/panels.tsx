@@ -36,6 +36,23 @@ function Open({ href, children }: { href: string; children: React.ReactNode }) {
   );
 }
 
+/** A sentence: words, the figures in it with their proofs, and text that only looks like one. */
+function Segs({ segs }: { segs: Briefing["feed"][number]["segs"] }) {
+  return segs.map((s, j) =>
+    typeof s === "string" ? (
+      s
+    ) : "notFigure" in s ? (
+      <NotFigure key={j} why={s.notFigure}>
+        {s.text}
+      </NotFigure>
+    ) : (
+      <span key={j} className="font-semibold text-fg">
+        <ProofValue proof={s.proof}>{s.text}</ProofValue>
+      </span>
+    ),
+  );
+}
+
 // ------------------------------------------------------------------ net worth
 
 export function NetWorthPanel({ nw, events, range, setRange, average, setAverage }: { nw: Summary["netWorth"]; events: Briefing["events"]; range: Range; setRange: (r: Range) => void; average: boolean; setAverage: (on: boolean) => void }) {
@@ -90,7 +107,7 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
         <thead>
           <tr>
             <th className={grid.th}>Step</th>
-            <th className={`${grid.th} w-[24%]`} aria-label="Waterfall" />
+            <th className={`${grid.th} w-[18%]`} aria-label="Waterfall" />
             <th className={grid.th}>Amount</th>
             <th className={grid.th}>Average</th>
           </tr>
@@ -112,7 +129,7 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
             const b = pct(Math.max(s.fromCents, s.toCents));
             return (
               <tr key={s.key} data-desk-row="" tabIndex={-1} className={grid.row}>
-                <td className={grid.td} title={s.note}>
+                <td className={grid.name} title={s.note}>
                   <Open href="/net-worth?tab=changes">{s.label}</Open>
                 </td>
                 <td className={grid.td}>
@@ -132,7 +149,7 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
             <td className={grid.td}>
               <Open href="/net-worth?tab=changes">Closing</Open>
             </td>
-            <td className={`${grid.td} ${tone(change.changeCents)}`}>
+            <td className={`${grid.td} !px-0 ${tone(change.changeCents)}`}>
               <ProofValue proof={change.proofs.change}>{usdDelta(change.changeCents)}</ProofValue>
             </td>
             <td className={grid.td}>
@@ -142,6 +159,15 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
           </tr>
         </tbody>
       </table>
+      {change.notes.length > 0 && (
+        <ul className="flex flex-col gap-1 px-2 py-1.5 text-[11.5px] leading-snug text-muted">
+          {change.notes.map((n, i) => (
+            <li key={i}>
+              <Segs segs={n} />
+            </li>
+          ))}
+        </ul>
+      )}
     </Panel>
   );
 }
@@ -392,6 +418,18 @@ export function BalancePanel({ nw }: { nw: Summary["netWorth"] }) {
               </td>
             </tr>
           ))}
+          {nw.assetsCents != null && nw.debtsCents != null && (
+            <tr data-desk-row="" tabIndex={-1} className={grid.row}>
+              <td className={`${grid.name} text-muted`}>
+                <Open href="/net-worth">Assets, less debts of</Open>{" "}
+                <ProofValue proof={proofOf(nw.proofs?.debts, nw.debtsCents)}>{usd0(Math.abs(nw.debtsCents))}</ProofValue>
+              </td>
+              <td className={grid.td}>
+                <ProofValue proof={proofOf(nw.proofs?.assets, nw.assetsCents)}>{usd0(nw.assetsCents)}</ProofValue>
+              </td>
+              <td className={grid.td} />
+            </tr>
+          )}
           <tr data-desk-row="" tabIndex={-1} className={`${grid.row} font-semibold`}>
             <td className={grid.td}>
               <Open href="/net-worth">Net worth</Open>
@@ -517,19 +555,7 @@ export function FeedPanel({ feed }: { feed: Briefing["feed"] }) {
                 {f.area}
               </Link>
               <span className="min-w-0 text-fg-2">
-                {f.segs.map((s, j) =>
-                  typeof s === "string" ? (
-                    s
-                  ) : "notFigure" in s ? (
-                    <NotFigure key={j} why={s.notFigure}>
-                      {s.text}
-                    </NotFigure>
-                  ) : (
-                    <span key={j} className="font-semibold text-fg">
-                      <ProofValue proof={s.proof}>{s.text}</ProofValue>
-                    </span>
-                  ),
-                )}
+                <Segs segs={f.segs} />
               </span>
             </li>
           ))}
