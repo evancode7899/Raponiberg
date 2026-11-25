@@ -542,6 +542,11 @@ export function Tabs<T extends string>({
   );
 }
 
+/** The page scrolls inside the app's frame (AppShell's main), never the window. */
+export function scrollToTop() {
+  document.getElementById("main")?.scrollTo({ top: 0 });
+}
+
 /**
  * Tab state mirrored in the URL (?tab=…), so tabs survive reloads, links can point at
  * a tab, and the browser's back button works. Re-read whenever Next's router changes the
@@ -550,8 +555,9 @@ export function Tabs<T extends string>({
  * search params needs no Suspense boundary.
  */
 export function useTabParam<T extends string>(valid: readonly T[], fallback: T): [T, (t: T) => void] {
-  const [tab, setTabState] = useState<T>(fallback);
   const query = useSearchParams().get("tab");
+  // The tab asked for from the first draw: a link to a tab never mounts the default one first.
+  const [tab, setTabState] = useState<T>(() => (query && (valid as readonly string[]).includes(query) ? (query as T) : fallback));
   useEffect(() => {
     const read = () => {
       const t = new URLSearchParams(window.location.search).get("tab") as T | null;

@@ -541,7 +541,7 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
     const p = c.prev != null && !(c.est && l.estPartial) ? vals[c.prev] : null;
     if (p == null || !("v" in p)) return { text: "", proof: noFigure("nothing to compare"), title: c.prev == null ? (c.y?.isCurrent ? "A partial year isn't compared." : "The first year: nothing to compare.") : undefined };
     const d = x.v - p.v;
-    if (Math.abs(d) < (l.fmt === "pct" ? 0.0005 : 50)) return { text: "—", dim: true, proof: noFigure("no change worth showing") };
+    if (Math.abs(d) < (l.fmt === "pct" ? 0.0005 : 50)) return { text: "—", dim: true, proof: noFigure("no change worth showing", true) };
     const good = l.good === undefined ? "up" : l.good;
     const tone = good == null ? "" : (d > 0) === (good === "up") ? "text-pos" : "text-neg";
     const rel = l.fmt !== "pct" && p.v !== 0 ? ` (${d > 0 ? "+" : "−"}${pct(Math.abs(d / p.v), 0)})` : "";
@@ -581,7 +581,7 @@ function LivingBreakdown({ years }: { years: YearProfile[] }) {
       cells: years.map((y) =>
         cell(y, (x) => {
           const cents = x.spending.find((s) => s.category === c)?.cents;
-          return cents == null ? { text: usd(0), proof: noFigure("nothing in this category that year") } : fig(cents, proofOf({ report: "annual", figure: "category", year: y.year, category: c }, cents));
+          return cents == null ? { text: usd(0), proof: noFigure("nothing in this category that year", true) } : fig(cents, proofOf({ report: "annual", figure: "category", year: y.year, category: c }, cents));
         }),
       ),
     })),

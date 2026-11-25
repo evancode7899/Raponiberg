@@ -3,7 +3,7 @@
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { Card, EmptyState, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { limitKey } from "@/lib/book/derived/insurance";
-import { usd0 } from "@/lib/formatMoney";
+import { NA, usd0 } from "@/lib/formatMoney";
 import type { AutoView } from "@/lib/insurance/cover";
 import type { InsurancePage } from "@/lib/insurance/page";
 import Link from "next/link";
@@ -50,10 +50,10 @@ export function AutoTab({ data, figs }: { data: InsurancePage; figs: readonly De
           proof={derivedTarget("insurance", figs, "renewal-change", pn)}
           label="Change at renewal"
           tone={change == null ? "neutral" : change > 0 ? "neg" : "pos"}
-          value={change == null ? "—" : `${change > 0 ? "+" : ""}${usd0(change)}`}
+          value={change == null ? NA : `${change > 0 ? "+" : ""}${usd0(change)}`}
           sub={change == null ? "No renewal letter on file" : "New term against the one it renews"}
         />
-        <StatCell proof={derivedTarget("insurance", figs, "discount-total", pn)} label="Discounts" value={p.discountTotalCents == null ? "—" : usd0(p.discountTotalCents)} sub="Already taken off the premium" />
+        <StatCell proof={derivedTarget("insurance", figs, "discount-total", pn)} label="Discounts" value={p.discountTotalCents == null ? NA : usd0(p.discountTotalCents)} sub="Already taken off the premium" />
       </StatGrid>
 
       <SubTabs
@@ -120,7 +120,7 @@ function AutoCoverage({ v, figs }: { v: AutoView; figs: readonly DerivedFigure[]
                   </td>
                   {vehicles.map((x, j) => (
                     <td key={x.n} className={table.tdR}>
-                      {c.premiumCents[j] == null ? <span className="text-muted">—</span> : <Fig figs={figs} figure="coverage-premium" k={`${pn}|${i}|${j}`} />}
+                      {c.premiumCents[j] == null ? <span className="text-muted">{NA}</span> : <Fig figs={figs} figure="coverage-premium" k={`${pn}|${i}|${j}`} />}
                     </td>
                   ))}
                 </tr>

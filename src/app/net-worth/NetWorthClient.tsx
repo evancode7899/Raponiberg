@@ -10,7 +10,7 @@ import { chartChrome, groupColor, groupRank, useChartPalette } from "@/component
 import { compositeOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, ErrorNote, Loading, NotFigure, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
-import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { addDays } from "@/lib/dates/isoDate";
 import type { NetWorthPeriodWithBlockers as NetWorthPeriod, NetWorthReport } from "@/lib/book/reports/netWorth";
@@ -498,7 +498,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                       <td className={`${table.tdR} font-semibold`}>
                         <ProofValue proof={balanceProof(p.end, h.closingCents)} quality={h.closingQuality}>{usd0(h.closingCents)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{h.portfolioReturn == null ? "—" : cell(`${p.start}:return`, "household", formatPercentRatio(h.portfolioReturn, 1))}</td>
+                      <td className={table.tdR}>{h.portfolioReturn == null ? NA : cell(`${p.start}:return`, "household", formatPercentRatio(h.portfolioReturn, 1))}</td>
                     </tr>
                     {isOpen && (
                       <tr>
@@ -536,7 +536,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                                   <td className={`${table.tdR} font-medium`}>
                                     <ProofValue proof={balanceProof(p.end, a.closingCents, { accountIds: [a.accountId] })} quality={a.closingQuality}>{usd0(a.closingCents)}</ProofValue>
                                   </td>
-                                  <td className={table.tdR}>{a.returnRatio == null ? "—" : cell(`${p.start}:return`, a.accountId, formatPercentRatio(a.returnRatio, 1))}</td>
+                                  <td className={table.tdR}>{a.returnRatio == null ? NA : cell(`${p.start}:return`, a.accountId, formatPercentRatio(a.returnRatio, 1))}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -575,7 +575,7 @@ function Returns({ r }: { r: NetWorthReport }) {
       <BlockedNote what={p ? `returns before ${fromLabel}, so they're chained from there` : "chained returns"} blockers={older} limit={3} />
       <StatGrid cols={3}>
         <StatCell proof={derivedTarget("net-worth", derived, "return-total")} label={p ? `Since ${fromLabel}` : "Cumulative"} value={p ? formatPercentRatio(p.total, 1) : "—"} sub="cumulative, time-weighted" tone={p && p.total < 0 ? "neg" : "neutral"} />
-        <StatCell proof={derivedTarget("net-worth", derived, "return-annualized")} label="Annualized" value={p?.annualized == null ? "—" : formatPercentRatio(p.annualized, 2)} sub="per year (shown after a full year)" />
+        <StatCell proof={derivedTarget("net-worth", derived, "return-annualized")} label="Annualized" value={p?.annualized == null ? NA : formatPercentRatio(p.annualized, 2)} sub="per year (shown after a full year)" />
         <StatCell proof={derivedTarget("net-worth", derived, "accounts-measured")} label="Accounts measured" value={String(r.proven.returns.byAccount.length)} sub="brokerage, IRAs, 401(k)s, 529, HSA" />
       </StatGrid>
       <Card
@@ -641,7 +641,7 @@ function Returns({ r }: { r: NetWorthReport }) {
                       <td className={`${table.tdR} ${x.total < 0 ? "text-neg" : ""}`}>
                         <ProofValue proof={derivedTarget("net-worth", derived, "account-return", x.accountId)}>{formatPercentRatio(x.total, 1)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{x.annualized == null ? "—" : <ProofValue proof={derivedTarget("net-worth", derived, "account-return-annualized", x.accountId)}>{formatPercentRatio(x.annualized, 2)}</ProofValue>}</td>
+                      <td className={table.tdR}>{x.annualized == null ? NA : <ProofValue proof={derivedTarget("net-worth", derived, "account-return-annualized", x.accountId)}>{formatPercentRatio(x.annualized, 2)}</ProofValue>}</td>
                     </tr>
                   );
                 })}

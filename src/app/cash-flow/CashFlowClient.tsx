@@ -6,7 +6,7 @@ import { derivedTarget, derivedText } from "@/lib/book/derived/types";
 import { unswept } from "@/lib/book/proof/clearance";
 import { cachedResponse, useApi, type Api } from "@/components/ledger/useApi";
 import { useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
-import { btn, Drawer, EmptyState, ErrorNote, Loading, PageBody, Segmented, selectCls, Tabs, usePersistentState, useTabParam } from "@/components/ui/kit";
+import { btn, Drawer, EmptyState, ErrorNote, Loading, PageBody, scrollToTop, Segmented, selectCls, Tabs, usePersistentState, useTabParam } from "@/components/ui/kit";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BudgetTab } from "./BudgetTab";
@@ -94,7 +94,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
   const goTo = (t: CashTab, category?: string) => {
     if (category) setFocus(category);
     setTab(t);
-    window.scrollTo({ top: 0 });
+    scrollToTop();
   };
 
   // The accounts the report was asked for (none: every account), so a proof covers the same ones.
@@ -170,7 +170,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
           {slice && slice.months.length > 0 && (
             <span className="text-xs text-muted">
               <span className="font-medium text-fg-2">{slice.label}</span> · {slice.months.length} month{slice.months.length === 1 ? "" : "s"}
-              {slice.prior.length ? ` · compared with the ${slice.prior.length} before` : ""}
+              {slice.priorLabel ? ` · compared with ${slice.priorLabel}` : ""}
             </span>
           )}
           <div className="ml-auto">

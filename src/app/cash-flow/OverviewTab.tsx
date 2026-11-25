@@ -7,7 +7,7 @@ import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashTab, Ctx } from "./CashFlowClient";
@@ -65,12 +65,12 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
         <StatCell label="Net saved" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={`over ${t.n} month${t.n === 1 ? "" : "s"}`} />
         <StatCell proof={ctx.dp("savings-rate", windowKey(slice.months))}
           label="Savings rate (take-home)"
-          value={t.savingsRate == null ? "—" : formatPercentRatio(t.savingsRate, 1)}
+          value={t.savingsRate == null ? NA : formatPercentRatio(t.savingsRate, 1)}
           tone={t.savingsRate == null ? "neutral" : t.savingsRate >= 0.2 ? "pos" : t.savingsRate < 0 ? "neg" : "neutral"}
           sub={
             p?.savingsRate != null ? (
               <>
-                was <ProofValue proof={ctx.dp("savings-rate", windowKey(slice.prior))}>{formatPercentRatio(p.savingsRate, 0)}</ProofValue> before
+                was <ProofValue proof={ctx.dp("savings-rate", windowKey(slice.prior))}>{formatPercentRatio(p.savingsRate, 0)}</ProofValue> {ctx.slice.priorLabel.includes("year") ? "a year earlier" : "before"}
               </>
             ) : (
               "net ÷ income"
@@ -243,7 +243,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                   <td className={`${table.tdR} font-medium ${m.netCents < 0 ? "text-neg" : "text-pos"}`}>
                     <ProofValue proof={ctx.proof("net", [m], { shownCents: m.netCents })}>{usd0(m.netCents)}</ProofValue>
                   </td>
-                  <td className={table.tdR}>{m.savingsRate == null ? "—" : <ProofValue proof={ctx.dp("savings-rate", windowKey([m]))}>{formatPercentRatio(m.savingsRate, 0)}</ProofValue>}</td>
+                  <td className={table.tdR}>{m.savingsRate == null ? NA : <ProofValue proof={ctx.dp("savings-rate", windowKey([m]))}>{formatPercentRatio(m.savingsRate, 0)}</ProofValue>}</td>
                   <td className={table.tdR}>
                     <ProofValue proof={ctx.dp("retirement", windowKey([m]))}>{usd0(m.retirementEmployeeCents + m.retirementEmployerCents)}</ProofValue>
                   </td>

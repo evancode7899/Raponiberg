@@ -1,6 +1,7 @@
 "use client";
 
 import { Callout } from "@/components/ui/kit";
+import { NA } from "@/lib/formatMoney";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import Link from "next/link";
 
@@ -62,7 +63,7 @@ export function BlockedValue({ blockers, className = "" }: { blockers: BlockerRe
   const fail = blockers.some((b) => b.status === "FAIL");
   return (
     <span title={blockedTitle(blockers)} className={`cursor-help whitespace-nowrap text-xs font-medium ${fail ? "text-neg" : "text-warn"} ${className}`}>
-      {fail ? "failing" : "missing data"}
+      {NA}
     </span>
   );
 }

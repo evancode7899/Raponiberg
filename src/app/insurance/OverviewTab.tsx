@@ -3,7 +3,7 @@
 import { derivedNumber, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { Badge, Card, EmptyState, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
 import { limitKey } from "@/lib/book/derived/insurance";
-import { usd0 } from "@/lib/formatMoney";
+import { NA, usd0 } from "@/lib/formatMoney";
 import { overviewPolicies, type CoverLine, type OverviewPolicy } from "@/lib/insurance/cover";
 import type { InsurancePage } from "@/lib/insurance/page";
 import { useMemo } from "react";
@@ -75,7 +75,7 @@ export function OverviewTab({ data, figs, open }: { data: InsurancePage; figs: r
                       <span className="text-muted">—</span>
                     )}
                   </td>
-                  <td className={table.tdR}>{p.annualCents == null ? <span className="text-muted">—</span> : <Fig figs={figs} figure="annual" k={`${p.line}|${p.key}`} />}</td>
+                  <td className={table.tdR}>{p.annualCents == null ? <span className="text-muted">{NA}</span> : <Fig figs={figs} figure="annual" k={`${p.line}|${p.key}`} />}</td>
                 </tr>
               ))}
             </tbody>

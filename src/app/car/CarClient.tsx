@@ -4,7 +4,7 @@ import { BlockedNote } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
-import { btn, Callout, EmptyState, ErrorNote, Loading, PageBody, Tabs, useTabParam } from "@/components/ui/kit";
+import { scrollToTop, btn, Callout, EmptyState, ErrorNote, Loading, PageBody, Tabs, useTabParam } from "@/components/ui/kit";
 import type { CarReport, GarageReport, Milestone } from "@/lib/car/report";
 import { carName, newCar, ownedOn, type Car, type CarEntry, type GarageSettings } from "@/lib/car/settings";
 import { useCallback, useEffect, useState } from "react";
@@ -119,7 +119,7 @@ export function CarClient({ requiresApiSecret }: { requiresApiSecret: boolean })
 
   const goTo = (t: CarTab) => {
     setTab(t);
-    window.scrollTo({ top: 0 });
+    scrollToTop();
   };
 
   const s = data?.settings;

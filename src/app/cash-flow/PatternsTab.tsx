@@ -6,7 +6,7 @@ import { Card, NotFigure, Segmented } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { CHARGE_BUCKETS, type SpendingMonth } from "@/lib/book/reports/spending";
-import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
 import { useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
@@ -157,7 +157,7 @@ function Pace({ ctx }: { ctx: Ctx }) {
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="day" {...ui.xAxis} ticks={[1, 5, 10, 15, 20, 25, 31]} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-              <Tooltip {...ui.tooltip} labelFormatter={(d) => `Day ${d}`} formatter={(v, n) => [v == null ? "—" : formatUsd(Math.round(Number(v))), String(n)]} />
+              <Tooltip {...ui.tooltip} labelFormatter={(d) => `Day ${d}`} formatter={(v, n) => [v == null ? NA : formatUsd(Math.round(Number(v))), String(n)]} />
               <Legend {...ui.legend} />
               <Line dataKey="typical" name="Typical month" stroke={chart.neutral} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
               {prev && <Line dataKey="prev" name={prev.label} stroke={chart.series[6]} strokeWidth={1.5} strokeOpacity={0.7} dot={false} isAnimationActive={false} />}

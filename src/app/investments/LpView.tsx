@@ -7,9 +7,9 @@ import { useChartPalette } from "@/components/shell/chartPalette";
 import { Badge, Callout, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { LpEvent, LpFund } from "@/lib/funds/report";
 import type { FundsPage } from "@/lib/funds/page";
-import { formatPercentRatio, usd0, usdDelta } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0, usdDelta } from "@/lib/formatMoney";
 
-const multiple = (x: number | null) => (x == null ? "—" : `${x.toFixed(2)}x`);
+const multiple = (x: number | null) => (x == null ? NA : `${x.toFixed(2)}x`);
 const cell = (cents: number) => (cents ? usd0(cents) : "—");
 
 /** Every private fund's LP view, grouped by manager (Investments › Private funds). */

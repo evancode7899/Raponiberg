@@ -59,7 +59,7 @@ const heldBy = (r: BonusesReport | null, proof: ProofTarget) => {
   return r && d.report === "bonuses" && d.figure !== "estimate" ? figureReads(r, d).blockers : [];
 };
 
-/** A Bonuses figure: its proof, or "missing data" with the finding when one withholds it. */
+/** A Bonuses figure: its proof, or "n.a." with the finding when one withholds it. */
 function BonusValue({ proof, children, drawn }: { proof: ProofTarget; children: ReactNode; drawn?: FigureProps["drawn"] }) {
   const held = heldBy(useContext(Report), proof);
   return held.length ? <BlockedValue blockers={held} /> : <ProofValue proof={proof} drawn={drawn}>{children}</ProofValue>;

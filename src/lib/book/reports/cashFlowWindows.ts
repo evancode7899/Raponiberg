@@ -16,8 +16,14 @@ export const PRESET_RANGES = ["3m", "6m", "12m", "ytd", "all"] as const satisfie
 
 export type Slice = {
   months: SpendingMonth[];
-  /** Up to as many months just before, for comparison (empty when fewer than three are proven). */
+  /**
+   * What it is compared with: the same months a year earlier, so a December is held against a
+   * December; without a year of history, as many months just before. Always as many months as
+   * it holds, so a bonus or holiday season is never in one side only; empty when neither is proven.
+   */
   prior: SpendingMonth[];
+  /** Those months in words ("the same months a year earlier"), or "". */
+  priorLabel: string;
   label: string;
 };
 
@@ -40,7 +46,7 @@ export const shiftMonth = (ym: string, months: number) => {
 
 export function sliceRange(r: Pick<SpendingReport, "months">, range: RangeId, custom: { from: string; to: string }): Slice {
   const all = r.months;
-  if (!all.length) return { months: [], prior: [], label: "" };
+  if (!all.length) return { months: [], prior: [], priorLabel: "", label: "" };
   let lo = 0;
   let hi = all.length - 1;
   if (range === "custom") {
@@ -56,10 +62,11 @@ export function sliceRange(r: Pick<SpendingReport, "months">, range: RangeId, cu
   }
   const months = all.slice(lo, hi + 1);
   const n = months.length;
-  // Compared per month, so a shorter run before still works (at least three months).
-  const prior = all.slice(Math.max(0, lo - n), lo);
-  if (prior.length < Math.min(3, n)) prior.length = 0;
-  return { months, prior, label: n === 1 ? months[0]!.label : `${months[0]!.label} – ${months.at(-1)!.label}` };
+  const yearEarlier = n <= 12 && lo >= 12 ? all.slice(lo - 12, hi - 11) : [];
+  const before = lo >= n ? all.slice(lo - n, lo) : [];
+  const prior = yearEarlier.length ? yearEarlier : before;
+  const priorLabel = yearEarlier.length ? `the same ${n === 1 ? "month" : "months"} a year earlier` : before.length ? `the ${n === 1 ? "month" : `${n} months`} before` : "";
+  return { months, prior, priorLabel, label: n === 1 ? months[0]!.label : `${months[0]!.label} – ${months.at(-1)!.label}` };
 }
 
 /** Where a slice's months sit in the report (the slice is a contiguous run of them). */

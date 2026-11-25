@@ -14,7 +14,6 @@ import type { Collector } from "./collector.ts";
  * year's tax figures are withheld until the misread is fixed or explained.
  */
 export function checkCustodianContributions(book: Book, c: Collector) {
-  const currentYear = Number(book.today.slice(0, 4));
   const years = startedTaxYears(book.today);
   for (const year of years) {
     const ties: CustodianTie[] = [...book.persons.flatMap((p) => iraYear(book, p.id, year).custodian), ...chetYear(book, year).custodian];

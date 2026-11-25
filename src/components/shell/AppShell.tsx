@@ -8,7 +8,7 @@ import { ProofProvider } from "@/components/ui/proof/ProofProvider";
 import { applyTheme, isAppTheme, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 const NAV_COLLAPSED_KEY = "pf-nav-collapsed";
 const THEME_LABEL: Record<AppTheme, string> = { light: "Light", dark: "Dark", bloomberg: "Terminal" };
@@ -37,6 +37,46 @@ function useAttention(pathname: string): Attention | null {
   return a;
 }
 
+/**
+ * Back and Forward return to where the page was scrolled. The browser does that for the
+ * window, but this app scrolls inside its frame (main), so it is kept here, by address. A page
+ * still drawing is too short at first, so it is tried again for a moment.
+ */
+function useScrollMemory(ready: boolean) {
+  const main = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = main.current;
+    if (!ready || !el) return;
+    const at = new Map<string, number>();
+    const here = () => window.location.pathname + window.location.search;
+    let key = here();
+    let stop = 0;
+    const onScroll = () => {
+      // The address moves before the old page is gone: its last scroll belongs to the old one.
+      if (here() === key) at.set(key, el.scrollTop);
+      else key = here();
+    };
+    const onPop = () => {
+      key = here();
+      const want = at.get(key) ?? 0;
+      const until = performance.now() + 700;
+      const attempt = () => {
+        el.scrollTop = want;
+        if (Math.abs(el.scrollTop - want) > 2 && performance.now() < until) stop = requestAnimationFrame(attempt);
+      };
+      stop = requestAnimationFrame(attempt);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("popstate", onPop);
+    return () => {
+      cancelAnimationFrame(stop);
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, [ready]);
+  return main;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -49,6 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [demoExit, setDemoExit] = useState<string | null>(null);
   const attention = useAttention(pathname);
   const page = commandForPath(pathname);
+  const main = useScrollMemory(locked === false && !shuttingDown);
 
   useEffect(() => {
     const unlocked = isUnlocked();
@@ -250,7 +291,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <main id="main" className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <main id="main" ref={main} className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
           {page && pathname !== "/" && <PageHeader page={page} />}
           <ProofProvider>{children}</ProofProvider>
         </main>

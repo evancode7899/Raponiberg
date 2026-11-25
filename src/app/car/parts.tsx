@@ -3,7 +3,7 @@
 import type { ChartPalette } from "@/components/shell/chartPalette";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import type { CarFigureDescriptor } from "@/lib/book/proof/carProof";
-import { EM_DASH } from "@/lib/formatMoney";
+import { EM_DASH, NA } from "@/lib/formatMoney";
 import type { CarReport, CostLine } from "@/lib/car/report";
 import { useState } from "react";
 
@@ -58,13 +58,13 @@ export function throughText(r: CarReport, saleDate: string | null): string {
 
 /** Cents per mile as "$0.17". */
 export function perMile(cents: number | null | undefined, digits = 2): string {
-  if (cents == null || !Number.isFinite(cents)) return EM_DASH;
+  if (cents == null || !Number.isFinite(cents)) return NA;
   return `$${(cents / 100).toFixed(digits)}`;
 }
 
 /** Cents with exactly two decimals, no accounting parentheses: "$26.25". */
 export function usd2(cents: number | null | undefined): string {
-  if (cents == null) return EM_DASH;
+  if (cents == null) return NA;
   const s = `$${Math.abs(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return cents < 0 ? `−${s}` : s;
 }
@@ -74,7 +74,7 @@ export function fmtDate(iso: string | null | undefined, style: "short" | "long" 
   return new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", style === "long" ? { month: "short", day: "numeric", year: "numeric" } : { month: "short", year: "numeric" });
 }
 
-export const miles = (n: number | null | undefined, digits = 0) => (n == null || !Number.isFinite(n) ? EM_DASH : n.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits }));
+export const miles = (n: number | null | undefined, digits = 0) => (n == null || !Number.isFinite(n) ? NA : n.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits }));
 
 /** Months between today and a date, as words ("in 3 months", "2 months ago"). */
 export function relative(iso: string | null, today: string): string {

@@ -1,6 +1,7 @@
 "use client";
 
 import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { NA } from "@/lib/formatMoney";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, EmptyState, StatCell, StatGrid, table } from "@/components/ui/kit";
@@ -114,10 +115,10 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
                     <td className={table.tdR}>{miles(x.odometer)}</td>
                     <td className={table.tdR}>{miles(x.miles)}</td>
                     <td className={table.tdR}>{x.gallons.toFixed(3)}</td>
-                    <td className={table.tdR}>{x.cents == null ? "—" : <ProofValue proof={ctx.dp("fill", `${r.carId}|${x.date}|${x.odometer}`)}>{usd2(x.cents)}</ProofValue>}</td>
-                    <td className={table.tdR} title={x.pricePerGallon == null ? "A fill-up in this span has no statement charge yet" : undefined}>{x.pricePerGallon == null ? "—" : <ProofValue proof={ctx.dp("fill-price", `${r.carId}|${x.date}|${x.odometer}`)}>{usd2(Math.round(x.pricePerGallon))}</ProofValue>}</td>
+                    <td className={table.tdR}>{x.cents == null ? NA : <ProofValue proof={ctx.dp("fill", `${r.carId}|${x.date}|${x.odometer}`)}>{usd2(x.cents)}</ProofValue>}</td>
+                    <td className={table.tdR} title={x.pricePerGallon == null ? "A fill-up in this span has no statement charge yet" : undefined}>{x.pricePerGallon == null ? NA : <ProofValue proof={ctx.dp("fill-price", `${r.carId}|${x.date}|${x.odometer}`)}>{usd2(Math.round(x.pricePerGallon))}</ProofValue>}</td>
                     <td className={`${table.tdR} ${f.mpg && x.mpg < f.mpg * 0.85 ? "text-warn" : ""}`}>{x.mpg.toFixed(1)}</td>
-                    <td className={table.tdR}>{x.costPerMile == null ? "—" : <ProofValue proof={ctx.dp("fill-per-mile", `${r.carId}|${x.date}|${x.odometer}`)} drawn={{ per: 100 }}>{perMile(x.costPerMile, 3)}</ProofValue>}</td>
+                    <td className={table.tdR}>{x.costPerMile == null ? NA : <ProofValue proof={ctx.dp("fill-per-mile", `${r.carId}|${x.date}|${x.odometer}`)} drawn={{ per: 100 }}>{perMile(x.costPerMile, 3)}</ProofValue>}</td>
                     <td className={table.tdR}>{x.range ? miles(x.range) : "—"}</td>
                   </tr>
                 ))}

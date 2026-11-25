@@ -1,8 +1,9 @@
 "use client";
 
 import type { Figure, FigureBasis } from "@/lib/book/figure";
-import { isUnswept, showValue } from "@/lib/book/proof/clearance";
+import { isNoFigure, isUnswept, showValue } from "@/lib/book/proof/clearance";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
+import { EM_DASH, NA } from "@/lib/formatMoney";
 import { QUALITY_TEXT } from "@/lib/ledger/qualityText";
 import type { Quality } from "@/lib/ledger/timeline";
 import type { ReactNode } from "react";
@@ -46,7 +47,7 @@ function standing(basis: FigureBasis, quality?: Quality): string {
  * A figure, fail-closed: its number shows only when the proof sweep of the page's own data
  * cleared it at the very value the page shows (clearance.ts). Until the sweep answers it
  * shows the page's number, plain; blocked, flagged, a different number, never swept, or no sweep at all,
- * it's withheld: a dash that opens the drawer saying why. A cleared figure opens its proof.
+ * it's withheld: "n.a.", which opens the drawer saying why (a dash is zero, never withheld). A cleared figure opens its proof.
  *
  * A cleared figure shows plain whatever it rests on: how it stands (an estimate, an accepted
  * exception, a data quality) is in its hover and its drawer, never a mark on the page.
@@ -59,6 +60,7 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
   const open = useProof();
   const ref = props.figure ?? props.proof;
   const c = useClearance(ref, props.blockers);
+  const zero = isNoFigure(ref) && ref.zero === true;
   const target = props.figure ? targetOf(props.figure) : isUnswept(props.proof) ? null : props.proof;
   const data = {
     "data-proof-key": c.key ?? (c.state === "withheld" && c.reason === "no-figure" ? "none" : "unswept"),
@@ -91,7 +93,7 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
         title={`Withheld: ${c.detail}`}
         className={`cursor-pointer rounded-sm underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${bad ? "text-neg decoration-neg" : "text-muted decoration-line-strong"} ${className}`}
       >
-        —
+        {zero ? EM_DASH : NA}
       </button>
     );
   }

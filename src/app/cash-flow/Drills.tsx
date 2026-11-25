@@ -9,7 +9,7 @@ import { useProof } from "@/components/ui/proof/context";
 import type { MerchantMonth, SpendingMonth } from "@/lib/book/reports/spending";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
-import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx, Drill } from "./CashFlowClient";
@@ -239,7 +239,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <Stat label="Income" value={usd0(m.incomeCents)} proof={ctx.proof("income", one, { shownCents: m.incomeCents })} />
         <Stat label="Spending" value={usd0(m.spendingCents)} proof={ctx.proof("spending", one, { shownCents: m.spendingCents })} sub="net of merchant refunds; tax refunds are income" />
         <Stat label="Net saved" value={usd0(m.netCents)} proof={ctx.proof("net", one, { shownCents: m.netCents })} />
-        <Stat proof={ctx.dp("savings-rate", windowKey(one))} label="Savings rate" value={m.savingsRate == null ? "—" : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
+        <Stat proof={ctx.dp("savings-rate", windowKey(one))} label="Savings rate" value={m.savingsRate == null ? NA : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
       </div>
       {(m.through || m.unreviewed.rows > 0) && (
         <p className="-mt-2 text-xs text-muted">

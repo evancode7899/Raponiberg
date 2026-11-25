@@ -61,7 +61,7 @@ html[data-theme="light"] {
   --fg: #111110;
   --fg-2: #3a3a37;
   --muted: #6b6a66;
-  --faint: #9a9993;
+  --faint: #6f6e69;
   --accent: #c2410c;
   --accent-fg: #ffffff;
   --accent-soft: #fdeee6;
@@ -112,7 +112,7 @@ html[data-theme="dark"] {
   --fg: #f4f4f1;
   --fg-2: #d6d5ce;
   --muted: #a3a29a;
-  --faint: #75746d;
+  --faint: #918f87;
   --accent: #f08a4b;
   --accent-fg: #1a1a19;
   --accent-soft: #3a2518;
@@ -162,7 +162,7 @@ html[data-theme="bloomberg"] {
   --fg: #e6edf3;
   --fg-2: #c9d1d9;
   --muted: #8b949e;
-  --faint: #5d6672;
+  --faint: #7d8794;
   --accent: #ffa028;
   --accent-fg: #0d1117;
   --accent-soft: #2e1f08;

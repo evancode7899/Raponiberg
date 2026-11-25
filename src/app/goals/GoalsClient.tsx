@@ -8,7 +8,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, type ProofTarget } from "@/components/ui/proof/context";
 import type { GoalFigure } from "@/lib/book/proof/planningProof";
 import type { GoalProgress, GoalsReport } from "@/lib/book/reports/goals";
-import { formatPercentRatio, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import type { Goal, GoalSettings } from "@/lib/goals/settings";
 import type { AccountGroup } from "@/lib/ledger/loadLedger";
 import Link from "next/link";
@@ -352,7 +352,7 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
         <span className="num text-2xl font-semibold tracking-tight text-fg">
           {blocked ? <BlockedValue blockers={g.blockers} /> : <ProofValue proof={goalProof(g, "current", g.currentCents)}>{usd0(g.currentCents)}</ProofValue>}
           <span className="ml-1.5 text-sm font-normal text-muted">
-            of {g.targetCents == null ? "—" : <ProofValue proof={goalProof(g, "target", g.targetCents)}>{usd0(g.targetCents)}</ProofValue>}
+            of {g.targetCents == null ? NA : <ProofValue proof={goalProof(g, "target", g.targetCents)}>{usd0(g.targetCents)}</ProofValue>}
           </span>
         </span>
         {g.targetCents != null && (

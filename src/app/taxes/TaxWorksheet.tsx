@@ -1,6 +1,7 @@
 "use client";
 
 import { buttonSecondary, Card, Segmented } from "@/components/ledger/LedgerBits";
+import { NA } from "@/lib/formatMoney";
 import { NotFigure } from "@/components/ui/kit";
 import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -149,7 +150,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     { label: "Social Security", values: ratio(["fica.socialSecurity"], ss, earnedPlusInvestment), indent: true },
     { label: "Connecticut (incl. PFML)", values: ratio(["ct.totalTax", "fica.pfml"], ct.map((v, i) => v + pfml[i]!), earnedPlusInvestment), indent: true },
     ...(hasNy ? [{ label: "New York State + City", values: ratio(["ny.incomeTax", "ny.cityTax"], nyState.map((v, i) => v + nyCity[i]!), earnedPlusInvestment), indent: true }] : []),
-    { label: <NotFigure why="the probe the rate is worked out on">Marginal rate on the next $1,000 of pay</NotFigure>, values: cols.map((c) => (c.marginal == null ? "—" : wcell("marginal", c.id, pct(c.marginal)))) },
+    { label: <NotFigure why="the probe the rate is worked out on">Marginal rate on the next $1,000 of pay</NotFigure>, values: cols.map((c) => (c.marginal == null ? NA : wcell("marginal", c.id, pct(c.marginal)))) },
     { label: "Federal bracket", values: R((x) => x.federal.marginalBracket).map((b, i) => (cols[i]!.r.federal.taxableIncome > 0 ? wcell("bracket", cols[i]!.id, pct(b, 0)) : "—")) },
 
     { label: "Total taxes paid", values: [], heading: true },
@@ -170,8 +171,8 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     ...(showActual
       ? [
           { label: "Actual return", values: [], heading: true },
-          { label: "Federal actual owed / (refund)", values: [...people.map(() => ""), actual.federalBalance == null ? "—" : <NotFigure why="your input: the return as filed (Inputs)">{balanceText(actual.federalBalance)}</NotFigure>] },
-          { label: "Connecticut actual owed / (refund)", values: [...people.map(() => ""), actual.ctBalance == null ? "—" : <NotFigure why="your input: the return as filed (Inputs)">{balanceText(actual.ctBalance)}</NotFigure>] },
+          { label: "Federal actual owed / (refund)", values: [...people.map(() => ""), actual.federalBalance == null ? NA : <NotFigure why="your input: the return as filed (Inputs)">{balanceText(actual.federalBalance)}</NotFigure>] },
+          { label: "Connecticut actual owed / (refund)", values: [...people.map(() => ""), actual.ctBalance == null ? NA : <NotFigure why="your input: the return as filed (Inputs)">{balanceText(actual.ctBalance)}</NotFigure>] },
           {
             label: "Model minus actual",
             values: [...people.map(() => ""), <NotFigure key="d" why="the model against the return you typed (Inputs)">{usd(fedBal.at(-1)! + ctBal.at(-1)! - (actual.federalBalance ?? 0) - (actual.ctBalance ?? 0))}</NotFigure>],

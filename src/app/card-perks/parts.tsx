@@ -7,7 +7,7 @@ import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { CardPerksPage } from "@/lib/cardPerks/page";
 import { useMemo } from "react";
-import { formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
 
 export const fmtPoints = (n: number) => `${Math.round(n).toLocaleString("en-US")} pts`;
@@ -20,7 +20,7 @@ export const fmtDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDat
 export const fmtMonth = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 /** Dollars, saying $0 rather than a dash where the sentence needs a number. */
 export const money = (cents: number) => (cents === 0 ? "$0" : usd0(cents));
-export const pct = (r: number | null) => (r == null ? "—" : `${Math.round(r * 100)}%`);
+export const pct = (r: number | null) => (r == null ? NA : `${Math.round(r * 100)}%`);
 
 /** What the card list says a card offers (its fee, rates, credit amounts): its terms, not a figure of yours. */
 export const TERMS = "the card's terms, from the card list";

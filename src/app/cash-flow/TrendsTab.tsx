@@ -8,7 +8,7 @@ import { Card, NotFigure, Segmented, StatCell, StatGrid, table } from "@/compone
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
-import { axisUsd, formatPercentRatio, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
@@ -94,7 +94,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       <StatGrid cols={4}>
         <StatCell
           label="Spending, last 12 months"
-          value={spend12[hi] == null ? "—" : usd0(spend12[hi])}
+          value={spend12[hi] == null ? NA : usd0(spend12[hi])}
           proof={spend12[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("spending", last12, { shownCents: spend12[hi]! })}
           sub={
             <>
@@ -109,7 +109,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         />
         <StatCell
           label="Income, last 12 months"
-          value={inc12[hi] == null ? "—" : usd0(inc12[hi])}
+          value={inc12[hi] == null ? NA : usd0(inc12[hi])}
           proof={inc12[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("income", last12, { shownCents: inc12[hi]! })}
           sub={
             <>
@@ -125,7 +125,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         <StatCell
           label="Savings rate, last 12 months"
           proof={rateNow == null ? noFigure("not twelve proven months yet") : ctx.dp("savings-rate", windowKey(last12))}
-          value={rateNow == null ? "—" : formatPercentRatio(rateNow, 0)}
+          value={rateNow == null ? NA : formatPercentRatio(rateNow, 0)}
           tone={rateNow == null ? "neutral" : rateNow >= 0.2 ? "pos" : rateNow < 0 ? "neg" : "neutral"}
           sub={
             rateBefore == null ? (
@@ -139,7 +139,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         />
         <StatCell
           label="Everyday spending, last 3 months"
-          value={every3[hi] == null ? "—" : `${usd0(every3[hi]! / 3)}/mo`}
+          value={every3[hi] == null ? NA : `${usd0(every3[hi]! / 3)}/mo`}
           proof={every3[hi] == null ? noFigure("not twelve proven months yet") : ctx.proof("spending", all.slice(hi - 2, hi + 1), { spendingKind: "everyday", perMonth: true, shownCents: every3[hi]! })}
           sub={
             every12[hi] == null ? (
@@ -184,7 +184,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-              <Tooltip {...ui.tooltip} formatter={(v, n) => [v == null ? "—" : formatUsd(Math.round(Number(v))), String(n)]} />
+              <Tooltip {...ui.tooltip} formatter={(v, n) => [v == null ? NA : formatUsd(Math.round(Number(v))), String(n)]} />
               <Legend {...ui.legend} />
               <Bar dataKey="month" name="Month" fill={chart.neutral} fillOpacity={0.55} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
               <Line dataKey="avg3" name="3-month average" stroke={chart.spending} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
@@ -290,7 +290,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
                 <YAxis {...ui.yAxis} width={44} tickFormatter={pctAxis} />
-                <Tooltip {...ui.tooltip} formatter={(v) => [v == null ? "—" : formatPercentRatio(Number(v), 1), "Savings rate"]} />
+                <Tooltip {...ui.tooltip} formatter={(v) => [v == null ? NA : formatPercentRatio(Number(v), 1), "Savings rate"]} />
                 <ReferenceLine y={0} stroke={chart.axisLine} />
                 <ReferenceLine y={0.2} stroke={chart.axis} strokeDasharray="4 4" label={(p: { viewBox?: { x?: number; y?: number } }) => (
                     // A guide, not a figure: the savings rate many plans aim for.

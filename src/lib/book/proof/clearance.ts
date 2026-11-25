@@ -57,11 +57,12 @@ export const isUnswept = (x: unknown): x is Unswept => typeof x === "object" && 
 
 /**
  * Where a figure would sit but there is none to show (no fill-ups logged, no warranty set):
- * not a figure at all, so nothing to prove. It renders the same dash a withheld figure
- * does, and says why; it can never carry a number.
+ * not a figure at all, so nothing to prove. It draws "n.a." as a withheld figure does, and
+ * says why; it can never carry a number. `zero`: nothing is there because it is zero (no
+ * spending in a category), so it draws the dash zero draws everywhere.
  */
-export type NoFigure = { noFigure: string };
-export const noFigure = (why: string): Unswept => ({ unswept: why, noFigure: why }) as Unswept & NoFigure;
+export type NoFigure = { noFigure: string; zero?: boolean };
+export const noFigure = (why: string, zero = false): Unswept => ({ unswept: why, noFigure: why, ...(zero ? { zero } : {}) }) as Unswept & NoFigure;
 export const isNoFigure = (x: unknown): x is NoFigure => typeof x === "object" && x !== null && "noFigure" in x;
 
 export type WithheldReason = "unswept" | "no-figure" | "blocked" | "flagged" | "mismatch" | "stale" | "failed" | "not-cleared";

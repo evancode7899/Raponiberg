@@ -8,7 +8,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
-import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
@@ -104,7 +104,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
         />
         <StatCell proof={ctx.dp("savings-rate", windowKey(now))}
           label="Savings rate (take-home)"
-          value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
+          value={a.savingsRate == null ? NA : formatPercentRatio(a.savingsRate, 0)}
           sub={
             b.savingsRate == null ? (
               "—"
@@ -199,8 +199,8 @@ function MoverCard({ title, rows, ctx, now, then }: { title: string; rows: { key
                 {m.name}
               </button>
               <span className="num shrink-0 text-xs text-muted">
-                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : noFigure("nothing spent here in that span")}>{usd0(m.then)}</ProofValue> →{" "}
-                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : noFigure("nothing spent here in that span")} className="text-fg">
+                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : noFigure("nothing spent here in that span", true)}>{usd0(m.then)}</ProofValue> →{" "}
+                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : noFigure("nothing spent here in that span", true)} className="text-fg">
                   {usd0(m.now)}
                 </ProofValue>
                 {!m.then && <span className="ml-1.5 text-info">new</span>}
@@ -360,7 +360,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} />
             <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-            <Tooltip {...ui.tooltip} itemSorter={(it) => -Number(it.dataKey)} formatter={(v, n) => [v == null ? "—" : formatUsd(Math.round(Number(v))), String(n)]} />
+            <Tooltip {...ui.tooltip} itemSorter={(it) => -Number(it.dataKey)} formatter={(v, n) => [v == null ? NA : formatUsd(Math.round(Number(v))), String(n)]} />
             <Legend {...ui.legend} />
             {shown.map((s) => (
               <Line
@@ -493,7 +493,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
                 const p = i ? rate(years[i - 1]!.months) : null;
                 return (
                   <td key={y.y} className={`${table.tdR} font-semibold`}>
-                    {r == null ? "—" : <ProofValue proof={ctx.dp("savings-rate", windowKey(y.months))}>{formatPercentRatio(r, 0)}</ProofValue>}
+                    {r == null ? NA : <ProofValue proof={ctx.dp("savings-rate", windowKey(y.months))}>{formatPercentRatio(r, 0)}</ProofValue>}
                     <div className="text-xs font-normal leading-none text-muted">{r != null && p != null ? `${r >= p ? "+" : "−"}${Math.abs(Math.round((r - p) * 100))} pts` : " "}</div>
                   </td>
                 );

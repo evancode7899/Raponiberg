@@ -1,3 +1,6 @@
+/** What a page draws where a figure is missing, can't be proven or doesn't apply. Zero is the em dash, so the two never look alike. */
+export const NA = "n.a.";
+
 /** Em dash for exact numeric zero in displays (not rounded-to-zero values). */
 export const EM_DASH = "\u2014";
 
@@ -56,15 +59,15 @@ export function formatUsdCents(cents: number): string {
   return formatCurrencyAccounting(Math.abs(dollars), dollars < 0, frac, frac);
 }
 
-/** Integer cents → whole dollars ($1,235; negatives in parentheses). null → em dash. */
+/** Integer cents → whole dollars ($1,235; negatives in parentheses). null → n.a. */
 export function usd0(cents: number | null | undefined): string {
-  if (cents == null) return EM_DASH;
+  if (cents == null) return NA;
   return formatUsd(Math.round(cents / 100));
 }
 
 /** Integer cents → short form for headlines and deltas: $916.7k, $1.24M, $820. */
 export function usdCompact(cents: number | null | undefined): string {
-  if (cents == null) return EM_DASH;
+  if (cents == null) return NA;
   const d = cents / 100;
   const a = Math.abs(d);
   const body =
@@ -78,7 +81,7 @@ export function usdCompact(cents: number | null | undefined): string {
 
 /** Signed change for deltas: +$12.3k / −$4.1k. */
 export function usdDelta(cents: number | null | undefined): string {
-  if (cents == null) return EM_DASH;
+  if (cents == null) return NA;
   if (Math.round(cents / 100) === 0) return "$0";
   const body = usdCompact(Math.abs(cents));
   return cents > 0 ? `+${body}` : `−${body}`;

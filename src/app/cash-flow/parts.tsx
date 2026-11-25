@@ -9,7 +9,7 @@ import { ONE_OFF_MIN_CENTS } from "@/lib/book/definitions";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth, WithheldMonth } from "@/lib/book/reports/spending";
-import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Ctx } from "./CashFlowClient";
@@ -63,7 +63,7 @@ export function Sparkline({ values, color, width = 84, height = 22 }: { values: 
  * the change is then a composite figure that clears from theirs (proof/composite.ts).
  */
 export function Delta({ now, before, goodWhenDown = false, asPercent = true, of, per }: { now: number; before: number | null; goodWhenDown?: boolean; asPercent?: boolean; of?: [ProofRef, ProofRef]; per?: [number, number] }) {
-  if (before == null) return <span className="text-xs text-faint">—</span>;
+  if (before == null) return <span className="text-xs text-faint">{NA}</span>;
   const diff = now - before;
   const rate = asPercent && before > 0;
   const change = of && compositeOf(rate ? "growth" : "diff", of, rate ? { ratio: diff / before } : { cents: diff }, per);

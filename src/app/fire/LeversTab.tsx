@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { NA } from "@/lib/formatMoney";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -19,7 +20,7 @@ const WRS = [0.03, 0.035, 0.04, 0.045, 0.05];
 export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
   const { plan } = f;
   const base = f.fi?.year ?? null;
-  const delta = (y: number | null) => (y == null || base == null ? (y == null ? (base == null ? "—" : "never") : "reaches FI") : y === base ? "same" : y < base ? `${base - y} yr${base - y === 1 ? "" : "s"} sooner` : `${y - base} yr${y - base === 1 ? "" : "s"} later`);
+  const delta = (y: number | null) => (y == null || base == null ? (y == null ? (base == null ? NA : "never") : "reaches FI") : y === base ? "same" : y < base ? `${base - y} yr${base - y === 1 ? "" : "s"} sooner` : `${y - base} yr${y - base === 1 ? "" : "s"} later`);
   const deltaTone = (y: number | null) => (y == null ? "text-warn" : base == null || y < base ? "text-pos" : y > base ? "text-warn" : "text-muted");
 
   const curve = useMemo(() => savingsRateCurve(plan, RATES), [plan]);

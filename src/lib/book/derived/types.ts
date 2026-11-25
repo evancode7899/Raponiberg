@@ -33,7 +33,7 @@ export type DerivedFigure = {
   key?: string;
   /** Plain words: what the figure is. */
   describes: string;
-  /** Null where the page has nothing to show yet (no fill-ups, no warranty set): a dash, not a figure. */
+  /** Null where the page has nothing to show yet (no fill-ups, no warranty set): n.a., not a figure. */
   value: ProofValue | null;
   /** How it is worked out from the report, line by line ("=" lines are held to re-add). */
   lines: ChainLine[];
@@ -69,10 +69,10 @@ export const derivedNumber = (list: readonly DerivedFigure[], figure: string, ke
   return v == null ? null : "cents" in v ? v.cents : "ratio" in v ? v.ratio : null;
 };
 
-/** A derived figure's words (a pattern, a count) as the list states them, or a dash. */
+/** A derived figure's words (a pattern, a count) as the list states them, or n.a. */
 export const derivedText = (list: readonly DerivedFigure[], figure: string, key?: string): string => {
   const v = list.find((x) => x.figure === figure && (x.key ?? null) === (key ?? null))?.value;
-  return v && "text" in v ? v.text : "—";
+  return v && "text" in v ? v.text : "n.a.";
 };
 
 // Chain helpers.

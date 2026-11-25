@@ -256,7 +256,7 @@ export function rowsTotal(rows: readonly TxnRow[], side: "in" | "out" | "net", c
   const parts = rows.filter((r) => (side === "in" ? r.amountCents > 0 : side === "out" ? r.amountCents < 0 : true));
   const cents = parts.reduce((s, r) => s + r.amountCents, 0);
   if (!complete) return { cents, proof: noFigure("the list isn't all loaded: show more to total every row") };
-  if (!parts.length) return { cents, proof: noFigure(`no money ${side === "net" ? "moved" : side}`) };
+  if (!parts.length) return { cents, proof: noFigure(`no money ${side === "net" ? "moved" : side}`, true) };
   const row = (r: TxnRow): ProofRef => ({ descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents });
   return { cents, proof: parts.length === 1 ? row(parts[0]!) : compositeOf("sum", parts.map(row), { cents }) };
 }

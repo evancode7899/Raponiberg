@@ -6,7 +6,7 @@ import { derivedTarget } from "@/lib/book/derived/types";
 import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { BudgetSettings } from "@/lib/budget/settings";
-import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0 } from "@/lib/formatMoney";
 import { useEffect, useState } from "react";
 import type { Ctx } from "./CashFlowClient";
 import { categoryCents, median, SPEND_CATEGORIES, totals } from "./model";
@@ -190,12 +190,12 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
                       <ProofValue proof={ctx.proof("spending", [last], { category: r.c, shownCents: r.latest })}>{usd0(r.latest)}</ProofValue>
                     </td>
                     <td className={`${table.tdR} text-muted`}>
-                      <ProofValue proof={r.total > 0 ? dp("category-typical", categoryKey(slice.months, "EXPENSE", r.c)) : noFigure("nothing spent in it in range")}>{usd0(r.typical)}</ProofValue>
+                      <ProofValue proof={r.total > 0 ? dp("category-typical", categoryKey(slice.months, "EXPENSE", r.c)) : noFigure("nothing spent in it in range", true)}>{usd0(r.typical)}</ProofValue>
                     </td>
                     <td className={`${table.tdR} text-muted`}>
                       <ProofValue proof={ctx.proof("spending", slice.months, { category: r.c, perMonth: true, shownCents: r.total })}>{usd0(r.avg)}</ProofValue>
                     </td>
-                    <td className={table.tdR}>{r.target == null ? <span className="text-faint">—</span> : `${r.over} of ${slice.months.length}`}</td>
+                    <td className={table.tdR}>{r.target == null ? <span className="text-faint">{NA}</span> : `${r.over} of ${slice.months.length}`}</td>
                     <td className={table.tdR}>{status}</td>
                   </tr>
                 );
