@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { apiSecretHeaders, type Api } from "@/components/ledger/useApi";
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { btn, Callout, Card, downloadResponse, ErrorNote, Field, inputCls, selectCls } from "@/components/ui/kit";
@@ -134,8 +135,8 @@ export function DataPanel({ api, requiresDbSecret }: { api: Api; requiresDbSecre
               type="button"
               className={btn.secondary}
               disabled={busy != null || !importFile}
-              onClick={() => {
-                if (!importFile || !confirm(`Replace the live database with ${importFile.name}? The current one is backed up first.`)) return;
+              onClick={async () => {
+                if (!importFile || !(await askDanger(`Replace the live database with ${importFile.name}?`, "Replace", "The current one is backed up first."))) return;
                 void run("import", async () => {
                   const fd = new FormData();
                   fd.set("file", importFile);

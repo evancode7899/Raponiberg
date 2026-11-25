@@ -60,11 +60,9 @@ export async function register() {
         "/api/calendar",
         "/api/investments/funds",
         "/api/mortgage/links",
-        // These also look for new files in their folders (a date check per file, read once), so the
-        // first visit after a download doesn't wait for a PDF to be read.
-        "/api/hsa",
-        "/api/medical",
-        "/api/insurance",
+        // These also look for new files in their folders and keep what they read, so the first visit
+        // after a download doesn't wait for a PDF. Never on a read-only second server (LAUNCH_UPKEEP=0).
+        ...(upkeep ? ["/api/hsa", "/api/medical", "/api/insurance"] : []),
         "/api/dashboard/net-worth/changes?granularity=month",
       ],
       // Then the proof sweep, in its own process (it opens every figure's proof).

@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, ErrorNote, inputCls, Loading, selectCls } from "@/components/ui/kit";
 import Link from "next/link";
@@ -140,9 +141,9 @@ function AccountRow({
                 type="button"
                 className={btn.secondary}
                 disabled={busy}
-                onClick={() => {
+                onClick={async () => {
                   const target = candidates.find((c) => c.id === into);
-                  if (target && confirm(`Merge "${a.name}" into "${target.name}"? Its statements and identifiers move over.`)) {
+                  if (target && (await askDanger(`Merge "${a.name}" into "${target.name}"?`, "Merge", "Its statements and identifiers move over."))) {
                     void run(() => api.call(`/api/accounts/${a.id}`, { method: "POST", json: { intoAccountId: into } }).then(() => "Merged."));
                   }
                 }}

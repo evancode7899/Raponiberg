@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { btn, Drawer, Field, inputCls, selectCls } from "@/components/ui/kit";
 import { formatUsdCents } from "@/lib/formatMoney";
 import { EXPENSE_KINDS, type ExpenseKind } from "@/lib/hsa/qualify";
@@ -205,8 +206,8 @@ export function ExpenseDrawer({ draft, r, send, onClose }: { draft: DraftExpense
             <button
               type="button"
               className={btn.danger}
-              onClick={() => {
-                if (window.confirm("Delete this expense from the log?")) void send({ op: "delete", ids: [existing.id] }).then((ok) => ok && onClose());
+              onClick={async () => {
+                if (await askDanger("Delete this expense from the log?")) void send({ op: "delete", ids: [existing.id] }).then((ok) => ok && onClose());
               }}
             >
               Delete

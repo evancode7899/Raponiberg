@@ -4,8 +4,10 @@ import { apiSecretHeaders, clearCachedResponses } from "@/components/ledger/useA
 import { commandForPath, NAV_GROUPS, TERMINAL_COMMANDS, type TerminalCommand } from "@/components/shell/terminalCommands";
 import { isUnlocked, LockScreen, setUnlocked } from "@/components/shell/LockScreen";
 import { TerminalCommandBar } from "@/components/shell/TerminalCommandBar";
+import { Tooltips } from "@/components/shell/Tooltips";
+import { ask, FeedbackHost, notify } from "@/components/ui/Feedback";
 import { ProofProvider } from "@/components/ui/proof/ProofProvider";
-import { applyTheme, isAppTheme, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
+import { amountsHidden, applyTheme, idleLockMinutes, isAppTheme, PREFERENCE_CHANGED_EVENT, setAmountsHidden, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -35,6 +37,40 @@ function useAttention(pathname: string): Attention | null {
     return () => window.removeEventListener("pf:ledger-changed", load);
   }, [load]);
   return a;
+}
+
+/** Locks the app after the minutes Settings › General asks for without a key, click or scroll; never when it asks for none. */
+function useIdleLock(active: boolean, lock: () => void) {
+  const run = useRef(lock);
+  useEffect(() => {
+    run.current = lock;
+  });
+  useEffect(() => {
+    if (!active) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let last = 0;
+    const arm = () => {
+      clearTimeout(timer);
+      const minutes = idleLockMinutes();
+      if (minutes) timer = setTimeout(() => run.current(), minutes * 60_000);
+    };
+    const onUse = () => {
+      // Pointer moves come in floods: once a second is enough to know it's in use.
+      const now = Date.now();
+      if (now - last < 1000) return;
+      last = now;
+      arm();
+    };
+    arm();
+    const events = ["keydown", "pointerdown", "pointermove", "wheel"] as const;
+    for (const e of events) window.addEventListener(e, onUse, { passive: true });
+    window.addEventListener(PREFERENCE_CHANGED_EVENT, arm);
+    return () => {
+      clearTimeout(timer);
+      for (const e of events) window.removeEventListener(e, onUse);
+      window.removeEventListener(PREFERENCE_CHANGED_EVENT, arm);
+    };
+  }, [active]);
 }
 
 /**
@@ -90,6 +126,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const attention = useAttention(pathname);
   const page = commandForPath(pathname);
   const main = useScrollMemory(locked === false && !shuttingDown);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    const read = () => setHidden(amountsHidden());
+    read();
+    window.addEventListener(PREFERENCE_CHANGED_EVENT, read);
+    return () => window.removeEventListener(PREFERENCE_CHANGED_EVENT, read);
+  }, []);
+  // The demo has no lock screen to lock to.
+  useIdleLock(locked === false && !demoExit && !shuttingDown, () => {
+    setUnlocked(false);
+    setLocked(true);
+  });
 
   useEffect(() => {
     const unlocked = isUnlocked();
@@ -145,12 +193,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const cycleTheme = () => applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]!);
 
   const handleShutdown = useCallback(async () => {
-    if (!window.confirm("Shut down Raponiberg? It backs up first. Open Raponiberg on the Desktop to start it again; it picks up any updates when it starts.")) return;
+    if (!(await ask({ title: "Shut down Raponiberg?", body: "It backs up first. Open Raponiberg on the Desktop to start it again; it picks up any updates when it starts.", confirm: "Shut down" }))) return;
     try {
       const res = await fetch("/api/system/shutdown", { method: "POST", headers: apiSecretHeaders() });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        window.alert(body?.error ? `Shutdown failed: ${body.error}` : "Shutdown failed.");
+        notify(body?.error ? `Shutdown failed: ${body.error}` : "Shutdown failed.", { tone: "bad" });
         return;
       }
     } catch {
@@ -173,6 +221,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <>
         <LockScreen onUnlock={() => setLocked(false)} />
+        <FeedbackHost />
+        <Tooltips />
         {/* Same spot as the top bar's power button, so the app can be turned off without unlocking. */}
         <button
           type="button"
@@ -236,6 +286,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <button
           type="button"
+          aria-pressed={hidden}
+          onClick={() => setAmountsHidden(!hidden)}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus ${hidden ? "text-accent" : "text-muted"}`}
+          title={hidden ? "Show amounts" : "Hide amounts (blurs every figure on screen)"}
+          aria-label={hidden ? "Show amounts" : "Hide amounts"}
+        >
+          <EyeIcon off={hidden} />
+        </button>
+        <button
+          type="button"
           onClick={cycleTheme}
           className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-focus sm:flex"
           title="Switch theme"
@@ -296,6 +356,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <ProofProvider>{children}</ProofProvider>
         </main>
       </div>
+      <FeedbackHost />
+      <Tooltips />
     </div>
   );
 }
@@ -382,6 +444,16 @@ function ThemeIcon() {
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
       <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function EyeIcon({ off }: { off: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M1.5 8s2.4-4.25 6.5-4.25S14.5 8 14.5 8 12.1 12.25 8 12.25 1.5 8 1.5 8z" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="8" cy="8" r="1.9" stroke="currentColor" strokeWidth="1.4" />
+      {off && <path d="M2.5 13.5l11-11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />}
     </svg>
   );
 }

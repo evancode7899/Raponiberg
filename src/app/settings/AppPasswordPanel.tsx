@@ -1,7 +1,8 @@
 "use client";
 
 import type { Api } from "@/components/ledger/useApi";
-import { btn, Card, SecretBox } from "@/components/ui/kit";
+import { btn, Card, Field, SecretBox, selectCls } from "@/components/ui/kit";
+import { IDLE_LOCK_CHOICES, idleLockMinutes, setIdleLockMinutes } from "@/lib/preferences";
 import { useEffect, useState } from "react";
 
 /** Settings › General: change the lock screen's password (lib/appPassword.ts). */
@@ -11,6 +12,7 @@ export function AppPasswordPanel({ api }: { api: Api }) {
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
+  const [idle, setIdle] = useState(0);
   const [msg, setMsg] = useState<{ tone: "pos" | "neg"; text: string } | null>(null);
 
   useEffect(() => {
@@ -18,6 +20,11 @@ export function AppPasswordPanel({ api }: { api: Api }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((j: { isDefault?: boolean } | null) => j && setIsDefault(Boolean(j.isDefault)))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the server render can't see localStorage
+    setIdle(idleLockMinutes());
   }, []);
 
   const mismatch = confirm.length > 0 && next !== confirm;
@@ -78,6 +85,25 @@ export function AppPasswordPanel({ api }: { api: Api }) {
         <button type="button" onClick={() => void save()} className={btn.primary} disabled={busy || !current || !next || next !== confirm}>
           {busy ? "Saving…" : "Change password"}
         </button>
+      </div>
+      <div className="mt-4 w-64">
+        <Field label="Lock by itself" hint="After this long without a key, click or scroll, in this browser.">
+          <select
+            className={selectCls}
+            value={idle}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setIdle(n);
+              setIdleLockMinutes(n);
+            }}
+          >
+            {IDLE_LOCK_CHOICES.map((n) => (
+              <option key={n} value={n}>
+                {n === 0 ? "Never" : `${n} minutes`}
+              </option>
+            ))}
+          </select>
+        </Field>
       </div>
       {mismatch && <p className="mt-2 text-xs text-neg">The two don&apos;t match.</p>}
       {msg && <p className={`mt-2 text-xs ${msg.tone === "pos" ? "text-pos" : "text-neg"}`}>{msg.text}</p>}

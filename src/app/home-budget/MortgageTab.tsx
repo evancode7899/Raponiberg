@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, ErrorNote, NotFigure, PageBody, StatCell, StatGrid, table, useSavedState, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -151,9 +152,7 @@ export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean 
           year={linkYear}
           set={set}
           payment={cmp.monthlyPayment}
-          onReset={() => {
-            if (window.confirm("Reset every input on this page to its default? Your lump sums are removed too.")) setIns(defaultInputs());
-          }}
+          onReset={() => void askDanger("Reset every input on this page to its default?", "Reset", "Your lump sums are removed too.").then((yes) => yes && setIns(defaultInputs()))}
         />
 
         <div className="flex min-w-0 flex-col gap-4">

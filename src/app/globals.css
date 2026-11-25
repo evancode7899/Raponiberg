@@ -292,6 +292,15 @@ body {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+/* Hide amounts: figures and chart labels blur until it's turned off again. */
+html[data-hide-amounts] :is([data-proof-key], .num, .recharts-text, .recharts-tooltip-wrapper, [data-what-if]) {
+  filter: blur(0.42em);
+  user-select: none;
+}
+html[data-hide-amounts] :is(.num) :is([data-proof-key]) {
+  filter: none;
+}
+
 /* Form controls inherit the theme. */
 input,
 select,

@@ -16,7 +16,9 @@ export function contentSecurityPolicy(dev: boolean): string {
     "img-src": [self, "data:", "blob:"],
     "font-src": [self],
     "connect-src": [self, ...(dev ? ["ws://127.0.0.1:*", "ws://localhost:*"] : [])],
-    "object-src": [self],
+    // A saved receipt opens as a blob in the browser's own PDF viewer.
+    "object-src": [self, "blob:"],
+    "frame-src": [self, "blob:"],
     "base-uri": [self],
     "form-action": [self],
     "frame-ancestors": ["'none'"],

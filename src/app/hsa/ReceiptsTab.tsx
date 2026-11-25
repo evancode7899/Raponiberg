@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger, notify } from "@/components/ui/Feedback";
 import { Badge, btn, Callout, Card, downloadResponse, EmptyState, inputCls, NotFigure, Segmented, selectCls, table } from "@/components/ui/kit";
 import { apiSecretHeaders } from "@/components/ledger/useApi";
 import { formatUsdCents, usd0 } from "@/lib/formatMoney";
@@ -117,8 +118,8 @@ export function ReceiptsTab({
               <button
                 type="button"
                 className={btn.danger}
-                onClick={() => {
-                  if (window.confirm(`Remove ${notMedical.length} expense${notMedical.length === 1 ? "" : "s"} from the log and stop suggesting those charges? (The journal beside the file keeps a copy.)`)) {
+                onClick={async () => {
+                  if (await askDanger(`Remove ${notMedical.length} expense${notMedical.length === 1 ? "" : "s"} from the log and stop suggesting those charges?`, "Remove", "The journal beside the file keeps a copy.")) {
                     void send({ op: "delete", ids: notMedical.map((e) => e.id), dismiss: true });
                   }
                 }}
@@ -238,8 +239,8 @@ export function ReceiptsTab({
             <button
               type="button"
               className={btn.danger}
-              onClick={() => {
-                if (window.confirm(`Delete ${picked.length} expense${picked.length === 1 ? "" : "s"} from the log? (The journal beside the file keeps a copy.)`)) {
+              onClick={async () => {
+                if (await askDanger(`Delete ${picked.length} expense${picked.length === 1 ? "" : "s"} from the log?`, "Delete", "The journal beside the file keeps a copy.")) {
                   void send({ op: "delete", ids: picked.map((e) => e.id) }).then(() => setSelected(new Set()));
                 }
               }}
@@ -416,7 +417,7 @@ export function openReceipt(file: string) {
     })
     .catch((err: Error) => {
       tab?.close();
-      window.alert(err.message);
+      notify(err.message, { tone: "bad" });
     });
 }
 

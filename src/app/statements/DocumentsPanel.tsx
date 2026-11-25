@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { LaneBadge } from "@/components/ledger/TransactionTable";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table, type Tone } from "@/components/ui/kit";
@@ -158,8 +159,8 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
                   type="button"
                   className={btn.danger}
                   disabled={busy === d.id}
-                  onClick={() => {
-                    if (confirm(`Delete "${d.title}" and everything it added to the ledger?`)) void run(d.id, () => api.call(`/api/documents/${d.id}`, { method: "DELETE" }));
+                  onClick={async () => {
+                    if (await askDanger(`Delete "${d.title}" and everything it added to the ledger?`)) void run(d.id, () => api.call(`/api/documents/${d.id}`, { method: "DELETE" }));
                   }}
                 >
                   Delete

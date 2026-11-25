@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { BlockedNote } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
@@ -231,7 +232,7 @@ export function CarClient({ requiresApiSecret }: { requiresApiSecret: boolean })
             saving={saving}
             onClose={() => setEditing(null)}
             onSave={async (e) => (await save({ ...s, entries: s.entries.some((x) => x.id === e.id) ? s.entries.map((x) => (x.id === e.id ? e : x)) : [...s.entries, e] })) && setEditing(null)}
-            onDelete={async () => window.confirm("Delete this entry from the car's log?") && (await save({ ...s, entries: s.entries.filter((x) => x.id !== editing.id) })) && setEditing(null)}
+            onDelete={async () => (await askDanger("Delete this entry from the car's log?")) && (await save({ ...s, entries: s.entries.filter((x) => x.id !== editing.id) })) && setEditing(null)}
           />
         )}
       </PageBody>

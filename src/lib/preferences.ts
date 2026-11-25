@@ -1,5 +1,40 @@
 export const STORAGE_THEME = "pf-theme";
 export const STORAGE_FONT_SCALE = "pf-font-scale";
+const STORAGE_IDLE_LOCK = "pf-idle-lock";
+const STORAGE_HIDE_AMOUNTS = "pf-hide-amounts";
+
+/** Minutes without a key, click or scroll before the app locks itself; 0 is never. */
+export const IDLE_LOCK_CHOICES = [0, 5, 15, 30, 60] as const;
+export const PREFERENCE_CHANGED_EVENT = "pf:preference-changed";
+
+const stored = (key: string) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const store = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable */
+  }
+  window.dispatchEvent(new Event(PREFERENCE_CHANGED_EVENT));
+};
+
+export function idleLockMinutes(): number {
+  const n = Number(stored(STORAGE_IDLE_LOCK));
+  return (IDLE_LOCK_CHOICES as readonly number[]).includes(n) ? n : 0;
+}
+export const setIdleLockMinutes = (n: number) => store(STORAGE_IDLE_LOCK, String(n));
+
+/** Amounts blurred on screen, for someone looking over a shoulder. Nothing is hidden from the page itself. */
+export const amountsHidden = () => stored(STORAGE_HIDE_AMOUNTS) === "1";
+export function setAmountsHidden(on: boolean) {
+  document.documentElement.toggleAttribute("data-hide-amounts", on);
+  store(STORAGE_HIDE_AMOUNTS, on ? "1" : "0");
+}
 
 export type AppTheme = "light" | "dark" | "terminal";
 export type FontScale = "sm" | "md" | "lg";

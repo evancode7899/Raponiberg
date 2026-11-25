@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger, notify } from "@/components/ui/Feedback";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
@@ -190,10 +191,12 @@ export function GoalsClient({ requiresApiSecret }: { requiresApiSecret: boolean 
             upsert(g);
             setEditing(null);
           }}
-          onDelete={() => {
-            if (!window.confirm("Delete this goal? Its target, date and funding choices are removed.")) return;
-            saveGoals(goals.filter((g) => g.id !== editing.id));
+          onDelete={async () => {
+            if (!(await askDanger("Delete this goal?", "Delete", "Its target, date and funding choices are removed."))) return;
+            const before = goals;
+            await saveGoals(goals.filter((g) => g.id !== editing.id));
             setEditing(null);
+            notify(`Deleted ${editing.name}.`, { undo: () => saveGoals(before) });
           }}
         />
       )}
