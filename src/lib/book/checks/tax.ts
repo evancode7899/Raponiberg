@@ -7,11 +7,13 @@ import type { Collector } from "./collector.ts";
  * The tax law the estimates need is in the app: this year's (to project it) and last
  * year's (to file it). Each January a new year's brackets, deductions, limits and
  * Connecticut tables have to be added; until they are, that year's taxes are withheld
- * with what to do, rather than estimated with another year's law.
+ * with what to do, rather than estimated with another year's law. From November, when the IRS
+ * has published it, next year's law missing is said ahead of time: it withholds nothing yet.
  */
 export function checkTaxParams(book: Book, c: Collector) {
   const year = Number(book.today.slice(0, 4));
-  for (const y of [year - 1, year]) {
+  const ahead = book.today.slice(5) >= "11-15" ? [year + 1] : [];
+  for (const y of [year - 1, year, ...ahead]) {
     if (TAX_YEARS[y]) {
       c.pass("tax.params", { subject: `${y} tax law`, from: `${y}-01-01`, to: `${y}-12-31`, affects: ["TAX"] });
       continue;

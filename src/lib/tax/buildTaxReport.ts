@@ -25,6 +25,7 @@ import { checkFiled, type FiledCheck } from "./filedCheck.ts";
 import { annualizedK1, expectedK1, k1Adds, k1Gaps, k1Items, K1_OWN_FIELDS, type K1AddField, type K1Adds, type K1Gap, type K1Items } from "./k1.ts";
 import { passiveCarryforwards, passiveKey, passiveLimit, type PassiveOutcome } from "./passive.ts";
 import { k1DetailFor, type K1Detail } from "./k1DetailStore.ts";
+import { estimateInstallments, filingDate } from "../dates/taxDates.ts";
 import { TAX_YEARS, taxYearParams, type TaxYearParams } from "./params.ts";
 import { bestSeparate, type MfsResult } from "./scenarios.ts";
 import { ageAtYearEnd, EXTRA_FIELDS, yearInputs, type NyResidency, type PayForecast, type Residency, type TaxPerson, type TaxProfile, type YearInputs } from "./profile.ts";
@@ -902,8 +903,8 @@ export function buildTaxReport(
       perPaycheckForSafeHarbor: per(ct.underDeMinimis ? 0 : ct.shortfall),
       perPaycheckToBreakEven: per(mfj.ct.balanceDue),
     },
-    q4DueDate: `${year + 1}-01-15`,
-    filingDate: `${year + 1}-04-15`,
+    q4DueDate: estimateInstallments(year)[3]!.date,
+    filingDate: filingDate(year),
   };
 
   // The rules the estimate follows: tax law and the choices under Inputs, never a figure read from the data.

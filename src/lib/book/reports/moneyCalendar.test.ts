@@ -144,6 +144,23 @@ describe("money calendar", () => {
     expect(fed?.proof).toEqual({ report: "tax-estimate", year: 2025, basis: "projected", key: "fed.balance" });
   });
 
+  it("keeps last year's Q4 estimate through its due date in January", () => {
+    const jan = { ...book, today: "2026-01-05" };
+    const late = buildMoneyCalendar(jan.today, yearsOf(jan));
+    expect(late.items.find((i) => i.id === "2025-q4-federal")?.date).toBe("2026-01-15");
+    expect(late.items.some((i) => i.id === "2025-q3-federal")).toBe(false);
+  });
+
+  it("spreads what's still to pay in over the due dates left, to the cent", () => {
+    const [, y26] = yearsOf(book);
+    if (y26!.tax.blocked) throw new Error("2026 is blocked");
+    const owing = { ...y26!, tax: { ...y26!.tax, plan: { ...y26!.tax.plan, federal: { ...y26!.tax.plan.federal, safeHarborShortfall: 1_000_01 } } } };
+    const parts = buildMoneyCalendar(TODAY, [owing]).items.filter((i) => /^2026-q\d-federal$/.test(i.id));
+    expect(parts.map((i) => i.date)).toEqual(["2026-04-15", "2026-06-15", "2026-09-15", "2027-01-15"]);
+    expect(parts.reduce((s, i) => s + i.cents!, 0)).toBe(1_000_01);
+    expect(parts.every((i) => !i.done)).toBe(true);
+  });
+
   it("puts the year in progress's Q4 estimate on January 15", () => {
     for (const s of ["federal", "ct"]) expect(r.items.find((i) => i.id === `2026-q4-${s}`)?.date).toBe("2027-01-15");
     expect(r.items.some((i) => i.id === "2025-q4-federal")).toBe(false);

@@ -17,7 +17,7 @@ import { perBook } from "./common.ts";
 import { normalizeMortgageInputs } from "../../mortgage/inputs.ts";
 import { buildMortgageLinks } from "../../mortgage/links.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
-import { TAX_YEARS } from "../../tax/params.ts";
+import { startedTaxYears } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxAccounts/settings.ts";
 import { bonusesOf } from "../reports/bonuses.ts";
 import { buildGoals, goalForecastOf } from "../reports/goals.ts";
@@ -182,11 +182,11 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
   await page("Mortgage", async () => mortgagePageFigures(normalizeMortgageInputs(readPageInputs("pf-mortgage-v2")), (await perBook(ctx, "mortgage-links", () => buildMortgageLinks(db, book))).links));
   const retirement = await loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);
   // The calendar reads the same two reports for its years: kept from here rather than built again.
-  const supported = Object.keys(TAX_YEARS).map(Number);
+  const supported = startedTaxYears(book.today);
   const onCalendar = calendarYears(book.today, supported);
   const calendar: Partial<CalendarYear>[] = onCalendar.map((y) => ({ year: y }));
   const keep = (y: number) => calendar.find((c) => c.year === y);
-  for (const y of supported.filter((y) => y <= year)) {
+  for (const y of supported) {
     await page(`Taxes ${y}`, () => {
       const r = buildTaxReport(book, y, { forecast: link });
       const c = keep(y);

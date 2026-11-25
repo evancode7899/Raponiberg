@@ -13,7 +13,7 @@ import { CATEGORIES } from "../classifier/taxonomy.ts";
 import type { Quality } from "../ledger/timeline.ts";
 import { usd0 } from "../formatMoney.ts";
 import { amountsFromLines, projectPayroll, type PayFrequency } from "../tax/facts/payroll.ts";
-import { TAX_YEARS } from "../tax/params.ts";
+import { startedTaxYears, TAX_YEARS } from "../tax/params.ts";
 import type { Dependent as TaxDependent } from "../tax/profile.ts";
 import type { BonusYear, DeferralParts, LivingTrail, OutlookSeeds, PaycheckSeed, PayTrail, PersonSeed } from "./basePay.ts";
 import {
@@ -491,7 +491,7 @@ function outlookSeeds(x: {
   latestProven: { asOf: string; netWorth: YearNetWorth } | null;
 }): OutlookSeeds {
   const { book, out, base, currentYear, settings, latestProven: proven } = x;
-  const taxYear = Math.max(...Object.keys(TAX_YEARS).map(Number).filter((y) => y <= currentYear), Math.min(...Object.keys(TAX_YEARS).map(Number)));
+  const taxYear = startedTaxYears(String(currentYear)).at(-1) ?? Math.min(...Object.keys(TAX_YEARS).map(Number));
   const fp = TAX_YEARS[taxYear]!.federal;
   const cur = out.find((y) => y.isCurrent);
 

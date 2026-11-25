@@ -169,7 +169,8 @@ describe("other itemized deductions", () => {
   it("property tax grows with inflation until it meets the cap", () => {
     const plan = plain({ stateIncomeTax: 20_000, propertyTax: 10_000 });
     expect(otherItemizedFor(plan, 2028)).toBeCloseTo(20_000 + 10_000 * 1.025 ** 2, 6);
-    expect(otherItemizedFor({ ...plan, propertyTax: 20_000 }, 2028)).toBe(40_400);
+    // The cap itself rises 1% a year from 2026's: $40,400 is $41,212.04 in 2028.
+    expect(otherItemizedFor({ ...plan, propertyTax: 30_000 }, 2028)).toBeCloseTo(41_212.04, 6);
   });
 
   it("property tax matters only while the SALT room isn't already used up", () => {

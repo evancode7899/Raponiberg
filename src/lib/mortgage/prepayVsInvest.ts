@@ -153,11 +153,11 @@ export function deductionValue(interest: number, other: number, standard: number
  * Itemized deductions other than mortgage interest in calendar `year`: state income tax and
  * property tax together up to that year's SALT cap, plus charity. Property tax and charity
  * grow with inflation from the first payment's year, like the standard deduction; the cap
- * is fixed in dollars.
+ * is the law's: 2026's, up 1% a year through 2029, then the lower one.
  */
 export function otherItemizedFor(plan: MortgagePlan, year: number): number {
   const grow = Math.pow(1 + plan.inflation, Math.max(0, year - plan.startYear));
-  const cap = year >= 2030 ? plan.saltCapFrom2030 : plan.saltCap;
+  const cap = year >= 2030 ? plan.saltCapFrom2030 : plan.saltCap * Math.pow(1.01, Math.max(0, year - 2026));
   const salt = Math.min(cap, Math.max(0, plan.stateIncomeTax) + Math.max(0, plan.propertyTax) * grow);
   return salt + Math.max(0, plan.charity) * grow;
 }

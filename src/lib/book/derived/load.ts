@@ -14,7 +14,7 @@ import { loadHsaReport } from "../../hsa/loadReport.ts";
 import { taxLink } from "../../forecast/forecast.ts";
 import { loadForecast } from "../../forecast/load.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
-import { TAX_YEARS } from "../../tax/params.ts";
+import { startedTaxYears } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxAccounts/settings.ts";
 import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
@@ -129,7 +129,7 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
   },
   calendar: async (ctx) => {
     const ys = await taxYears(ctx);
-    const on = calendarYears(ctx.book.today, Object.keys(TAX_YEARS).map(Number));
+    const on = calendarYears(ctx.book.today, startedTaxYears(ctx.book.today));
     const figures = calendarDerived(buildMoneyCalendar(ctx.book.today, ys.filter((y) => on.includes(y.year))));
     return { figures, rederived: declared(CALENDAR_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
@@ -156,11 +156,7 @@ function taxYears(ctx: ProofContext): Promise<CalendarYear[]> {
     const { book, db } = ctx;
     const [{ forecast }, retirement] = await Promise.all([loadForecast(db, book), loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings)]);
     const link = forecast ? taxLink(forecast) : null;
-    const year = Number(book.today.slice(0, 4));
-    return Object.keys(TAX_YEARS)
-      .map(Number)
-      .filter((y) => y <= year)
-      .map((y) => ({ year: y, tax: buildTaxReport(book, y, { forecast: link }), accounts: buildTaxAccounts(book, y, retirement, link) }));
+    return startedTaxYears(book.today).map((y) => ({ year: y, tax: buildTaxReport(book, y, { forecast: link }), accounts: buildTaxAccounts(book, y, retirement, link) }));
   });
 }
 

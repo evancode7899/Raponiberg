@@ -121,14 +121,14 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
           <Headline name="Connecticut" col="ct" b={plan.ct} year={r.year} k="ct.balance" fig={fig} />
         </div>
         <div className="flex flex-col gap-2 px-4 pb-4">
-          {!reached && <Callout tone="warn">No paychecks are left this year for a new W-4 to reach. Settle the balance with an estimated payment by {formatDate(`${r.year + 1}-01-15`)}.</Callout>}
+          {!reached && <Callout tone="warn">No paychecks are left this year for a new W-4 to reach. Settle the balance with an estimated payment by {formatDate(r.plan.q4DueDate)}.</Callout>}
           {(plan.unreachable.federal > 0 || plan.unreachable.ct > 0) && reached > 0 && (
             <Callout tone="warn">
               The paychecks left can&apos;t take it all without going past take-home pay: pay{" "}
               {plan.unreachable.federal > 0 && <>{fig("unreachable", "federal", usd(plan.unreachable.federal))} to the IRS</>}
               {plan.unreachable.federal > 0 && plan.unreachable.ct > 0 && " and "}
               {plan.unreachable.ct > 0 && <>{fig("unreachable", "ct", usd(plan.unreachable.ct))} to Connecticut</>} as an
-              estimated payment by {formatDate(`${r.year + 1}-01-15`)}.
+              estimated payment by {formatDate(r.plan.q4DueDate)}.
             </Callout>
           )}
           {plan.people.some((p) => !p.onFileEntered) && (

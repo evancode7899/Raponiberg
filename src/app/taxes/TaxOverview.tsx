@@ -12,6 +12,7 @@ import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { employerRow, showsNyW2 } from "@/lib/tax/incomeExtras";
 import { atFilingReturns, dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
+import { estimateInstallments } from "@/lib/dates/taxDates";
 import { useMemo, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { BalanceBadge, Callout, EstimateValue, formatDate, lawLabel, NumberTable, pct, usd } from "./taxUi";
@@ -438,7 +439,7 @@ function NextThousand({ r }: { r: TaxResponse }) {
 function Calendar({ r }: { r: TaxResponse }) {
   const y = r.year;
   const events = [
-    { date: `${y}-09-15`, label: "Q3 estimate due" },
+    { date: estimateInstallments(y)[2]!.date, label: "Q3 estimate due" },
     { date: `${y}-12-31`, label: "Last day for this year's 401(k), HSA payroll and gifts" },
     { date: r.plan.q4DueDate, label: "Q4 estimate due" },
     { date: `${y + 1}-01-31`, label: "W-2s and most 1099s arrive" },

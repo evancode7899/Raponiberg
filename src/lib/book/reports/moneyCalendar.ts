@@ -1,3 +1,4 @@
+import { estimateInstallments, filingDate } from "../../dates/taxDates.ts";
 import { usd0 } from "../../formatMoney.ts";
 import type { TaxReport, TaxReportBlocked } from "../../tax/buildTaxReport.ts";
 import { estimateColumns, lineValue, type EstimateKey } from "../../tax/estimateLines.ts";
@@ -52,7 +53,7 @@ export type MoneyCalendarReport = {
 /** The tax years with something still open on `today`: this year, and last year until its filing date. */
 export function calendarYears(today: string, supported: number[]): number[] {
   const y = Number(today.slice(0, 4));
-  return [y - 1, y].filter((x) => supported.includes(x) && today <= `${x + 1}-04-15`);
+  return [y - 1, y].filter((x) => supported.includes(x) && today <= filingDate(x));
 }
 
 const STEP_ORDER: CalendarKind[] = ["tax", "save", "file"];
@@ -62,7 +63,7 @@ export function buildMoneyCalendar(today: string, years: CalendarYear[]): MoneyC
   const notes: string[] = [];
   for (const { year, tax, accounts } of years) {
     const yearEnd = `${year}-12-31`;
-    const filing = tax.blocked ? `${year + 1}-04-15` : tax.plan.filingDate;
+    const filing = tax.blocked ? filingDate(year) : tax.plan.filingDate;
     const limit = (x: Omit<AccountLimitsDescriptor, "report" | "year">): ProofDescriptor => ({ report: "account-limits", year, ...x });
     const people = new Map(accounts.people.map((p) => [p.id, p]));
 
@@ -129,26 +130,46 @@ export function buildMoneyCalendar(today: string, years: CalendarYear[]): MoneyC
           done: false,
         });
       }
-      for (const [state, name, shortfall] of [
-        ["federal", "Federal", plan.federal.safeHarborShortfall],
-        ["ct", "Connecticut", plan.ct.safeHarborShortfall],
-      ] as const) {
+    }
+    // The year's last installment is due the January after it, so it outlives the year in progress.
+    const left = estimateInstallments(year).filter((x) => x.date >= today);
+    for (const [state, name, shortfall] of [
+      ["federal", "Federal", plan.federal.safeHarborShortfall],
+      ["ct", "Connecticut", plan.ct.safeHarborShortfall],
+    ] as const) {
+      if (shortfall <= 0) {
+        const last = left.at(-1);
+        if (last)
+          items.push({
+            id: `${year}-q${last.quarter}-${state}`,
+            date: last.date,
+            year,
+            kind: "tax",
+            title: `${name} Q${last.quarter} estimated tax`,
+            detail: "Projected withholding and payments already meet the safe harbor.",
+            cents: shortfall,
+            proof: null,
+            href: "/taxes",
+            done: true,
+          });
+        continue;
+      }
+      // What's left to pay in, in equal parts over the due dates left (the last takes the odd cents).
+      const part = Math.floor(shortfall / Math.max(1, left.length));
+      left.forEach((x, i) =>
         items.push({
-          id: `${year}-q4-${state}`,
-          date: plan.q4DueDate,
+          id: `${year}-q${x.quarter}-${state}`,
+          date: x.date,
           year,
           kind: "tax",
-          title: `${name} Q4 estimated tax`,
-          detail:
-            shortfall > 0
-              ? `What still has to be paid in to meet the safe harbor and avoid the underpayment penalty${state === "federal" ? ", unless raising withholding covers it first" : ""}.`
-              : "Projected withholding and payments already meet the safe harbor.",
-          cents: shortfall,
+          title: `${name} Q${x.quarter} estimated tax`,
+          detail: `${left.length > 1 ? `One of ${left.length} equal parts of what` : "What"} still has to be paid in to meet the safe harbor and avoid the underpayment penalty${state === "federal" && tax.isCurrentYear ? ", unless raising withholding covers it first" : ""}.`,
+          cents: i === left.length - 1 ? shortfall - part * (left.length - 1) : part,
           proof: null,
           href: "/taxes",
-          done: shortfall <= 0,
-        });
-      }
+          done: false,
+        }),
+      );
     }
     const { cols } = estimateColumns(tax, "projected");
     const joint = cols.find((c) => c.id === "joint");
