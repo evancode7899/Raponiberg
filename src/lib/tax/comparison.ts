@@ -65,7 +65,7 @@ export function taxComparison(r: Pick<TaxReport, "scenarios" | "people">) {
     usd("ct-taxable", "CT taxable income", (x) => x.ct.taxableIncome),
     usd("ct-brackets", "Tax from brackets", (x) => x.ct.initialTax, { indent: true }),
     usd("ct-addback", "2% phase-out + benefit recapture", (x) => x.ct.addBack + x.ct.recapture, { indent: true }),
-    usd("ct-credits", "Credits", (x) => -(x.ct.personalCredit + x.ct.childTaxCredit + x.ct.otherStateCredit), { indent: true }),
+    usd("ct-credits", "Credits", (x) => -(x.ct.personalCredit + x.ct.otherStateCredit), { indent: true }),
     usd("ct", "Connecticut tax", (x) => x.ct.totalTax, { strong: true }),
     ...(hasNy
       ? [

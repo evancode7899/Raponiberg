@@ -170,7 +170,6 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
                 rows={[
                   { label: "Federal child tax credit", values: [cell("overview", "dependent", "fedChild", usd(dep.fedChild))], help: "$2,200 per child under 17, reduced $50 per $1,000 of AGI over $400,000 (joint)." },
                   { label: "Other dependent / care credits", values: [cell("overview", "dependent", "otherCredits", usd(dep.otherCredits))] },
-                  { label: "CT child tax credit", values: [cell("overview", "dependent", "ctChild", usd(dep.ctChild))], help: "$600 per child 16 or under; phases out between $200k and $209k federal AGI (joint)." },
                   ...(mfj.ny ? [{ label: "New York dependent exemption", values: [cell("overview", "dependent", "ny", usd(depNy))], help: "$1,000 of income per dependent, at your New York (and City) rate." }] : []),
                   { label: "Total savings", values: [cell("overview", "dependent", "total", usd(depFed + depCt + depNy))], strong: true },
                 ]}

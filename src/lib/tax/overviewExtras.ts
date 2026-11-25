@@ -54,7 +54,6 @@ export function dependentEffect(r: Pick<TaxReport, "scenarios">, b: ReturnType<t
     total: fed + ct + ny,
     fedChild: mfj.federal.childTaxCredit + mfj.federal.refundableChildCredit,
     otherCredits: mfj.federal.otherDependentCredit + mfj.federal.dependentCareCredit,
-    ctChild: mfj.ct.childTaxCredit,
   };
 }
 
@@ -76,7 +75,7 @@ export function overviewCells(r: TaxReport): OverviewCell[] {
   // The dependent's effect, with dependents: each credit and the total (New York's with a New York return).
   const d = dependentEffect(r, b);
   if (r.dependents.length)
-    for (const [id, cents] of Object.entries({ fedChild: d.fedChild, otherCredits: d.otherCredits, ctChild: d.ctChild, ...(r.scenarios.mfj.ny ? { ny: d.ny } : {}), total: d.total })) add("dependent", id, `The dependent's effect: ${id}`, { cents });
+    for (const [id, cents] of Object.entries({ fedChild: d.fedChild, otherCredits: d.otherCredits, ...(r.scenarios.mfj.ny ? { ny: d.ny } : {}), total: d.total })) add("dependent", id, `The dependent's effect: ${id}`, { cents });
   for (const which of ["federal", "ct"] as const) {
     const sh = r.safeHarbor[which];
     const plan = r.plan[which];

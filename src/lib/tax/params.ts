@@ -8,9 +8,12 @@
  *   Beautiful Bill Act), SSA 2026 wage base. Federal 2025: Rev. Proc. 2024-40 as
  *   amended by the OBBBA (standard deduction, SALT cap, child tax credit).
  * - Connecticut: Form CT-1040 TCS (Rev. 12/25) Tables A–E. Connecticut does not index
- *   these, so 2026 and 2027 reuse them; the CT child tax credit is from 2026 sSB 6.
+ *   these, so 2026 and 2027 reuse them. No Connecticut child tax credit: 2026 sSB 6's was never
+ *   enacted (OLR report 2026-R-0076 lists the 2026 tax acts). Paid Leave: 0.5% for 2027 too
+ *   (ctpaidleave.org, "has voted to maintain the contribution rate at 0.5% for 2027"; C.G.S. §31-49g caps it there).
  * - New York: IT-201-I / IT-203-I rate schedules, tax computation worksheets and the NYC
- *   school tax credit. New York doesn't index its brackets either.
+ *   school tax credit. New York doesn't index its brackets either. 2026 and 2027 on: Tax Law
+ *   §601(a)(1), (b)(1), (c)(1) (vii) and (viii), the first five rates down 0.1 point a year through 2032.
  *
  * A new tax year is a new entry here; nothing else hard-codes a rate or threshold.
  */
@@ -136,7 +139,6 @@ export type CtParams = {
   personalCredit: ByStatus<[number, number][]>;
   /** Contributions to CHET (CT's 529) deductible per return. */
   chetDeduction: ByStatus<number>;
-  childCredit: { perChild: number; maxChildren: number; fullBelow: ByStatus<number>; zeroAbove: ByStatus<number> } | null;
   /** Paid Family & Medical Leave employee contribution (payroll, not income tax). */
   pfmlRate: number;
 };
@@ -535,18 +537,7 @@ const CT_2025: CtParams = {
     ]),
   ),
   chetDeduction: byStatus($(5_000), $(10_000), $(5_000), $(5_000)),
-  childCredit: null,
   pfmlRate: 0.005,
-};
-
-const CT_2026: CtParams = {
-  ...CT_2025,
-  childCredit: {
-    perChild: $(600),
-    maxChildren: 3,
-    fullBelow: byStatus($(100_000), $(200_000), $(100_000), $(160_000)),
-    zeroAbove: byStatus($(109_000), $(209_000), $(109_000), $(169_000)),
-  },
 };
 
 /**
@@ -625,7 +616,7 @@ const NY_2025: NyParams = {
   },
 };
 
-/** The FY2026 budget's cut to the first five New York rates: 0.1 point off 2025's for 2026, and 0.2 from 2027. */
+/** New York's first five rates (Tax Law §601, 2025's budget): 0.1 point off 2025's for 2026, 0.2 for 2027 through 2032; the brackets and the other rates stay. */
 const nyCut = (points: number): NyParams => ({
   ...NY_2025,
   brackets: Object.fromEntries(
@@ -693,23 +684,23 @@ export const TAX_YEARS: Record<number, TaxYearParams> = {
   2026: {
     year: 2026,
     federal: FED_2026,
-    ct: CT_2026,
+    ct: CT_2025,
     ny: NY_2026,
     notes: [
       "Federal: Rev. Proc. 2025-32 (2026 inflation adjustments incl. OBBBA changes).",
-      "Connecticut: 2025 CT-1040 TCS tables (not inflation-indexed; 2026 forms are not out yet). CT child tax credit per 2026 sSB 6.",
-      "New York: 2025 brackets with the FY2026 budget's 0.1-point cut to the first five rates (2026 forms are not out yet); New York City unchanged.",
+      "Connecticut: 2025 CT-1040 TCS tables (not inflation-indexed; 2026 forms are not out yet; no rate change or child tax credit was enacted for 2026).",
+      "New York: 2025 brackets with Tax Law §601's 0.1-point cut to the first five rates (2026 forms are not out yet); New York City unchanged.",
     ],
   },
   2027: {
     year: 2027,
     federal: FED_2027,
-    ct: CT_2026,
+    ct: CT_2025,
     ny: NY_2027,
     notes: [
       "Federal: Rev. Proc. 2026-35 and 2026-24, Notice 2026-66.",
-      "Connecticut: 2025 CT-1040 TCS tables (not inflation-indexed; no rate change was enacted for 2027 in the 2026 session). Paid Leave at 0.5%.",
-      "New York: 2025 brackets with the FY2026 budget's 0.2-point cut to the first five rates (2027 forms are not out yet); New York City unchanged.",
+      "Connecticut: 2025 CT-1040 TCS tables (not inflation-indexed; no rate change or child tax credit was enacted for 2027 in the 2026 session). Paid Leave at 0.5%, as its board set for 2027.",
+      "New York: 2025 brackets with Tax Law §601's 0.2-point cut to the first five rates (2027 forms are not out yet); New York City unchanged.",
     ],
   },
 };

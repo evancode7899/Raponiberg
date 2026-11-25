@@ -148,7 +148,6 @@ export const ESTIMATE_LINES = L({
   "ct.incomePercentage": { label: "Connecticut share of income", value: (c) => c.r.ct.incomePercentage, ratio: true },
   "ct.taxBeforeAllocation": { label: "Tax on all income (resident tables)", value: (c) => c.r.ct.taxBeforeAllocation },
   "ct.otherStateCredit": { label: "Credit for taxes paid to other states", value: (c) => c.r.ct.otherStateCredit },
-  "ct.childTaxCredit": { label: "Connecticut child tax credit", value: (c) => c.r.ct.childTaxCredit },
   "ct.totalTax": { label: "Connecticut income tax", value: (c) => c.r.ct.totalTax },
   "ct.withheld": { label: "Connecticut withholding (W-2 box 17)", value: (c) => c.r.ct.withholding },
   "ct.estimatedPayments": { label: "Connecticut estimated payments", value: (c) => c.r.ct.estimatedPayments },
@@ -235,7 +234,7 @@ export function worksheetLines(cols: EstimateColumn[]): { key: EstimateKey; only
 /** The joint return's lines Taxes › Income & W-2 draws beyond the Worksheet's, projected (federal income to taxable income, Connecticut AGI to tax). */
 export const INCOME_TAB_LINES: readonly EstimateKey[] = [
   "fed.taxableInterest", "fed.ordinaryDividends", "fed.capitalGain", "fed.iraTaxable", "fed.additionalIncome",
-  "ct.federalAgi", "ct.chet", "ct.usObligationSubtraction", "ct.childTaxCredit",
+  "ct.federalAgi", "ct.chet", "ct.usObligationSubtraction",
 ];
 
 /** Every tax the worksheet totals (computeReturn.ts allTaxes, the one definition). */

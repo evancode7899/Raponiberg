@@ -14,6 +14,36 @@ function taxAt(bounds: number[], upTo: number): number {
   return Math.round(tax) / 100;
 }
 
+describe("New York's statutory tables", () => {
+  // The base tax Tax Law §601 prints at the start of each bracket, for 2026 ((vii)) and for 2027 through 2032 ((viii)).
+  const bases = (year: number, fs: FilingStatus) => {
+    const out: number[] = [];
+    let from = 0;
+    let tax = 0;
+    for (const [upper, rate] of taxYearParams(year).ny.brackets[fs]) {
+      if (from) out.push(Math.round(tax / 100));
+      if (upper === Infinity) break;
+      tax += (upper - from) * rate;
+      from = upper;
+    }
+    return out;
+  };
+  // The statute rounds each bracket's base as it goes, so a running total can be a dollar off.
+  const near = (mine: number[], statute: number[]) => {
+    expect(mine).toHaveLength(statute.length);
+    mine.forEach((m, i) => expect(Math.abs(m - statute[i]!), `bracket ${i + 2}`).toBeLessThanOrEqual(1));
+  };
+
+  it("reproduces the 2026 and 2027 tables for each filing status", () => {
+    near(bases(2026, "MFJ"), [669, 953, 1_174, 8_391, 17_928, 143_430, 417_939, 2_477_939]);
+    near(bases(2027, "MFJ"), [652, 929, 1_146, 8_229, 17_605, 143_107, 417_616, 2_477_616]);
+    near(bases(2026, "SINGLE"), [332, 473, 586, 4_191, 12_141, 71_198, 449_714, 2_509_714]);
+    near(bases(2027, "SINGLE"), [323, 461, 572, 4_110, 11_926, 70_983, 449_499, 2_509_499]);
+    near(bases(2026, "HOH"), [499, 712, 879, 5_564, 15_101, 107_381, 433_894, 2_493_894]);
+    near(bases(2027, "HOH"), [486, 695, 859, 5_457, 14_833, 107_113, 433_626, 2_493_626]);
+  });
+});
+
 describe("2027 law", () => {
   const f = taxYearParams(2027).federal;
 
