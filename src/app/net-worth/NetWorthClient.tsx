@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { builtDerived, netWorthDerived } from "@/lib/book/derived/netWorth";
+import { builtDerived, netWorthDerived, recordsDerived } from "@/lib/book/derived/netWorth";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
@@ -10,7 +10,8 @@ import { chartChrome, groupColor, groupRank, useChartPalette } from "@/component
 import { compositeOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, ErrorNote, Loading, NotFigure, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
-import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
+import { netWorthRecords, roundMark } from "@/lib/book/reports/records";
+import { axisUsd, EM_DASH, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { addDays } from "@/lib/dates/isoDate";
 import type { NetWorthPeriodWithBlockers as NetWorthPeriod, NetWorthReport } from "@/lib/book/reports/netWorth";
@@ -41,6 +42,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
   const [rolls, setRolls] = useState(() => cachedResponse<RollforwardReport>("/api/dashboard/net-worth/accounts"));
   const [changesGranularity, setChangesGranularity] = useState<Granularity>("month");
   const [changes, setChanges] = useState(() => cachedResponse<NetWorthChangesReport>("/api/dashboard/net-worth/changes?granularity=month"));
+  const [monthChanges, setMonthChanges] = useState(() => cachedResponse<NetWorthChangesReport>("/api/dashboard/net-worth/changes?granularity=month"));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,6 +74,14 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
       .then(setRolls)
       .catch((e: Error) => setError(e.message));
   }, [api, tab, rolls]);
+  // Records reads the months What changed lists, whatever that tab is set to.
+  useEffect(() => {
+    if (!api.ready || tab !== "overview" || monthChanges) return;
+    api
+      .call<NetWorthChangesReport>("/api/dashboard/net-worth/changes?granularity=month")
+      .then(setMonthChanges)
+      .catch((e: Error) => setError(e.message));
+  }, [api, tab, monthChanges]);
   // The monthly view is the report already loaded for the overview; other views are fetched.
   const built = granularity === "month" && monthly ? monthly : report;
 
@@ -103,7 +113,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
             }
           />
         ) : tab === "overview" ? (
-          <Overview r={monthly} />
+          <Overview r={monthly} changes={monthChanges} />
         ) : tab === "changes" ? (
           <ChangesTab r={changes} granularity={changesGranularity} setGranularity={setChangesGranularity} />
         ) : tab === "built" ? (
@@ -174,7 +184,70 @@ function bandValue(group: string, cents: number): number {
   return (isDebt(group) ? Math.min(0, cents) : Math.max(0, cents)) / 100;
 }
 
-function Overview({ r }: { r: NetWorthReport }) {
+/** The household's records (reports/records.ts): each month in it a figure with its own proof. */
+function RecordsCard({ r, changes }: { r: NetWorthReport; changes: NetWorthChangesReport }) {
+  const x = useMemo(() => netWorthRecords(r, changes.periods), [r, changes]);
+  const derived = useMemo(() => recordsDerived(r, changes.periods), [r, changes]);
+  if (!x) return null;
+  const mark = (cents: number) => <NotFigure why="a round number, not a figure of yours">{roundMark(cents)}</NotFigure>;
+  const at = (p: { end: string; cents: number }) => <ProofValue proof={balanceProof(p.end, p.cents)}>{usd0(p.cents)}</ProofValue>;
+  const count = (figure: string, months: number) => <ProofValue proof={derivedTarget("net-worth", derived, figure)}>{months}</ProofValue>;
+  const rows: { what: string; when: ReactNode; value: ReactNode; title?: string }[] = [
+    { what: "Highest month-end", when: x.high.label, value: at(x.high) },
+    ...(x.longestRise ? [{ what: "Longest run of rising months", when: `${x.longestRise.from.label} to ${x.longestRise.to.label}`, value: count("record-rise", x.longestRise.months), title: "Month-ends in a row above the one before." }] : []),
+    { what: "Rising run under way", when: x.currentRise ? `since ${x.currentRise.from.label}` : "", value: x.currentRise ? count("record-rise-now", x.currentRise.months) : EM_DASH },
+    ...(x.bestSaved ? [{ what: "Most saved in a month", when: x.bestSaved.label, value: <ProofValue proof={{ descriptor: x.bestSaved.proofs.saved, shownCents: x.bestSaved.savedCents }}>{usd0(x.bestSaved.savedCents)}</ProofValue> }] : []),
+    ...(x.bestMarkets ? [{ what: "Best month for markets", when: x.bestMarkets.label, value: <ProofValue proof={{ descriptor: x.bestMarkets.proofs.markets, shownCents: x.bestMarkets.marketsCents }}>{usd0(x.bestMarkets.marketsCents)}</ProofValue> }] : []),
+    ...(x.passed
+      ? [
+          {
+            what: "Last milestone passed",
+            when: (
+              <>
+                {mark(x.passed.markCents)}
+                {x.passed.at ? `, ${x.passed.at.label}` : ", before the first proven month"}
+              </>
+            ),
+            value: x.passed.at ? at(x.passed.at) : NA,
+          },
+        ]
+      : []),
+    ...(x.next
+      ? [
+          {
+            what: "Next milestone",
+            when: mark(x.next.markCents),
+            value: (
+              <>
+                <ProofValue proof={derivedTarget("net-worth", derived, "record-next")}>{usd0(x.next.gapCents)}</ProofValue> to go
+              </>
+            ),
+          },
+        ]
+      : []),
+  ];
+  return (
+    <Card title="Records" subtitle="From the unbroken run of proven months.">
+      <div className={table.wrap}>
+        <table className={table.table}>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.what} className={table.trHover}>
+                <td className={table.td} title={row.title}>
+                  {row.what}
+                </td>
+                <td className={`${table.td} text-muted`}>{row.when}</td>
+                <td className={`${table.tdR} font-medium`}>{row.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function Overview({ r, changes }: { r: NetWorthReport; changes: NetWorthChangesReport | null }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const [span, setSpan] = useState<"24" | "all">("all");
@@ -276,6 +349,8 @@ function Overview({ r }: { r: NetWorthReport }) {
           </RechartsResponsive>
         </div>
       </Card>
+
+      {changes && <RecordsCard r={r} changes={changes} />}
 
       <Card title="Accounts">
         <div className={table.wrap}>

@@ -50,6 +50,8 @@ export type NetWorthChange = {
   changeCents: number;
   /** Everything saved or contributed (Home's "from saving"). */
   savedCents: number;
+  /** The part of it that is balances already in accounts first on file in the period (not saved in it). */
+  firstOnFileCents: number;
   /** Market growth net of fees (Home's "from markets"). */
   marketsCents: number;
   incomeCents: number;
@@ -224,6 +226,7 @@ function changeOf(j: Joined, before: Joined[], g: Granularity): NetWorthChange {
     closingCents: h.closingCents,
     changeCents: h.closingCents - h.openingCents,
     savedCents: saved,
+    firstOnFileCents: h.newlyTrackedCents,
     marketsCents: h.growthNetOfFeesCents,
     incomeCents: cf.incomeCents,
     spendingCents: cf.spendingCents,

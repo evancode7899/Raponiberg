@@ -50,7 +50,8 @@ describe("records", () => {
 
   it("says when it's well below a high, and nothing for a small dip", () => {
     expect(text(records(netWorth([100_00, 200_00, 150_00]))[0]!)).toMatch(/^Net worth is below its high of \$200 \(2025-02\)/);
-    expect(records(netWorth([100_00, 200_00, 198_00]))).toEqual([]);
+    // Only the next round mark is left to say.
+    expect(records(netWorth([100_00, 200_00, 198_00])).map((r) => r.id)).toEqual(["next-mark:10000000"]);
   });
 
   it("never looks past a month that can't be proven", () => {

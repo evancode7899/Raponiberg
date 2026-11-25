@@ -191,7 +191,7 @@ export function buildBriefing(x: BriefingInputs): Briefing {
     },
     events: eventsOf(x.netWorth, x.changes),
     trends,
-    feed: buildFeed({ today: x.book.today, spending: x.spending, netWorth: x.netWorth, change: last, calendar: x.calendar.items, goals: x.goals.goals }),
+    feed: buildFeed({ today: x.book.today, spending: x.spending, netWorth: x.netWorth, changes: x.changes.periods, change: last, calendar: x.calendar.items, goals: x.goals.goals }),
   };
 }
 

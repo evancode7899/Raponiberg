@@ -1,5 +1,6 @@
 import type { NetWorthReport } from "../reports/netWorth.ts";
-import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
+import type { NetWorthChange, NetWorthChangesReport } from "../reports/netWorthChanges.ts";
+import { netWorthRecords, roundMark } from "../reports/records.ts";
 import type { ProofValue } from "../proof/types.ts";
 import type { RollforwardReport } from "../../profile/rollforwards.ts";
 import { c, ln, r, t, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
@@ -36,6 +37,50 @@ export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" |
       { figure: "account-return", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, cumulative and time-weighted`, value: r(a.total), lines: [ln(`Each month's return, chained from ${a.from}`, r(a.total), undefined, { note: "(1 + r₁) × (1 + r₂) × … − 1" })] },
       ...(a.annualized == null ? [] : [{ figure: "account-return-annualized", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, a year`, value: r(a.annualized), lines: [ln("Cumulative", r(a.total)), ln("Over its days, a year", r(a.annualized))] }]),
     ]),
+  ];
+}
+
+/**
+ * Net worth › Records: what no other figure states. The months themselves (a high, a best
+ * month) are balances and What changed's own figures; the length of a rising run and the
+ * way to the next round mark are worked out here (reports/records.ts).
+ */
+export function recordsDerived(rep: Pick<NetWorthReport, "periods">, changes: readonly NetWorthChange[]): DerivedFigure[] {
+  const x = netWorthRecords(rep, changes);
+  if (!x) return [];
+  const balance = (p: { end: string; label: string }) => ({ label: `Net worth, ${p.label}`, descriptor: { report: "net-worth" as const, metric: "balance" as const, date: p.end } });
+  const rise = (figure: string, what: string, v: typeof x.longestRise): DerivedFigure[] =>
+    v
+      ? [
+          {
+            figure,
+            describes: `${what}: month-ends in a row above the one before`,
+            value: t(String(v.months)),
+            lines: [
+              ln(`Rose from ${v.from.label}`, c(v.from.cents), undefined, { source: "proven", link: balance(v.from) }),
+              ln(`to ${v.to.label}`, c(v.to.cents), undefined, { source: "proven", link: balance(v.to) }),
+              ln("Months that rose, each above the one before", t(String(v.months))),
+            ],
+          },
+        ]
+      : [];
+  return [
+    ...rise("record-rise", "The longest run of rising months", x.longestRise),
+    ...rise("record-rise-now", "The run of rising months under way", x.currentRise),
+    ...(x.next
+      ? [
+          {
+            figure: "record-next",
+            describes: `From net worth at the end of ${x.last.label} to the next round mark, ${roundMark(x.next.markCents)}`,
+            value: c(x.next.gapCents),
+            lines: [
+              ln("The next round mark", c(x.next.markCents), undefined, { note: "A round number, not a figure of yours." }),
+              ln(`Net worth, ${x.last.label}`, c(x.last.cents), "−", { source: "proven", link: balance(x.last) }),
+              ln("To go", c(x.next.gapCents), "="),
+            ],
+          },
+        ]
+      : []),
   ];
 }
 

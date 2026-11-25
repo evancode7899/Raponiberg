@@ -4,8 +4,9 @@ import { bookedCents } from "../booking.ts";
 import type { DerivedFigure } from "../derived/types.ts";
 import { household } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
-import { centsRoute, invariant, ratioRoute, rederiveList } from "../proof/independence.ts";
+import { centsRoute, invariant, ratioRoute, rederiveList, textRoute } from "../proof/independence.ts";
 import type { Rederivation, RederivedRoute } from "../proof/types.ts";
+import { markStep } from "../reports/records.ts";
 import { cashFlowRows, dayOfFor } from "../reports/cashFlow.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 
@@ -187,6 +188,21 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
         return { none: "The mean of the same figure over the whole proven periods before it: each of those is a figure of its own on this tab (its change, saving, markets, income, spending or category), re-derived by its own proof." };
       case "accounts-measured":
         return { none: "A count of the accounts whose statements give an unbroken stretch to measure: which stretch is unbroken is the integrity checks' call, not a sum." };
+      case "record-rise":
+      case "record-rise-now": {
+        // Every month-end from the run's first to its last, summed account by account, must rise.
+        const ends = f.lines.flatMap((l) => (l.link?.descriptor.report === "net-worth" && l.link.descriptor.metric === "balance" ? [l.link.descriptor.date] : []));
+        if (ends.length !== 2) return null;
+        const months = periodsBetween(addDays(ends[0]!, 1), ends[1]!, "month");
+        const values = [balance(ends[0]!), ...months.map((m) => balance(minIso(m.end, through)))];
+        const rising = values.slice(1).filter((x, i) => Math.round(x) > Math.round(values[i]!)).length;
+        return [textRoute("month-ends summed account by account", v, rising === months.length ? String(rising) : "not every month rose", "each month-end above the one before")];
+      }
+      case "record-next": {
+        const now = Math.round(balance(through));
+        const step = markStep(now);
+        return [centsRoute("the next multiple of the step above net worth, summed account by account", v, Math.floor(now / step) * step + step - now, "the mark less net worth", 1)];
+      }
       case "change-step": {
         const k = f.key ?? "";
         const s = steps.get(k);
