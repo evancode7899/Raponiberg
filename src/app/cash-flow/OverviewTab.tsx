@@ -40,6 +40,8 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   const over = pastScale(slice.months, cap);
   // With a cut, the axis ends there: a nicer round number above it would leave the top empty.
   const low = Math.floor(Math.min(0, ...rows.map((r) => r.net)) / 5000) * 5000;
+  const step = [1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000].find((s) => ((cap ?? 0) - low) / s <= 6) ?? 1_000_000;
+  const ticks = cap == null ? undefined : Array.from({ length: Math.floor(cap / step) - Math.ceil(low / step) + 1 }, (_, i) => (Math.ceil(low / step) + i) * step);
   const last = slice.months.at(-1)!;
   const cats = mergeCategories(slice.months, (m) => m.spendingByCategory).filter((c) => c.cents > 0);
   const rest = slice.months.length > 1 ? slice.months.slice(0, -1) : slice.months;
@@ -105,7 +107,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                 </defs>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
-                <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={cap == null ? ["auto", "auto"] : [low, cap]} />
+                <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={cap == null ? ["auto", "auto"] : [low, cap]} {...(ticks ? { ticks } : {})} />
                 <Tooltip {...ui.tooltip} formatter={(v, n, item) => [formatUsd(Math.round((item?.payload as (typeof rows)[number] | undefined)?.raw[String(n) as "Income" | "Spending" | "Net"] ?? Number(v))), String(n)]} />
                 <Legend {...ui.legend} />
                 {cap != null && <ReferenceLine y={cap} stroke={chart.axisLine} strokeDasharray="2 3" />}

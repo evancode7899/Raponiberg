@@ -133,7 +133,7 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
                   <Open href="/net-worth?tab=changes">{s.label}</Open>
                 </td>
                 <td className={grid.td}>
-                  <span aria-hidden className="relative block h-2.5 bg-surface-3">
+                  <span aria-hidden className="relative block h-2.5 min-w-9 bg-surface-3 min-[1800px]:min-w-28">
                     <span className={`absolute inset-y-0 ${up ? "bg-pos" : "bg-neg"}`} style={{ left: `${a}%`, width: `${Math.max(1, b - a)}%` }} />
                     <span className="absolute -inset-y-0.5 w-px bg-fg-2" style={{ left: `${pct(0)}%` }} />
                   </span>
@@ -418,11 +418,10 @@ export function BalancePanel({ nw }: { nw: Summary["netWorth"] }) {
               </td>
             </tr>
           ))}
-          {nw.assetsCents != null && nw.debtsCents != null && (
+          {nw.assetsCents != null && nw.assetsCents !== nw.totalCents && (
             <tr data-desk-row="" tabIndex={-1} className={grid.row}>
-              <td className={`${grid.name} text-muted`}>
-                <Open href="/net-worth">Assets, less debts of</Open>{" "}
-                <ProofValue proof={proofOf(nw.proofs?.debts, nw.debtsCents)}>{usd0(Math.abs(nw.debtsCents))}</ProofValue>
+              <td className={`${grid.td} text-muted`}>
+                <Open href="/net-worth">Assets</Open>
               </td>
               <td className={grid.td}>
                 <ProofValue proof={proofOf(nw.proofs?.assets, nw.assetsCents)}>{usd0(nw.assetsCents)}</ProofValue>

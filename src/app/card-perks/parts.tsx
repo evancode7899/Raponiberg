@@ -97,7 +97,7 @@ export function CardFace({ c, small = false, children }: { c: CardScore; small?:
       {!small && (
         <div className="relative flex h-full flex-col justify-between p-3.5">
           <div className="flex items-start justify-between gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider opacity-80">{c.product?.issuer ?? c.accountName}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider opacity-95">{c.product?.issuer ?? c.accountName}</span>
             <span className="h-5 w-7 rounded-[4px] bg-gradient-to-br from-yellow-200/90 to-yellow-500/80 shadow-inner" />
           </div>
           <div>
