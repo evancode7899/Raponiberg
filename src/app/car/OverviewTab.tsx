@@ -3,7 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { ShareBar } from "@/components/charts/ShareBar";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Badge, btn, Card, NotFigure, Segmented, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
+import { RowButton, Badge, btn, Card, NotFigure, Segmented, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
 import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { COST_LINES, LINE_INFO, type CostLine } from "@/lib/car/report";
 import { SHARED } from "@/lib/car/settings";
@@ -417,7 +417,7 @@ function RecentLog({ ctx }: { ctx: CarCtx }) {
             const entry = i.entryIds.length ? s.entries.find((e) => e.id === i.entryIds[0]) : null;
             return (
               <li key={i.id}>
-                <button type="button" className="flex w-full items-center gap-3 py-1.5 text-left text-xs hover:bg-surface-2" onClick={() => (entry ? editEntry(entry) : goTo("log"))}>
+                <RowButton label={entry ? `Edit ${i.label ?? i.item}` : "Open the log"} className="flex w-full items-center gap-3 py-1.5 text-left text-xs" onClick={() => (entry ? editEntry(entry) : goTo("log"))}>
                   <span className="num w-24 shrink-0 text-muted">{fmtDate(i.date)}</span>
                   <span className="min-w-0 flex-1 truncate text-fg" title={i.item}>
                     {i.label ?? i.item}
@@ -426,7 +426,7 @@ function RecentLog({ ctx }: { ctx: CarCtx }) {
                   </span>
                   <span className="num shrink-0 text-muted">{i.odometer != null ? `${miles(i.odometer)} mi` : ""}</span>
                   <span className="num w-20 shrink-0 text-right text-fg-2">{isReading(i) ? "" : <ProofValue proof={logProof(i.id, i.cents)}>{usd2(i.cents)}</ProofValue>}</span>
-                </button>
+                </RowButton>
               </li>
             );
           })}

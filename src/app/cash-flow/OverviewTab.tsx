@@ -4,7 +4,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
 import { noFigure } from "@/lib/book/proof/clearance";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { RowButton, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
@@ -46,8 +46,8 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={6}>
-        <StatCell label="Income / month" value={usd0(t.avgIncome)} proof={ctx.proof("income", slice.months, { perMonth: true, shownCents: t.income })} sub={<>typical <ProofValue proof={ctx.dp("typical-income", windowKey(slice.months))}>{usd0(t.typicalIncome)}</ProofValue> · <Delta now={t.avgIncome} before={p?.avgIncome ?? null} {...vsPrior("income")} /></>} />
-        <StatCell label="Spending / month" value={usd0(t.avgSpending)} proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })} sub={<>typical <ProofValue proof={ctx.dp("typical-spending", windowKey(slice.months))}>{usd0(t.typicalSpending)}</ProofValue> · <Delta now={t.avgSpending} before={p?.avgSpending ?? null} goodWhenDown {...vsPrior("spending")} /></>} />
+        <StatCell label="Income / month" value={usd0(t.avgIncome)} proof={ctx.proof("income", slice.months, { perMonth: true, shownCents: t.income })} sub={<>typical <ProofValue proof={ctx.dp("typical-income", windowKey(slice.months))}>{usd0(t.typicalIncome)}</ProofValue>{p && <> · <Delta now={t.avgIncome} before={p.avgIncome} {...vsPrior("income")} /></>}</>} />
+        <StatCell label="Spending / month" value={usd0(t.avgSpending)} proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })} sub={<>typical <ProofValue proof={ctx.dp("typical-spending", windowKey(slice.months))}>{usd0(t.typicalSpending)}</ProofValue>{p && <> · <Delta now={t.avgSpending} before={p.avgSpending} goodWhenDown {...vsPrior("spending")} /></>}</>} />
         <StatCell
           label="Excluding one-offs"
           value={usd0(t.avgCore)}
@@ -136,10 +136,9 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
           <ul className="flex flex-col">
             {cats.map((c) => (
               <li key={c.category}>
-                <button
-                  type="button"
+                <RowButton label={`Open ${c.category}`}
                   onClick={() => ctx.open({ kind: "category", category: c.category })}
-                  className="grid w-full grid-cols-[minmax(0,10rem)_1fr_5rem_3rem] items-center gap-3 rounded px-1 py-1.5 text-left text-[13px] hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-focus"
+                  className="grid w-full grid-cols-[minmax(0,10rem)_1fr_5rem_3rem] items-center gap-3 px-1 py-1.5 text-left text-[13px]"
                 >
                   <span className="flex min-w-0 items-center gap-2 truncate text-fg-2">
                     <Dot color={categoryColor(chart, c.category)} />
@@ -155,7 +154,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                   <span className="num text-right text-xs text-muted">
                     <ProofValue proof={ctx.dp("category-share", categoryKey(slice.months, "EXPENSE", c.category))}>{formatPercentRatio(c.cents / t.spending, 0)}</ProofValue>
                   </span>
-                </button>
+                </RowButton>
               </li>
             ))}
           </ul>

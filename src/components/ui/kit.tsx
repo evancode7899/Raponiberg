@@ -31,6 +31,19 @@ export const buttonPrimary = btn.primary;
 export const buttonSecondary = btn.secondary;
 export const buttonDanger = btn.danger;
 
+/**
+ * A row that opens something, with figures in it. The row's own button is stretched under its
+ * text and each figure keeps its own button above it: a button may not hold another one.
+ */
+export function RowButton({ label, onClick, title, className = "", children }: { label: string; onClick: () => void; title?: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={`relative rounded hover:bg-surface-2 [&_[data-proof-key]]:relative [&_[data-proof-key]]:z-10 ${className}`}>
+      <button type="button" aria-label={label} title={title} onClick={onClick} className="absolute inset-0 z-[5] cursor-pointer rounded outline-none focus-visible:ring-2 focus-visible:ring-focus" />
+      {children}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------- inputs
 
 export const inputCls =

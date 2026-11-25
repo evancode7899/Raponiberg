@@ -3,7 +3,7 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { categoryKey, merchantKeyOf, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Stat, NotFigure } from "@/components/ui/kit";
+import { RowButton, Stat, NotFigure } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useProof } from "@/components/ui/proof/context";
 import type { MerchantMonth, SpendingMonth } from "@/lib/book/reports/spending";
@@ -92,9 +92,8 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
           <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
             {merchants.slice(0, 12).map((m) => (
               <li key={m.key}>
-                <button
-                  type="button"
-                  className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+                <RowButton label={`Open ${m.name}`}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-center gap-2 px-1 py-1 text-left text-[13px]"
                   onClick={() => ctx.open({ kind: "merchant", key: m.key, name: m.name, lane: "EXPENSE" })}
                   title={m.key}
                 >
@@ -103,7 +102,7 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
                   <span className="num text-right font-medium">
                     <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })}>{usd0(m.cents)}</ProofValue>
                   </span>
-                </button>
+                </RowButton>
               </li>
             ))}
           </ul>
@@ -218,9 +217,8 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
   const { credits, top } = monthDrillMerchants(m);
   const merchant = (x: MerchantMonth) => (
     <li key={x.key}>
-      <button
-        type="button"
-        className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,9rem)_3rem_6rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+      <RowButton label={`Open ${x.name}`}
+        className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,9rem)_3rem_6rem] items-center gap-2 px-1 py-1 text-left text-[13px]"
         onClick={() => ctx.open({ kind: "merchant", key: x.key, name: x.name, lane: "EXPENSE" })}
         title={x.key}
       >
@@ -230,7 +228,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <span className={`num text-right font-medium ${x.cents < 0 ? "text-pos" : ""}`}>
           <ProofValue proof={ctx.proof("spending", one, { merchantKey: x.key, shownCents: x.cents })}>{usd0(x.cents)}</ProofValue>
         </span>
-      </button>
+      </RowButton>
     </li>
   );
   return (
@@ -274,9 +272,8 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
           {m.spendingByCategory.map((c) => (
             <li key={c.category}>
-              <button
-                type="button"
-                className="grid w-full grid-cols-[minmax(0,1fr)_6rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+              <RowButton label={`Open ${c.category}`}
+                className="grid w-full grid-cols-[minmax(0,1fr)_6rem] items-center gap-2 px-1 py-1 text-left text-[13px]"
                 onClick={() => ctx.open({ kind: "category", category: c.category })}
               >
                 <span className="flex min-w-0 items-center gap-2 truncate text-fg-2">
@@ -287,7 +284,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
                 <span className={`num text-right font-medium ${c.cents < 0 ? "text-pos" : ""}`}>
                   <ProofValue proof={ctx.proof("spending", one, { category: c.category, shownCents: c.cents })}>{usd0(c.cents)}</ProofValue>
                 </span>
-              </button>
+              </RowButton>
             </li>
           ))}
         </ul>
