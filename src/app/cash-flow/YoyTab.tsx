@@ -12,8 +12,8 @@ import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdCompact, usdDelta 
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
-import { yoyWindows } from "@/lib/book/reports/cashFlowWindows";
-import { KINDS, mergeCategories, merchantMovers, MONTH_NAMES, monthKey, SPEND_CATEGORIES, sum, totals } from "./model";
+import { compareCategories, yearCategories, yoyWindows } from "@/lib/book/reports/cashFlowWindows";
+import { KINDS, merchantMovers, MONTH_NAMES, monthKey, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
@@ -64,16 +64,6 @@ export function YoyTab({ ctx }: { ctx: Ctx }) {
       <YearTable ctx={ctx} />
     </>
   );
-}
-
-/** Spending by category in both periods, biggest change first. */
-function compareCategories(now: SpendingMonth[], then: SpendingMonth[]) {
-  const n = new Map(mergeCategories(now, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
-  const t = new Map(mergeCategories(then, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
-  return [...new Set([...n.keys(), ...t.keys()])]
-    .map((category) => ({ category, now: n.get(category) ?? 0, then: t.get(category) ?? 0 }))
-    .filter((c) => c.now || c.then)
-    .sort((x, y) => Math.abs(y.now - y.then) - Math.abs(x.now - x.then));
 }
 
 function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: SpendingMonth[] }) {
@@ -400,7 +390,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
     ...KINDS.map((k) => ({ label: k.label, f: (m: SpendingMonth) => m.kinds[k.id], proof: { metric: "spending" as const, spendingKind: k.kind }, goodWhenDown: true, indent: true })),
     { label: "Saved from take-home", f: (m) => m.netCents, proof: { metric: "net" }, strong: true },
   ];
-  const categoryRows: YearRow[] = SPEND_CATEGORIES.filter((c) => report.months.some((m) => m.spendingByCategory.some((x) => x.category === c && x.cents))).map((c) => ({
+  const categoryRows: YearRow[] = yearCategories(report.months).map((c) => ({
     label: c,
     f: (m: SpendingMonth) => m.spendingByCategory.find((x) => x.category === c)?.cents ?? 0,
     proof: { metric: "spending" as const, category: c },

@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { last12At, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
+import { last12At, momentumCategories, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
 import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, NotFigure, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
@@ -12,7 +12,7 @@ import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/li
 import { useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
-import { categoryCents, categoryGroup, KINDS, sliceStart, SPEND_CATEGORIES, sum, trailing } from "./model";
+import { categoryGroup, KINDS, sliceStart, sum, trailing } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot, openMonthOnClick } from "./parts";
 import { noFigure } from "@/lib/book/proof/clearance";
 
@@ -342,14 +342,13 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
 function Momentum({ ctx, hi }: { ctx: Ctx; hi: number }) {
   const { report, chart } = ctx;
   const { recent, before } = momentumWindows(report.months, hi);
-  const rows = SPEND_CATEGORIES.map((c) => {
-    const nowCents = sum(recent, (m) => categoryCents(m, c));
-    const thenCents = sum(before, (m) => categoryCents(m, c));
-    const now = nowCents / Math.max(1, recent.length);
-    const then = thenCents / Math.max(1, before.length);
-    return { c, now, then, nowCents, thenCents, d: now - then };
-  })
-    .filter((r) => r.now > 0 || r.then > 0)
+  // The categories the proof sweep holds over both runs (momentumCategories).
+  const rows = momentumCategories(recent, before)
+    .map((r) => {
+      const now = r.nowCents / Math.max(1, recent.length);
+      const then = r.thenCents / Math.max(1, before.length);
+      return { ...r, now, then, d: now - then };
+    })
     .sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
   const max = Math.max(1, ...rows.map((r) => Math.abs(r.d)));
   return (

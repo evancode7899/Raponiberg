@@ -13,7 +13,8 @@ import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0 } from
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx, Drill } from "./CashFlowClient";
-import { categoryCents, KINDS, median, mergeMerchants, monthDrillMerchants, sum } from "./model";
+import { categoryMerchants } from "@/lib/book/reports/cashFlowWindows";
+import { categoryCents, KINDS, median, monthDrillMerchants, sum } from "./model";
 import { categoryColor, Dot, Eyebrow, TxnList } from "./parts";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { isUnswept } from "@/lib/book/proof/clearance";
@@ -68,7 +69,7 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
   const total = sum(values, (v) => v);
   const spending = sum(slice.months, (m) => m.spendingCents);
   const merchants = useMemo(
-    () => (lane === "EXPENSE" ? mergeMerchants(slice.months, (m) => m.merchants.filter((x) => x.category === category)) : []),
+    () => (lane === "EXPENSE" ? categoryMerchants(slice.months, category) : []),
     [slice, category, lane],
   );
   return (
@@ -90,7 +91,7 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
         <div>
           <Eyebrow>Top merchants</Eyebrow>
           <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
-            {merchants.slice(0, 12).map((m) => (
+            {merchants.map((m) => (
               <li key={m.key}>
                 <RowButton label={`Open ${m.name}`}
                   className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-center gap-2 px-1 py-1 text-left text-[13px]"
@@ -100,7 +101,7 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
                   <span className="truncate text-fg-2">{m.name}</span>
                   <span className="num text-right text-xs text-muted">{m.count}×</span>
                   <span className="num text-right font-medium">
-                    <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })}>{usd0(m.cents)}</ProofValue>
+                    <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: m.key, ...(m.whole ? {} : { category }), shownCents: m.cents })}>{usd0(m.cents)}</ProofValue>
                   </span>
                 </RowButton>
               </li>

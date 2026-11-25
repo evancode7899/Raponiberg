@@ -34,6 +34,7 @@ export type CashFlowDescriptor = {
    * One merchant's part (spending) or one payer's (income), grouped the way the spending
    * report groups them (merchantKeyOf): net of refunds, each row whole in the month it
    * counts in, less charges reversed in full. The Merchants and Year-over-year tabs.
+   * With a category, only its rows filed there (a category's drill, for a merchant in more than one).
    */
   merchantKey?: string;
   /**
@@ -114,7 +115,7 @@ export function parseCashFlowDescriptor(d: Record<string, unknown>): CashFlowDes
   if (d.accountIds != null && (!Array.isArray(d.accountIds) || d.accountIds.some((x) => typeof x !== "string"))) return { error: "accountIds must be a list of ids." };
   if (d.merchantKey != null && (typeof d.merchantKey !== "string" || !d.merchantKey)) return { error: "merchantKey must be a merchant's key." };
   if (d.merchantKey != null && d.metric !== "spending" && d.metric !== "income") return { error: "merchantKey goes with spending (a merchant) or income (a payer)." };
-  if (d.merchantKey != null && d.category != null) return { error: "Give a category or a merchantKey, not both." };
+  if (d.merchantKey != null && d.category != null && (d.metric !== "spending" || d.merchantBasis != null)) return { error: "A merchantKey with a category goes with spending, and no merchantBasis." };
   if (d.merchantBasis != null && (d.merchantBasis !== "charges" || !d.merchantKey || d.metric !== "spending")) return { error: "merchantBasis can only be charges, with a merchantKey and spending." };
   if (d.oneOffs != null && (d.oneOffs !== "exclude" || d.metric !== "spending" || d.merchantKey != null)) return { error: "oneOffs can only be exclude, with spending (not a merchant)." };
   if (d.spendingKind != null && (!["bill", "big", "everyday"].includes(d.spendingKind as string) || d.metric !== "spending" || d.merchantKey != null || d.category != null || d.oneOffs != null))
@@ -231,7 +232,7 @@ export function buildCashFlowProof(
   const merchantPart = (part: Part): { mine: Picked[]; figureCents: number } => {
     const s = spend!;
     const lane = part.lane as "EXPENSE" | "INCOME";
-    const isMine = (r: BookRow) => r.lane === lane && merchantKeyOf(r) === d.merchantKey;
+    const isMine = (r: BookRow) => r.lane === lane && merchantKeyOf(r) === d.merchantKey && (!d.category || r.category === d.category);
     const at = (iso: string) => periods.findIndex((p) => p.start <= iso && iso <= p.end);
     let mine: Picked[];
     let figureCents: number;
@@ -243,7 +244,7 @@ export function buildCashFlowProof(
       if (!figureCents && mine.length) merchantNotes.push("This merchant isn't a recurring charge through this date, so the Recurring tab shows no figure for it.");
     } else {
       // The merchant's own rows, each in its period: what merchantsIn groups for this one merchant (a net of zero is no figure, so zero either way).
-      mine = (byMerchant(s.inScope).get(`${lane}|${d.merchantKey}`) ?? []).flatMap((row) => {
+      mine = (byMerchant(s.inScope).get(`${lane}|${d.merchantKey}`) ?? []).filter(isMine).flatMap((row) => {
         const i = at(s.dayOf(row));
         return i < 0 ? [] : [{ row, periodIndex: i, share: 1, cents: row.amountCents }];
       });

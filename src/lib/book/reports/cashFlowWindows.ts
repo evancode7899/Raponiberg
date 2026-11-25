@@ -1,3 +1,4 @@
+import { CATEGORIES } from "../../classifier/taxonomy.ts";
 import type { CashFlowDescriptor, CashFlowMetric } from "../proof/cashFlowProof.ts";
 import type { CategoryAmount } from "./cashFlow.ts";
 import type { MerchantMonth, SpendingKind, SpendingMonth, SpendingReport } from "./spending.ts";
@@ -8,6 +9,9 @@ import type { MerchantMonth, SpendingKind, SpendingMonth, SpendingReport } from 
  * proof sweep (proof/figures.ts) enumerates the same runs with them, so every figure a tab
  * renders is one the sweep holds to its proof (swept = rendered).
  */
+
+/** The spending categories in the taxonomy's order; each keeps its color slot everywhere. */
+export const SPEND_CATEGORIES = CATEGORIES.filter((c) => c.kind === "EXPENSE" && c.group !== "Money movement").map((c) => c.name);
 
 export type RangeId = "3m" | "6m" | "12m" | "ytd" | "all" | "custom";
 
@@ -154,6 +158,7 @@ export const last12At = (months: SpendingMonth[], hi: number) => (hi >= 11 ? mon
 
 export type CashFlowRecipe = {
   category?: string;
+  /** One merchant's part; with a category too, only its rows filed there (a merchant in more than one). */
   merchantKey?: string;
   /** With merchantKey: the merchant's charges dated in the twelve months ending with the last of `months` (Recurring's "last 12 months"). */
   charges?: boolean;
@@ -244,14 +249,74 @@ export function merchantMovers(now: SpendingMonth[], then: SpendingMonth[]) {
   };
 }
 
+/** A merchant's total in one category over some months; `whole`: every row it has there is in that category. */
+export type CategoryMerchant = { key: string; name: string; cents: number; count: number; whole: boolean };
+
+/** A category's drill: its twelve biggest merchants over the months, each by what it took in this category. */
+export function categoryMerchants(months: SpendingMonth[], category: string): CategoryMerchant[] {
+  const out = new Map<string, CategoryMerchant>();
+  const mixed = new Set<string>();
+  for (const m of months)
+    for (const x of m.merchants) {
+      const part = x.split ? x.split.find((s) => s.category === category) : x.category === category ? x : undefined;
+      if (x.split || x.category !== category) mixed.add(x.key);
+      if (!part) continue;
+      const cur = out.get(x.key) ?? { key: x.key, name: x.name, cents: 0, count: 0, whole: true };
+      cur.cents += part.cents;
+      cur.count += part.count;
+      out.set(x.key, cur);
+    }
+  return [...out.values()]
+    .filter((x) => x.cents > 0)
+    .map((x) => ({ ...x, whole: !mixed.has(x.key) }))
+    .sort((a, b) => b.cents - a.cents)
+    .slice(0, 12);
+}
+
+/** Every category with money in it over any of the runs (on one side of a comparison it may be zero). */
+export const categoriesIn = (...runs: SpendingMonth[][]) => [...new Set(runs.flatMap((ms) => mergeCategories(ms, (m) => m.spendingByCategory).map((c) => c.category)))];
+
+/** Year over year's category table: spending in each category on both sides, biggest change first. */
+export function compareCategories(now: SpendingMonth[], then: SpendingMonth[]) {
+  const n = new Map(mergeCategories(now, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
+  const t = new Map(mergeCategories(then, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
+  return categoriesIn(now, then)
+    .map((category) => ({ category, now: n.get(category) ?? 0, then: t.get(category) ?? 0 }))
+    .sort((x, y) => Math.abs(y.now - y.then) - Math.abs(x.now - x.then));
+}
+
+/** Year over year's year table: the categories any month spent in. */
+export const yearCategories = (months: SpendingMonth[]) => SPEND_CATEGORIES.filter((c) => months.some((m) => m.spendingByCategory.some((x) => x.category === c && x.cents)));
+
+/** Trends' heating up, cooling down: each category lately and in the months before (none until six months come before). */
+export function momentumCategories(recent: SpendingMonth[], before: SpendingMonth[]) {
+  const cents = (ms: SpendingMonth[], c: string) => sum(ms, (m) => m.spendingByCategory.find((x) => x.category === c)?.cents ?? 0);
+  if (before.length < 6) return [];
+  return SPEND_CATEGORIES.map((c) => ({ c, nowCents: cents(recent, c), thenCents: cents(before, c) })).filter((r) => r.nowCents > 0 || r.thenCents > 0);
+}
+
+/** The category an insight names as moving spending most, per month, against the run before; null when nothing moved enough to say. */
+export function spendingMover({ months, prior }: Pick<Slice, "months" | "prior">): { c: string; now: number; then: number; d: number } | null {
+  const was = sum(prior, (m) => m.spendingCents) / Math.max(1, prior.length);
+  if (!months.length || was <= 0) return null;
+  const ch = sum(months, (m) => m.spendingCents) / months.length / was - 1;
+  if (Math.abs(ch) < 0.05) return null;
+  const top = compareCategories(months, prior)
+    .filter((x) => SPEND_CATEGORIES.includes(x.category))
+    .map((x) => ({ c: x.category, now: x.now, then: x.then, d: x.now / months.length - x.then / prior.length }))
+    .sort((a, b) => (ch >= 0 ? b.d - a.d : a.d - b.d))[0];
+  return top && Math.abs(top.d) >= 5000 ? top : null;
+}
+
 /**
  * What the tabs draw over one run of months: which totals (income, spending, saved), spending
  * less one-offs, which bands of spending, which spending categories (every one, or those
- * named), its outside-money categories, which merchants and which payers.
+ * named), the categories drawn at zero (`zeros`: a comparison's empty side), its outside-money
+ * categories, which merchants, which merchants' parts in one category, and which payers.
  */
-export type WindowDraws = { totals: ("income" | "spending" | "net")[]; oneOffs: boolean; kinds: SpendingKind[]; categories: "all" | string[]; external: boolean; merchants: "all" | string[]; payers: string[] };
+export type WindowDraws = { totals: ("income" | "spending" | "net")[]; oneOffs: boolean; kinds: SpendingKind[]; categories: "all" | string[]; zeros: string[]; external: boolean; merchants: "all" | string[]; parts: { key: string; category: string }[]; payers: string[] };
 
-const NOTHING: WindowDraws = { totals: [], oneOffs: false, kinds: [], categories: [], external: false, merchants: [], payers: [] };
+const NOTHING: WindowDraws = { totals: [], oneOffs: false, kinds: [], categories: [], zeros: [], external: false, merchants: [], parts: [], payers: [] };
 const TOTALS: WindowDraws["totals"] = ["income", "spending", "net"];
 const union = <T,>(a: "all" | T[], b: "all" | T[] | undefined): "all" | T[] => (a === "all" || b === "all" ? "all" : [...new Set([...a, ...(b ?? [])])]);
 const ALL_KINDS: SpendingKind[] = ["bill", "big", "everyday"];
@@ -262,8 +327,10 @@ function mergeDraws(a: WindowDraws, b: Partial<WindowDraws>): WindowDraws {
     oneOffs: a.oneOffs || !!b.oneOffs,
     kinds: [...new Set([...a.kinds, ...(b.kinds ?? [])])],
     categories: union(a.categories, b.categories),
+    zeros: [...new Set([...a.zeros, ...(b.zeros ?? [])])],
     external: a.external || !!b.external,
     merchants: union(a.merchants, b.merchants),
+    parts: [...new Map([...a.parts, ...(b.parts ?? [])].map((p) => [`${p.key}|${p.category}`, p])).values()],
     payers: [...new Set([...a.payers, ...(b.payers ?? [])])],
   };
 }
@@ -283,8 +350,11 @@ function mergeDraws(a: WindowDraws, b: Partial<WindowDraws>): WindowDraws {
  *  - each side of a year-over-year comparison: its totals, everyday spending, categories and the merchants that moved most;
  *  - Trends: the trailing twelve months (totals, everyday spending), the last three (everyday
  *    spending), and momentum's two runs (categories).
+ * A category one side of a comparison spends nothing in is drawn too, at zero, so the
+ * sweep holds that zero to its proof. `budgeted`: the categories with a saved target
+ * (Budget lists them whether or not anything was spent).
  */
-export function cashFlowWindowDraws(r: Pick<SpendingReport, "months">): { months: SpendingMonth[]; draws: WindowDraws }[] {
+export function cashFlowWindowDraws(r: Pick<SpendingReport, "months">, budgeted: string[] = []): { months: SpendingMonth[]; draws: WindowDraws }[] {
   const all = r.months;
   if (!all.length) return [];
   const byKey = new Map<string, { months: SpendingMonth[]; draws: WindowDraws }>();
@@ -302,24 +372,41 @@ export function cashFlowWindowDraws(r: Pick<SpendingReport, "months">): { months
   for (const range of PRESET_RANGES) {
     const s = sliceRange(r, range, { from: "", to: "" });
     const lo = sliceStart(r, s);
-    add(s.months, { totals: TOTALS, oneOffs: true, kinds: ALL_KINDS, categories: "all", external: true, merchants: "all", payers: topPayers(s.months).map((x) => x.key) });
-    add(s.prior, { totals: ["income", "spending"], categories: mergeCategories(s.months, (m) => m.spendingByCategory).map((c) => c.category) });
+    const cats = categoriesIn(s.months);
+    const mover = spendingMover(s);
+    const moved = mover ? [mover.c] : [];
+    add(s.months, {
+      totals: TOTALS,
+      oneOffs: true,
+      kinds: ALL_KINDS,
+      categories: "all",
+      zeros: [...budgeted, ...moved],
+      external: true,
+      merchants: "all",
+      parts: cats.flatMap((category) => categoryMerchants(s.months, category).flatMap((x) => (x.whole ? [] : [{ key: x.key, category }]))),
+      payers: topPayers(s.months).map((x) => x.key),
+    });
+    // The latest month against a typical one (Overview), and against its target (Budget).
+    add(s.months.slice(-1), { zeros: [...mergeCategories(s.months, (m) => m.spendingByCategory).filter((c) => c.cents > 0).map((c) => c.category), ...budgeted] });
+    add(s.prior, { totals: ["income", "spending"], categories: [...cats, ...moved], zeros: moved });
     const recent = all.slice(Math.max(0, lo - 12), lo);
     add(recent, { merchants: quietMerchants(recent, s.months).map((x) => x.key) });
   }
-  for (const [, ms] of byYear(all)) add(ms, { totals: TOTALS, kinds: ALL_KINDS, categories: "all" });
+  for (const [, ms] of byYear(all)) add(ms, { totals: TOTALS, kinds: ALL_KINDS, categories: "all", zeros: yearCategories(all) });
   for (const mode of ["month", "ytd", "12m"] as const) {
     const y = yoyWindows(all, mode);
     if (y.missing.length) continue;
     const { up, down } = merchantMovers(y.now, y.then);
-    add(y.now, { totals: TOTALS, kinds: ["everyday"], categories: "all", merchants: [...up, ...down].filter((x) => x.now).map((x) => x.key) });
-    add(y.then, { totals: TOTALS, kinds: ["everyday"], categories: "all", merchants: [...up, ...down].filter((x) => x.then).map((x) => x.key) });
+    const zeros = compareCategories(y.now, y.then).map((c) => c.category);
+    add(y.now, { totals: TOTALS, kinds: ["everyday"], categories: "all", zeros, merchants: [...up, ...down].filter((x) => x.now).map((x) => x.key) });
+    add(y.then, { totals: TOTALS, kinds: ["everyday"], categories: "all", zeros, merchants: [...up, ...down].filter((x) => x.then).map((x) => x.key) });
   }
   const m = momentumWindows(all, hi);
   add(last12At(all, hi), { totals: ["income", "spending"], kinds: ["everyday"] });
   add(all.slice(Math.max(0, hi - 2), hi + 1), { kinds: ["everyday"] });
-  add(m.recent, { categories: "all" });
-  add(m.before, { categories: "all" });
+  const heat = momentumCategories(m.recent, m.before).map((x) => x.c);
+  add(m.recent, { categories: heat, zeros: heat });
+  add(m.before, { categories: heat, zeros: heat });
   return [...byKey.values()];
 }
 
@@ -329,7 +416,8 @@ export type CashFlowFigure = { descriptor: CashFlowDescriptor; cents: number };
 /**
  * The figures the tabs draw over one run of months (cashFlowWindowDraws), with the total
  * each shows: income, spending and saved; spending less one-offs; the bands of spending;
- * each category of spending and of outside money; and the merchants and payers drawn.
+ * each category of spending (and the zeros drawn) and of outside money; and the merchants,
+ * merchants' parts in one category and payers drawn.
  */
 export function windowFigures(months: SpendingMonth[], draws: WindowDraws): CashFlowFigure[] {
   const out: CashFlowFigure[] = [];
@@ -340,7 +428,9 @@ export function windowFigures(months: SpendingMonth[], draws: WindowDraws): Cash
   for (const metric of draws.totals) add(metric, {}, total[metric]);
   if (draws.oneOffs) add("spending", { excludeOneOffs: true }, spending - sum(months, (m) => m.oneOffCents));
   for (const k of draws.kinds) add("spending", { spendingKind: k }, sum(months, (m) => m.kinds[KIND_FIELD[k]]));
-  for (const c of mergeCategories(months, (m) => m.spendingByCategory)) if (draws.categories === "all" || draws.categories.includes(c.category)) add("spending", { category: c.category }, c.cents);
+  const categories = mergeCategories(months, (m) => m.spendingByCategory);
+  for (const c of categories) if (draws.categories === "all" || draws.categories.includes(c.category)) add("spending", { category: c.category }, c.cents);
+  for (const z of draws.zeros) if (!categories.some((c) => c.category === z)) add("spending", { category: z }, 0);
   if (draws.external) for (const c of mergeCategories(months, (m) => m.externalByCategory)) add("external", { category: c.category }, c.cents);
   const merchants = mergeMerchants(months);
   if (draws.merchants === "all") for (const x of merchants) add("spending", { merchantKey: x.key }, x.cents);
@@ -348,6 +438,10 @@ export function windowFigures(months: SpendingMonth[], draws: WindowDraws): Cash
     // A month's credits (a merchant that paid back more than it charged) as well as what it charged.
     const cents = new Map([...merchants.map((x) => [x.key, x.cents] as const), ...(months.length === 1 ? months[0]!.merchants.filter((x) => x.cents < 0).map((x) => [x.key, x.cents] as const) : [])]);
     for (const k of draws.merchants) if (cents.has(k)) add("spending", { merchantKey: k }, cents.get(k)!);
+  }
+  for (const p of draws.parts) {
+    const x = categoryMerchants(months, p.category).find((c) => c.key === p.key);
+    if (x) add("spending", { merchantKey: p.key, category: p.category }, x.cents);
   }
   const payers = new Map(mergeMerchants(months, (m) => m.payers).map((x) => [x.key, x.cents]));
   for (const k of draws.payers) if (payers.has(k)) add("income", { merchantKey: k }, payers.get(k)!);

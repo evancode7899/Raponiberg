@@ -57,6 +57,7 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
   const latestTotal = rows.filter((r) => r.target != null).reduce((s, r) => s + r.latest, 0);
   // On the saved targets: unsaved edits make a recipe no sweep has seen, withheld until saved.
   const derived = dirty ? null : cashFlowDerived(ctx.report, saved.targets);
+  const noTargets = noFigure("no targets set yet");
   const dp = (figure: string, key?: string) => (derived ? derivedTarget("cash-flow", derived, figure, key) : unswept("unsaved targets: save them to have the budget's figures proven"));
 
   const save = async () => {
@@ -76,10 +77,10 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={4}>
-        <StatCell proof={dp("budget-monthly")} label="Monthly budget" value={hasTargets ? usd0(budgeted) : "—"} sub={hasTargets ? `${Object.keys(draft).length} categories with a target` : "no targets yet"} />
-        <StatCell proof={dp("budget-latest", windowKey(slice.months))}
+        <StatCell proof={hasTargets ? dp("budget-monthly") : noTargets} label="Monthly budget" value={hasTargets ? usd0(budgeted) : NA} sub={hasTargets ? `${Object.keys(draft).length} categories with a target` : "no targets yet"} />
+        <StatCell proof={hasTargets ? dp("budget-latest", windowKey(slice.months)) : noTargets}
           label={`${last.label} vs budget`}
-          value={hasTargets ? usd0(latestTotal) : "—"}
+          value={hasTargets ? usd0(latestTotal) : NA}
           tone={hasTargets ? (latestTotal > budgeted ? "neg" : "pos") : "neutral"}
           sub={
             hasTargets ? (
@@ -91,9 +92,9 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
           }
         />
         <StatCell proof={dp("typical-income", windowKey(slice.months))} label="Typical income" value={usd0(t.typicalIncome)} sub="median month in range" />
-        <StatCell proof={dp("budget-savings-rate", windowKey(slice.months))}
+        <StatCell proof={hasTargets ? dp("budget-savings-rate", windowKey(slice.months)) : noTargets}
           label="Planned savings rate"
-          value={hasTargets && t.typicalIncome > 0 ? formatPercentRatio((t.typicalIncome - budgeted) / t.typicalIncome, 0) : "—"}
+          value={hasTargets && t.typicalIncome > 0 ? formatPercentRatio((t.typicalIncome - budgeted) / t.typicalIncome, 0) : NA}
           sub={
             hasTargets ? (
               <>
@@ -116,7 +117,7 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
             </button>
           }
         >
-          Targets are seeded from your median month in {slice.label}, rounded to $10. Trim the ones you want to bring down, then save.
+          Targets are seeded from your median month in {slice.label}, rounded to the nearest ten dollars. Trim the ones you want to bring down, then save.
         </Callout>
       )}
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -202,7 +203,7 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
               })}
               <tr className={`${table.tr} font-semibold`}>
                 <td className={table.td}>Total</td>
-                <td className={table.tdR}>{hasTargets ? <ProofValue proof={dp("budget-monthly")}>{usd0(budgeted)}</ProofValue> : "—"}</td>
+                <td className={table.tdR}>{hasTargets ? <ProofValue proof={dp("budget-monthly")}>{usd0(budgeted)}</ProofValue> : NA}</td>
                 <td className={table.td} />
                 <td className={table.tdR}>
                   <ProofValue proof={ctx.proof("spending", [last], { shownCents: last.spendingCents })}>{usd0(last.spendingCents)}</ProofValue>

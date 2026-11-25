@@ -3,15 +3,13 @@ import { savingsRate } from "../book/definitions.ts";
 import type { CashFlowMetric } from "../book/proof/cashFlowProof.ts";
 import { noFigure } from "../book/proof/clearance.ts";
 import { compositeOf, type ProofRef } from "../book/proof/compose.ts";
-import { cashFlowDescriptor, median, mergeCategories, sum, type CashFlowRecipe, type Slice } from "../book/reports/cashFlowWindows.ts";
+import { cashFlowDescriptor, median, mergeCategories, SPEND_CATEGORIES, spendingMover, sum, type CashFlowRecipe, type Slice } from "../book/reports/cashFlowWindows.ts";
 import type { SpendingMonth, SpendingReport } from "../book/reports/spending.ts";
-import { CATEGORIES } from "../classifier/taxonomy.ts";
 import { formatPercentRatio, usd0, usdCompact } from "../formatMoney.ts";
 
 type Report = SpendingReport;
 
-/** The spending categories in the taxonomy's order; each keeps its color slot everywhere. */
-export const SPEND_CATEGORIES = CATEGORIES.filter((c) => c.kind === "EXPENSE" && c.group !== "Money movement").map((c) => c.name);
+export { SPEND_CATEGORIES };
 
 export type Totals = {
   n: number;
@@ -98,19 +96,12 @@ export function buildInsights(slice: Slice, r: Report, x: InsightProofs): Insigh
 
   if (p && p.avgSpending > 0) {
     const ch = t.avgSpending / p.avgSpending - 1;
-    const cats = mergeCategories(months, (m) => m.spendingByCategory);
-    const prevCats = mergeCategories(prior, (m) => m.spendingByCategory);
-    const deltas = SPEND_CATEGORIES.map((c) => {
-      const now = cats.find((y) => y.category === c)?.cents ?? 0;
-      const then = prevCats.find((y) => y.category === c)?.cents ?? 0;
-      return { c, now, then, d: now / t.n - then / p.n };
-    }).sort((a, b) => (ch >= 0 ? b.d - a.d : a.d - b.d));
-    const driver = deltas[0];
+    const driver = spendingMover(slice);
     // The change in a month's spending: this run against the one before, each over its months.
     const change = fig(pct(ch), compositeOf("growth", [x.proof("spending", months, { shownCents: t.spending }), x.proof("spending", prior, { shownCents: p.spending })], { ratio: ch }, [t.n, p.n]));
     if (Math.abs(ch) >= 0.05) {
       const mover =
-        driver && Math.abs(driver.d) >= 5000
+        driver
           ? [
               ` Biggest mover: ${driver.c} (${driver.d > 0 ? "+" : "−"}`,
               fig(usd0(Math.abs(driver.d)), compositeOf("diff", [x.proof("spending", months, { category: driver.c, shownCents: driver.now }), x.proof("spending", prior, { category: driver.c, shownCents: driver.then })], { cents: driver.d }, [t.n, p.n])),

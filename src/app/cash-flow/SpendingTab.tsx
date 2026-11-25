@@ -269,7 +269,7 @@ function OneOffs({ ctx }: { ctx: Ctx }) {
           {tagged.length ? (
             <>
               {" "}
-              {tagged.length} marked: <ProofValue proof={sumOf(tagged.map(oneOffRow), tagged.reduce((s, o) => s + o.cents, 0))}>{usd0(tagged.reduce((s, o) => s + o.cents, 0))}</ProofValue>.
+              {tagged.length} marked: <ProofValue proof={sumOf(tagged.map(oneOffRow), -tagged.reduce((s, o) => s + o.cents, 0))}>{usd0(tagged.reduce((s, o) => s + o.cents, 0))}</ProofValue>.
             </>
           ) : null}
         </>

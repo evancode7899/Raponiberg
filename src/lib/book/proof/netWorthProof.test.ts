@@ -7,7 +7,9 @@ import type { Book, BookRow, BookStatement } from "../load";
 import { buildNetWorth, netWorthSpanQuality } from "../reports/netWorth";
 import type { Finding } from "../types";
 import { buildDashboardProof } from "./dashboardProof";
+import { netWorthBuiltFigures, netWorthFigures } from "./figures";
 import { buildProof, parseDescriptor, type Proof, type ProofLink } from "./index";
+import { descriptorKey } from "./key";
 import { buildNetWorthProof, MONTHS_SPLIT_NOTE, type NetWorthDescriptor } from "./netWorthProof";
 
 // An invented household: Pat Example at Springfield Bank, Jan – Apr 2025. Checking
@@ -371,6 +373,40 @@ describe("net-worth balance proof", () => {
       // The opening of each period is the balance the day before it starts.
       expect(cents(buildNetWorthProof(book, bal(addDay(p.start, -1))))).toBe(p.household.openingCents);
     }
+  });
+
+  it("sweeps every balance and change How it was built draws, by month, quarter and year, each at its proof's value", () => {
+    const book = makeBook();
+    const monthly = new Set(netWorthBuiltFigures(buildNetWorth(book, { granularity: "month" })).map((f) => descriptorKey(f.descriptor)));
+    for (const granularity of ["month", "quarter", "year"] as const) {
+      const report = buildNetWorth(book, { granularity });
+      const figures = netWorthBuiltFigures(report);
+      const keys = new Set(figures.map((f) => descriptorKey(f.descriptor)));
+      expect(keys.size).toBe(figures.length);
+      for (const p of report.periods.filter((x) => !x.blockers.length)) {
+        // The page's own recipes: the row, and each account its drill lists.
+        const change = { report: "net-worth" as const, metric: "change" as const, granularity, start: p.start, end: p.end };
+        for (const d of [change, bal(p.end), bal(addDay(p.start, -1))]) expect(keys.has(descriptorKey(d)), `${granularity} ${p.label}`).toBe(true);
+        for (const a of p.byAccount) {
+          expect(keys.has(descriptorKey(bal(p.end, { accountIds: [a.accountId] }))), `${a.accountId} ${p.label}`).toBe(true);
+          if (!a.newlyTrackedCents) expect(keys.has(descriptorKey(bal(addDay(p.start, -1), { accountIds: [a.accountId] }))), `${a.accountId} ${p.label}`).toBe(true);
+        }
+      }
+      for (const f of figures) {
+        const p = buildNetWorthProof(book, f.descriptor as NetWorthDescriptor);
+        expect(p.figure, JSON.stringify(f.descriptor)).toEqual(f.shown);
+        expect(p.selfCheck?.ok, JSON.stringify(f.descriptor)).toBe(true);
+      }
+      // A quarter's and a year's rows hold changes no month's do.
+      if (granularity !== "month") expect([...keys].some((k) => !monthly.has(k))).toBe(true);
+    }
+  });
+
+  it("sweeps an account with nothing in it: the page lists every account", () => {
+    const report = buildNetWorth(makeBook(), { granularity: "month" });
+    const empty = { ...report, accounts: report.accounts.map((a, i) => (i === 0 ? { ...a, currentCents: 0 } : a)) };
+    const mine = netWorthFigures(empty).find((f) => descriptorKey(f.descriptor) === descriptorKey(bal(report.current.asOf, { accountIds: [report.accounts[0]!.id] })));
+    expect(mine?.shown).toEqual({ cents: 0 });
   });
 
   it("re-adds on any day: inside an investment statement, a derived stretch, an idle cycle and a gap", () => {

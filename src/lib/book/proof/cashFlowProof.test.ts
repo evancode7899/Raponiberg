@@ -433,6 +433,23 @@ describe("one merchant's part", () => {
     expect(feb.describes).toBe("Big & one-off spending, Feb 2025");
   });
 
+  it("proves a merchant's part of one category, and a category with nothing in it as zero", () => {
+    const market = { payee: "CORNER MARKET", merchantKey: "CORNER MARKET" };
+    const book = makeBook([...shops(), row("card", "2025-01-20", -2_345, { ...market, category: "Dining" }), row("card", "2025-02-20", -1_155, { ...market, category: "Dining" })]);
+    const jan = buildSpendingReport(book, { oneOffs: {}, nonRecurringCategories: [] }).months.find((m) => m.start === "2025-01-01")!;
+    const part = jan.merchants.find((x) => x.key === "CORNER MARKET")!.split!;
+    expect(part.map((s) => s.category).sort()).toEqual(["Dining", "Groceries"]);
+    for (const category of ["Dining", "Groceries"]) {
+      const proof = buildCashFlowProof(book, d({ merchantKey: "CORNER MARKET", category, start: jan.start, end: jan.end }));
+      expect(proof.figureCents, category).toBe(part.find((s) => s.category === category)!.cents);
+      expect(proof.selfCheck.ok, category).toBe(true);
+    }
+    const both = buildCashFlowProof(book, d({ merchantKey: "CORNER MARKET", category: "Dining", start: "2025-01-01", end: "2025-02-28" }));
+    expect([both.figureCents, both.selfCheck.ok, both.periods.map((p) => p.cents)]).toEqual([3_500, true, [2_345, 1_155]]);
+    const none = buildCashFlowProof(book, d({ category: "Health & insurance", start: "2025-01-01", end: "2025-02-28" }));
+    expect([none.figureCents, none.selfCheck.ok, none.withheld]).toEqual([0, true, false]);
+  });
+
   it("emits only links that parse, build and re-add, and no split by month for a charges sum", async () => {
     const c = { book: makeBook(shops()), db: {} as never };
     for (const desc of [md("CORNER MARKET"), md("EXAMPLE PARTNERS LP PAYROLL", { metric: "income" }), md("STREAMFLIX", { merchantBasis: "charges", start: "2024-05-01" })]) {
@@ -460,7 +477,9 @@ describe("one merchant's part", () => {
     expect(parseDescriptor({ ...base, merchantKey: "" })).toHaveProperty("error");
     expect(parseDescriptor({ ...base, merchantKey: 7 })).toHaveProperty("error");
     expect(parseDescriptor({ ...base, metric: "net", merchantKey: "CORNER MARKET" })).toHaveProperty("error");
-    expect(parseDescriptor({ ...base, merchantKey: "CORNER MARKET", category: "Groceries" })).toHaveProperty("error");
+    expect(parseDescriptor({ ...base, merchantKey: "CORNER MARKET", category: "Groceries" })).toEqual({ ...base, merchantKey: "CORNER MARKET", category: "Groceries" });
+    expect(parseDescriptor({ ...base, metric: "income", merchantKey: "X", category: "Paycheck" })).toHaveProperty("error");
+    expect(parseDescriptor({ ...base, merchantKey: "STREAMFLIX", merchantBasis: "charges", category: "Dining" })).toHaveProperty("error");
     expect(parseDescriptor({ ...base, merchantBasis: "charges" })).toHaveProperty("error");
     expect(parseDescriptor({ ...base, metric: "income", merchantKey: "X", merchantBasis: "charges" })).toHaveProperty("error");
   });
