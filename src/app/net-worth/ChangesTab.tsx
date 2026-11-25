@@ -6,10 +6,10 @@ import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { btn, Card, EmptyState, Loading, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { btn, Card, EmptyState, Loading, NotFigure, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { ProofDescriptor } from "@/lib/book/proof";
 import type { ChangeMover, HighlightSeg, NetWorthChange, NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
-import { axisUsd, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { unswept } from "@/lib/book/proof/clearance";
@@ -147,7 +147,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
         <Waterfall p={p} />
       </Card>
 
-      <Card title={t ? `Against your average ${unit}` : "Step by step"} subtitle="Click a figure for the rows behind it. Steps without their own proof are parts of the change's proof (click Change above).">
+      <Card title={t ? `Against your average ${unit}` : "Step by step"} subtitle="Click a figure for the rows behind it. The steps add up to the change to the cent; each one's part of it is beside it. Steps without their own proof are parts of the change's proof (click Change above).">
         <div className={table.wrap}>
           <table className={`${table.table} min-w-[34rem]`}>
             <thead className={table.head}>
@@ -156,6 +156,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
                 <th className={table.thR}>{p.label}</th>
                 {t && <th className={table.thR}>Average</th>}
                 {t && <th className={table.thR}>Difference</th>}
+                <th className={table.thR} title="Each step's part of the change: the column adds up to 100%.">Of the change</th>
               </tr>
             </thead>
             <tbody>
@@ -178,6 +179,14 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
                       <Delta cents={s.typicalCents == null ? null : s.cents - s.typicalCents} of={[own, avg]} ofCents={s.typicalCents == null ? null : s.key === "spending" ? p.spendingCents - (t?.spendingCents ?? 0) : s.cents - s.typicalCents} />
                     </td>
                   )}
+                  <td className={`${table.tdR} text-muted`}>
+                    {!s.cents ? "—" : Math.abs(p.changeCents) < 100 ? (
+                      NA
+                    ) : (
+                      // Spending's proof states what was spent; what it did to net worth is that times −1.
+                      <ProofValue proof={compositeOf("share", [s.key === "spending" ? compositeOf("times", [own], { cents: s.cents }, undefined, -1) : own, proofOf(p.proofs.change, p.changeCents)], { ratio: s.cents / p.changeCents })}>{formatPercentRatio(s.cents / p.changeCents, 0)}</ProofValue>
+                    )}
+                  </td>
                 </tr>
                 );
               })}
@@ -196,6 +205,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
                     <Delta cents={p.changeCents - t.changeCents} of={[proofOf(p.proofs.change, p.changeCents), typical("change")]} />
                   </td>
                 )}
+                <td className={`${table.tdR} text-muted`}>{Math.abs(p.changeCents) < 100 ? NA : <NotFigure why="the whole change: the column above adds up to it">100%</NotFigure>}</td>
               </tr>
             </tbody>
           </table>

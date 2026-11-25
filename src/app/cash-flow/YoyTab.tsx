@@ -3,12 +3,12 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { Callout, Card, NotFigure, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
-import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
@@ -16,6 +16,7 @@ import { compareCategories, yearCategories, yoyWindows } from "@/lib/book/report
 import { KINDS, merchantMovers, MONTH_NAMES, monthKey, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { contributions } from "@/lib/book/reports/contributions";
 
 type Mode = "month" | "ytd" | "12m";
 
@@ -74,6 +75,20 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
   // The ten that rose and fell most (merchantMovers: the lists the proof sweep enumerates too).
   const { up, down } = useMemo(() => merchantMovers(now, then), [now, then]);
   const maxChange = Math.max(1, ...categories.map((c) => Math.abs(c.now - c.then)));
+  // Each category's part of the change in spending, adding up to it to the cent (reports/contributions.ts).
+  const contrib = useMemo(() => contributions(categories.map((c) => ({ key: c.category, now: c.now, then: c.then })), { now: a.spending, then: b.spending }), [categories, a.spending, b.spending]);
+  const catProof = (c: { category: string; now: number; then: number }) => {
+    const n = ctx.proof("spending", now, { category: c.category, shownCents: c.now });
+    const t = ctx.proof("spending", then, { category: c.category, shownCents: c.then });
+    return { n, t, change: !c.then ? n : !c.now ? t : compositeOf("diff", [n, t], { cents: c.now - c.then }) };
+  };
+  const totalNow = ctx.proof("spending", now, { shownCents: a.spending });
+  const totalThen = ctx.proof("spending", then, { shownCents: b.spending });
+  const totalChange = compositeOf("diff", [totalNow, totalThen], { cents: a.spending - b.spending });
+  const shareOf = (change: ProofRef, cents: number) => {
+    const s = contrib.total.change ? cents / contrib.total.change : null;
+    return s == null || Math.abs(contrib.total.change) < 100 ? <span className="text-faint">{NA}</span> : <ProofValue proof={compositeOf("share", [change, totalChange], { ratio: s })}>{formatPercentRatio(s, 0)}</ProofValue>;
+  };
 
   return (
     <>
@@ -106,7 +121,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
           }
         />
       </StatGrid>
-      <Card title="By category" subtitle="Largest changes first. Click a category for its rows.">
+      <Card title="By category" subtitle="Largest changes first; each category's part of the change in spending adds up to it. Click a category for its rows.">
         <div className={table.wrap}>
           <table className={table.table}>
             <thead className={table.head}>
@@ -117,6 +132,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
                 <th className={`${table.th} w-[24%]`} />
                 <th className={table.thR}>Change</th>
                 <th className={table.thR}>%</th>
+                <th className={table.thR} title="Each category's part of the change in total spending: the column adds up to 100%.">Of the change</th>
               </tr>
             </thead>
             <tbody>
@@ -151,8 +167,39 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
                     </ProofValue>
                   </td>
                   <td className={table.tdR}>{c.then ? <Delta now={c.now} before={c.then} goodWhenDown of={[ctx.proof("spending", now, { category: c.category, shownCents: c.now }), ctx.proof("spending", then, { category: c.category, shownCents: c.then })]} /> : <span className="text-xs text-muted">new</span>}</td>
+                  <td className={`${table.tdR} text-muted`}>{c.now === c.then ? "—" : shareOf(catProof(c).change, c.now - c.then)}</td>
                 </tr>
               ))}
+              {contrib.rest !== 0 && (
+                <tr className={table.tr} title="Each category's months are rounded to the cent on their own; the total is rounded once.">
+                  <td className={`${table.td} text-muted`}>Rounding</td>
+                  <td className={table.tdR} />
+                  <td className={table.tdR} />
+                  <td className={table.td} />
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={compositeOf("diff", [totalChange, compositeOf("sum", categories.filter((c) => c.now !== c.then).map((c) => catProof(c).change), { cents: contrib.total.change - contrib.rest })], { cents: contrib.rest })}>{formatUsdCents(contrib.rest)}</ProofValue>
+                  </td>
+                  <td className={table.tdR} />
+                  <td className={table.tdR} />
+                </tr>
+              )}
+              <tr className="border-t border-line-strong font-semibold">
+                <td className={table.td}>Spending</td>
+                <td className={`${table.tdR} text-muted`}>
+                  <ProofValue proof={totalThen}>{usd0(b.spending)}</ProofValue>
+                </td>
+                <td className={table.tdR}>
+                  <ProofValue proof={totalNow}>{usd0(a.spending)}</ProofValue>
+                </td>
+                <td className={table.td} />
+                <td className={`${table.tdR} ${a.spending > b.spending ? "text-neg" : a.spending < b.spending ? "text-pos" : ""}`}>
+                  <ProofValue proof={totalChange}>{usdDelta(a.spending - b.spending)}</ProofValue>
+                </td>
+                <td className={table.tdR}>
+                  <Delta now={a.spending} before={b.spending} goodWhenDown of={[totalNow, totalThen]} />
+                </td>
+                <td className={`${table.tdR} text-muted`}>{Math.abs(contrib.total.change) < 100 ? NA : <NotFigure why="the whole change: the column above adds up to it">100%</NotFigure>}</td>
+              </tr>
             </tbody>
           </table>
         </div>
