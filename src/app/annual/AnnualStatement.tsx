@@ -1,6 +1,7 @@
 "use client";
 
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
+import { NA } from "@/lib/formatMoney";
 import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, Segmented, StatCell, StatGrid } from "@/components/ui/kit";
 import type { ProofRef, ProofTarget } from "@/components/ui/proof/context";
@@ -119,7 +120,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
   const cols = useMemo(() => statementColumns(r, est), [r, est]);
   const rows = useMemo(() => statementRows(r, cols, mode), [r, cols, mode]);
   const value = (v: number | null | undefined, blockers: BlockerRef[] | undefined, fmt: (n: number) => string = (n) => usd(n)) =>
-    v != null ? fmt(v) : blockers?.length ? <BlockedValue blockers={blockers} /> : "—";
+    v != null ? fmt(v) : blockers?.length ? <BlockedValue blockers={blockers} /> : NA;
   const blockedYears = ys.filter((y) => Object.values(y.blockers).some((b) => b.length > 0));
   const highlight = cols.map((c, i) => (c.y?.isCurrent || c.est ? i : -1)).filter((i) => i >= 0);
   const projected = cols.map((c, i) => (c.est ? i : -1)).filter((i) => i >= 0);
@@ -156,7 +157,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
         <StatCell
           proof={estChangeV && "proof" in estChangeV && estChangeV.proof ? estChangeV.proof : noFigure("needs a proven starting point")}
           label={est ? `Change ${est.year} est.` : "Change, full year est."}
-          value={estChangeV && "v" in estChangeV ? usd(estChangeV.v) : "—"}
+          value={estChangeV && "v" in estChangeV ? usd(estChangeV.v) : NA}
           sub={
             est?.flows.close ? (
               <>

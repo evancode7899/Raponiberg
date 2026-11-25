@@ -4,7 +4,7 @@ import { Badge, Card, Segmented, StatCell, StatGrid, table } from "@/components/
 import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { RecurringCharge } from "@/lib/book/reports/spending";
-import { usd0, usdDelta } from "@/lib/formatMoney";
+import { NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useState } from "react";
 import type { Ctx } from "./CashFlowClient";
 import { sum } from "./model";
@@ -124,7 +124,7 @@ function BillTable({ ctx, list }: { ctx: Ctx; list: RecurringCharge[] }) {
                 </span>
               </td>
               <td className={`${table.td} text-xs text-muted`}>
-                {CADENCE[c.cadence ?? ""] ?? "—"} · {c.count}×
+                {CADENCE[c.cadence ?? ""] ?? NA} · {c.count}×
               </td>
               <td className={table.tdR}>
                 <ProofValue proof={ctx.dp("recurring-typical", c.key)}>{usd0(c.typicalCents)}</ProofValue>

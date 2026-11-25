@@ -3,7 +3,7 @@
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, Segmented, table } from "@/components/ui/kit";
-import { formatUsdFromCents } from "@/lib/formatMoney";
+import { formatUsdFromCents, NA } from "@/lib/formatMoney";
 import type { CoverPayment, CoverStatus, CoverTerm } from "@/lib/insurance/cover";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -26,7 +26,7 @@ export const rowProof = (rowId: string, cents: number) => ({ descriptor: { repor
 export function Fig({ figs, figure, k, money = "cents" }: { figs: readonly DerivedFigure[]; figure: string; k?: string; money?: "cents" | "dollars" }) {
   const f = figs.find((x) => x.figure === figure && (x.key ?? null) === (k ?? null));
   const v = f?.value;
-  const text = !v ? "—" : "cents" in v ? (money === "dollars" ? `$${Math.round(v.cents / 100).toLocaleString("en-US")}` : formatUsdFromCents(v.cents)) : "text" in v ? v.text : String(v.ratio);
+  const text = !v ? NA : "cents" in v ? (money === "dollars" ? `$${Math.round(v.cents / 100).toLocaleString("en-US")}` : formatUsdFromCents(v.cents)) : "text" in v ? v.text : String(v.ratio);
   // A limit in words can be long: let it wrap; money stays on one line.
   return (
     <ProofValue proof={derivedTarget("insurance", figs, figure, k)} className={v && "text" in v ? "whitespace-normal" : ""}>
@@ -140,7 +140,7 @@ export function CoverPayments({ payments, terms, accounts, insurer }: { payments
             <tr key={x.rowId} className={table.tr}>
               <td className={table.td}>{shortDate(x.date)}</td>
               <td className={`${table.td} text-fg-2`}>{termLabel(x.term)}</td>
-              <td className={table.td}>{accounts[x.accountId] ?? "—"}</td>
+              <td className={table.td}>{accounts[x.accountId] ?? NA}</td>
               <td className={`${table.td} max-w-[22rem] truncate text-fg-2`} title={x.payee}>
                 {x.payee}
               </td>

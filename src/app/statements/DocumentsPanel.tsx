@@ -8,7 +8,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { Lane } from "@/lib/classifier/taxonomy";
-import { formatUsdFromCents } from "@/lib/formatMoney";
+import { formatUsdFromCents, NA } from "@/lib/formatMoney";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { unswept } from "@/lib/book/proof/clearance";
 
@@ -63,7 +63,7 @@ const STATUS: Record<Section["status"], { tone: Tone; label: string }> = {
   DISCREPANT: { tone: "neg", label: "Doesn't tie out" },
 };
 
-const d10 = (s: string | null) => (s ? s.slice(0, 10) : "—");
+const d10 = (s: string | null) => (s ? s.slice(0, 10) : NA);
 
 export function DocumentsPanel({ api, version, onChanged }: { api: Api; version: number; onChanged: () => void }) {
   const [docs, setDocs] = useState(() => cachedResponse<{ documents: Doc[] }>("/api/statements")?.documents ?? null);
@@ -144,7 +144,7 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
                 <div className="min-w-0">
                   <div className="text-[13px] font-medium text-fg">{d.title}</div>
                   <div className="num text-xs text-muted">
-                    {d.originalFileName ?? "—"} · {d10(d.periodStart)} → {d10(d.periodEnd)} · {d.parserId === "manual" ? "hand-parsed" : d.parserId}
+                    {d.originalFileName ?? NA} · {d10(d.periodStart)} → {d10(d.periodEnd)} · {d.parserId === "manual" ? "hand-parsed" : d.parserId}
                     {d.kind === "PERIOD_SUMMARY" && " · summary (fills gaps only)"}
                     {d.kind === "SUPPORTING" && " · supporting document (no ledger rows)"}
                     {d._count.payStubs > 0 && ` · ${d._count.payStubs} pay stubs`}
@@ -267,7 +267,7 @@ function SectionRow({ s, api, busy, onCommit }: { s: Section; api: Api; busy: bo
                     {r.transferLeg && <span className="ml-1 text-pos">· paired</span>}
                     {r.needsReview && <span className="ml-1 text-warn">· review</span>}
                   </td>
-                  <td className={`${table.td} text-fg-2`}>{r.category?.name ?? "—"}</td>
+                  <td className={`${table.td} text-fg-2`}>{r.category?.name ?? NA}</td>
                   <td className={table.tdR}>
                     <ProofValue proof={inBook && !s.isSummary ? { descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents } : unswept("not in the Book yet: an import still to commit")}>{formatUsdFromCents(r.amountCents)}</ProofValue>
                   </td>

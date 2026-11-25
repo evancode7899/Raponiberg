@@ -456,7 +456,7 @@ function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                   </td>
                   <td className={table.td}>
                     <select className={selectCls} value={v.cls} onChange={(e) => setPicks({ ...picks, [u.key]: { ...v, cls: e.target.value as AssetClass | "" } })}>
-                      <option value="">—</option>
+                      <option value="">Not set</option>
                       {ASSET_CLASSES.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.label}
@@ -601,7 +601,7 @@ function Gains({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) 
                     <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                     <td className={`${table.tdR} text-muted`}><ProofValue proof={posFig(d, p, "cost")}>{usd0(p.costBasisCents)}</ProofValue></td>
                     <td className={`${table.tdR} text-neg`}><ProofValue proof={posFig(d, p, "gain")}>{usdDelta(p.unrealizedCents)}</ProofValue></td>
-                    <td className={table.tdR}>{p.costBasisCents && p.costBasisCents > 0 ? <ProofValue proof={compositeOf("share", [posFig(d, p, "gain"), posFig(d, p, "cost")], { ratio: p.unrealizedCents! / p.costBasisCents })}>{pct(p.unrealizedCents! / p.costBasisCents)}</ProofValue> : "—"}</td>
+                    <td className={table.tdR}>{p.costBasisCents && p.costBasisCents > 0 ? <ProofValue proof={compositeOf("share", [posFig(d, p, "gain"), posFig(d, p, "cost")], { ratio: p.unrealizedCents! / p.costBasisCents })}>{pct(p.unrealizedCents! / p.costBasisCents)}</ProofValue> : NA}</td>
                   </tr>
                 ))}
               </tbody>
@@ -709,8 +709,8 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
               <Tooltip {...ui.tooltip} formatter={(v, n) => [usd0(Math.round(Number(v) * 100)), n === "value" ? "Value" : "Money in"]} />
               <Legend {...ui.legend} formatter={(v) => (v === "value" ? "Value" : "Money in")} />
-              <Line type="monotone" dataKey="invested" stroke={p.principal} strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="value" stroke={p.growth} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="invested" stroke={p.principal} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="value" stroke={p.growth} strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </RechartsResponsive>
         </div>

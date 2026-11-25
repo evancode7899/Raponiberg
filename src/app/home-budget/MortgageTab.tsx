@@ -4,7 +4,7 @@ import { askDanger } from "@/components/ui/Feedback";
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, ErrorNote, NotFigure, PageBody, StatCell, StatGrid, table, useSavedState, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
+import { formatPercentRatio, formatUsd, NA } from "@/lib/formatMoney";
 import { comparePrepayVsInvest, loanMonthToCalendar, type PathSeries } from "@/lib/mortgage/prepayVsInvest";
 import { mortgageFigures, type MortgageFigure } from "@/lib/mortgage/figures";
 import { normalizeMortgageInputs } from "@/lib/mortgage/inputs";
@@ -194,24 +194,24 @@ export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean 
           <StatGrid cols={4}>
             <StatCell proof={tile("advantage")}
               label="Invest − pay down"
-              value={"cents" in tileValue.advantage && tileValue.advantage.cents != null ? signed(tileValue.advantage.cents / 100) : "—"}
+              value={"cents" in tileValue.advantage && tileValue.advantage.cents != null ? signed(tileValue.advantage.cents / 100) : NA}
               tone={advantage > 0 ? "pos" : advantage < 0 ? "warn" : "neutral"}
               sub={`net worth after ${ins.horizonYears} yr, ${unit}`}
             />
             <StatCell proof={tile("break-even")}
               label="Break-even return"
-              value={"ratio" in tileValue["break-even"] && tileValue["break-even"].ratio != null ? formatPercentRatio(tileValue["break-even"].ratio, 2) : "—"}
+              value={"ratio" in tileValue["break-even"] && tileValue["break-even"].ratio != null ? formatPercentRatio(tileValue["break-even"].ratio, 2) : NA}
               sub="investing wins above this"
             />
             <StatCell proof={tile("chance")}
               label="Chance investing wins"
-              value={"ratio" in tileValue.chance && tileValue.chance.ratio != null ? `${Math.round(tileValue.chance.ratio * 100)}%` : "—"}
+              value={"ratio" in tileValue.chance && tileValue.chance.ratio != null ? `${Math.round(tileValue.chance.ratio * 100)}%` : NA}
               tone={tossUp ? "neutral" : mc.chanceInvestWins > 0.5 ? "pos" : "warn"}
               sub={<NotFigure why="your input">{`${formatPercentRatio(ins.volatility, 0)} volatility · ${mc.paths} markets`}</NotFigure>}
             />
             <StatCell proof={tile("interest-saved")}
               label="Paying down saves"
-              value={"cents" in tileValue["interest-saved"] && tileValue["interest-saved"].cents != null ? formatUsd(tileValue["interest-saved"].cents / 100) : "—"}
+              value={"cents" in tileValue["interest-saved"] && tileValue["interest-saved"].cents != null ? formatUsd(tileValue["interest-saved"].cents / 100) : NA}
               sub={sooner !== null && sooner > 0 ? `interest · loan gone ${span(sooner)} sooner` : "interest by the horizon"}
             />
           </StatGrid>

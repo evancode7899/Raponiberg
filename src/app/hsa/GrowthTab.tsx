@@ -93,8 +93,8 @@ export function GrowthTab({ r }: { r: HsaReport }) {
                 <YAxis {...chrome.yAxis} tickFormatter={axisUsd} />
                 <Tooltip {...chrome.tooltip} formatter={(v) => usd0(Number(v) * 100)} />
                 <Legend {...chrome.legend} />
-                <Line type="monotone" dataKey="hsa" name="Left in the HSA" stroke={p.series[2]} strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="taxable" name="Reimbursed now, in a taxable account" stroke={p.neutral} strokeWidth={2} strokeDasharray="4 3" dot={false} />
+                <Line type="linear" dataKey="hsa" name="Left in the HSA" stroke={p.series[2]} strokeWidth={2} dot={false} />
+                <Line type="linear" dataKey="taxable" name="Reimbursed now, in a taxable account" stroke={p.neutral} strokeWidth={2} strokeDasharray="4 3" dot={false} />
               </LineChart>
             </RechartsResponsive>
           </div>

@@ -96,7 +96,7 @@ export function LpPanel({ fund: f }: { fund: LpFund }) {
           sub={f.commitmentCents ? `${formatPercentRatio((f.unfundedCents ?? 0) / f.commitmentCents, 0)} of the commitment still to be called` : "no commitment printed yet"}
         />
         <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "net-cash", f.key)} label="Net cash wired" value={usd0(f.netCashCents)} sub={`amounts due on the notices; ${wires} bank wire${wires === 1 ? "" : "s"} on file total ${usd0(f.wiredCents)}`} />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "nav", f.key)} label="Value (NAV)" value={s ? usd0(s.navCents) : "—"} sub={s ? `capital account at the ${s.asOf} statement` : "no capital statement yet"} />
+        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "nav", f.key)} label="Value (NAV)" value={s ? usd0(s.navCents) : NA} sub={s ? `capital account at the ${s.asOf} statement` : "no capital statement yet"} />
       </StatGrid>
       {s && (
         <Card

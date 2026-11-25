@@ -8,7 +8,7 @@ import { noFigure } from "@/lib/book/proof/clearance";
 import { sortRows, SortTh, useSort, type Sort, type SortKey } from "@/components/ui/sort";
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import { CATEGORIES, LANE_LABELS, type Lane } from "@/lib/classifier/taxonomy";
-import { formatUsdFromCents } from "@/lib/formatMoney";
+import { formatUsdFromCents, NA } from "@/lib/formatMoney";
 import type { ReimbursementsResponse } from "@/app/api/reimbursements/route";
 import { useCallback, useEffect, useState } from "react";
 import { PaidBackDrawer } from "./PaidBackDrawer";
@@ -71,7 +71,7 @@ const LANE_SHORT: Record<Lane, { label: string; tone: Tone }> = {
 };
 
 export function LaneBadge({ lane }: { lane: Lane | null }) {
-  if (!lane) return <span className="text-faint">—</span>;
+  if (!lane) return <span className="text-faint">{NA}</span>;
   const l = LANE_SHORT[lane];
   return (
     <Badge tone={l.tone} title={LANE_LABELS[lane]}>
@@ -186,7 +186,7 @@ function Row({
       <td className={`${table.td} num whitespace-nowrap text-muted`}>{r.date.slice(0, 10)}</td>
       <td className={`${table.td} w-full max-w-0 min-w-[12rem]`}>
         <div className="truncate text-fg" title={r.payee ?? undefined}>
-          {r.payee ?? "—"}
+          {r.payee ?? NA}
         </div>
         {r.detail && (
           <div className="truncate text-[11px] text-muted" title={r.detail}>

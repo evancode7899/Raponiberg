@@ -4,7 +4,7 @@ import { Badge, btn, Card, Drawer, NotFigure, table } from "@/components/ui/kit"
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { CardPerksPage } from "@/lib/cardPerks/page";
 import type { CardScore } from "@/lib/cardPerks/types";
-import { formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import { useState } from "react";
 import { CardFace, fmtCpp, fmtDate, fmtMonth, fmtRate, fmtRewards, Meter, money, pct, SectionTitle, shortName, SourceTag, TERMS, useCardFigures, type CardFigures } from "./parts";
 
@@ -149,7 +149,7 @@ function CardTile({ c, cf, onOpen }: { c: CardScore; cf: CardFigures; onOpen: ()
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
         <div>
           <dt className="text-muted">Rewards</dt>
-          <dd className="num font-medium text-fg">{c.program.kind === "NONE" ? "—" : c.rewards.kind === "CASH" ? <ProofValue proof={k("earned")}>{fmtRewards(c.rewards.kind, c.rewards.earned, true)}</ProofValue> : fmtRewards(c.rewards.kind, c.rewards.earned, true)}</dd>
+          <dd className="num font-medium text-fg">{c.program.kind === "NONE" ? NA : c.rewards.kind === "CASH" ? <ProofValue proof={k("earned")}>{fmtRewards(c.rewards.kind, c.rewards.earned, true)}</ProofValue> : fmtRewards(c.rewards.kind, c.rewards.earned, true)}</dd>
           <dd>
             <SourceTag source={c.rewards.source} />
           </dd>

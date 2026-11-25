@@ -1,6 +1,7 @@
 "use client";
 
 import { askDanger } from "@/components/ui/Feedback";
+import { NA } from "@/lib/formatMoney";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, ErrorNote, inputCls, Loading, selectCls } from "@/components/ui/kit";
 import Link from "next/link";
@@ -116,7 +117,7 @@ function AccountRow({
           {a.archivedAt && <Badge>Archived</Badge>}
         </div>
         <span className="text-muted">
-          {a.institution ?? "—"} · {(a.subtype ?? a.type).replace(/_/g, " ").toLowerCase()} · {a.aliases.map((x) => x.identifier).join(", ") || "no statements yet"} ·{" "}
+          {a.institution ?? NA} · {(a.subtype ?? a.type).replace(/_/g, " ").toLowerCase()} · {a.aliases.map((x) => x.identifier).join(", ") || "no statements yet"} ·{" "}
           <span className="num">
             {a._count.statementImports} statements · {a._count.transactions.toLocaleString()} rows
           </span>

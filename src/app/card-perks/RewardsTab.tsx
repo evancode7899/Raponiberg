@@ -8,7 +8,7 @@ import type { CardPerksPage } from "@/lib/cardPerks/page";
 import type { Reconciliation, RewardsPool } from "@/lib/cardPerks/types";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { poolLast, poolStretches } from "@/lib/book/derived/cardPerks";
-import { usd0 } from "@/lib/formatMoney";
+import { NA, usd0 } from "@/lib/formatMoney";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { fmtCpp, fmtDate, fmtMonth, fmtRewards, SectionTitle, shortName, SourceTag, TERMS, useCardFigures, type CardFigures } from "./parts";
 
@@ -115,7 +115,7 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
                 {last ? (
                   <ProofValue proof={{ descriptor: { report: "statement", statementId: last.statementId }, shownCents: null }}>{fmtRewards(kind, last.balance, kind !== "CASH")}</ProofValue>
                 ) : (
-                  "—"
+                  NA
                 )}
               </dd>
               {last && kind === "POINTS" && (

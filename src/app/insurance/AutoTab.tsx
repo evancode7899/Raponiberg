@@ -176,8 +176,8 @@ function AutoVehicles({ v }: { v: AutoView }) {
                 <tr key={x.n} className={table.tr}>
                   <td className={table.td}>{x.n}</td>
                   <td className={table.td}>{vehicleName(x)}</td>
-                  <td className={`${table.td} num text-fg-2`}>{x.vin ?? "—"}</td>
-                  <td className={table.td}>{x.garaged ?? "—"}</td>
+                  <td className={`${table.td} num text-fg-2`}>{x.vin ?? NA}</td>
+                  <td className={table.td}>{x.garaged ?? NA}</td>
                   <td className={table.td}>{x.lienholder ?? "None"}</td>
                 </tr>
               ))}

@@ -72,7 +72,7 @@ export function OverviewTab({ data, figs, open }: { data: InsurancePage; figs: r
                         </span>
                       </>
                     ) : (
-                      <span className="text-muted">—</span>
+                      <span className="text-muted">{NA}</span>
                     )}
                   </td>
                   <td className={table.tdR}>{p.annualCents == null ? <span className="text-muted">{NA}</span> : <Fig figs={figs} figure="annual" k={`${p.line}|${p.key}`} />}</td>

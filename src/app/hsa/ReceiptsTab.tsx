@@ -3,7 +3,7 @@
 import { askDanger, notify } from "@/components/ui/Feedback";
 import { Badge, btn, Callout, Card, downloadResponse, EmptyState, inputCls, NotFigure, Segmented, selectCls, table } from "@/components/ui/kit";
 import { apiSecretHeaders } from "@/components/ledger/useApi";
-import { formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL } from "@/lib/hsa/qualify";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
@@ -504,7 +504,7 @@ function Row({ e, dp, picked, toggle, send, onEdit }: { e: ExpenseView; dp: HsaD
           </div>
         )}
       </td>
-      <td className={`${table.td} whitespace-nowrap text-fg-2`}>{e.patient || <span className="text-faint">—</span>}</td>
+      <td className={`${table.td} whitespace-nowrap text-fg-2`}>{e.patient || <span className="text-faint">{NA}</span>}</td>
       <td className={`${table.td} max-w-[13rem] truncate whitespace-nowrap text-xs`}>
         {e.paid ? (
           <span title={`${e.paid.payee} · ${e.paid.date}${e.paidAuto ? " · matched by amount and date" : ""}`}>

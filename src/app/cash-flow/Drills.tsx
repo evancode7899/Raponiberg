@@ -78,7 +78,7 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
         <Stat label="Total" value={usd0(total)} proof={ctx.proof(metricOf[lane]!, slice.months, { category, shownCents: total })} />
         <Stat label="Per month" value={usd0(total / Math.max(1, values.length))} proof={ctx.proof(metricOf[lane]!, slice.months, { category, perMonth: true, shownCents: total })} />
         <Stat proof={ctx.dp("category-typical", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label="Typical month" value={usd0(median(values))} />
-        <Stat proof={ctx.dp(lane === "EXPENSE" ? "category-share" : "category-months", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label={lane === "EXPENSE" ? "Share of spending" : "Months"} value={lane === "EXPENSE" ? (spending > 0 ? formatPercentRatio(total / spending, 0) : "—") : values.filter(Boolean).length} />
+        <Stat proof={ctx.dp(lane === "EXPENSE" ? "category-share" : "category-months", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label={lane === "EXPENSE" ? "Share of spending" : "Months"} value={lane === "EXPENSE" ? (spending > 0 ? formatPercentRatio(total / spending, 0) : NA) : values.filter(Boolean).length} />
       </div>
       <p className="-mt-2 text-xs text-muted">
         Click the total for the rows behind it, statement by statement, with every check over them. The transactions below are listed by posting date for editing, so a row near a month&apos;s edge or a rent

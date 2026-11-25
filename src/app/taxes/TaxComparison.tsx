@@ -31,7 +31,7 @@ export function TaxComparison({ r }: { r: TaxResponse }) {
   };
   const rows: Row[] = cmp.rows.map((row) => ({
     label: lawLabel(row.label),
-    values: row.values.map((v, j) => (v == null ? (row.kind === "bracket" ? "" : "—") : cell("compare", row.id, cmp.cols[j]!.id, show(row, v, j), row.kind === "balance" ? "zero" : undefined))),
+    values: row.values.map((v, j) => (v == null ? (row.kind === "bracket" ? "" : NA) : cell("compare", row.id, cmp.cols[j]!.id, show(row, v, j), row.kind === "balance" ? "zero" : undefined))),
     ...(row.strong ? { strong: true } : {}),
     ...(row.indent ? { indent: true } : {}),
     ...(row.help ? { help: row.help } : {}),

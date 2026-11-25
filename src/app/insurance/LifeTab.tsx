@@ -5,7 +5,7 @@ import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, btn, Callout, Card, EmptyState, ErrorNote, inputCls, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { formatUsdFromCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdFromCents, NA, usd0 } from "@/lib/formatMoney";
 import type { InsurancePage } from "@/lib/insurance/page";
 import type { Beneficiary, InsuranceNotes, PolicyNotes } from "@/lib/insurance/notes";
 import { addDays } from "@/lib/dates/isoDate";
@@ -87,12 +87,12 @@ function Overview({ v, today, notes, save, figs }: { v: PolicyView; today: strin
         <StatCell proof={derivedTarget("insurance", figs, "premium", v.policy.policyNumber)} label="Annual premium" value={usd0(p.annualPremiumCents)} sub={`${formatUsdFromCents(Math.round(v.per1000Cents))} per $1,000 of cover${p.policyFeeCents ? ` · incl. ${usd0(p.policyFeeCents)} policy fee` : ""}`} />
         <StatCell proof={derivedTarget("insurance", figs, "level-end", v.policy.policyNumber)}
           label="Level term ends"
-          value={p.levelEndDate ? shortDate(p.levelEndDate) : "—"}
+          value={p.levelEndDate ? shortDate(p.levelEndDate) : NA}
           sub={p.levelEndDate ? `${until(today, p.levelEndDate) ?? "ended"}${ageAtLevelEnd != null ? ` · insured age ${ageAtLevelEnd}` : ""}` : undefined}
         />
         <StatCell proof={derivedTarget("insurance", figs, "level-total", v.policy.policyNumber)}
           label="Total premiums"
-          value={v.levelTotalCents != null ? usd0(v.levelTotalCents) : "—"}
+          value={v.levelTotalCents != null ? usd0(v.levelTotalCents) : NA}
           sub={v.levelTotalCents != null ? `${p.levelYears} × ${usd0(p.annualPremiumCents)}, fixed by contract` : undefined}
         />
       </StatGrid>
@@ -262,7 +262,7 @@ function BeneficiaryTable({ list }: { list: Beneficiary[] }) {
             .map((b, i) => (
               <tr key={i} className={table.tr}>
                 <td className={table.td}>{b.name}</td>
-                <td className={table.td}>{b.relationship || "—"}</td>
+                <td className={table.td}>{b.relationship || NA}</td>
                 <td className={table.td}>{b.type === "PRIMARY" ? "Primary" : "Contingent"}</td>
                 <td className={table.tdR}>{b.sharePct}%</td>
               </tr>
@@ -294,10 +294,10 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
       <StatGrid cols={4}>
         <StatCell proof={derivedTarget("insurance", figs, "premium", v.policy.policyNumber)} label="Fixed premium" value={usd0(p.annualPremiumCents)} sub={p.levelYears ? `Years 1–${p.levelYears}, guaranteed` : undefined} />
         <StatCell proof={derivedTarget("insurance", figs, "face", v.policy.policyNumber)} label="Coverage, level term" value={usd0(p.faceCents)} sub={p.levelEndDate ? `Through ${shortDate(addDays(p.levelEndDate, -1))}` : undefined} />
-        <StatCell proof={derivedTarget("insurance", figs, "face-after", v.policy.policyNumber)} label="Coverage after" value={firstRenewal ? usd0(firstRenewal.faceCents) : "—"} sub={firstRenewal ? `From year ${firstRenewal.year}, renewing yearly` : undefined} />
+        <StatCell proof={derivedTarget("insurance", figs, "face-after", v.policy.policyNumber)} label="Coverage after" value={firstRenewal ? usd0(firstRenewal.faceCents) : NA} sub={firstRenewal ? `From year ${firstRenewal.year}, renewing yearly` : undefined} />
         <StatCell proof={derivedTarget("insurance", figs, "max-premium-last", v.policy.policyNumber)}
           label="Maximum premium, last year"
-          value={lastRenewal ? usd0(lastRenewal.maxPremiumCents) : "—"}
+          value={lastRenewal ? usd0(lastRenewal.maxPremiumCents) : NA}
           sub={lastRenewal ? `Year ${lastRenewal.year}${lastRenewal.age != null ? `, age ${lastRenewal.age}` : ""}` : undefined}
         />
       </StatGrid>
@@ -314,7 +314,7 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
               <YAxis {...ui.yAxis} scale="log" domain={["auto", "auto"]} ticks={[1000, 3000, 10_000, 30_000, 100_000]} tickFormatter={(n: number) => (n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${Math.round(n)}`)} />
               <Tooltip {...ui.tooltip} labelFormatter={(l) => `Age ${l}`} formatter={(n) => [formatUsdFromCents(Math.round(Number(n) * 100)), "Max premium"]} />
               {p.levelYears && <ReferenceLine x={data[p.levelYears]?.label} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: "Level term ends", fill: chart.axis, fontSize: 11, position: "insideTopLeft" }} />}
-              <Line type="monotone" dataKey="premium" stroke={chart.series[0]} dot={false} strokeWidth={2} isAnimationActive={false} />
+              <Line type="stepAfter" dataKey="premium" stroke={chart.series[0]} dot={false} strokeWidth={2} isAnimationActive={false} />
             </LineChart>
           </RechartsResponsive>
         </div>
@@ -358,7 +358,7 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
                       {now && <span className="ml-2 text-[11px] font-semibold text-accent">now</span>}
                     </td>
                     <td className={table.td}>{shortDate(y.start)}</td>
-                    <td className={table.tdR}>{y.age ?? "—"}</td>
+                    <td className={table.tdR}>{y.age ?? NA}</td>
                     <td className={table.tdR}>
                       {formatUsdFromCents(y.maxPremiumCents)}
                       {!y.level && <span className="ml-1 text-faint" title="Guaranteed maximum: the insurer may charge less.">max</span>}
@@ -417,7 +417,7 @@ function Payments({ v, accounts, figs }: { v: PolicyView; accounts: Record<strin
       <StatGrid cols={v.paidTo ? 4 : 3}>
         <StatCell proof={derivedTarget("insurance", figs, "paid", v.policy.policyNumber)} label="Paid so far" value={usd0(v.paidCents)} sub={`${v.payments.length} premium${v.payments.length === 1 ? "" : "s"} found in the statements`} />
         <StatCell proof={derivedTarget("insurance", figs, "years-paid", v.policy.policyNumber)} label="Years paid" value={`${dueSoFar.filter((y) => paidYears.has(y.year)).length} of ${dueSoFar.length}`} sub="Policy years started so far" />
-        <StatCell proof={derivedTarget("insurance", figs, "next-due", v.policy.policyNumber)} label="Next premium" value={v.nextDue ? usd0(v.nextDue.cents) : "—"} sub={v.nextDue ? `Due ${longDate(v.nextDue.date)} (year ${v.nextDue.year})` : undefined} />
+        <StatCell proof={derivedTarget("insurance", figs, "next-due", v.policy.policyNumber)} label="Next premium" value={v.nextDue ? usd0(v.nextDue.cents) : NA} sub={v.nextDue ? `Due ${longDate(v.nextDue.date)} (year ${v.nextDue.year})` : undefined} />
         {v.paidTo && <StatCell proof={derivedTarget("insurance", figs, "paid-to", v.policy.policyNumber)} label="Paid to" value={shortDate(v.paidTo.date)} sub={`Per the insurer's policy summary of ${shortDate(v.paidTo.asOf)}`} />}
       </StatGrid>
 
@@ -441,7 +441,7 @@ function Payments({ v, accounts, figs }: { v: PolicyView; accounts: Record<strin
                   <tr key={x.rowId} className={table.tr}>
                     <td className={table.td}>{shortDate(x.date)}</td>
                     <td className={table.td}>{x.year}</td>
-                    <td className={table.td}>{accounts[x.accountId] ?? "—"}</td>
+                    <td className={table.td}>{accounts[x.accountId] ?? NA}</td>
                     <td className={`${table.td} max-w-[22rem] truncate text-fg-2`} title={x.payee}>
                       {x.payee}
                     </td>
@@ -475,7 +475,7 @@ function Payments({ v, accounts, figs }: { v: PolicyView; accounts: Record<strin
                   return (
                     <tr key={x.file} className={table.tr}>
                       <td className={table.td}>{shortDate(x.date)}</td>
-                      <td className={`${table.td} text-fg-2`}>{[x.confirmation, x.method].filter(Boolean).join(" · ") || "—"}</td>
+                      <td className={`${table.td} text-fg-2`}>{[x.confirmation, x.method].filter(Boolean).join(" · ") || NA}</td>
                       <td className={table.td}>{paid ? `${shortDate(paid.date)} · ${accounts[paid.accountId] ?? "statement"}` : <span className="text-muted">Not found in the statements</span>}</td>
                       <td className={`${table.td} max-w-[16rem] truncate text-fg-2`} title={x.file}>
                         {x.file}
@@ -511,7 +511,7 @@ function Payments({ v, accounts, figs }: { v: PolicyView; accounts: Record<strin
                   return (
                     <tr key={b.file} className={table.tr}>
                       <td className={table.td}>{shortDate(b.dueDate)}</td>
-                      <td className={table.td}>{b.mode ?? "—"}</td>
+                      <td className={table.td}>{b.mode ?? NA}</td>
                       <td className={table.td}>{paid ? `${shortDate(paid.date)} · ${accounts[paid.accountId] ?? "statement"}` : <span className="text-muted">Not found in the statements</span>}</td>
                       <td className={`${table.td} max-w-[16rem] truncate text-fg-2`} title={b.file}>
                         {b.file}

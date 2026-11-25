@@ -7,7 +7,7 @@ import { btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table }
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import type { Lane } from "@/lib/classifier/taxonomy";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { formatUsdFromCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdFromCents, NA, usd0 } from "@/lib/formatMoney";
 import { useEffect, useMemo, useState } from "react";
 
 export type ReviewRow = {
@@ -229,7 +229,7 @@ function GroupCard({ group, api, onDone }: { group: Group; api: Api; onDone: (un
         <button type="button" className="min-w-[14rem] flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-focus" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
           <div className="flex items-baseline gap-2">
             <span className="text-faint">{open ? "▾" : "▸"}</span>
-            <span className="truncate text-sm font-semibold text-fg">{group.merchantKey ?? first.payee ?? "—"}</span>
+            <span className="truncate text-sm font-semibold text-fg">{group.merchantKey ?? first.payee ?? NA}</span>
             <span className={`num shrink-0 text-sm font-medium ${group.totalCents > 0 ? "text-pos" : "text-fg-2"}`}>{usd0(group.totalCents)}</span>
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 pl-4 text-xs text-muted">

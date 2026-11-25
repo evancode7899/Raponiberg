@@ -1,6 +1,7 @@
 "use client";
 
 import { NotFigure } from "@/components/ui/kit";
+import { NA } from "@/lib/formatMoney";
 import { sumOf } from "@/components/ui/proof/context";
 import { Badge, btn, Card, EmptyState, inputCls, selectCls, table, type Tone } from "@/components/ui/kit";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
@@ -140,7 +141,7 @@ export function LogTab({ ctx }: { ctx: CarCtx }) {
                       title={i.entryIds.length ? "Edit the log entry" : i.source === "STATEMENT" ? "Add details (gallons, odometer, what it was) or move it to another car" : "Edit"}
                     >
                       <td className={`${table.td} whitespace-nowrap`}>{fmtDate(i.date)}</td>
-                      {many && <td className={`${table.td} whitespace-nowrap text-xs text-fg-2`}>{i.carId === SHARED ? <Badge tone="accent">shared</Badge> : (names.get(i.carId) ?? "—")}</td>}
+                      {many && <td className={`${table.td} whitespace-nowrap text-xs text-fg-2`}>{i.carId === SHARED ? <Badge tone="accent">shared</Badge> : (names.get(i.carId) ?? NA)}</td>}
                       <td className={table.td}>
                         <div className={`max-w-[26rem] truncate ${i.counted && i.source === "STATEMENT" ? "font-mono text-xs" : ""}`} title={i.item}>
                           {i.item}

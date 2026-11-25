@@ -7,7 +7,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { btn, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { newId } from "@/lib/car/settings";
-import { usd0, usdDelta } from "@/lib/formatMoney";
+import { NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useState } from "react";
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
@@ -133,7 +133,7 @@ export function ValueTab({ ctx }: { ctx: CarCtx }) {
                         <NotFigure why="your value check">{usd0(v.tradeInCents)}</NotFigure>
                       </td>
                       <td className={`${table.tdR} text-muted`} title="What selling it yourself is worth over trading it in">
-                        {v.privateCents != null && v.tradeInCents != null ? <NotFigure why="your value check">{usd0(v.privateCents - v.tradeInCents)}</NotFigure> : "—"}
+                        {v.privateCents != null && v.tradeInCents != null ? <NotFigure why="your value check">{usd0(v.privateCents - v.tradeInCents)}</NotFigure> : NA}
                       </td>
                       <td className={`${table.td} text-muted`}>{v.source}</td>
                       <td className={`${table.td} text-right`}>

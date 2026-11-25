@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, btn, Card, Callout, NotFigure, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
+import { NA } from "@/lib/formatMoney";
 import { ONE_OFF_MIN_CENTS } from "@/lib/book/definitions";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import { fireNumber } from "@/lib/fire/fire";
@@ -90,20 +91,20 @@ export function OneOffsTab({
 
       <StatGrid cols={4}>
         <StatCell
-          label={`Marked one-off in ${full?.year ?? "—"}`}
-          value={full?.cash ? usd(full.cash.waterfall.nonRecurring) : "—"}
+          label={`Marked one-off in ${full?.year ?? NA}`}
+          value={full?.cash ? usd(full.cash.waterfall.nonRecurring) : NA}
           proof={full?.cash ? cashP(full.year, "one-offs", full.cash.waterfall.nonRecurring) : noFigure("no year with proven cash")}
           sub={full?.cash ? `${full.oneOffTagged.count} expenses` : undefined}
         />
         <StatCell
           label={`Living expenses ${full?.year ?? ""}`}
-          value={full?.cash ? usd(full.cash.waterfall.living) : "—"}
+          value={full?.cash ? usd(full.cash.waterfall.living) : NA}
           proof={full?.cash ? cashP(full.year, "living", full.cash.waterfall.living) : noFigure("no year with proven cash")}
           sub={full?.cash ? "one-offs left out" : undefined}
         />
         <StatCell proof={fire ? { descriptor: { report: "planning", page: "fire", figure: "fire-number", fire: fire.settings }, shownCents: fire.number } : noFigure("needs a proven full year")}
           label="Your FIRE number"
-          value={fire ? usd(fire.number) : "—"}
+          value={fire ? usd(fire.number) : NA}
           sub={fire ? (fire.typed ? "uses the living cost typed on FIRE, so tags here don't move it" : <>at a <NotFigure why="your withdrawal rate (FIRE)">{pct(fire.wr)}</NotFigure> withdrawal rate, after tax</>) : "needs a proven full year"}
         />
         <WordsCell label="Status" value={recalculating ? "Recalculating…" : status?.tone === "neg" ? "Not saved" : "Up to date"} sub={status ? <span className={status.tone === "neg" ? "text-neg" : status.tone === "pos" ? "text-pos" : ""}>{status.text}</span> : "ticks save instantly"} />

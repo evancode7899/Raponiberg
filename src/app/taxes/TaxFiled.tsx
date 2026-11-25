@@ -151,7 +151,7 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
                   <td className={table.td}>
                     <Badge tone={f.superseded ? "neutral" : f.kind.startsWith("RETURN_") ? "pos" : "info"}>{TAX_DOC_KIND_LABEL[f.kind]}</Badge>
                   </td>
-                  <td className={table.td}>{f.personId ? (r.profile.persons.find((p) => p.id === f.personId)?.name ?? f.personId) : "—"}</td>
+                  <td className={table.td}>{f.personId ? (r.profile.persons.find((p) => p.id === f.personId)?.name ?? f.personId) : NA}</td>
                   <td className={`${table.td} text-xs text-muted`}>{[f.superseded, ...f.warnings].filter(Boolean).join(" ") || ""}</td>
                 </tr>
               ))}

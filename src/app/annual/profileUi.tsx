@@ -23,4 +23,4 @@ export const YearTable = StatementTable;
 export const blockedCell = (blockers: BlockerRef[]): Cell => ({ text: "", proof: unswept("blocked"), blockers });
 
 /** A cell with nothing to show (no value for that year). */
-export const emptyCell = (why: string): Cell => ({ text: "—", proof: noFigure(why) });
+export const emptyCell = (why: string): Cell => ({ text: NA, proof: noFigure(why) });

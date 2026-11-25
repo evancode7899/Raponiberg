@@ -1,6 +1,7 @@
 "use client";
 
 import { buttonSecondary, Card } from "@/components/ledger/LedgerBits";
+import { NA } from "@/lib/formatMoney";
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
 import type { SafeHarbor } from "@/lib/tax/computeReturn";
 import type { TruePlan } from "@/lib/tax/buildTaxReport";
@@ -748,7 +749,7 @@ function ForecastBasis({ r, onGo }: { r: TaxResponse; onGo: (tab: "inputs") => v
       <ul className="list-disc space-y-1 pl-4 text-xs text-fg-2">
         {pay.length ? pay : <li>No pay stubs this year.</li>}
         <li>
-          Investments — statements through {r.dataThrough.statements ? formatDate(r.dataThrough.statements) : "—"}; dividends and interest run-rated to year end.{" "}
+          Investments — statements through {r.dataThrough.statements ? formatDate(r.dataThrough.statements) : NA}; dividends and interest run-rated to year end.{" "}
           <b className="text-fg">Sales after that aren&apos;t predicted</b>: enter expected gains or losses under Inputs.
         </li>
         <li>Bank interest and estimated tax payments — bank statements through {formatDate(r.dataThrough.bank)}.</li>

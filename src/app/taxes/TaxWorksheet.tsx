@@ -52,7 +52,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
   // A rate over earned + investment income: a share of two estimate lines (the first a sum of two where a row adds them).
   const ratio = (keys: EstimateKey[], num: number[], den: number[]) =>
     num.map((n, i) => {
-      if (!(den[i]! > 0)) return "—";
+      if (!(den[i]! > 0)) return NA;
       const top = keys.length === 1 ? est(keys[0]!, i) : ({ report: "composite", op: "sum", of: keys.map((k) => est(k, i)) } as const);
       return proofs ? <ProofValue proof={compositeOf("share", [{ descriptor: top as ProofDescriptor, shownCents: n }, { descriptor: est("all.earnedPlusInvestment", i), shownCents: den[i]! }], { ratio: n / den[i]! })}>{pct(n / den[i]!)}</ProofValue> : pct(n / den[i]!);
     });
@@ -151,7 +151,7 @@ export function TaxWorksheet({ r }: { r: TaxResponse }) {
     { label: "Connecticut (incl. PFML)", values: ratio(["ct.totalTax", "fica.pfml"], ct.map((v, i) => v + pfml[i]!), earnedPlusInvestment), indent: true },
     ...(hasNy ? [{ label: "New York State + City", values: ratio(["ny.incomeTax", "ny.cityTax"], nyState.map((v, i) => v + nyCity[i]!), earnedPlusInvestment), indent: true }] : []),
     { label: <NotFigure why="the probe the rate is worked out on">Marginal rate on the next $1,000 of pay</NotFigure>, values: cols.map((c) => (c.marginal == null ? NA : wcell("marginal", c.id, pct(c.marginal)))) },
-    { label: "Federal bracket", values: R((x) => x.federal.marginalBracket).map((b, i) => (cols[i]!.r.federal.taxableIncome > 0 ? wcell("bracket", cols[i]!.id, pct(b, 0)) : "—")) },
+    { label: "Federal bracket", values: R((x) => x.federal.marginalBracket).map((b, i) => (cols[i]!.r.federal.taxableIncome > 0 ? wcell("bracket", cols[i]!.id, pct(b, 0)) : NA)) },
 
     { label: "Total taxes paid", values: [], heading: true },
     ...line("fed.w2Withholding", "Federal withholding (box 2)"),
@@ -487,7 +487,7 @@ function ScheduleView({ s, col, cell }: { s: Schedule; col: string; cell: Cell }
           ))}
           <tr className="border-t border-line-strong font-semibold">
             <td className="py-0.5 pl-1 text-left">Total</td>
-            <td className="py-0.5 text-right tabular-nums">{s.included > 0 ? cell(`sched:${s.key}:total:rate`, col, pct(s.owed / s.included, 1)) : "—"}</td>
+            <td className="py-0.5 text-right tabular-nums">{s.included > 0 ? cell(`sched:${s.key}:total:rate`, col, pct(s.owed / s.included, 1)) : NA}</td>
             <td />
             <td className="py-0.5 text-right tabular-nums">{cell(`sched:${s.key}:total:included`, col, usd(s.included))}</td>
             <td className="py-0.5 pr-1 text-right tabular-nums">{cell(`sched:${s.key}:total:owed`, col, usd(s.owed))}</td>

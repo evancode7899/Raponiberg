@@ -103,7 +103,7 @@ function AccountCard({ a, currentYear, derived }: { a: AccountRollforward; curre
     label,
     indent: !opts.strong && !opts.total,
     ...opts,
-    cells: ys.map((x) => cell(x, f(x) == null ? { text: "—", proof: noFigure("no value that year") } : { text: usd(f(x)), proof: rollP(a, x, line) })),
+    cells: ys.map((x) => cell(x, f(x) == null ? { text: NA, proof: noFigure("no value that year") } : { text: usd(f(x)), proof: rollP(a, x, line) })),
   });
   const rows: TableRow[] = [
     {

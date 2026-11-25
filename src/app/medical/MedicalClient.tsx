@@ -8,7 +8,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, Callout, Card, EmptyState, ErrorNote, Loading, NotFigure, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam, WordsCell } from "@/components/ui/kit";
 import { BALANCE_LABEL, balanceKey, medicalDerived, planLimitKey, sliceKey, yearKey } from "@/lib/book/derived/medical";
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
-import { axisUsd, formatUsdFromCents } from "@/lib/formatMoney";
+import { axisUsd, formatUsdFromCents, NA } from "@/lib/formatMoney";
 import type { MedicalPage } from "@/lib/medical/page";
 import type { HealthPlan } from "@/lib/medical/plans";
 import type { ClaimView, LimitUse, Slice, YearView } from "@/lib/medical/report";
@@ -554,7 +554,7 @@ function AccountTable({ accounts, fig }: { accounts: MedicalPage["accounts"]; fi
             const name = a.payees[0] ?? a.providers[0] ?? "Provider";
             return (
               <tr key={a.key} className={table.tr}>
-                <td className={`${table.td} max-w-[18rem] truncate`} title={[`Billed as ${a.payees.join(", ") || "—"}`, `EOBs name ${a.providers.join(", ") || "no provider"}`, `${a.firstDate} to ${a.lastDate}`].join("\n")}>
+                <td className={`${table.td} max-w-[18rem] truncate`} title={[`Billed as ${a.payees.join(", ") || NA}`, `EOBs name ${a.providers.join(", ") || "no provider"}`, `${a.firstDate} to ${a.lastDate}`].join("\n")}>
                   {name}
                   {a.providers.length > 0 && <span className="text-faint"> · {a.providers.join(", ")}</span>}
                 </td>

@@ -4,7 +4,7 @@ import { btn, Card, Field, inputCls, NotFigure, selectCls, table } from "@/compo
 import { CARD_PRODUCTS, CATALOG_AS_OF, guessProduct, PROGRAMS, type ProgramId } from "@/lib/cardPerks/catalog";
 import type { CardPerksPage } from "@/lib/cardPerks/page";
 import type { CardPerksSettings } from "@/lib/cardPerks/settings";
-import { usd0 } from "@/lib/formatMoney";
+import { NA, usd0 } from "@/lib/formatMoney";
 import { useState } from "react";
 import type { Save } from "./CardPerksClient";
 import { CardFace, fmtCpp, shortName, TERMS } from "./parts";
@@ -81,7 +81,7 @@ export function SetupTab({ r, settings, save }: { r: CardPerksPage; settings: Ca
                         <option value="none">Not in this list (no perks or rewards counted)</option>
                       </select>
                     </td>
-                    <td className={`${table.tdR} text-muted`}>{product ? product.annualFeeCents ? <NotFigure why={TERMS}>{usd0(product.annualFeeCents)}</NotFigure> : "None" : "—"}</td>
+                    <td className={`${table.tdR} text-muted`}>{product ? product.annualFeeCents ? <NotFigure why={TERMS}>{usd0(product.annualFeeCents)}</NotFigure> : "None" : NA}</td>
                     <td className={table.td}>
                       <label className="flex items-center gap-1.5 text-xs text-fg-2">
                         <input type="checkbox" checked={!(choice?.hidden ?? false)} onChange={(e) => setCard(row.id, { hidden: !e.target.checked })} />

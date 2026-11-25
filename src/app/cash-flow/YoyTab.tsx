@@ -97,7 +97,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
           value={a.savingsRate == null ? NA : formatPercentRatio(a.savingsRate, 0)}
           sub={
             b.savingsRate == null ? (
-              "—"
+              NA
             ) : (
               <>
                 <ProofValue proof={ctx.dp("savings-rate", windowKey(then))}>{formatPercentRatio(b.savingsRate, 0)}</ProofValue> a year earlier

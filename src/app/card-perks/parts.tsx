@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 export const fmtPoints = (n: number) => `${Math.round(n).toLocaleString("en-US")} pts`;
 export const fmtCpp = (cpp: number) => `${+cpp.toFixed(2)}¢`;
 /** Rewards in their own unit: points, or cents of cash back shown as dollars. */
-export const fmtRewards = (kind: RewardKind, n: number, whole = false) => (kind === "CASH" ? (whole ? usd0(n) : formatUsdCents(n)) : kind === "POINTS" ? fmtPoints(n) : "—");
+export const fmtRewards = (kind: RewardKind, n: number, whole = false) => (kind === "CASH" ? (whole ? usd0(n) : formatUsdCents(n)) : kind === "POINTS" ? fmtPoints(n) : NA);
 /** A rate: "4×" for points, "3%" for cash back. */
 export const fmtRate = (kind: RewardKind, rate: number) => (kind === "CASH" ? `${+rate.toFixed(2)}%` : `${+rate.toFixed(2)}×`);
 export const fmtDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });

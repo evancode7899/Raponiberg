@@ -152,7 +152,7 @@ export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
                     const tint = y == null ? "bg-neg-soft" : base == null ? "bg-pos-soft" : y < base ? "bg-pos-soft" : y > base ? "bg-warn-soft" : "";
                     return (
                       <td key={w} className={`${table.tdR} ${tint} ${mine ? "outline outline-2 -outline-offset-2 outline-accent font-semibold" : ""}`} title={y ? yearAge(y, plan) : "not within 60 years"}>
-                        {y ?? "—"}
+                        {y ?? NA}
                       </td>
                     );
                   })}
@@ -192,7 +192,7 @@ function SavingsRateChart({ f, curve, d, pf }: { f: FireProps["f"]; curve: Retur
             <XAxis dataKey="rate" type="number" domain={[5, 85]} ticks={[10, 20, 30, 40, 50, 60, 70, 80]} tickFormatter={(v: number) => `${v}%`} {...ui.xAxis} />
             <YAxis {...ui.yAxis} width={40} allowDecimals={false} tickFormatter={(v: number) => `${v}y`} />
             <Tooltip {...ui.tooltip} labelFormatter={(v) => `Saving ${v}%`} formatter={(v) => [v == null ? "not within 60 years" : `${v} years`, "To FI"]} />
-            <Line type="monotone" dataKey="years" name="Years to FI" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
+            <Line type="linear" dataKey="years" name="Years to FI" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
             {mine && <ReferenceDot x={mine.rate} y={mine.years} r={6} fill={chart.series[1]} stroke={chart.tooltipBg} strokeWidth={2} label={{ value: "You", position: "top", fill: chart.legend, fontSize: 11 }} />}
           </LineChart>
         </RechartsResponsive>

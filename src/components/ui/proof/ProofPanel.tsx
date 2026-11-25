@@ -192,7 +192,7 @@ function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?
                   </span>
                 </span>
                 <span className="min-w-0 truncate text-xs text-muted" title={s.documentTitle}>
-                  {s.documentTitle || "—"}
+                  {s.documentTitle || NA}
                 </span>
               </li>
             ))}
@@ -415,7 +415,7 @@ function GroupView({ g, self, onFollow }: { g: ProofGroup; self: Self; onFollow:
                   <td className={table.td}>
                     <div className="text-fg">
                       <FollowLink link={r.rowId && r.rowId !== self.rowId ? { label: r.payee || "this row", descriptor: { report: "row", rowId: r.rowId } } : undefined} onFollow={onFollow}>
-                        {r.payee || "—"}
+                        {r.payee || NA}
                       </FollowLink>
                     </div>
                     <RowNotes r={r} />

@@ -160,8 +160,8 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
                   <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => (v === "Buy" ? "Buy" : "Rent and invest")} />
                   <ReferenceLine x={horizon} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: "You sell", position: "insideTopLeft", fontSize: 10, fill: chart.axis }} />
                   {sim.breakEvenYear && <ReferenceLine x={sim.breakEvenYear} stroke={chart.series[2]} strokeDasharray="2 3" />}
-                  <Line type="monotone" dataKey="Buy" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="Rent" stroke={chart.series[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="linear" dataKey="Buy" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="linear" dataKey="Rent" stroke={chart.series[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
                 </LineChart>
               </RechartsResponsive>
             </div>

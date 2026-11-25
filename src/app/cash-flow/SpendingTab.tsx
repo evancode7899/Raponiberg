@@ -7,7 +7,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
 import type { OneOffExpense } from "@/lib/book/reports/spending";
 import type { FinancialProfileSettings } from "@/lib/profile/settings";
-import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdCompact } from "@/lib/formatMoney";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
@@ -92,7 +92,7 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
                       <ProofValue proof={ctx.proof("spending", slice.months, { category: c.category, shownCents: c.cents })}>{usd0(c.cents)}</ProofValue>
                     </td>
                     <td className={`${table.tdR} text-muted`}>
-                      {c.cents > 0 && t.spending > 0 ? <ProofValue proof={ctx.dp("category-share", categoryKey(slice.months, "EXPENSE", c.category))}>{formatPercentRatio(c.cents / t.spending, 0)}</ProofValue> : "—"}
+                      {c.cents > 0 && t.spending > 0 ? <ProofValue proof={ctx.dp("category-share", categoryKey(slice.months, "EXPENSE", c.category))}>{formatPercentRatio(c.cents / t.spending, 0)}</ProofValue> : NA}
                     </td>
                     <td className={table.tdR}>
                       {p &&

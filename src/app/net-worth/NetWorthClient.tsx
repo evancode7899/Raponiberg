@@ -269,9 +269,9 @@ function Overview({ r }: { r: NetWorthReport }) {
                 <ReferenceLine x={mergeLabel} stroke={chart.axis} strokeDasharray="4 3" label={{ value: "Finances merged", fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />
               )}
               {groups.map((g) => (
-                <Area key={g} type="monotone" dataKey={g} stackId={isDebt(g) ? "debts" : "assets"} stroke={groupColor(chart, g)} fill={groupColor(chart, g)} fillOpacity={0.55} strokeWidth={1} isAnimationActive={false} />
+                <Area key={g} type="linear" dataKey={g} stackId={isDebt(g) ? "debts" : "assets"} stroke={groupColor(chart, g)} fill={groupColor(chart, g)} fillOpacity={0.55} strokeWidth={1} isAnimationActive={false} />
               ))}
-              <Line type="monotone" dataKey="total" stroke={chart.lineBalance} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="total" stroke={chart.lineBalance} strokeWidth={2} dot={false} isAnimationActive={false} />
             </ComposedChart>
           </RechartsResponsive>
         </div>
@@ -429,9 +429,9 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
                   return [formatUsd(Math.round(Number(own ?? v))), seriesName(n)];
                 }}
               />
-              <Area type="monotone" dataKey="start" stackId="c" stroke={chart.neutral} fill={chart.neutral} fillOpacity={0.3} isAnimationActive={false} />
-              <Area type="monotone" dataKey="principal" stackId="c" stroke={chart.principal} fill={chart.principal} fillOpacity={0.45} isAnimationActive={false} />
-              <Area type="monotone" dataKey="growth" stackId="c" stroke={chart.growth} fill={chart.growth} fillOpacity={0.45} isAnimationActive={false} />
+              <Area type="linear" dataKey="start" stackId="c" stroke={chart.neutral} fill={chart.neutral} fillOpacity={0.3} isAnimationActive={false} />
+              <Area type="linear" dataKey="principal" stackId="c" stroke={chart.principal} fill={chart.principal} fillOpacity={0.45} isAnimationActive={false} />
+              <Area type="linear" dataKey="growth" stackId="c" stroke={chart.growth} fill={chart.growth} fillOpacity={0.45} isAnimationActive={false} />
             </ComposedChart>
           </RechartsResponsive>
         </div>
@@ -574,7 +574,7 @@ function Returns({ r }: { r: NetWorthReport }) {
     <>
       <BlockedNote what={p ? `returns before ${fromLabel}, so they're chained from there` : "chained returns"} blockers={older} limit={3} />
       <StatGrid cols={3}>
-        <StatCell proof={derivedTarget("net-worth", derived, "return-total")} label={p ? `Since ${fromLabel}` : "Cumulative"} value={p ? formatPercentRatio(p.total, 1) : "—"} sub="cumulative, time-weighted" tone={p && p.total < 0 ? "neg" : "neutral"} />
+        <StatCell proof={derivedTarget("net-worth", derived, "return-total")} label={p ? `Since ${fromLabel}` : "Cumulative"} value={p ? formatPercentRatio(p.total, 1) : NA} sub="cumulative, time-weighted" tone={p && p.total < 0 ? "neg" : "neutral"} />
         <StatCell proof={derivedTarget("net-worth", derived, "return-annualized")} label="Annualized" value={p?.annualized == null ? NA : formatPercentRatio(p.annualized, 2)} sub="per year (shown after a full year)" />
         <StatCell proof={derivedTarget("net-worth", derived, "accounts-measured")} label="Accounts measured" value={String(r.proven.returns.byAccount.length)} sub="brokerage, IRAs, 401(k)s, 529, HSA" />
       </StatGrid>

@@ -48,7 +48,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
     {
       label: "Per mile",
       strong: true,
-      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—", proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }, null) : noFigure("no miles to divide by") })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }, null) : noFigure("no miles to divide by") }],
+      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : NA, proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }, null) : noFigure("no miles to divide by") })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }, null) : noFigure("no miles to divide by") }],
     },
     { label: "Per month", muted: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months), proof: carProof(s.id, { span: yr, per: "month" }, null) })), { text: usd0(r.totals.perMonth), proof: r.totals.perMonth != null ? carProof(s.id, { span: "toDate", per: "month" }, null) : noFigure("no months to divide by") }] },
   ];
@@ -101,7 +101,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                     <td className={table.tdR}>
                       <ProofValue proof={carProof(s.id, { span: "toDate", line: "INTEREST" }, r.accrued.INTEREST)}>{usd0(r.accrued.INTEREST)}</ProofValue>
                     </td>
-                    <td className={`${table.tdR} text-muted`}>—</td>
+                    <td className={`${table.tdR} text-muted`}>{NA}</td>
                   </tr>
                 )}
               </tbody>

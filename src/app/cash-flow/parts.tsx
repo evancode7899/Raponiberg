@@ -100,7 +100,7 @@ export function WithheldStrip({ after, before, through }: { after: WithheldMonth
   }
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-surface-2 px-3 py-2 text-xs text-muted">
-      <span className="font-medium text-fg-2">Proven through {through ?? "—"}.</span>
+      <span className="font-medium text-fg-2">Proven through {through ?? NA}.</span>
       {items.map((x, i) => (
         <span key={i}>
           {i ? "· " : ""}

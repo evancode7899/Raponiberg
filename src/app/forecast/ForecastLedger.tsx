@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, Card, Segmented, table, usePersistentState } from "@/components/ui/kit";
+import { NA } from "@/lib/formatMoney";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ForecastDescriptor, LedgerLine } from "@/lib/book/proof/forecastProof";
 import type { ScheduledBonus } from "@/lib/forecast/bonusSchedule";
@@ -201,7 +202,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                       }`}
                     >
                       {shown == null ? (
-                        <span className="text-faint">—</span>
+                        <span className="text-faint">{NA}</span>
                       ) : (
                         <ProofValue proof={provable ? { descriptor: cellProof(p, row.line), shownCents: v! } : unswept("a forecast line with no proof")} drawn={units === "usd" ? undefined : { per: 1000 }}>{shown === 0 && !row.kind ? <span className="text-faint">0</span> : money(shown)}</ProofValue>
                       )}
@@ -242,7 +243,7 @@ export function ForecastLedger({ f, r, provable }: { f: Forecast; r: AnnualProfi
                         {pct(x.saved / gross, 0)}
                       </ProofValue>
                     ) : (
-                      "—"
+                      NA
                     )}
                   </td>
                 );
