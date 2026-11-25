@@ -272,6 +272,23 @@ html[data-theme="terminal"] [role="tab"][aria-selected="true"] {
   background: var(--accent);
   color: var(--accent-fg);
 }
+/* Square corners everywhere: no pills, dots or rounded buttons left (a spinner stays round, or it wouldn't read as turning). */
+html[data-theme="terminal"] body *:not(.animate-spin, input[type="radio"]) {
+  border-radius: 0;
+}
+/* A segmented control is a run of cells: the one chosen is lit, as a tab is. */
+html[data-theme="terminal"] [data-segmented] {
+  padding: 0;
+  border-color: var(--line);
+}
+html[data-theme="terminal"] [data-segmented] > [role="radio"] + [role="radio"] {
+  border-left: 1px solid var(--line);
+}
+html[data-theme="terminal"] [data-segmented] > [role="radio"][aria-checked="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: none;
+}
 html[data-theme="terminal"] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
 html[data-theme="terminal"] select {
   color: var(--info);
@@ -360,6 +377,21 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 50%;
   background: var(--slider-thumb);
   border: 2px solid var(--slider-thumb-border);
+}
+
+html[data-theme="terminal"] input[type="range"]::-webkit-slider-runnable-track {
+  border-radius: 0;
+}
+html[data-theme="terminal"] input[type="range"]::-webkit-slider-thumb {
+  width: 10px;
+  border-radius: 0;
+}
+html[data-theme="terminal"] input[type="range"]::-moz-range-track {
+  border-radius: 0;
+}
+html[data-theme="terminal"] input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  border-radius: 0;
 }
 
 /* A range drawn over its own track (zoned sliders): hide the native track. */

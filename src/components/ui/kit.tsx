@@ -490,7 +490,7 @@ export function Segmented<T extends string>({
     ? { "data-audit-view": v?.skip?.join(",") ?? "", ...(v?.skip?.length ? { "data-audit-skip-why": v.why } : {}), ...(v?.nested ? { "data-audit-nest": "" } : {}) }
     : {};
   return (
-    <div role="radiogroup" aria-label={ariaLabel} {...audit} className="inline-flex rounded-md border border-line-strong bg-surface-2 p-0.5">
+    <div role="radiogroup" data-segmented="" aria-label={ariaLabel} {...audit} className="inline-flex rounded-md border border-line-strong bg-surface-2 p-0.5">
       {options.map((o) => {
         const on = value === o.value;
         return (
