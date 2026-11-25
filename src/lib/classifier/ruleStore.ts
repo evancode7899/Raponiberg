@@ -69,11 +69,27 @@ export function saveRules(rules: Omit<SavedRule, "savedAt">[], file = rulesFileP
     changed.push(saved);
   }
   if (changed.length === 0) return 0;
+  writeRules(file, data, { op: "save", rules: changed });
+  return changed.length;
+}
+
+/** Puts a merchant's rule back to `previous` (null: it had none). How teaching a rule is undone. */
+export function restoreRule(merchantKey: string, previous: SavedRule | null, file = rulesFilePath()): void {
+  const data = readRules(file);
+  const i = data.rules.findIndex((r) => r.merchantKey === merchantKey);
+  if (previous) {
+    if (i >= 0) data.rules[i] = previous;
+    else data.rules.push(previous);
+  } else if (i >= 0) data.rules.splice(i, 1);
+  else return;
+  writeRules(file, data, { op: "restore", merchantKey, rule: previous });
+}
+
+function writeRules(file: string, data: RulesFile, journal: Record<string, unknown>) {
   data.rules.sort((a, b) => a.merchantKey.localeCompare(b.merchantKey));
   mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), op: "save", rules: changed }) + "\n");
+  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), ...journal }) + "\n");
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
   renameSync(tmp, file);
-  return changed.length;
 }

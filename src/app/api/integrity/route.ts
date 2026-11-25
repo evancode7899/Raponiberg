@@ -1,3 +1,4 @@
+import { AUDIT_ACTOR_OWNER, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { addException, retireException } from "@/lib/book/exceptionStore";
 import { cachedBuilt, getBook, jsonBody } from "@/lib/book/cache";
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 409 });
     }
-    await prisma.auditEvent.create({ data: { action: "integrity_exception_added", actor: "owner", payloadJson: { id, note } } });
+    await logAuditEvent({ action: "integrity_exception_added", actor: AUDIT_ACTOR_OWNER, payload: { id, note } });
   } else if (body.action === "retire") {
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
     if (!reason) return NextResponse.json({ error: "Say why the exception is no longer needed" }, { status: 400 });
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 404 });
     }
-    await prisma.auditEvent.create({ data: { action: "integrity_exception_retired", actor: "owner", payloadJson: { id, reason } } });
+    await logAuditEvent({ action: "integrity_exception_retired", actor: AUDIT_ACTOR_OWNER, payload: { id, reason } });
   } else {
     return NextResponse.json({ error: 'action must be "accept" or "retire"' }, { status: 400 });
   }

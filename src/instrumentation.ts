@@ -56,6 +56,15 @@ export async function register() {
         "/api/bonuses",
         "/api/home-budget/funds",
         "/api/dashboard/net-worth/accounts",
+        "/api/calendar",
+        "/api/investments/funds",
+        "/api/mortgage/links",
+        // These also look for new files in their folders (a date check per file, read once), so the
+        // first visit after a download doesn't wait for a PDF to be read.
+        "/api/hsa",
+        "/api/medical",
+        "/api/insurance",
+        "/api/dashboard/net-worth/changes?granularity=month",
       ],
       // Then the proof sweep, in its own process (it opens every figure's proof).
       then: () => proofSweep().warm(),

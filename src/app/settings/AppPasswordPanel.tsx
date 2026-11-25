@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 /** Settings › General: change the lock screen's password (lib/appPassword.ts). */
 export function AppPasswordPanel({ api }: { api: Api }) {
   const [isDefault, setIsDefault] = useState<boolean | null>(null);
+  const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,11 +23,12 @@ export function AppPasswordPanel({ api }: { api: Api }) {
   const mismatch = confirm.length > 0 && next !== confirm;
 
   const save = async () => {
-    if (busy || !next || next !== confirm) return;
+    if (busy || !current || !next || next !== confirm) return;
     setBusy(true);
     setMsg(null);
     try {
-      await api.call("/api/app-password", { method: "PUT", json: { password: next } });
+      await api.call("/api/app-password", { method: "PUT", json: { current, password: next } });
+      setCurrent("");
       setNext("");
       setConfirm("");
       setIsDefault(next === "password");
@@ -56,6 +58,12 @@ export function AppPasswordPanel({ api }: { api: Api }) {
     >
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex w-48 flex-col gap-1 text-xs">
+          <span id="app-password-current" className="font-medium text-fg-2">
+            Current password
+          </span>
+          <SecretBox labelledBy="app-password-current" value={current} onChange={setCurrent} onEnter={() => void save()} />
+        </div>
+        <div className="flex w-48 flex-col gap-1 text-xs">
           <span id="app-password-new" className="font-medium text-fg-2">
             New password
           </span>
@@ -67,7 +75,7 @@ export function AppPasswordPanel({ api }: { api: Api }) {
           </span>
           <SecretBox labelledBy="app-password-confirm" value={confirm} onChange={setConfirm} onEnter={() => void save()} invalid={mismatch} />
         </div>
-        <button type="button" onClick={() => void save()} className={btn.primary} disabled={busy || !next || next !== confirm}>
+        <button type="button" onClick={() => void save()} className={btn.primary} disabled={busy || !current || !next || next !== confirm}>
           {busy ? "Saving…" : "Change password"}
         </button>
       </div>

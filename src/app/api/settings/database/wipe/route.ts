@@ -1,7 +1,10 @@
 import { AUDIT_ACTOR_SETTINGS, logAuditEvent } from "@/lib/audit/logAuditEvent";
+import { proofSweep } from "@/lib/book/proof/sweepProcess";
+import { dataDir } from "@/lib/dataDir";
 import { prisma } from "@/lib/db";
 import { assertSettingsDatabaseRequest } from "@/lib/settingsDatabaseAuth";
 import { resolveSqliteDatabaseFilePath } from "@/lib/sqliteDbPath";
+import { snapshotBefore } from "@/lib/sqliteSnapshot";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +52,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Confirmation mismatch", hint: `Send JSON { "confirm": "${WIPE_CONFIRM}" }` }, { status: 400 });
   }
 
+  // A complete copy first: if it can't be made, nothing is wiped.
+  let savedTo: string;
+  try {
+    proofSweep().stop();
+    savedTo = await snapshotBefore(prisma, dataDir(), "wipe");
+  } catch (e) {
+    return NextResponse.json({ error: `Nothing was wiped: the copy kept first couldn't be made (${e instanceof Error ? e.message : String(e)}).` }, { status: 500 });
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("PRAGMA defer_foreign_keys = ON");
     for (const t of TABLES) await tx.$executeRawUnsafe(`DELETE FROM "${t}"`);
@@ -63,8 +75,8 @@ export async function POST(req: Request) {
   await logAuditEvent({
     action: "wipe_database_sqlite",
     actor: AUDIT_ACTOR_SETTINGS,
-    payload: { mode: "statement_ledger", tables: TABLES },
+    payload: { mode: "statement_ledger", tables: TABLES, previousSavedTo: savedTo },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, previousDatabaseBackedUpTo: savedTo });
 }

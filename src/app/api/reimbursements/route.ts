@@ -1,3 +1,4 @@
+import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { getBook } from "@/lib/book/cache";
 import type { Book } from "@/lib/book/load";
@@ -130,6 +131,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const link = addReimbursementLink({ expense: rowFingerprint(r, book.accounts), source, cents, note: typeof body.note === "string" ? body.note : null });
+    await logAuditEvent({ action: "reimbursement_linked", actor: AUDIT_ACTOR_APP, payload: { linkId: link.id, transactionId: r.id, source: source.kind, cents } });
     return NextResponse.json({ link });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not save" }, { status: 400 });
@@ -143,6 +145,7 @@ export async function DELETE(request: NextRequest) {
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
   try {
     if (!removeReimbursementLink(id)) return NextResponse.json({ error: "No such link" }, { status: 404 });
+    await logAuditEvent({ action: "reimbursement_unlinked", actor: AUDIT_ACTOR_APP, payload: { linkId: id } });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not save" }, { status: 400 });

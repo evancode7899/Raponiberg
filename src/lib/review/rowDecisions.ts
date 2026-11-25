@@ -95,6 +95,23 @@ export function recordRowDecisions(entries: Omit<RowDecision, "decidedAt">[], op
   return changed.length;
 }
 
+/** Puts each row's saved answer back to `previous` (null: none was saved). How an answer is undone. */
+export function restoreRowDecisions(entries: { row: RowFingerprint; previous: RowDecision | null }[], file = rowDecisionsFilePath()): number {
+  const data = readRowDecisions(file);
+  let changed = 0;
+  for (const { row, previous } of entries) {
+    const i = data.decisions.findIndex((d) => sameRow(d.row, row));
+    if (previous) {
+      if (i >= 0) data.decisions[i] = previous;
+      else data.decisions.push(previous);
+    } else if (i >= 0) data.decisions.splice(i, 1);
+    else continue;
+    changed++;
+  }
+  if (changed) write(file, data, { action: "restore", entries });
+  return changed;
+}
+
 const rowSelect = {
   id: true,
   date: true,
@@ -117,6 +134,16 @@ const fingerprint = (r: Row): RowFingerprint => ({
   amountCents: r.amountCents,
   payee: normPayee(r.payee),
 });
+
+/** What the file holds for each of these rows now (null: nothing). */
+export async function decisionsFor(db: Db, ids: string[]): Promise<{ row: RowFingerprint; previous: RowDecision | null }[]> {
+  const { decisions } = readRowDecisions();
+  const rows = await db.transaction.findMany({ where: { id: { in: ids } }, select: rowSelect });
+  return rows.map((r) => {
+    const row = fingerprint(r);
+    return { row, previous: decisions.find((d) => sameRow(d.row, row)) ?? null };
+  });
+}
 
 /** Saves the answer the owner just gave for these rows (ids as of now). */
 export async function recordRowDecisionsFor(db: Db, ids: string[], answer: { category: string | null; lane: string | null; reviewedOnly: boolean }) {
