@@ -1,6 +1,7 @@
 "use client";
 
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
+import { NA } from "@/lib/formatMoney";
 import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, Segmented, StatCell, StatGrid } from "@/components/ui/kit";
 import type { ProofRef, ProofTarget } from "@/components/ui/proof/context";
@@ -119,7 +120,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
   const cols = useMemo(() => statementColumns(r, est), [r, est]);
   const rows = useMemo(() => statementRows(r, cols, mode), [r, cols, mode]);
   const value = (v: number | null | undefined, blockers: BlockerRef[] | undefined, fmt: (n: number) => string = (n) => usd(n)) =>
-    v != null ? fmt(v) : blockers?.length ? <BlockedValue blockers={blockers} /> : "—";
+    v != null ? fmt(v) : blockers?.length ? <BlockedValue blockers={blockers} /> : NA;
   const blockedYears = ys.filter((y) => Object.values(y.blockers).some((b) => b.length > 0));
   const highlight = cols.map((c, i) => (c.y?.isCurrent || c.est ? i : -1)).filter((i) => i >= 0);
   const projected = cols.map((c, i) => (c.est ? i : -1)).filter((i) => i >= 0);
@@ -156,7 +157,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
         <StatCell
           proof={estChangeV && "proof" in estChangeV && estChangeV.proof ? estChangeV.proof : noFigure("needs a proven starting point")}
           label={est ? `Change ${est.year} est.` : "Change, full year est."}
-          value={estChangeV && "v" in estChangeV ? usd(estChangeV.v) : "—"}
+          value={estChangeV && "v" in estChangeV ? usd(estChangeV.v) : NA}
           sub={
             est?.flows.close ? (
               <>
@@ -541,7 +542,7 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
     const p = c.prev != null && !(c.est && l.estPartial) ? vals[c.prev] : null;
     if (p == null || !("v" in p)) return { text: "", proof: noFigure("nothing to compare"), title: c.prev == null ? (c.y?.isCurrent ? "A partial year isn't compared." : "The first year: nothing to compare.") : undefined };
     const d = x.v - p.v;
-    if (Math.abs(d) < (l.fmt === "pct" ? 0.0005 : 50)) return { text: "—", dim: true, proof: noFigure("no change worth showing") };
+    if (Math.abs(d) < (l.fmt === "pct" ? 0.0005 : 50)) return { text: "—", dim: true, proof: noFigure("no change worth showing", true) };
     const good = l.good === undefined ? "up" : l.good;
     const tone = good == null ? "" : (d > 0) === (good === "up") ? "text-pos" : "text-neg";
     const rel = l.fmt !== "pct" && p.v !== 0 ? ` (${d > 0 ? "+" : "−"}${pct(Math.abs(d / p.v), 0)})` : "";
@@ -581,7 +582,7 @@ function LivingBreakdown({ years }: { years: YearProfile[] }) {
       cells: years.map((y) =>
         cell(y, (x) => {
           const cents = x.spending.find((s) => s.category === c)?.cents;
-          return cents == null ? { text: usd(0), proof: noFigure("nothing in this category that year") } : fig(cents, proofOf({ report: "annual", figure: "category", year: y.year, category: c }, cents));
+          return cents == null ? { text: usd(0), proof: noFigure("nothing in this category that year", true) } : fig(cents, proofOf({ report: "annual", figure: "category", year: y.year, category: c }, cents));
         }),
       ),
     })),

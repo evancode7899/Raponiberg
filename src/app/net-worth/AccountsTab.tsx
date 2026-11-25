@@ -4,7 +4,7 @@ import { Card, NotFigure, StatementTable, type TableRow } from "@/components/ui/
 import type { ProofTarget } from "@/components/ui/proof/context";
 import { rollTotalValue, rollValue, shownRollLines, type RollLine, type RollTotalLine } from "@/lib/profile/rollLines";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
-import { formatPercentRatio, usd0 as usd } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0 as usd } from "@/lib/formatMoney";
 import type { AccountRollforward, RollforwardReport, RollYear } from "@/lib/profile/rollforwards";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
 import { rollforwardsDerived } from "@/lib/book/derived/netWorth";
@@ -12,7 +12,7 @@ import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 
 type Cell = Extract<TableRow, { cells: unknown }>["cells"][number];
-const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
+const pct = (r: number | null | undefined, digits = 1) => (r == null ? NA : formatPercentRatio(r, digits));
 const blockedCell = (blockers: BlockerRef[]): Cell => ({ text: "", proof: unswept("blocked"), blockers });
 const uniq = (bs: BlockerRef[]) => [...new Map(bs.map((b) => [b.id, b])).values()];
 const yearLabel = (y: number, currentYear: number) => (y === currentYear ? `${y} YTD` : String(y));
@@ -103,7 +103,7 @@ function AccountCard({ a, currentYear, derived }: { a: AccountRollforward; curre
     label,
     indent: !opts.strong && !opts.total,
     ...opts,
-    cells: ys.map((x) => cell(x, f(x) == null ? { text: "—", proof: noFigure("no value that year") } : { text: usd(f(x)), proof: rollP(a, x, line) })),
+    cells: ys.map((x) => cell(x, f(x) == null ? { text: NA, proof: noFigure("no value that year") } : { text: usd(f(x)), proof: rollP(a, x, line) })),
   });
   const rows: TableRow[] = [
     {

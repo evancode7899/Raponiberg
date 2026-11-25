@@ -1,6 +1,7 @@
 "use client";
 
 import { buttonSecondary, Card } from "@/components/ledger/LedgerBits";
+import { NA } from "@/lib/formatMoney";
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
 import type { SafeHarbor } from "@/lib/tax/computeReturn";
 import type { TruePlan } from "@/lib/tax/buildTaxReport";
@@ -12,6 +13,7 @@ import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { employerRow, showsNyW2 } from "@/lib/tax/incomeExtras";
 import { atFilingReturns, dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
+import { estimateInstallments } from "@/lib/dates/taxDates";
 import { useMemo, type ReactNode } from "react";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { BalanceBadge, Callout, EstimateValue, formatDate, lawLabel, NumberTable, pct, usd } from "./taxUi";
@@ -169,7 +171,6 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
                 rows={[
                   { label: "Federal child tax credit", values: [cell("overview", "dependent", "fedChild", usd(dep.fedChild))], help: "$2,200 per child under 17, reduced $50 per $1,000 of AGI over $400,000 (joint)." },
                   { label: "Other dependent / care credits", values: [cell("overview", "dependent", "otherCredits", usd(dep.otherCredits))] },
-                  { label: "CT child tax credit", values: [cell("overview", "dependent", "ctChild", usd(dep.ctChild))], help: "$600 per child 16 or under; phases out between $200k and $209k federal AGI (joint)." },
                   ...(mfj.ny ? [{ label: "New York dependent exemption", values: [cell("overview", "dependent", "ny", usd(depNy))], help: "$1,000 of income per dependent, at your New York (and City) rate." }] : []),
                   { label: "Total savings", values: [cell("overview", "dependent", "total", usd(depFed + depCt + depNy))], strong: true },
                 ]}
@@ -438,7 +439,7 @@ function NextThousand({ r }: { r: TaxResponse }) {
 function Calendar({ r }: { r: TaxResponse }) {
   const y = r.year;
   const events = [
-    { date: `${y}-09-15`, label: "Q3 estimate due" },
+    { date: estimateInstallments(y)[2]!.date, label: "Q3 estimate due" },
     { date: `${y}-12-31`, label: "Last day for this year's 401(k), HSA payroll and gifts" },
     { date: r.plan.q4DueDate, label: "Q4 estimate due" },
     { date: `${y + 1}-01-31`, label: "W-2s and most 1099s arrive" },
@@ -748,7 +749,7 @@ function ForecastBasis({ r, onGo }: { r: TaxResponse; onGo: (tab: "inputs") => v
       <ul className="list-disc space-y-1 pl-4 text-xs text-fg-2">
         {pay.length ? pay : <li>No pay stubs this year.</li>}
         <li>
-          Investments — statements through {r.dataThrough.statements ? formatDate(r.dataThrough.statements) : "—"}; dividends and interest run-rated to year end.{" "}
+          Investments — statements through {r.dataThrough.statements ? formatDate(r.dataThrough.statements) : NA}; dividends and interest run-rated to year end.{" "}
           <b className="text-fg">Sales after that aren&apos;t predicted</b>: enter expected gains or losses under Inputs.
         </li>
         <li>Bank interest and estimated tax payments — bank statements through {formatDate(r.dataThrough.bank)}.</li>

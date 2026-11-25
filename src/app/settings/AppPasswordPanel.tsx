@@ -1,15 +1,18 @@
 "use client";
 
 import type { Api } from "@/components/ledger/useApi";
-import { btn, Card, SecretBox } from "@/components/ui/kit";
+import { btn, Card, Field, SecretBox, selectCls } from "@/components/ui/kit";
+import { IDLE_LOCK_CHOICES, idleLockMinutes, setIdleLockMinutes } from "@/lib/preferences";
 import { useEffect, useState } from "react";
 
 /** Settings › General: change the lock screen's password (lib/appPassword.ts). */
 export function AppPasswordPanel({ api }: { api: Api }) {
   const [isDefault, setIsDefault] = useState<boolean | null>(null);
+  const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
+  const [idle, setIdle] = useState(0);
   const [msg, setMsg] = useState<{ tone: "pos" | "neg"; text: string } | null>(null);
 
   useEffect(() => {
@@ -19,14 +22,20 @@ export function AppPasswordPanel({ api }: { api: Api }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the server render can't see localStorage
+    setIdle(idleLockMinutes());
+  }, []);
+
   const mismatch = confirm.length > 0 && next !== confirm;
 
   const save = async () => {
-    if (busy || !next || next !== confirm) return;
+    if (busy || !current || !next || next !== confirm) return;
     setBusy(true);
     setMsg(null);
     try {
-      await api.call("/api/app-password", { method: "PUT", json: { password: next } });
+      await api.call("/api/app-password", { method: "PUT", json: { current, password: next } });
+      setCurrent("");
       setNext("");
       setConfirm("");
       setIsDefault(next === "password");
@@ -56,6 +65,12 @@ export function AppPasswordPanel({ api }: { api: Api }) {
     >
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex w-48 flex-col gap-1 text-xs">
+          <span id="app-password-current" className="font-medium text-fg-2">
+            Current password
+          </span>
+          <SecretBox labelledBy="app-password-current" value={current} onChange={setCurrent} onEnter={() => void save()} />
+        </div>
+        <div className="flex w-48 flex-col gap-1 text-xs">
           <span id="app-password-new" className="font-medium text-fg-2">
             New password
           </span>
@@ -67,9 +82,28 @@ export function AppPasswordPanel({ api }: { api: Api }) {
           </span>
           <SecretBox labelledBy="app-password-confirm" value={confirm} onChange={setConfirm} onEnter={() => void save()} invalid={mismatch} />
         </div>
-        <button type="button" onClick={() => void save()} className={btn.primary} disabled={busy || !next || next !== confirm}>
+        <button type="button" onClick={() => void save()} className={btn.primary} disabled={busy || !current || !next || next !== confirm}>
           {busy ? "Saving…" : "Change password"}
         </button>
+      </div>
+      <div className="mt-4 w-64">
+        <Field label="Lock by itself" hint="After this long without a key, click or scroll, in this browser.">
+          <select
+            className={selectCls}
+            value={idle}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setIdle(n);
+              setIdleLockMinutes(n);
+            }}
+          >
+            {IDLE_LOCK_CHOICES.map((n) => (
+              <option key={n} value={n}>
+                {n === 0 ? "Never" : `${n} minutes`}
+              </option>
+            ))}
+          </select>
+        </Field>
       </div>
       {mismatch && <p className="mt-2 text-xs text-neg">The two don&apos;t match.</p>}
       {msg && <p className={`mt-2 text-xs ${msg.tone === "pos" ? "text-pos" : "text-neg"}`}>{msg.text}</p>}

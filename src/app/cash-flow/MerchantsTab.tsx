@@ -6,7 +6,7 @@ import { sumOf } from "@/components/ui/proof/context";
 import { Card, inputCls, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
-import { formatPercentRatio, usd0, usdCompact } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0, usdCompact } from "@/lib/formatMoney";
 import { Treemap, type TreemapNode } from "recharts";
 import { useMemo, useState } from "react";
 import type { Ctx } from "./CashFlowClient";
@@ -55,7 +55,7 @@ export function MerchantsTab({ ctx }: { ctx: Ctx }) {
     <>
       <StatGrid cols={4}>
         <StatCell proof={ctx.dp("merchants", windowKey(slice.months))} label="Merchants" value={all.length.toLocaleString("en-US")} sub={`${visits.toLocaleString("en-US")} charges in ${slice.label}`} />
-        <StatCell proof={ctx.dp("top10-share", windowKey(slice.months))} label="Top 10 merchants" value={t.spending > 0 ? formatPercentRatio(top10 / t.spending, 0) : "—"} sub={<>of spending · <ProofValue proof={sumOf(all.slice(0, 10).map((m) => ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })), top10)}>{usd0(top10)}</ProofValue></>} />
+        <StatCell proof={ctx.dp("top10-share", windowKey(slice.months))} label="Top 10 merchants" value={t.spending > 0 ? formatPercentRatio(top10 / t.spending, 0) : NA} sub={<>of spending · <ProofValue proof={sumOf(all.slice(0, 10).map((m) => ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })), top10)}>{usd0(top10)}</ProofValue></>} />
         <StatCell proof={ctx.dp("avg-charge", windowKey(slice.months))} label="Average charge" value={usd0(visits ? sum(all, (m) => m.cents) / visits : 0)} sub={mid ? <>half of merchants got under <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: mid.key, shownCents: mid.cents })}>{usd0(mid.cents)}</ProofValue> in total</> : undefined} />
         <StatCell proof={ctx.dp("charges-per-month", windowKey(slice.months))} label="Charges / month" value={Math.round(visits / Math.max(1, t.n)).toLocaleString("en-US")} sub={`${(visits / Math.max(1, t.n) / 30).toFixed(1)} a day`} />
       </StatGrid>
@@ -183,7 +183,7 @@ function MerchantMap({ ctx, merchants, total }: { ctx: Ctx; merchants: MerchantT
       title="Where it goes"
       subtitle={
         <>
-          The {top.length} biggest merchants, sized by spending and colored by category — {total > 0 ? <ProofValue proof={ctx.dp("map-share", windowKey(ctx.slice.months))}>{formatPercentRatio(sum(top, (m) => m.cents) / total, 0)}</ProofValue> : "—"} of all spending
+          The {top.length} biggest merchants, sized by spending and colored by category — {total > 0 ? <ProofValue proof={ctx.dp("map-share", windowKey(ctx.slice.months))}>{formatPercentRatio(sum(top, (m) => m.cents) / total, 0)}</ProofValue> : NA} of all spending
           {rest > 0 ? (
             <>
               ; <ProofValue proof={ctx.dp("map-rest", windowKey(ctx.slice.months))}>{usd0(rest)}</ProofValue> more across {merchants.length - top.length} others

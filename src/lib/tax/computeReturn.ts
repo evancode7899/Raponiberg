@@ -246,7 +246,6 @@ export type CtResult = {
   taxBeforeAllocation: number;
   taxBeforeCredits: number;
   otherStateCredit: number;
-  childTaxCredit: number;
   totalTax: number;
   withholding: number;
   estimatedPayments: number;
@@ -346,7 +345,7 @@ export function computeReturn(input: ReturnInput): ReturnResult {
   // A Connecticut resident working in New York as a nonresident: New York's tax on that
   // income is credited against Connecticut's (Schedule 2).
   const nyCredit = ny && ny.filing.state === "NONRESIDENT" && ny.sourceIncome ? { tax: ny.stateTax, income: ny.sourceIncome } : null;
-  const ct = computeCt(params.ct, fs, people, dependents, federal.agi, ctSource, nyCredit);
+  const ct = computeCt(params.ct, fs, people, federal.agi, ctSource, nyCredit);
   const fica = computeFica(params, people);
   const otherStateTax = total(people, (p) => p.otherStateTax);
   const grossPay = total(people, (p) => sum(p.w2s.map((w) => w.grossPay)));
@@ -711,7 +710,6 @@ function computeCt(
   cp: CtParams,
   fs: FilingStatus,
   people: PersonIncome[],
-  dependents: Dependent[],
   federalAgi: number,
   sourceIncome: number | null,
   nyCredit: { tax: number; income: number } | null = null,
@@ -723,7 +721,7 @@ function computeCt(
   const ctAgi = federalAgi + additions - subtractions;
   // CT-1040NR/PY line 7: the tax tables are read at the greater of CT AGI and CT-source income.
   const tableAgi = sourceIncome == null ? ctAgi : Math.max(ctAgi, sourceIncome);
-  return ctTax(cp, fs, people, dependents, federalAgi, { additions, subtractions, chetDeduction, usObligationSubtraction, ctAgi }, tableAgi, sourceIncome, nyCredit);
+  return ctTax(cp, fs, people, federalAgi, { additions, subtractions, chetDeduction, usObligationSubtraction, ctAgi }, tableAgi, sourceIncome, nyCredit);
 }
 
 /**
@@ -733,14 +731,13 @@ function computeCt(
  */
 export function ctIncomeTax(cp: CtParams, fs: FilingStatus, agi: number): number {
   const zero = { additions: 0, subtractions: 0, chetDeduction: 0, usObligationSubtraction: 0, ctAgi: agi };
-  return ctTax(cp, fs, [], [], agi, zero, agi, null, null).totalTax;
+  return ctTax(cp, fs, [], agi, zero, agi, null, null).totalTax;
 }
 
 function ctTax(
   cp: CtParams,
   fs: FilingStatus,
   people: PersonIncome[],
-  dependents: Dependent[],
   federalAgi: number,
   mods: { additions: number; subtractions: number; chetDeduction: number; usObligationSubtraction: number; ctAgi: number },
   agiForTables: number,
@@ -780,19 +777,7 @@ function ctTax(
   const nyPart = nyCredit && mods.ctAgi > 0 ? Math.min(nyCredit.tax, r(taxBeforeCredits * Math.min(1, nyCredit.income / mods.ctAgi))) : 0;
   const otherStateCredit = Math.min(total(people, (p) => p.otherStateTax) + nyPart, taxBeforeCredits);
 
-  let childTaxCredit = 0;
-  const cc = cp.childCredit;
-  if (cc) {
-    const kids = Math.min(cc.maxChildren, dependents.filter((d) => d.age <= 16).length);
-    const full = kids * cc.perChild;
-    if (federalAgi <= cc.fullBelow[fs]) childTaxCredit = full;
-    else if (federalAgi <= cc.zeroAbove[fs]) {
-      const tenths = Math.ceil((federalAgi - cc.fullBelow[fs]) / 100_000);
-      childTaxCredit = r(full * pos(1 - tenths / 10));
-    }
-  }
-
-  const totalTax = taxBeforeCredits - otherStateCredit - childTaxCredit;
+  const totalTax = taxBeforeCredits - otherStateCredit;
   const withholding = total(people, (p) => sum(p.w2s.map((w) => w.stateWithheld)));
   const estimatedPayments = total(people, (p) => p.estimatedCt);
   // Schedule CT-PE → CT-1040 line 20c: the pass-through entity tax a partnership paid for its members.
@@ -817,7 +802,6 @@ function ctTax(
     taxBeforeAllocation,
     taxBeforeCredits,
     otherStateCredit,
-    childTaxCredit,
     totalTax,
     withholding,
     estimatedPayments,
@@ -995,7 +979,7 @@ export type SafeHarbor = {
   estimatesPaid: number;
   /** Additional payments needed to be penalty-proof. */
   shortfall: number;
-  /** Owed at filing is under the de-minimis ($1,000) line: no penalty either way. */
+  /** The year's tax less withholding is under the de-minimis line ($1,000; New York $300): no penalty either way (estimates paid don't count toward it). */
   underDeMinimis: boolean;
 };
 
@@ -1031,6 +1015,23 @@ export function safeHarbor(opts: {
     withholding: opts.withholding,
     estimatesPaid: opts.estimatesPaid,
     shortfall: pos(required - paid),
-    underDeMinimis: opts.currentYearTax - paid < rules.deMinimis,
+    underDeMinimis: opts.currentYearTax - opts.withholding < rules.deMinimis,
   };
+}
+
+/**
+ * What each estimated-tax date left asks for, by the law's regular method (IRC §6654(d)(1),
+ * C.G.S. §12-722, New York Tax Law §685(c)): by the year's k-th date, k quarters of the
+ * required annual payment must be in, withholding counting in four equal parts whenever it
+ * was withheld. So the next date carries what earlier ones missed, and the rest are a
+ * quarter each. `left`: the quarters still to come. Adds up to the shortfall.
+ */
+export function installmentsDue(sh: Pick<SafeHarbor, "requiredAnnualPayment" | "withholding" | "estimatesPaid" | "underDeMinimis">, left: readonly number[]): number[] {
+  const owed = sh.underDeMinimis ? 0 : pos(sh.requiredAnnualPayment - sh.withholding);
+  let paid = sh.estimatesPaid;
+  return left.map((quarter) => {
+    const due = pos((quarter === 4 ? owed : Math.round((owed * quarter) / 4)) - paid);
+    paid += due;
+    return due;
+  });
 }

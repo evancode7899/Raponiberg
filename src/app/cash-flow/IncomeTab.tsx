@@ -6,7 +6,7 @@ import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
@@ -112,7 +112,7 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
                           {formatPercentRatio(p.cents / t.income, 0)}
                         </ProofValue>
                       ) : (
-                        "—"
+                        NA
                       )}
                     </td>
                   </tr>

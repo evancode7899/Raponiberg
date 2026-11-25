@@ -793,14 +793,11 @@ function explain(x: X, key: EstimateKey): ChainLine[] {
       const typedOther = x.col.incomes.reduce((t, i) => t + i.otherStateTax, 0);
       return [ln(undefined, "Other state tax (typed under Inputs)", typedOther, "assumption"), ...(ct.otherStateCredit - typedOther ? [ln("+", "New York tax on income Connecticut also taxes (Schedule 2)", ct.otherStateCredit - typedOther, "derived", "The lesser of New York's tax and Connecticut's tax on the same income.")] : [])];
     }
-    case "ct.childTaxCredit":
-      return [ln(undefined, ct.childTaxCredit ? "Children 16 or under, phased out by federal AGI" : "No Connecticut child tax credit", ct.childTaxCredit, ct.childTaxCredit ? "law" : "derived", lawNote(x, "Connecticut child tax credit"))];
     case "ct.totalTax":
       return [
         ref(x, "+", "ct.taxBeforeAllocation"),
         ...(ct.incomePercentage != null ? [ln("×", "Connecticut share of income", { ratio: ct.incomePercentage }, "derived", undefined, selfLink(x, "ct.incomePercentage")), ln("=", "Connecticut tax on Connecticut income", ct.taxBeforeCredits, "derived")] : []),
         ref(x, "−", "ct.otherStateCredit"),
-        ref(x, "−", "ct.childTaxCredit"),
       ];
     case "ct.totalPayments":
       return [ref(x, "+", "ct.withheld"), ref(x, "+", "ct.estimatedPayments"), ...(ct.peCredit ? [ln("+", "Pass-through entity tax credit (Schedule CT-PE)", ct.peCredit, "proven", "The credit the partnerships' Connecticut K-1s report, from the K-1 details file.")] : [])];

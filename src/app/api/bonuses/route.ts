@@ -1,3 +1,4 @@
+import { AUDIT_ACTOR_OWNER, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { cachedBuilt, getBook, jsonBody, type Built } from "@/lib/book/cache";
 import { addException, retireException } from "@/lib/book/exceptionStore";
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         return NextResponse.json({ error: (e as Error).message }, { status: 409 });
       }
-      await prisma.auditEvent.create({ data: { action: "bonus_warning_reviewed", actor: "owner", payloadJson: { id, note } } });
+      await logAuditEvent({ action: "bonus_warning_reviewed", actor: AUDIT_ACTOR_OWNER, payload: { id, note } });
     } else if (body.action === "reopen") {
       const reason = typeof body.reason === "string" ? body.reason.trim() : "";
       if (!reason) return NextResponse.json({ error: "Say why the review no longer holds" }, { status: 400 });
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         return NextResponse.json({ error: (e as Error).message }, { status: 404 });
       }
-      await prisma.auditEvent.create({ data: { action: "bonus_review_reopened", actor: "owner", payloadJson: { id, reason } } });
+      await logAuditEvent({ action: "bonus_review_reopened", actor: AUDIT_ACTOR_OWNER, payload: { id, reason } });
     } else {
       return NextResponse.json({ error: 'action must be "review" or "reopen"' }, { status: 400 });
     }

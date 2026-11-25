@@ -4,12 +4,13 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
 import { noFigure } from "@/lib/book/proof/clearance";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { RowButton, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { axisUsd, formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
+import { cashCap, OverPattern, pastScale } from "../dashboard/charts";
 import { useMemo } from "react";
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashTab, Ctx } from "./CashFlowClient";
 import { buildInsights, categoryCents, median, mergeCategories, totals, type Insight, type Seg } from "./model";
 import { categoryColor, Delta, Dot, openMonthOnClick } from "./parts";
@@ -32,7 +33,15 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   const t = useMemo(() => totals(slice.months), [slice]);
   const p = useMemo(() => (slice.prior.length ? totals(slice.prior) : null), [slice]);
   const insights = useMemo(() => buildInsights(slice, report, ctx), [slice, report, ctx]);
-  const rows = slice.months.map((m) => ({ label: m.label, income: m.incomeCents / 100, spending: m.spendingCents / 100, net: m.netCents / 100 }));
+  // A bonus or a one-off month past the scale is cut there and hatched, so the other months stay readable; it's listed under the chart.
+  const cap = useMemo(() => cashCap(slice.months.map((m) => ({ label: m.label, income: m.incomeCents / 100, spending: m.spendingCents / 100 }))), [slice]);
+  const cut = (v: number) => (cap == null ? v : Math.max(-cap, Math.min(cap, v)));
+  const rows = slice.months.map((m) => ({ label: m.label, income: cut(m.incomeCents / 100), spending: cut(m.spendingCents / 100), net: cut(m.netCents / 100), raw: { Income: m.incomeCents / 100, Spending: m.spendingCents / 100, Net: m.netCents / 100 } }));
+  const over = pastScale(slice.months, cap);
+  // With a cut, the axis ends there: a nicer round number above it would leave the top empty.
+  const low = Math.floor(Math.min(0, ...rows.map((r) => r.net)) / 5000) * 5000;
+  const step = [1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000].find((s) => ((cap ?? 0) - low) / s <= 6) ?? 1_000_000;
+  const ticks = cap == null ? undefined : Array.from({ length: Math.floor(cap / step) - Math.ceil(low / step) + 1 }, (_, i) => (Math.ceil(low / step) + i) * step);
   const last = slice.months.at(-1)!;
   const cats = mergeCategories(slice.months, (m) => m.spendingByCategory).filter((c) => c.cents > 0);
   const rest = slice.months.length > 1 ? slice.months.slice(0, -1) : slice.months;
@@ -46,8 +55,8 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <StatGrid cols={6}>
-        <StatCell label="Income / month" value={usd0(t.avgIncome)} proof={ctx.proof("income", slice.months, { perMonth: true, shownCents: t.income })} sub={<>typical <ProofValue proof={ctx.dp("typical-income", windowKey(slice.months))}>{usd0(t.typicalIncome)}</ProofValue> · <Delta now={t.avgIncome} before={p?.avgIncome ?? null} {...vsPrior("income")} /></>} />
-        <StatCell label="Spending / month" value={usd0(t.avgSpending)} proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })} sub={<>typical <ProofValue proof={ctx.dp("typical-spending", windowKey(slice.months))}>{usd0(t.typicalSpending)}</ProofValue> · <Delta now={t.avgSpending} before={p?.avgSpending ?? null} goodWhenDown {...vsPrior("spending")} /></>} />
+        <StatCell label="Income / month" value={usd0(t.avgIncome)} proof={ctx.proof("income", slice.months, { perMonth: true, shownCents: t.income })} sub={<>typical <ProofValue proof={ctx.dp("typical-income", windowKey(slice.months))}>{usd0(t.typicalIncome)}</ProofValue>{p && <> · <Delta now={t.avgIncome} before={p.avgIncome} {...vsPrior("income")} /></>}</>} />
+        <StatCell label="Spending / month" value={usd0(t.avgSpending)} proof={ctx.proof("spending", slice.months, { perMonth: true, shownCents: t.spending })} sub={<>typical <ProofValue proof={ctx.dp("typical-spending", windowKey(slice.months))}>{usd0(t.typicalSpending)}</ProofValue>{p && <> · <Delta now={t.avgSpending} before={p.avgSpending} goodWhenDown {...vsPrior("spending")} /></>}</>} />
         <StatCell
           label="Excluding one-offs"
           value={usd0(t.avgCore)}
@@ -65,12 +74,12 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
         <StatCell label="Net saved" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={`over ${t.n} month${t.n === 1 ? "" : "s"}`} />
         <StatCell proof={ctx.dp("savings-rate", windowKey(slice.months))}
           label="Savings rate (take-home)"
-          value={t.savingsRate == null ? "—" : formatPercentRatio(t.savingsRate, 1)}
+          value={t.savingsRate == null ? NA : formatPercentRatio(t.savingsRate, 1)}
           tone={t.savingsRate == null ? "neutral" : t.savingsRate >= 0.2 ? "pos" : t.savingsRate < 0 ? "neg" : "neutral"}
           sub={
             p?.savingsRate != null ? (
               <>
-                was <ProofValue proof={ctx.dp("savings-rate", windowKey(slice.prior))}>{formatPercentRatio(p.savingsRate, 0)}</ProofValue> before
+                was <ProofValue proof={ctx.dp("savings-rate", windowKey(slice.prior))}>{formatPercentRatio(p.savingsRate, 0)}</ProofValue> {ctx.slice.priorLabel.includes("year") ? "a year earlier" : "before"}
               </>
             ) : (
               "net ÷ income"
@@ -82,24 +91,56 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <Card
+          className="flex flex-col"
+          bodyClassName="flex min-h-0 flex-1 flex-col"
           title="Income vs spending"
           subtitle="Each month from bank and card statements. Transfers between your own accounts never count. The dashed line is your average month of spending. Click a month to audit it."
         >
-          <div className="h-[320px] w-full min-w-0">
+          {/* Fills the height beside Insights: the chart is laid over its box, so it never sets it. */}
+          <div className="relative min-h-[320px] w-full min-w-0 flex-1">
+            <div className="absolute inset-0">
             <RechartsResponsive>
               <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2} className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
+                <defs>
+                  <OverPattern id="cfOver" color={chart.income} bg={chart.tooltipBg} />
+                  <OverPattern id="cfOverSpent" color={chart.spending} bg={chart.tooltipBg} />
+                </defs>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
-                <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-                <Tooltip {...ui.tooltip} formatter={(v, n) => [formatUsd(Math.round(Number(v))), String(n)]} />
+                <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={cap == null ? ["auto", "auto"] : [low, cap]} {...(ticks ? { ticks } : {})} />
+                <Tooltip {...ui.tooltip} formatter={(v, n, item) => [formatUsd(Math.round((item?.payload as (typeof rows)[number] | undefined)?.raw[String(n) as "Income" | "Spending" | "Net"] ?? Number(v))), String(n)]} />
                 <Legend {...ui.legend} />
+                {cap != null && <ReferenceLine y={cap} stroke={chart.axisLine} strokeDasharray="2 3" />}
                 <ReferenceLine y={t.avgSpending / 100} stroke={chart.spending} strokeDasharray="4 4" strokeOpacity={0.8} />
-                <Bar dataKey="income" name="Income" fill={chart.income} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
-                <Bar dataKey="spending" name="Spending" fill={chart.spending} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+                <Bar dataKey="income" name="Income" fill={chart.income} maxBarSize={22} isAnimationActive={false}>
+                  {slice.months.map((m) => (
+                    <Cell key={m.start} fill={cap != null && m.incomeCents / 100 > cap ? "url(#cfOver)" : chart.income} />
+                  ))}
+                </Bar>
+                <Bar dataKey="spending" name="Spending" fill={chart.spending} maxBarSize={22} isAnimationActive={false}>
+                  {slice.months.map((m) => (
+                    <Cell key={m.start} fill={cap != null && m.spendingCents / 100 > cap ? "url(#cfOverSpent)" : chart.spending} />
+                  ))}
+                </Bar>
                 <Line type="linear" dataKey="net" name="Net" stroke={chart.lineBalance} dot={{ r: 3 }} strokeWidth={2} isAnimationActive={false} />
               </ComposedChart>
             </RechartsResponsive>
+            </div>
           </div>
+          {over.length > 0 && (
+            <p className="mt-2 text-xs text-muted">
+              Off the scale, hatched:{" "}
+              {over.map((x, i) => (
+                <span key={`${x.m.start}${x.what}`}>
+                  {i > 0 && " · "}
+                  {x.m.label} {x.what}{" "}
+                  <span className="num font-medium text-fg">
+                    <ProofValue proof={ctx.proof(x.what, [x.m], { shownCents: x.cents })}>{usd0(x.cents)}</ProofValue>
+                  </span>
+                </span>
+              ))}
+            </p>
+          )}
         </Card>
         <Card title="Insights" subtitle={`What stands out in ${slice.label}.`}>
           {insights.length === 0 ? (
@@ -136,10 +177,9 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
           <ul className="flex flex-col">
             {cats.map((c) => (
               <li key={c.category}>
-                <button
-                  type="button"
+                <RowButton label={`Open ${c.category}`}
                   onClick={() => ctx.open({ kind: "category", category: c.category })}
-                  className="grid w-full grid-cols-[minmax(0,10rem)_1fr_5rem_3rem] items-center gap-3 rounded px-1 py-1.5 text-left text-[13px] hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-focus"
+                  className="grid w-full grid-cols-[minmax(0,10rem)_1fr_5rem_3rem] items-center gap-3 px-1 py-1.5 text-left text-[13px]"
                 >
                   <span className="flex min-w-0 items-center gap-2 truncate text-fg-2">
                     <Dot color={categoryColor(chart, c.category)} />
@@ -155,7 +195,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                   <span className="num text-right text-xs text-muted">
                     <ProofValue proof={ctx.dp("category-share", categoryKey(slice.months, "EXPENSE", c.category))}>{formatPercentRatio(c.cents / t.spending, 0)}</ProofValue>
                   </span>
-                </button>
+                </RowButton>
               </li>
             ))}
           </ul>
@@ -243,7 +283,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
                   <td className={`${table.tdR} font-medium ${m.netCents < 0 ? "text-neg" : "text-pos"}`}>
                     <ProofValue proof={ctx.proof("net", [m], { shownCents: m.netCents })}>{usd0(m.netCents)}</ProofValue>
                   </td>
-                  <td className={table.tdR}>{m.savingsRate == null ? "—" : <ProofValue proof={ctx.dp("savings-rate", windowKey([m]))}>{formatPercentRatio(m.savingsRate, 0)}</ProofValue>}</td>
+                  <td className={table.tdR}>{m.savingsRate == null ? NA : <ProofValue proof={ctx.dp("savings-rate", windowKey([m]))}>{formatPercentRatio(m.savingsRate, 0)}</ProofValue>}</td>
                   <td className={table.tdR}>
                     <ProofValue proof={ctx.dp("retirement", windowKey([m]))}>{usd0(m.retirementEmployeeCents + m.retirementEmployerCents)}</ProofValue>
                   </td>

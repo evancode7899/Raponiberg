@@ -1,6 +1,7 @@
 "use client";
 
 import { NotFigure } from "@/components/ui/kit";
+import { NA } from "@/lib/formatMoney";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ReactNode } from "react";
 import { Badge, btn, Card, EmptyState, Field, inputCls, Segmented, selectCls, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
@@ -418,7 +419,7 @@ function Charges({ ctx }: { ctx: CarCtx }) {
                     {many && (
                       <td className={table.td}>
                         {locked ? (
-                          <span className="text-xs text-fg-2">{c.carId === SHARED ? "shared" : (names.get(c.carId) ?? "—")}</span>
+                          <span className="text-xs text-fg-2">{c.carId === SHARED ? "shared" : (names.get(c.carId) ?? NA)}</span>
                         ) : (
                           <select
                             className={`${selectCls} ${c.carGuessed ? "border-accent" : ""}`}
@@ -497,7 +498,7 @@ function Keywords({ ctx }: { ctx: CarCtx }) {
   const [patternKind, setPatternKind] = useState<CarKind | "IGNORE">("TAX_REG");
   const [patternCar, setPatternCar] = useState<string>("");
   const names = useMemo(() => new Map(s.cars.map((c) => [c.id, carName(c)])), [s.cars]);
-  const carLabel = (id: string | null) => (id == null ? "the usual car" : id === SHARED ? "shared" : (names.get(id) ?? "—"));
+  const carLabel = (id: string | null) => (id == null ? "the usual car" : id === SHARED ? "shared" : (names.get(id) ?? NA));
   return (
     <Card title="Your keywords" subtitle="A word from a statement description that always means a car cost (your town's tax collector, a local garage, the parking company that bills you), or never does (your renters insurer). Your keywords come before the built-in merchants.">
       <div className="flex flex-col gap-2">

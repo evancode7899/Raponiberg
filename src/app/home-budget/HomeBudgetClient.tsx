@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { btn, ErrorNote, PageBody, Tabs, useSavedState, useTabParam } from "@/components/ui/kit";
@@ -69,8 +70,8 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
   const lender: LenderState = { ...lend, setCountBonus: (v) => setConfig({ ...config, lenderBonus: v }) };
   const lenderMax = useMemo(() => computeLenderMax(ins, lender.income), [ins, lender.income]);
   const spendMonthly = book?.spending ? book.spending.monthlyCents / 100 : null;
-  const reset = () => {
-    if (!window.confirm("Reset every input on this page to its default? Cash goes back to following your net worth.")) return;
+  const reset = async () => {
+    if (!(await askDanger("Reset every input on this page to its default?", "Reset", "Cash goes back to following your net worth."))) return;
     setStored(defaultHomeBudgetInputs());
     setConfig(defaultFunds());
   };

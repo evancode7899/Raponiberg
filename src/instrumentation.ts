@@ -42,6 +42,8 @@ export async function register() {
       reports: [
         "/api/ledger/attention",
         "/api/dashboard/home-summary",
+        "/api/dashboard/briefing",
+        "/api/dashboard/upcoming",
         "/api/dashboard/net-worth?granularity=month",
         "/api/dashboard/cash-flow",
         "/api/integrity",
@@ -56,6 +58,13 @@ export async function register() {
         "/api/bonuses",
         "/api/home-budget/funds",
         "/api/dashboard/net-worth/accounts",
+        "/api/calendar",
+        "/api/investments/funds",
+        "/api/mortgage/links",
+        // These also look for new files in their folders and keep what they read, so the first visit
+        // after a download doesn't wait for a PDF. Never on a read-only second server (LAUNCH_UPKEEP=0).
+        ...(upkeep ? ["/api/hsa", "/api/medical", "/api/insurance"] : []),
+        "/api/dashboard/net-worth/changes?granularity=month",
       ],
       // Then the proof sweep, in its own process (it opens every figure's proof).
       then: () => proofSweep().warm(),

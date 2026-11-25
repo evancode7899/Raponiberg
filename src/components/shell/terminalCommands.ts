@@ -6,7 +6,7 @@
 export type NavGroup = "Overview" | "Net worth & planning" | "Income & expenses" | "Data" | "Settings";
 
 export type TerminalCommand = {
-  /** Bloomberg-style uppercase mnemonic */
+  /** Uppercase code, typed in the command bar */
   mnemonic: string;
   href: string;
   /** Display name */

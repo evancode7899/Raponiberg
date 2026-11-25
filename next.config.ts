@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { contentSecurityPolicy } from "./src/lib/auth/csp";
 
 const nextConfig: NextConfig = {
   // The desktop launcher builds into a staging folder (NEXT_BUILD_DIR) and only swaps it
@@ -13,7 +14,8 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{ source: "/integrity", destination: "/statements?tab=issues", permanent: false }];
   },
-  // No other site may show the app inside a frame (clickjacking: tricking a click on a
+  // Pages load from and send to this app's own address only (lib/auth/csp.ts). No other site
+  // may show the app inside a frame (clickjacking: tricking a click on a
   // hidden Raponiberg button), browsers don't guess file types, and links out of the app
   // don't tell the next site which page they came from.
   async headers() {
@@ -21,7 +23,7 @@ const nextConfig: NextConfig = {
       {
         source: "/:path*",
         headers: [
-          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "Content-Security-Policy", value: contentSecurityPolicy(process.env.NODE_ENV === "development") },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "no-referrer" },

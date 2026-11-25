@@ -6,14 +6,14 @@ import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import type { EstimateBasis, EstimateKey } from "@/lib/tax/estimateLines";
 
 export { Callout } from "@/components/ui/kit";
-import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
+import { formatPercentRatio, formatUsd, NA } from "@/lib/formatMoney";
 import { useMemo, type ReactNode } from "react";
 import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import type { TaxReport, TaxReportBlocked } from "@/lib/tax/buildTaxReport";
 
 /** Whole dollars from cents; exact zero shows an em dash. */
-export const usd = (cents: number | null | undefined) => (cents == null ? "—" : formatUsd(Math.round(cents / 100)));
+export const usd = (cents: number | null | undefined) => (cents == null ? NA : formatUsd(Math.round(cents / 100)));
 export const pct = (r: number, digits = 1) => formatPercentRatio(r, digits);
 
 /** "Refund $1,234" / "Owe $1,234" for a balance-due figure (positive = owe). */

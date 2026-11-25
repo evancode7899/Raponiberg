@@ -6,7 +6,7 @@ import { chetYear, excessDeferral, excessDeferralMessage, iraYear, k401Limit, st
 import { taxRows } from "../book/taxPayments.ts";
 import type { TaxForecastLink } from "../forecast/forecast.ts";
 import type { FiledReturn, K1Form, TaxDoc } from "../taxdocs/types.ts";
-import { additionalIncome, computeReturn, safeHarbor, type NyFiling, type PersonIncome, type QbiBusiness, type ReturnResult, type SafeHarbor, type W2 } from "./computeReturn.ts";
+import { additionalIncome, computeReturn, installmentsDue, safeHarbor, type NyFiling, type PersonIncome, type QbiBusiness, type ReturnResult, type SafeHarbor, type W2 } from "./computeReturn.ts";
 import {
   ctResidentShares,
   filedBalance,
@@ -25,7 +25,8 @@ import { checkFiled, type FiledCheck } from "./filedCheck.ts";
 import { annualizedK1, expectedK1, k1Adds, k1Gaps, k1Items, K1_OWN_FIELDS, type K1AddField, type K1Adds, type K1Gap, type K1Items } from "./k1.ts";
 import { passiveCarryforwards, passiveKey, passiveLimit, type PassiveOutcome } from "./passive.ts";
 import { k1DetailFor, type K1Detail } from "./k1DetailStore.ts";
-import { TAX_YEARS, taxYearParams, type TaxYearParams } from "./params.ts";
+import { estimateInstallments, filingDate } from "../dates/taxDates.ts";
+import { NY_SAFE_HARBOR, TAX_YEARS, taxYearParams, type TaxYearParams } from "./params.ts";
 import { bestSeparate, type MfsResult } from "./scenarios.ts";
 import { ageAtYearEnd, EXTRA_FIELDS, yearInputs, type NyResidency, type PayForecast, type Residency, type TaxPerson, type TaxProfile, type YearInputs } from "./profile.ts";
 
@@ -224,7 +225,8 @@ export type TaxReport = {
     mfsNoDependents: MfsResult;
   };
   marginal: { federal: number; ct: number; ny: number; payroll: number };
-  safeHarbor: { federal: SafeHarbor; ct: SafeHarbor };
+  /** New York's, where the year has a New York return. */
+  safeHarbor: { federal: SafeHarbor; ct: SafeHarbor; ny: SafeHarbor | null };
   /**
    * Where last year's federal tax for the safe harbor came from: the filed return as
    * entered under Inputs, last year's filed return in the tax documents folder, or this
@@ -283,6 +285,7 @@ export type TaxReport = {
     paycheckPerson: string | null;
     federal: TruePlan;
     ct: TruePlan;
+    ny: TruePlan | null;
     q4DueDate: string;
     filingDate: string;
   };
@@ -299,6 +302,8 @@ export type TruePlan = {
   projectedBalanceDue: number;
   perPaycheckForSafeHarbor: number | null;
   perPaycheckToBreakEven: number | null;
+  /** The estimated-tax dates still to come, with what each asks for (installmentsDue). */
+  installments: { quarter: number; date: string; cents: number }[];
 };
 
 export type TaxReportBlocked = { blocked: true; year: number; today: string; profile: TaxProfile; inputs: YearInputs; blockers: BlockerRef[] };
@@ -872,6 +877,20 @@ export function buildTaxReport(
     highAgiThreshold: null,
     rules: fp.safeHarborRules,
   });
+  // New York's: the same tests on the New York (and City) tax, against last year's filed New York return.
+  const filedNy = lastYearDocs.ny?.state ?? null;
+  const nyHarbor = mfj.ny
+    ? safeHarbor({
+        // Less the refundable credits (school tax, pass-through entity tax), as the penalty form counts tax.
+        currentYearTax: mfj.ny.totalTax - (mfj.ny.totalPayments - mfj.ny.withholding - mfj.ny.cityWithholding - mfj.ny.estimatedPayments),
+        withholding: mfj.ny.withholding + mfj.ny.cityWithholding,
+        estimatesPaid: mfj.ny.estimatedPayments,
+        priorYearTax: filedNy?.totalTax ?? null,
+        priorYearAgi: filedNy?.stateAgi ?? null,
+        highAgiThreshold: NY_SAFE_HARBOR.highAgi[filingStatus],
+        rules: NY_SAFE_HARBOR,
+      })
+    : null;
   if (filedCt != null && priorCt === filedCt && lastYearDocs.ct?.form === "CT-1040NR/PY") {
     assumptions.push(`Connecticut's prior-year safe harbor uses ${year - 1}'s part-year return (under Inputs). It covered all twelve months, but only part of the income; check CT-2210 before leaning on it.`);
   }
@@ -887,23 +906,26 @@ export function buildTaxReport(
   const main = active.sort((a, b) => b.n - a.n)[0];
   const remaining = main?.n ?? 0;
   const per = (amount: number) => (remaining > 0 && amount > 0 ? Math.ceil(amount / remaining / 100) * 100 : null);
+  // The estimated-tax dates still to come: the year's last is due the January after it.
+  const datesLeft = estimateInstallments(year).filter((x) => x.date >= today);
+  const planOf = (sh: SafeHarbor, balanceDue: number): TruePlan => {
+    const dues = installmentsDue(sh, datesLeft.map((x) => x.quarter));
+    return {
+      safeHarborShortfall: sh.underDeMinimis ? 0 : sh.shortfall,
+      projectedBalanceDue: balanceDue,
+      perPaycheckForSafeHarbor: per(sh.underDeMinimis ? 0 : sh.shortfall),
+      perPaycheckToBreakEven: per(balanceDue),
+      installments: datesLeft.map((x, i) => ({ quarter: x.quarter, date: x.date, cents: dues[i]! })),
+    };
+  };
   const plan = {
     remainingPaychecks: remaining,
     paycheckPerson: main?.person ?? null,
-    federal: {
-      safeHarborShortfall: federal.underDeMinimis ? 0 : federal.shortfall,
-      projectedBalanceDue: mfj.federal.balanceDue,
-      perPaycheckForSafeHarbor: per(federal.underDeMinimis ? 0 : federal.shortfall),
-      perPaycheckToBreakEven: per(mfj.federal.balanceDue),
-    },
-    ct: {
-      safeHarborShortfall: ct.underDeMinimis ? 0 : ct.shortfall,
-      projectedBalanceDue: mfj.ct.balanceDue,
-      perPaycheckForSafeHarbor: per(ct.underDeMinimis ? 0 : ct.shortfall),
-      perPaycheckToBreakEven: per(mfj.ct.balanceDue),
-    },
-    q4DueDate: `${year + 1}-01-15`,
-    filingDate: `${year + 1}-04-15`,
+    federal: planOf(federal, mfj.federal.balanceDue),
+    ct: planOf(ct, mfj.ct.balanceDue),
+    ny: nyHarbor && mfj.ny ? planOf(nyHarbor, mfj.ny.balanceDue) : null,
+    q4DueDate: estimateInstallments(year)[3]!.date,
+    filingDate: filingDate(year),
   };
 
   // The rules the estimate follows: tax law and the choices under Inputs, never a figure read from the data.
@@ -966,7 +988,7 @@ export function buildTaxReport(
     filingStatus,
     scenarios: { mfj, mfjNoDependents, mfs, mfsNoDependents },
     marginal,
-    safeHarbor: { federal, ct },
+    safeHarbor: { federal, ct, ny: nyHarbor },
     priorYearSource,
     priorYear,
     residency,

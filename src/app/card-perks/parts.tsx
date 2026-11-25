@@ -7,20 +7,20 @@ import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { CardPerksPage } from "@/lib/cardPerks/page";
 import { useMemo } from "react";
-import { formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
 
 export const fmtPoints = (n: number) => `${Math.round(n).toLocaleString("en-US")} pts`;
 export const fmtCpp = (cpp: number) => `${+cpp.toFixed(2)}¢`;
 /** Rewards in their own unit: points, or cents of cash back shown as dollars. */
-export const fmtRewards = (kind: RewardKind, n: number, whole = false) => (kind === "CASH" ? (whole ? usd0(n) : formatUsdCents(n)) : kind === "POINTS" ? fmtPoints(n) : "—");
+export const fmtRewards = (kind: RewardKind, n: number, whole = false) => (kind === "CASH" ? (whole ? usd0(n) : formatUsdCents(n)) : kind === "POINTS" ? fmtPoints(n) : NA);
 /** A rate: "4×" for points, "3%" for cash back. */
 export const fmtRate = (kind: RewardKind, rate: number) => (kind === "CASH" ? `${+rate.toFixed(2)}%` : `${+rate.toFixed(2)}×`);
 export const fmtDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 export const fmtMonth = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 /** Dollars, saying $0 rather than a dash where the sentence needs a number. */
 export const money = (cents: number) => (cents === 0 ? "$0" : usd0(cents));
-export const pct = (r: number | null) => (r == null ? "—" : `${Math.round(r * 100)}%`);
+export const pct = (r: number | null) => (r == null ? NA : `${Math.round(r * 100)}%`);
 
 /** What the card list says a card offers (its fee, rates, credit amounts): its terms, not a figure of yours. */
 export const TERMS = "the card's terms, from the card list";
@@ -97,7 +97,7 @@ export function CardFace({ c, small = false, children }: { c: CardScore; small?:
       {!small && (
         <div className="relative flex h-full flex-col justify-between p-3.5">
           <div className="flex items-start justify-between gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider opacity-80">{c.product?.issuer ?? c.accountName}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider opacity-95">{c.product?.issuer ?? c.accountName}</span>
             <span className="h-5 w-7 rounded-[4px] bg-gradient-to-br from-yellow-200/90 to-yellow-500/80 shadow-inner" />
           </div>
           <div>

@@ -266,6 +266,19 @@ export function spendingCuts(plan: OutlookPlan, monthly: number[]): SpendingCut[
   });
 }
 
+/** What each lever changes, a year: the same dollars spent less or earned more, or a point less return. */
+export const LEVER_YEARLY = 12 * 1_000_00;
+export type FiLever = { key: "spend" | "earn" | "return"; fiYear: number | null };
+
+/** The FI year with one thing changed: $1,000 a month less spending, $12,000 a year more pay, or a point less return. */
+export function fiLevers(plan: OutlookPlan): FiLever[] {
+  return [
+    { key: "spend", fiYear: fiYear({ ...plan, livingCost: Math.max(0, plan.livingCost - LEVER_YEARLY) }) },
+    { key: "earn", fiYear: fiYear({ ...plan, salary: plan.salary + LEVER_YEARLY }) },
+    { key: "return", fiYear: fiYear({ ...plan, returnRate: plan.returnRate - 0.01 }) },
+  ];
+}
+
 /** FI year for each return × withdrawal rate. */
 export function sensitivityGrid(plan: OutlookPlan, returns: number[], withdrawalRates: number[]): (number | null)[][] {
   return returns.map((returnRate) => withdrawalRates.map((withdrawalRate) => fiYear({ ...plan, returnRate, withdrawalRate })));

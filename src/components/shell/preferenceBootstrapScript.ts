@@ -3,11 +3,14 @@ export const PREFERENCE_BOOTSTRAP_SCRIPT = `
 (function(){
   try {
     var t = localStorage.getItem("pf-theme");
-    if (t === "light" || t === "dark" || t === "bloomberg") {
+    if (t === "light" || t === "dark") {
       document.documentElement.setAttribute("data-theme", t);
     } else {
-      document.documentElement.setAttribute("data-theme", "bloomberg");
+      // Also the theme saved under its earlier id.
+      if (t && t !== "terminal") localStorage.setItem("pf-theme", "terminal");
+      document.documentElement.setAttribute("data-theme", "terminal");
     }
+    if (localStorage.getItem("pf-hide-amounts") === "1") document.documentElement.setAttribute("data-hide-amounts", "");
     var f = localStorage.getItem("pf-font-scale");
     if (f === "sm" || f === "md" || f === "lg") {
       document.documentElement.setAttribute("data-font-scale", f);

@@ -241,8 +241,8 @@ export function MortgageInputsPanel({
         {ins.deductInterest && (
           <>
             {S("fedMarginalRate", "Federal marginal rate", "The rate each deducted dollar saves. Connecticut has no itemized deductions, so the deduction saves no state tax.")}
-            {S("standardDeduction", "Standard deduction", "2026: $32,200 joint, $16,100 single. Grows with inflation here.")}
-            {S("stateIncomeTax", "State income tax a year", "Deductible as SALT together with property tax, capped at $40,400 through 2029 and $10,000 from 2030.")}
+            {S("standardDeduction", "Standard deduction", "Starts from this year's joint amount. Grows with inflation here.")}
+            {S("stateIncomeTax", "State income tax a year", "Deductible as SALT together with property tax, up to the SALT cap: $40,400 in 2026, 1% more each year through 2029, then $10,000.")}
             {S("propertyTax", "Property tax a year", "On this home, in the first payment's year; SALT, so it shares the cap. Use home budget fills it from the price and tax rate.")}
             {S("charity", "Charity a year", "Itemized outside the SALT cap.")}
             <Toggle

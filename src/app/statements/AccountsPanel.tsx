@@ -1,5 +1,7 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
+import { NA } from "@/lib/formatMoney";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, ErrorNote, inputCls, Loading, selectCls } from "@/components/ui/kit";
 import Link from "next/link";
@@ -115,7 +117,7 @@ function AccountRow({
           {a.archivedAt && <Badge>Archived</Badge>}
         </div>
         <span className="text-muted">
-          {a.institution ?? "—"} · {(a.subtype ?? a.type).replace(/_/g, " ").toLowerCase()} · {a.aliases.map((x) => x.identifier).join(", ") || "no statements yet"} ·{" "}
+          {a.institution ?? NA} · {(a.subtype ?? a.type).replace(/_/g, " ").toLowerCase()} · {a.aliases.map((x) => x.identifier).join(", ") || "no statements yet"} ·{" "}
           <span className="num">
             {a._count.statementImports} statements · {a._count.transactions.toLocaleString()} rows
           </span>
@@ -140,9 +142,9 @@ function AccountRow({
                 type="button"
                 className={btn.secondary}
                 disabled={busy}
-                onClick={() => {
+                onClick={async () => {
                   const target = candidates.find((c) => c.id === into);
-                  if (target && confirm(`Merge "${a.name}" into "${target.name}"? Its statements and identifiers move over.`)) {
+                  if (target && (await askDanger(`Merge "${a.name}" into "${target.name}"?`, "Merge", "Its statements and identifiers move over."))) {
                     void run(() => api.call(`/api/accounts/${a.id}`, { method: "POST", json: { intoAccountId: into } }).then(() => "Merged."));
                   }
                 }}

@@ -1,8 +1,9 @@
 "use client";
 
+import { askDanger, notify } from "@/components/ui/Feedback";
 import { Badge, btn, Callout, Card, downloadResponse, EmptyState, inputCls, NotFigure, Segmented, selectCls, table } from "@/components/ui/kit";
 import { apiSecretHeaders } from "@/components/ledger/useApi";
-import { formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import { KIND_LABEL } from "@/lib/hsa/qualify";
 import type { ExpenseView, HsaReport } from "@/lib/hsa/report";
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
@@ -117,8 +118,8 @@ export function ReceiptsTab({
               <button
                 type="button"
                 className={btn.danger}
-                onClick={() => {
-                  if (window.confirm(`Remove ${notMedical.length} expense${notMedical.length === 1 ? "" : "s"} from the log and stop suggesting those charges? (The journal beside the file keeps a copy.)`)) {
+                onClick={async () => {
+                  if (await askDanger(`Remove ${notMedical.length} expense${notMedical.length === 1 ? "" : "s"} from the log and stop suggesting those charges?`, "Remove", "The journal beside the file keeps a copy.")) {
                     void send({ op: "delete", ids: notMedical.map((e) => e.id), dismiss: true });
                   }
                 }}
@@ -238,8 +239,8 @@ export function ReceiptsTab({
             <button
               type="button"
               className={btn.danger}
-              onClick={() => {
-                if (window.confirm(`Delete ${picked.length} expense${picked.length === 1 ? "" : "s"} from the log? (The journal beside the file keeps a copy.)`)) {
+              onClick={async () => {
+                if (await askDanger(`Delete ${picked.length} expense${picked.length === 1 ? "" : "s"} from the log?`, "Delete", "The journal beside the file keeps a copy.")) {
                   void send({ op: "delete", ids: picked.map((e) => e.id) }).then(() => setSelected(new Set()));
                 }
               }}
@@ -416,7 +417,7 @@ export function openReceipt(file: string) {
     })
     .catch((err: Error) => {
       tab?.close();
-      window.alert(err.message);
+      notify(err.message, { tone: "bad" });
     });
 }
 
@@ -503,7 +504,7 @@ function Row({ e, dp, picked, toggle, send, onEdit }: { e: ExpenseView; dp: HsaD
           </div>
         )}
       </td>
-      <td className={`${table.td} whitespace-nowrap text-fg-2`}>{e.patient || <span className="text-faint">—</span>}</td>
+      <td className={`${table.td} whitespace-nowrap text-fg-2`}>{e.patient || <span className="text-faint">{NA}</span>}</td>
       <td className={`${table.td} max-w-[13rem] truncate whitespace-nowrap text-xs`}>
         {e.paid ? (
           <span title={`${e.paid.payee} · ${e.paid.date}${e.paidAuto ? " · matched by amount and date" : ""}`}>

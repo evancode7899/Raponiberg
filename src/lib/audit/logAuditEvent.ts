@@ -30,13 +30,25 @@ export type AuditAction =
   | "card_perks_updated"
   | "hsa_expenses_updated"
   | "hsa_expenses_exported"
-  | "insurance_notes_updated";
+  | "insurance_notes_updated"
+  | "app_password_changed"
+  | "reimbursement_linked"
+  | "reimbursement_unlinked"
+  | "transfer_rejected"
+  | "transactions_restored"
+  | "bonus_warning_reviewed"
+  | "bonus_review_reopened"
+  | "integrity_exception_added"
+  | "integrity_exception_retired";
 
 /** Routes authenticated with `x-api-secret` (when secret is set). */
 export const AUDIT_ACTOR_API = "api";
 
 /** Settings → database export / import / wipe (when `SETTINGS_DATABASE_SECRET` is set). */
 export const AUDIT_ACTOR_SETTINGS = "settings";
+
+/** The owner's own rulings on findings (exceptions, reviewed warnings). */
+export const AUDIT_ACTOR_OWNER = "owner";
 
 /** In-app flows from the browser. */
 export const AUDIT_ACTOR_APP = "app";

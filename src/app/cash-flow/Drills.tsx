@@ -3,17 +3,18 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { categoryKey, merchantKeyOf, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Stat, NotFigure } from "@/components/ui/kit";
+import { RowButton, Stat, NotFigure } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useProof } from "@/components/ui/proof/context";
 import type { MerchantMonth, SpendingMonth } from "@/lib/book/reports/spending";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
-import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx, Drill } from "./CashFlowClient";
-import { categoryCents, KINDS, median, mergeMerchants, monthDrillMerchants, sum } from "./model";
+import { categoryMerchants } from "@/lib/book/reports/cashFlowWindows";
+import { categoryCents, KINDS, median, monthDrillMerchants, sum } from "./model";
 import { categoryColor, Dot, Eyebrow, TxnList } from "./parts";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { isUnswept } from "@/lib/book/proof/clearance";
@@ -68,7 +69,7 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
   const total = sum(values, (v) => v);
   const spending = sum(slice.months, (m) => m.spendingCents);
   const merchants = useMemo(
-    () => (lane === "EXPENSE" ? mergeMerchants(slice.months, (m) => m.merchants.filter((x) => x.category === category)) : []),
+    () => (lane === "EXPENSE" ? categoryMerchants(slice.months, category) : []),
     [slice, category, lane],
   );
   return (
@@ -77,7 +78,7 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
         <Stat label="Total" value={usd0(total)} proof={ctx.proof(metricOf[lane]!, slice.months, { category, shownCents: total })} />
         <Stat label="Per month" value={usd0(total / Math.max(1, values.length))} proof={ctx.proof(metricOf[lane]!, slice.months, { category, perMonth: true, shownCents: total })} />
         <Stat proof={ctx.dp("category-typical", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label="Typical month" value={usd0(median(values))} />
-        <Stat proof={ctx.dp(lane === "EXPENSE" ? "category-share" : "category-months", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label={lane === "EXPENSE" ? "Share of spending" : "Months"} value={lane === "EXPENSE" ? (spending > 0 ? formatPercentRatio(total / spending, 0) : "—") : values.filter(Boolean).length} />
+        <Stat proof={ctx.dp(lane === "EXPENSE" ? "category-share" : "category-months", categoryKey(slice.months, lane === "EXTERNAL_TRANSFER" ? "EXTERNAL" : lane === "INCOME" ? "INCOME" : "EXPENSE", category))} label={lane === "EXPENSE" ? "Share of spending" : "Months"} value={lane === "EXPENSE" ? (spending > 0 ? formatPercentRatio(total / spending, 0) : NA) : values.filter(Boolean).length} />
       </div>
       <p className="-mt-2 text-xs text-muted">
         Click the total for the rows behind it, statement by statement, with every check over them. The transactions below are listed by posting date for editing, so a row near a month&apos;s edge or a rent
@@ -90,20 +91,19 @@ export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string })
         <div>
           <Eyebrow>Top merchants</Eyebrow>
           <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
-            {merchants.slice(0, 12).map((m) => (
+            {merchants.map((m) => (
               <li key={m.key}>
-                <button
-                  type="button"
-                  className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+                <RowButton label={`Open ${m.name}`}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-center gap-2 px-1 py-1 text-left text-[13px]"
                   onClick={() => ctx.open({ kind: "merchant", key: m.key, name: m.name, lane: "EXPENSE" })}
                   title={m.key}
                 >
                   <span className="truncate text-fg-2">{m.name}</span>
                   <span className="num text-right text-xs text-muted">{m.count}×</span>
                   <span className="num text-right font-medium">
-                    <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: m.key, shownCents: m.cents })}>{usd0(m.cents)}</ProofValue>
+                    <ProofValue proof={ctx.proof("spending", slice.months, { merchantKey: m.key, ...(m.whole ? {} : { category }), shownCents: m.cents })}>{usd0(m.cents)}</ProofValue>
                   </span>
-                </button>
+                </RowButton>
               </li>
             ))}
           </ul>
@@ -218,9 +218,8 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
   const { credits, top } = monthDrillMerchants(m);
   const merchant = (x: MerchantMonth) => (
     <li key={x.key}>
-      <button
-        type="button"
-        className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,9rem)_3rem_6rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+      <RowButton label={`Open ${x.name}`}
+        className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,9rem)_3rem_6rem] items-center gap-2 px-1 py-1 text-left text-[13px]"
         onClick={() => ctx.open({ kind: "merchant", key: x.key, name: x.name, lane: "EXPENSE" })}
         title={x.key}
       >
@@ -230,7 +229,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <span className={`num text-right font-medium ${x.cents < 0 ? "text-pos" : ""}`}>
           <ProofValue proof={ctx.proof("spending", one, { merchantKey: x.key, shownCents: x.cents })}>{usd0(x.cents)}</ProofValue>
         </span>
-      </button>
+      </RowButton>
     </li>
   );
   return (
@@ -239,7 +238,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <Stat label="Income" value={usd0(m.incomeCents)} proof={ctx.proof("income", one, { shownCents: m.incomeCents })} />
         <Stat label="Spending" value={usd0(m.spendingCents)} proof={ctx.proof("spending", one, { shownCents: m.spendingCents })} sub="net of merchant refunds; tax refunds are income" />
         <Stat label="Net saved" value={usd0(m.netCents)} proof={ctx.proof("net", one, { shownCents: m.netCents })} />
-        <Stat proof={ctx.dp("savings-rate", windowKey(one))} label="Savings rate" value={m.savingsRate == null ? "—" : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
+        <Stat proof={ctx.dp("savings-rate", windowKey(one))} label="Savings rate" value={m.savingsRate == null ? NA : formatPercentRatio(m.savingsRate, 0)} sub="net ÷ income" />
       </div>
       {(m.through || m.unreviewed.rows > 0) && (
         <p className="-mt-2 text-xs text-muted">
@@ -274,9 +273,8 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
         <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
           {m.spendingByCategory.map((c) => (
             <li key={c.category}>
-              <button
-                type="button"
-                className="grid w-full grid-cols-[minmax(0,1fr)_6rem] items-center gap-2 rounded px-1 py-1 text-left text-[13px] hover:bg-surface-2"
+              <RowButton label={`Open ${c.category}`}
+                className="grid w-full grid-cols-[minmax(0,1fr)_6rem] items-center gap-2 px-1 py-1 text-left text-[13px]"
                 onClick={() => ctx.open({ kind: "category", category: c.category })}
               >
                 <span className="flex min-w-0 items-center gap-2 truncate text-fg-2">
@@ -287,7 +285,7 @@ export function MonthDrill({ ctx, month: m }: { ctx: Ctx; month: SpendingMonth }
                 <span className={`num text-right font-medium ${c.cents < 0 ? "text-pos" : ""}`}>
                   <ProofValue proof={ctx.proof("spending", one, { category: c.category, shownCents: c.cents })}>{usd0(c.cents)}</ProofValue>
                 </span>
-              </button>
+              </RowButton>
             </li>
           ))}
         </ul>

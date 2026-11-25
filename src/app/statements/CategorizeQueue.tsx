@@ -7,7 +7,7 @@ import { btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table }
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import type { Lane } from "@/lib/classifier/taxonomy";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { formatUsdFromCents, usd0 } from "@/lib/formatMoney";
+import { formatUsdFromCents, NA, usd0 } from "@/lib/formatMoney";
 import { useEffect, useMemo, useState } from "react";
 
 export type ReviewRow = {
@@ -43,6 +43,8 @@ export function CategorizeQueue({ api, onCount }: { api: Api; onCount: (n: numbe
   const [done, setDone] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<"amount" | "rows" | "recent">("amount");
   const [q, setQ] = useState("");
+  const [last, setLast] = useState<{ undoId: string; key: string; what: string } | null>(null);
+  const [undoing, setUndoing] = useState(false);
 
   useEffect(() => {
     api
@@ -80,7 +82,23 @@ export function CategorizeQueue({ api, onCount }: { api: Api; onCount: (n: numbe
     );
   }, [remaining, q, sort]);
 
-  if (error) return <ErrorNote>{error}</ErrorNote>;
+  const undo = async () => {
+    if (!last || undoing) return;
+    setUndoing(true);
+    setError(null);
+    try {
+      await api.call(`/api/transactions/answers?undo=${encodeURIComponent(last.undoId)}`, { method: "DELETE" });
+      setDone((d) => new Set([...d].filter((k) => k !== last.key)));
+      setLast(null);
+      notifyLedgerChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't undo");
+    } finally {
+      setUndoing(false);
+    }
+  };
+
+  if (!rows && error) return <ErrorNote>{error}</ErrorNote>;
   if (!rows) return <Loading label="Gathering open questions…" />;
   const total = rows.length;
   const answered = total - remainingRows;
@@ -119,6 +137,16 @@ export function CategorizeQueue({ api, onCount }: { api: Api; onCount: (n: numbe
         </p>
       </Card>
 
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {last && (
+        <div role="status" className="flex items-center gap-3 rounded-md border border-line bg-surface-2 px-3 py-2 text-xs text-fg-2">
+          <span className="min-w-0 flex-1 truncate">{last.what}</span>
+          <button type="button" className={btn.secondary} disabled={undoing} onClick={() => void undo()}>
+            {undoing ? "Undoing…" : "Undo"}
+          </button>
+        </div>
+      )}
+
       {shown.length === 0 ? (
         <EmptyState title={remaining.length === 0 ? "Nothing left to review" : "No merchant matches"}>
           {remaining.length === 0 ? "Every row has a confident category." : "Clear the search to see everything."}
@@ -126,7 +154,15 @@ export function CategorizeQueue({ api, onCount }: { api: Api; onCount: (n: numbe
       ) : (
         <ul className="flex flex-col gap-2">
           {shown.slice(0, 60).map((g) => (
-            <GroupCard key={g.key} group={g} api={api} onDone={() => setDone((d) => new Set(d).add(g.key))} />
+            <GroupCard
+              key={g.key}
+              group={g}
+              api={api}
+              onDone={(undoId, what) => {
+                setDone((d) => new Set(d).add(g.key));
+                setLast({ undoId, key: g.key, what });
+              }}
+            />
           ))}
         </ul>
       )}
@@ -135,7 +171,7 @@ export function CategorizeQueue({ api, onCount }: { api: Api; onCount: (n: numbe
   );
 }
 
-function GroupCard({ group, api, onDone }: { group: Group; api: Api; onDone: () => void }) {
+function GroupCard({ group, api, onDone }: { group: Group; api: Api; onDone: (undoId: string, what: string) => void }) {
   const first = group.rows[0]!;
   const guess = first.category?.name ?? "Other";
   const [category, setCategory] = useState(guess);
@@ -144,40 +180,56 @@ function GroupCard({ group, api, onDone }: { group: Group; api: Api; onDone: () 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const name = group.merchantKey ?? first.payee ?? "This row";
+  const run = async (json: Record<string, unknown>, what: string) => {
     setBusy(true);
     setError(null);
     try {
-      await fn();
+      const r = await api.call<{ undoId: string }>("/api/transactions/answers", { method: "POST", json: { ids: group.rows.map((x) => x.id), ...json } });
       notifyLedgerChanged();
-      onDone();
+      onDone(r.undoId, what);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
       setBusy(false);
     }
   };
 
-  const apply = () =>
-    run(async () => {
-      if (group.merchantKey) {
-        await api.call(`/api/transactions/${first.id}`, { method: "PATCH", json: { category, lane: lane || undefined, applyToMerchant: true } });
-      } else {
-        for (const r of group.rows) await api.call(`/api/transactions/${r.id}`, { method: "PATCH", json: { category, lane: lane || undefined } });
-      }
-    });
-  const accept = () =>
-    run(async () => {
-      for (const r of group.rows) await api.call(`/api/transactions/${r.id}`, { method: "PATCH", json: { reviewed: true } });
-    });
+  // A merchant's answer teaches a rule; rows that name no merchant are answered together.
+  const apply = () => run({ category, lane: lane || undefined, applyToMerchant: Boolean(group.merchantKey) }, `${name}: ${category}${group.merchantKey ? ", every row" : ""}`);
+  const accept = () => run({ reviewed: true }, `${name}: kept as ${guess}`);
   const changed = category !== guess || lane !== "";
 
   return (
-    <li className={`rounded-lg border border-line bg-surface transition-opacity ${busy ? "opacity-50" : ""}`}>
+    <li
+      className={`rounded-lg border border-line bg-surface outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-focus ${busy ? "opacity-50" : ""}`}
+      tabIndex={0}
+      aria-label={`${name}, guess ${guess}`}
+      data-queue-card=""
+      title="Keys: J / K next and previous, A looks right, Enter apply, O the rows"
+      onKeyDown={(e) => {
+        // Only on the card itself: a key typed in its selects and buttons is theirs.
+        if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey || busy) return;
+        const cards = [...document.querySelectorAll<HTMLElement>("[data-queue-card]")];
+        const step = (by: number) => cards[cards.indexOf(e.currentTarget) + by]?.focus();
+        const key = e.key.toLowerCase();
+        if (key === "j") step(1);
+        else if (key === "k") step(-1);
+        else if (key === "o") setOpen((v) => !v);
+        else if (key === "a") {
+          step(1);
+          void accept();
+        } else if (e.key === "Enter" && changed) {
+          step(1);
+          void apply();
+        } else return;
+        e.preventDefault();
+      }}
+    >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
         <button type="button" className="min-w-[14rem] flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-focus" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
           <div className="flex items-baseline gap-2">
             <span className="text-faint">{open ? "▾" : "▸"}</span>
-            <span className="truncate text-sm font-semibold text-fg">{group.merchantKey ?? first.payee ?? "—"}</span>
+            <span className="truncate text-sm font-semibold text-fg">{group.merchantKey ?? first.payee ?? NA}</span>
             <span className={`num shrink-0 text-sm font-medium ${group.totalCents > 0 ? "text-pos" : "text-fg-2"}`}>{usd0(group.totalCents)}</span>
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 pl-4 text-xs text-muted">

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { NA } from "@/lib/formatMoney";
 import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, btn, EmptyState, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -150,7 +151,7 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
                   <td className={table.td}>
                     <Badge tone={f.superseded ? "neutral" : f.kind.startsWith("RETURN_") ? "pos" : "info"}>{TAX_DOC_KIND_LABEL[f.kind]}</Badge>
                   </td>
-                  <td className={table.td}>{f.personId ? (r.profile.persons.find((p) => p.id === f.personId)?.name ?? f.personId) : "—"}</td>
+                  <td className={table.td}>{f.personId ? (r.profile.persons.find((p) => p.id === f.personId)?.name ?? f.personId) : NA}</td>
                   <td className={`${table.td} text-xs text-muted`}>{[f.superseded, ...f.warnings].filter(Boolean).join(" ") || ""}</td>
                 </tr>
               ))}
@@ -168,7 +169,7 @@ function fileOf(docs: NonNullable<TaxResponse["documents"]>, kind: string): stri
   return docs.files.find((f) => f.kind === kind && !f.superseded)?.file ?? null;
 }
 
-const show = (l: CheckLine, v: number | null) => (v == null ? "—" : l.percent ? `${(v / 100).toFixed(2)}%` : usd(v));
+const show = (l: CheckLine, v: number | null) => (v == null ? NA : l.percent ? `${(v / 100).toFixed(2)}%` : usd(v));
 
 const ESTIMATE_PREFIX: Record<FiledJurisdiction, string> = { FEDERAL: "fed", CT: "ct", NY: "ny" };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { NotFigure } from "@/components/ui/kit";
+import { NA } from "@/lib/formatMoney";
 import { buttonPrimary, buttonSecondary, Card } from "@/components/ledger/LedgerBits";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { ACCOUNT_KIND_LABEL, ACCOUNT_TAX_KINDS, CHILD_KINDS, type AccountTaxKind } from "@/lib/tax/facts/investments";
@@ -421,7 +422,7 @@ function PriorYearCard({
               {t.value == null ? usd(null) : typed[t.k] != null ? <NotFigure why="your entry (Override)">{usd(t.value)}</NotFigure> : cell(`prior:${t.k}`, "auto", usd(t.value))}
             </div>
             <div className="mt-0.5 truncate text-[11px] text-faint" title={typed[t.k] != null ? "Typed under Override" : where}>
-              {typed[t.k] != null ? "Typed under Override" : t.value == null ? "—" : t.k === "ctTotalTax" && auto?.ctFile ? `Read from ${auto.ctFile.split("/").at(-1)}` : where}
+              {typed[t.k] != null ? "Typed under Override" : t.value == null ? NA : t.k === "ctTotalTax" && auto?.ctFile ? `Read from ${auto.ctFile.split("/").at(-1)}` : where}
             </div>
           </div>
         ))}

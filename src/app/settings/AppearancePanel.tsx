@@ -5,7 +5,7 @@ import { applyFontScale, applyTheme, isAppTheme, isFontScale, THEME_CHANGED_EVEN
 import { useEffect, useState } from "react";
 
 const THEMES: { id: AppTheme; label: string; note: string; swatch: [string, string, string] }[] = [
-  { id: "bloomberg", label: "Terminal", note: "Black field, amber accent, monospace", swatch: ["#05070a", "#0d1117", "#ffa028"] },
+  { id: "terminal", label: "Terminal", note: "True black, amber labels, dense square panels", swatch: ["#000000", "#12100b", "#ffb545"] },
   { id: "dark", label: "Dark", note: "Soft dark, sans-serif", swatch: ["#121211", "#1a1a19", "#f08a4b"] },
   { id: "light", label: "Light", note: "Paper white, sans-serif", swatch: ["#f4f4f2", "#ffffff", "#c2410c"] },
 ];
@@ -17,7 +17,7 @@ const SIZES: { id: FontScale; label: string; sample: string }[] = [
 ];
 
 export function AppearancePanel() {
-  const [theme, setTheme] = useState<AppTheme>("bloomberg");
+  const [theme, setTheme] = useState<AppTheme>("terminal");
   const [size, setSize] = useState<FontScale>("md");
   useEffect(() => {
     const t = document.documentElement.getAttribute("data-theme");

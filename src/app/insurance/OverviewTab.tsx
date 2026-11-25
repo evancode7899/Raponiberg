@@ -3,8 +3,8 @@
 import { derivedNumber, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { Badge, Card, EmptyState, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
 import { limitKey } from "@/lib/book/derived/insurance";
-import { usd0 } from "@/lib/formatMoney";
-import { overviewPolicies, type CoverLine, type OverviewPolicy } from "@/lib/insurance/cover";
+import { NA, usd0 } from "@/lib/formatMoney";
+import { overviewPolicies, upcomingDates, type CoverLine, type OverviewPolicy } from "@/lib/insurance/cover";
 import type { InsurancePage } from "@/lib/insurance/page";
 import { useMemo } from "react";
 import { CoverStatusBadge, Fig, shortDate, until } from "./parts";
@@ -72,10 +72,10 @@ export function OverviewTab({ data, figs, open }: { data: InsurancePage; figs: r
                         </span>
                       </>
                     ) : (
-                      <span className="text-muted">—</span>
+                      <span className="text-muted">{NA}</span>
                     )}
                   </td>
-                  <td className={table.tdR}>{p.annualCents == null ? <span className="text-muted">—</span> : <Fig figs={figs} figure="annual" k={`${p.line}|${p.key}`} />}</td>
+                  <td className={table.tdR}>{p.annualCents == null ? <span className="text-muted">{NA}</span> : <Fig figs={figs} figure="annual" k={`${p.line}|${p.key}`} />}</td>
                 </tr>
               ))}
             </tbody>
@@ -182,10 +182,3 @@ function CoverItem({ line, title, rows, onOpen }: { line: string; title: string;
   );
 }
 
-/** What's ahead on every policy: renewals and term ends, life premiums due and the contract's own dates. */
-function upcomingDates(data: InsurancePage, all: OverviewPolicy[]) {
-  const out: { line: CoverLine; key: string; insurer: string; date: string; label: string }[] = [];
-  for (const p of all) if (p.next && p.next.date >= data.today) out.push({ line: p.line, key: p.key, insurer: p.insurer, date: p.next.date, label: p.next.label });
-  for (const v of data.policies) for (const d of v.dates) if (!d.past) out.push({ line: "LIFE", key: v.policy.policyNumber, insurer: v.policy.insurer, date: d.date, label: d.label });
-  return out.sort((a, b) => a.date.localeCompare(b.date));
-}

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { financialIndependenceYear, projectOutlook, retirementTax, walkAwayTable, type OutlookPlan } from "../profile/outlook";
 import { DEFAULT_OUTLOOK } from "../profile/settings";
 import { taxYearParams } from "../tax/params";
-import { accessBridge, analyzeFire, drawFor, firePlans, extended, fireNumber, fiYear, randomReturns, savingsRateCurve, sensitivityGrid, spendingCuts, stressTest } from "./fire";
+import { accessBridge, analyzeFire, drawFor, firePlans, extended, fireNumber, fiLevers, fiYear, randomReturns, savingsRateCurve, sensitivityGrid, spendingCuts, stressTest } from "./fire";
 
 // All amounts below are invented.
 const fp = taxYearParams(2026).federal;
@@ -114,6 +114,16 @@ describe("levers", () => {
     const cut = spendingCuts(plan, [2_000_00])[0]!;
     expect(cut.livingCost).toBe(90_000_00 - 24_000_00);
     expect(cut.fiYear!).toBeLessThanOrEqual(fiYear(plan)!);
+  });
+
+  it("states what one change does: the same plan rerun with it, sooner for less spending, never sooner for less return", () => {
+    const [spend, earn, ret] = fiLevers(plan);
+    expect([spend!.key, earn!.key, ret!.key]).toEqual(["spend", "earn", "return"]);
+    expect(spend!.fiYear).toBe(spendingCuts(plan, [1_000_00])[0]!.fiYear);
+    expect(earn!.fiYear).toBe(fiYear({ ...plan, salary: plan.salary + 12_000_00 }));
+    expect(ret!.fiYear).toBe(fiYear({ ...plan, returnRate: plan.returnRate - 0.01 }));
+    expect(spend!.fiYear!).toBeLessThanOrEqual(earn!.fiYear!);
+    expect(ret!.fiYear ?? Infinity).toBeGreaterThanOrEqual(fiYear(plan)!);
   });
 
   it("puts the plan's own return and rate in the grid", () => {

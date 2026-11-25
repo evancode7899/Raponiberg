@@ -1,6 +1,7 @@
 "use client";
 
 import { apiSecretHeaders } from "@/components/ledger/useApi";
+import { NA } from "@/lib/formatMoney";
 import { btn, Card, ErrorNote, inputCls, PageBody } from "@/components/ui/kit";
 import { useCallback, useEffect, useState } from "react";
 
@@ -38,7 +39,7 @@ function prettyJsonFromUnknown(value: unknown): string | null {
  * Pretty-prints JSON, humanizes dates, formats *Cents as USD.
  */
 function formatDatabaseCell(column: string, value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return NA;
   if (typeof value === "boolean") return value ? "yes" : "no";
   if (typeof value === "bigint") return value.toString();
   const pretty = prettyJsonFromUnknown(value);

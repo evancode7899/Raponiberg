@@ -7,7 +7,7 @@ import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
 import { loadJsonSetting, saveJsonSetting } from "@/lib/settingsStore";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "@/lib/taxAccounts/settings";
-import { TAX_YEARS } from "@/lib/tax/params";
+import { startedTaxYears, TAX_YEARS } from "@/lib/tax/params";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +17,10 @@ export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const years = Object.keys(TAX_YEARS).map(Number).sort();
   const asked = Number(request.nextUrl.searchParams.get("year"));
   return jsonBody(
-    await cachedBuilt(prisma, `tax-accounts|${years.includes(asked) ? asked : "current"}`, async (book) => {
+    await cachedBuilt(prisma, `tax-accounts|${TAX_YEARS[asked] ? asked : "current"}`, async (book) => {
+      const years = startedTaxYears(book.today);
       // No year asked: the Book's year (book.today), the one every figure is built as of.
       const thisYear = Number(book.today.slice(0, 4));
       const year = years.includes(asked) ? asked : years.includes(thisYear) ? thisYear : years.at(-1)!;

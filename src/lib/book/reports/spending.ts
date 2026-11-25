@@ -21,7 +21,15 @@ import { buildCashFlowReport, cashFlowRows, dayOfFor, type CashFlowPeriod } from
 export const merchantKeyOf = (r: Pick<BookRow, "merchantKey" | "payee">) => r.merchantKey ?? r.payee;
 
 /** A merchant's (or payer's) net money in one month. Spending is positive. */
-export type MerchantMonth = { key: string; name: string; category: string; cents: number; count: number };
+export type MerchantMonth = {
+  key: string;
+  name: string;
+  category: string;
+  cents: number;
+  count: number;
+  /** Its part in each category, where its rows this month fall in more than one. */
+  split?: { category: string; cents: number; count: number }[];
+};
 
 export type SpendingMonth = CashFlowPeriod & {
   /** Spending by merchant (net of refunds), largest first. */
@@ -309,16 +317,25 @@ function buildSpendingRows(book: Book, accountIds?: string[]) {
 export function merchantsIn(rows: BookRow[], p: { start: string; end: string }, dayOf: (r: BookRow) => string): { merchants: MerchantMonth[]; payers: MerchantMonth[] } {
   const merchants = new Map<string, MerchantMonth>();
   const payers = new Map<string, MerchantMonth>();
+  const parts = new Map<MerchantMonth, Map<string, { category: string; cents: number; count: number }>>();
   for (const r of rows) {
     if (dayOf(r) < p.start || dayOf(r) > p.end) continue;
     if (r.lane !== "EXPENSE" && r.lane !== "INCOME") continue;
     const key = merchantKeyOf(r);
     const m = r.lane === "EXPENSE" ? merchants : payers;
     const cur = m.get(key) ?? { key, name: merchantName(key), category: r.category, cents: 0, count: 0 };
-    cur.cents += r.lane === "EXPENSE" ? -r.amountCents : r.amountCents;
+    const cents = r.lane === "EXPENSE" ? -r.amountCents : r.amountCents;
+    cur.cents += cents;
     cur.count++;
     m.set(key, cur);
+    const byCategory = parts.get(cur) ?? new Map<string, { category: string; cents: number; count: number }>();
+    const part = byCategory.get(r.category) ?? { category: r.category, cents: 0, count: 0 };
+    part.cents += cents;
+    part.count++;
+    byCategory.set(r.category, part);
+    parts.set(cur, byCategory);
   }
+  for (const [m, byCategory] of parts) if (byCategory.size > 1) m.split = [...byCategory.values()];
   const sorted = (m: Map<string, MerchantMonth>) => [...m.values()].filter((x) => x.cents !== 0).sort((a, b) => b.cents - a.cents);
   return { merchants: sorted(merchants), payers: sorted(payers) };
 }

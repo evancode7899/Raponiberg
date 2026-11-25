@@ -6,7 +6,7 @@ import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/p
 import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
 import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue, Rederivation } from "@/lib/book/proof/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
-import { formatPercentRatio, formatUsdFromCents, usd0 } from "@/lib/formatMoney";
+import { EM_DASH, formatPercentRatio, formatUsdFromCents, NA, usd0 } from "@/lib/formatMoney";
 import { QUALITY_TEXT } from "@/lib/ledger/qualityText";
 import type { Quality } from "@/lib/ledger/timeline";
 import Link from "next/link";
@@ -16,7 +16,7 @@ import type { ProofEntry } from "./ProofProvider";
 const date = (iso: string) => formatDisplayDateFromYmd(iso);
 const cents = (c: number) => formatUsdFromCents(Math.round(c));
 const month = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
-const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd0(v.cents) : cents(v.cents)) : "ratio" in v ? formatPercentRatio(v.ratio, 2) : v.text);
+const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd0(v.cents) : cents(v.cents)) : "ratio" in v ? formatPercentRatio(v.ratio, 2) : v.text === EM_DASH ? NA : v.text);
 
 /**
  * The proof behind a figure, whatever kind it is: the figure and whether its parts
@@ -192,7 +192,7 @@ function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?
                   </span>
                 </span>
                 <span className="min-w-0 truncate text-xs text-muted" title={s.documentTitle}>
-                  {s.documentTitle || "—"}
+                  {s.documentTitle || NA}
                 </span>
               </li>
             ))}
@@ -415,7 +415,7 @@ function GroupView({ g, self, onFollow }: { g: ProofGroup; self: Self; onFollow:
                   <td className={table.td}>
                     <div className="text-fg">
                       <FollowLink link={r.rowId && r.rowId !== self.rowId ? { label: r.payee || "this row", descriptor: { report: "row", rowId: r.rowId } } : undefined} onFollow={onFollow}>
-                        {r.payee || "—"}
+                        {r.payee || NA}
                       </FollowLink>
                     </div>
                     <RowNotes r={r} />

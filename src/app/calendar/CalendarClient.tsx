@@ -5,8 +5,9 @@ import { calendarDerived } from "@/lib/book/derived/planning";
 import { derivedTarget } from "@/lib/book/derived/types";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { Badge, Callout, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Loading, PageBody, Segmented } from "@/components/ui/kit";
 import type { CalendarItem, CalendarKind, MoneyCalendarReport } from "@/lib/book/reports/moneyCalendar";
+import { icsFile } from "@/lib/dates/ics";
 import { usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -66,7 +67,7 @@ function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" |
         ) : (
           <p className="text-sm text-fg-2">Nothing open: every room is filled and no payment is due.</p>
         )}
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <Segmented view
             options={[
               { value: "open", label: `Open (${open.length})` },
@@ -75,6 +76,11 @@ function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" |
             value={show}
             onChange={setShow}
           />
+          {open.length > 0 && (
+            <button type="button" className={btn.secondary} title="Every open deadline as a calendar file, with reminders 14 and 3 days before. It carries the actions and dates, no amounts." onClick={() => saveIcs(open)}>
+              Add to my calendar
+            </button>
+          )}
         </div>
       </Card>
 
@@ -104,9 +110,27 @@ function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" |
           </ul>
         </Callout>
       )}
-      <p className="text-xs text-muted">Estimates from your statements and pay stubs, not tax advice.</p>
+      <p className="text-xs leading-relaxed text-muted">
+        Estimated tax uses the regular method: by each date a quarter more of the year&apos;s safe-harbor payment must be in, with withholding counted as paid evenly through the year, so the next date
+        includes what earlier ones missed. The annualized-income method, which can ask for less early on when income comes late in the year, isn&apos;t worked out here. Estimates from your statements and
+        pay stubs, not tax advice.
+      </p>
     </div>
   );
+}
+
+/** Saves the open deadlines as a calendar file. Amounts stay in the app: a calendar is often shared or synced. */
+function saveIcs(items: CalendarItem[]) {
+  const text = icsFile(
+    items.map((i) => ({ id: i.id, date: i.date, title: i.title, description: "From Raponiberg's money calendar. Open the app for the amount." })),
+    new Date(),
+  );
+  const url = URL.createObjectURL(new Blob([text], { type: "text/calendar" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "money-calendar.ics";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function Item({ i, showYear }: { i: CalendarItem; showYear: boolean }) {

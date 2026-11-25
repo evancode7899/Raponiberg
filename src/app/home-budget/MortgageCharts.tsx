@@ -48,8 +48,8 @@ export function NetWorthChart({ rows, chart, payoffYear, label }: { rows: YearPo
         {payoffYear !== null && (
           <ReferenceLine x={payoffYear} stroke={chart.series[1]} strokeDasharray="3 3" label={{ value: "Paid off early", position: "insideTopLeft", fontSize: 10, fill: chart.axis }} />
         )}
-        <Line name={INVEST} type="monotone" dataKey="investNW" stroke={chart.series[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
-        <Line name={PREPAY} type="monotone" dataKey="prepayNW" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line name={INVEST} type="linear" dataKey="investNW" stroke={chart.series[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line name={PREPAY} type="linear" dataKey="prepayNW" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
       </LineChart>
     </Frame>
   );

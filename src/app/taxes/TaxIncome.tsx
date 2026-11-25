@@ -81,7 +81,6 @@ export function TaxIncome({ r }: { r: TaxResponse }) {
               { label: lawLabel("2% rate phase-out add-back"), values: [cell("ct-addback", "joint", ct.addBack)] },
               { label: "Benefit recapture", values: [cell("ct-recapture", "joint", ct.recapture)] },
               { label: lawLabel(`Personal tax credit (${pct(ct.personalCreditRate, 0)})`), values: [cell("ct-personal-credit", "joint", -ct.personalCredit)] },
-              { label: "Child tax credit", values: [est("ct.childTaxCredit", ct.childTaxCredit, true)] },
               { label: "Connecticut income tax", values: [est("ct.totalTax", ct.totalTax)], strong: true },
             ]}
           />

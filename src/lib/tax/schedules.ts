@@ -133,7 +133,6 @@ export function returnSchedules(r: ReturnResult, people: PersonIncome[], params:
   ];
   if (r.ct.personalCredit) ctLines.push({ label: `Personal tax credit (${Math.round(r.ct.personalCreditRate * 100)}%)`, value: -r.ct.personalCredit });
   if (r.ct.otherStateCredit) ctLines.push({ label: "Credit for tax paid to other states", value: -r.ct.otherStateCredit });
-  if (r.ct.childTaxCredit) ctLines.push({ label: "CT child tax credit", value: -r.ct.childTaxCredit });
   ctLines.push({ label: "Connecticut income tax", value: r.ct.totalTax, strong: true });
   out.push({ key: "ctcalc", title: "Connecticut tax calculation", kind: "lines", lines: ctLines });
 

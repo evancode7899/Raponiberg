@@ -31,6 +31,19 @@ export const buttonPrimary = btn.primary;
 export const buttonSecondary = btn.secondary;
 export const buttonDanger = btn.danger;
 
+/**
+ * A row that opens something, with figures in it. The row's own button is stretched under its
+ * text and each figure keeps its own button above it: a button may not hold another one.
+ */
+export function RowButton({ label, onClick, title, className = "", children }: { label: string; onClick: () => void; title?: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={`relative rounded hover:bg-surface-2 [&_[data-proof-key]]:relative [&_[data-proof-key]]:z-10 ${className}`}>
+      <button type="button" aria-label={label} title={title} onClick={onClick} className="absolute inset-0 z-[5] cursor-pointer rounded outline-none focus-visible:ring-2 focus-visible:ring-focus" />
+      {children}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------- inputs
 
 export const inputCls =
@@ -254,15 +267,15 @@ export function Card({
       className={`min-w-0 rounded-lg border shadow-[var(--shadow)] ${overview ? "border-line-strong bg-surface-2" : "border-line bg-surface"} ${className}`}
     >
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-3.5">
+        <header data-panel-head="" className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-3.5">
           <div className="min-w-0 flex-1">
             {title && <h2 className="text-[13px] font-semibold text-fg">{title}</h2>}
-            {subtitle && <div className="mt-0.5 max-w-3xl text-xs leading-relaxed text-muted">{subtitle}</div>}
+            {subtitle && <div data-panel-sub="" className="mt-0.5 max-w-3xl text-xs leading-relaxed text-muted"><div data-panel-words="">{subtitle}</div></div>}
           </div>
           {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      {children !== undefined && <div className={`min-w-0 px-4 pb-4 ${title || actions ? "pt-3" : "pt-4"} ${bodyClassName}`}>{children}</div>}
+      {children !== undefined && <div data-panel-body="" className={`min-w-0 px-4 pb-4 ${title || actions ? "pt-3" : "pt-4"} ${bodyClassName}`}>{children}</div>}
     </section>
   );
 }
@@ -477,7 +490,7 @@ export function Segmented<T extends string>({
     ? { "data-audit-view": v?.skip?.join(",") ?? "", ...(v?.skip?.length ? { "data-audit-skip-why": v.why } : {}), ...(v?.nested ? { "data-audit-nest": "" } : {}) }
     : {};
   return (
-    <div role="radiogroup" aria-label={ariaLabel} {...audit} className="inline-flex rounded-md border border-line-strong bg-surface-2 p-0.5">
+    <div role="radiogroup" data-segmented="" aria-label={ariaLabel} {...audit} className="inline-flex rounded-md border border-line-strong bg-surface-2 p-0.5">
       {options.map((o) => {
         const on = value === o.value;
         return (
@@ -542,6 +555,11 @@ export function Tabs<T extends string>({
   );
 }
 
+/** The page scrolls inside the app's frame (AppShell's main), never the window. */
+export function scrollToTop() {
+  document.getElementById("main")?.scrollTo({ top: 0 });
+}
+
 /**
  * Tab state mirrored in the URL (?tab=…), so tabs survive reloads, links can point at
  * a tab, and the browser's back button works. Re-read whenever Next's router changes the
@@ -550,8 +568,9 @@ export function Tabs<T extends string>({
  * search params needs no Suspense boundary.
  */
 export function useTabParam<T extends string>(valid: readonly T[], fallback: T): [T, (t: T) => void] {
-  const [tab, setTabState] = useState<T>(fallback);
   const query = useSearchParams().get("tab");
+  // The tab asked for from the first draw: a link to a tab never mounts the default one first.
+  const [tab, setTabState] = useState<T>(() => (query && (valid as readonly string[]).includes(query) ? (query as T) : fallback));
   useEffect(() => {
     const read = () => {
       const t = new URLSearchParams(window.location.search).get("tab") as T | null;

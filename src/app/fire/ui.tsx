@@ -8,15 +8,15 @@ import { noFigure } from "@/lib/book/proof/clearance";
 import type { OutlookSeeds, ResolvedBasePay } from "@/lib/profile/basePay";
 import type { OutlookAssumptions } from "@/lib/profile/settings";
 import { planValue, type AccessFigure, type PlanCellValue, type StressFigure } from "@/lib/fire/longTerm";
-import { formatPercentRatio, formatUsd, usd0 } from "@/lib/formatMoney";
+import { formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
 import type { OutlookPlan } from "@/lib/profile/outlook";
 
 /** Whole dollars from cents. */
 export const usd = usd0;
-export const pct = (r: number | null | undefined, digits = 1) => (r == null ? "—" : formatPercentRatio(r, digits));
+export const pct = (r: number | null | undefined, digits = 1) => (r == null ? NA : formatPercentRatio(r, digits));
 /** $1.25M / $480k / $900 from cents. */
 export function short(cents: number | null | undefined): string {
-  if (cents == null || !Number.isFinite(cents)) return "—";
+  if (cents == null || !Number.isFinite(cents)) return NA;
   const d = cents / 100;
   const a = Math.abs(d);
   const s = a >= 1e6 ? `$${(a / 1e6).toFixed(a >= 1e7 ? 1 : 2)}M` : a >= 1e3 ? `$${Math.round(a / 1e3)}k` : `$${Math.round(a)}`;
@@ -47,7 +47,7 @@ export function DollarsToggle({ value, onChange }: { value: Dollars; onChange: (
 
 /** "2034 (age 41)" or "2034". */
 export const yearAge = (year: number | null | undefined, plan: OutlookPlan) =>
-  year == null ? "—" : plan.birthYear != null ? `${year} (age ${year - plan.birthYear})` : String(year);
+  year == null ? NA : plan.birthYear != null ? `${year} (age ${year - plan.birthYear})` : String(year);
 
 /** "in 8 years" relative to the plan's first year. */
 export const yearsFrom = (year: number | null | undefined, plan: OutlookPlan) => {
@@ -100,6 +100,6 @@ export const firePlanProof =
   (fire: FireSettings): FirePlanProof =>
   (which, v) => {
     const value = planValue(v);
-    if (!value) return noFigure("nothing that year");
+    if (!value) return noFigure("nothing that year", true);
     return { descriptor: { report: "planning", page: "fire", fire, ...which }, shownCents: "cents" in value ? value.cents : null, ...("cents" in value ? {} : { shown: value }) };
   };

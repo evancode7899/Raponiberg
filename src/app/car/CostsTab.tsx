@@ -7,7 +7,7 @@ import { chartChrome } from "@/components/shell/chartPalette";
 import { Badge, Card, StatementTable, table, type TableRow } from "@/components/ui/kit";
 import { COST_LINES, LINE_INFO, type CostLine } from "@/lib/car/report";
 import { KIND_INFO, type CarKind } from "@/lib/car/settings";
-import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
@@ -48,7 +48,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
     {
       label: "Per mile",
       strong: true,
-      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : "—", proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }, null) : noFigure("no miles to divide by") })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }, null) : noFigure("no miles to divide by") }],
+      cells: [...years.map(([yr, y]) => ({ text: y.miles ? perMile(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.miles) : NA, proof: y.miles ? carProof(s.id, { span: yr, per: "mile" }, null) : noFigure("no miles to divide by") })), { text: perMile(r.totals.perMile), proof: r.totals.perMile != null ? carProof(s.id, { span: "toDate", per: "mile" }, null) : noFigure("no miles to divide by") }],
     },
     { label: "Per month", muted: true, cells: [...years.map(([yr, y]) => ({ text: usd0(Object.values(y.lines).reduce((a, b) => a + b, 0) / y.months), proof: carProof(s.id, { span: yr, per: "month" }, null) })), { text: usd0(r.totals.perMonth), proof: r.totals.perMonth != null ? carProof(s.id, { span: "toDate", per: "month" }, null) : noFigure("no months to divide by") }] },
   ];
@@ -87,8 +87,8 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                       <td className={table.tdR}>
                         <ProofValue proof={carProof(s.id, { span: "toDate", basis: "cash", line: k }, r.cash[k])}>{usd0(r.cash[k])}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{usedC == null ? "—" : <ProofValue proof={carProof(s.id, { span: "toDate", line: k as CostLine }, usedC)}>{usd0(usedC)}</ProofValue>}</td>
-                      <td className={`${table.tdR} text-muted`}>{usedC == null ? "—" : <ProofValue proof={compositeOf("diff", [carProof(s.id, { span: "toDate", basis: "cash", line: k }, r.cash[k]), carProof(s.id, { span: "toDate", line: k as CostLine }, usedC)], { cents: r.cash[k] - usedC })}>{usd0(r.cash[k] - usedC)}</ProofValue>}</td>
+                      <td className={table.tdR}>{usedC == null ? NA : <ProofValue proof={carProof(s.id, { span: "toDate", line: k as CostLine }, usedC)}>{usd0(usedC)}</ProofValue>}</td>
+                      <td className={`${table.tdR} text-muted`}>{usedC == null ? NA : <ProofValue proof={compositeOf("diff", [carProof(s.id, { span: "toDate", basis: "cash", line: k }, r.cash[k]), carProof(s.id, { span: "toDate", line: k as CostLine }, usedC)], { cents: r.cash[k] - usedC })}>{usd0(r.cash[k] - usedC)}</ProofValue>}</td>
                     </tr>
                   );
                 })}
@@ -101,7 +101,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                     <td className={table.tdR}>
                       <ProofValue proof={carProof(s.id, { span: "toDate", line: "INTEREST" }, r.accrued.INTEREST)}>{usd0(r.accrued.INTEREST)}</ProofValue>
                     </td>
-                    <td className={`${table.tdR} text-muted`}>—</td>
+                    <td className={`${table.tdR} text-muted`}>{NA}</td>
                   </tr>
                 )}
               </tbody>
@@ -146,7 +146,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                   <td className={table.td}>Dead loss on day one (fees, tax, registration)</td>
                   <td className={table.tdR}>
                     <NotFigure why="worked out from your purchase entry">
-                      {usd2(a.sunkCents)} <span className="text-muted">({a.deadLossShare == null ? "—" : formatPercentRatio(a.deadLossShare, 1)})</span>
+                      {usd2(a.sunkCents)} <span className="text-muted">({a.deadLossShare == null ? NA : formatPercentRatio(a.deadLossShare, 1)})</span>
                     </NotFigure>
                   </td>
                 </tr>
@@ -214,7 +214,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
                         <ProofValue proof={ctx.dp("premium-monthly", k)}>{usd0(x.monthlyCents)}</ProofValue>
                       </td>
                       <td className={`${table.tdR} ${x.changeShare == null ? "" : x.changeShare > 0.005 ? "text-neg" : x.changeShare < -0.005 ? "text-pos" : "text-muted"}`}>
-                        {x.changeShare == null ? "—" : <ProofValue proof={ctx.dp("premium-change", k)}>{`${x.changeShare > 0 ? "+" : ""}${(x.changeShare * 100).toFixed(1)}%`}</ProofValue>}
+                        {x.changeShare == null ? NA : <ProofValue proof={ctx.dp("premium-change", k)}>{`${x.changeShare > 0 ? "+" : ""}${(x.changeShare * 100).toFixed(1)}%`}</ProofValue>}
                       </td>
                     </tr>
                   ))}

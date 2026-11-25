@@ -1,3 +1,4 @@
+import { filingDate } from "../../dates/taxDates.ts";
 import { usd0 } from "../../formatMoney.ts";
 import type { TaxReport, TaxReportBlocked } from "../../tax/buildTaxReport.ts";
 import { estimateColumns, lineValue, type EstimateKey } from "../../tax/estimateLines.ts";
@@ -12,6 +13,11 @@ import type { TaxAccountsReport } from "./taxAccounts.ts";
  * that page uses. Each account's own deadline decides the date: the 401(k), employer match
  * and CHET close on December 31, but HSA and IRA money still counts for the year until
  * April 15. So from January to the filing date, last year's items sit beside this year's.
+ *
+ * Estimated tax follows the law's regular method (installmentsDue in tax/computeReturn.ts):
+ * each date asks for what brings the payments up to that many quarters of the year's safe
+ * harbor, so a date that passed unpaid is in the next one. Not the annualized-income method
+ * (Form 2210 Schedule AI), which can ask for less early when income comes late in the year.
  */
 
 export type CalendarKind = "save" | "tax" | "file";
@@ -52,7 +58,7 @@ export type MoneyCalendarReport = {
 /** The tax years with something still open on `today`: this year, and last year until its filing date. */
 export function calendarYears(today: string, supported: number[]): number[] {
   const y = Number(today.slice(0, 4));
-  return [y - 1, y].filter((x) => supported.includes(x) && today <= `${x + 1}-04-15`);
+  return [y - 1, y].filter((x) => supported.includes(x) && today <= filingDate(x));
 }
 
 const STEP_ORDER: CalendarKind[] = ["tax", "save", "file"];
@@ -62,7 +68,7 @@ export function buildMoneyCalendar(today: string, years: CalendarYear[]): MoneyC
   const notes: string[] = [];
   for (const { year, tax, accounts } of years) {
     const yearEnd = `${year}-12-31`;
-    const filing = tax.blocked ? `${year + 1}-04-15` : tax.plan.filingDate;
+    const filing = tax.blocked ? filingDate(year) : tax.plan.filingDate;
     const limit = (x: Omit<AccountLimitsDescriptor, "report" | "year">): ProofDescriptor => ({ report: "account-limits", year, ...x });
     const people = new Map(accounts.people.map((p) => [p.id, p]));
 
@@ -121,7 +127,7 @@ export function buildMoneyCalendar(today: string, years: CalendarYear[]): MoneyC
           year,
           kind: "tax",
           title: plan.paycheckPerson ? `${plan.paycheckPerson}: raise federal withholding (W-4)` : "Raise federal withholding (W-4)",
-          detail: `Extra withholding per paycheck over the ${plan.remainingPaychecks} paychecks left covers the safe harbor without an estimated payment. It only reaches paychecks still to come, so each one that passes raises the amount.`,
+          detail: `Extra withholding per paycheck over the ${plan.remainingPaychecks} paychecks left covers the safe harbor without an estimated payment: withholding counts as paid evenly through the year, so it reaches the dates already past too. It only comes out of paychecks still to come, so each one that passes raises the amount.`,
           cents: per,
           perPaycheck: true,
           proof: null,
@@ -129,26 +135,48 @@ export function buildMoneyCalendar(today: string, years: CalendarYear[]): MoneyC
           done: false,
         });
       }
-      for (const [state, name, shortfall] of [
-        ["federal", "Federal", plan.federal.safeHarborShortfall],
-        ["ct", "Connecticut", plan.ct.safeHarborShortfall],
-      ] as const) {
+    }
+    const quarters = ["", "a quarter", "half", "three quarters", "all"];
+    for (const [state, name, due] of [
+      ["federal", "Federal", plan.federal],
+      ["ct", "Connecticut", plan.ct],
+      ...(plan.ny ? ([["ny", "New York", plan.ny]] as const) : []),
+    ] as const) {
+      // The year's last installment is due the January after it, so it outlives the year in progress.
+      const left = due.installments;
+      if (due.safeHarborShortfall <= 0) {
+        const last = left.at(-1);
+        if (last)
+          items.push({
+            id: `${year}-q${last.quarter}-${state}`,
+            date: last.date,
+            year,
+            kind: "tax",
+            title: `${name} Q${last.quarter} estimated tax`,
+            detail: "Projected withholding and payments already meet the safe harbor.",
+            cents: due.safeHarborShortfall,
+            proof: null,
+            href: "/taxes",
+            done: true,
+          });
+        continue;
+      }
+      // A date asking for nothing (already covered) stays off the calendar.
+      const open = left.filter((x) => x.cents > 0);
+      open.forEach((x, i) =>
         items.push({
-          id: `${year}-q4-${state}`,
-          date: plan.q4DueDate,
+          id: `${year}-q${x.quarter}-${state}`,
+          date: x.date,
           year,
           kind: "tax",
-          title: `${name} Q4 estimated tax`,
-          detail:
-            shortfall > 0
-              ? `What still has to be paid in to meet the safe harbor and avoid the underpayment penalty${state === "federal" ? ", unless raising withholding covers it first" : ""}.`
-              : "Projected withholding and payments already meet the safe harbor.",
-          cents: shortfall,
+          title: `${name} Q${x.quarter} estimated tax`,
+          detail: `Brings what's paid in to ${quarters[x.quarter]} of the year's safe-harbor payment by this date, withholding counted as paid evenly through the year${state === "federal" && tax.isCurrentYear ? ", unless raising withholding covers it first" : ""}.${i === 0 && x.quarter > 1 ? " It includes anything earlier dates missed: paying it stops the penalty on them from growing, but doesn't undo the days since." : ""} An estimate, not advice.`,
+          cents: x.cents,
           proof: null,
           href: "/taxes",
-          done: shortfall <= 0,
-        });
-      }
+          done: false,
+        }),
+      );
     }
     const { cols } = estimateColumns(tax, "projected");
     const joint = cols.find((c) => c.id === "joint");

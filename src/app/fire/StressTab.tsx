@@ -4,7 +4,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, NotFigure, StatCell, StatGrid, WhatIf } from "@/components/ui/kit";
 import { stressTest } from "@/lib/fire/fire";
-import { axisUsd } from "@/lib/formatMoney";
+import { axisUsd, NA } from "@/lib/formatMoney";
 import { useDeferredValue, useMemo } from "react";
 import { Area, AreaChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { deflator, DollarsToggle, pct, tipUsd, yearAge, type FirePlanProof, type FireProps } from "./ui";
@@ -28,9 +28,9 @@ export function StressTab({ f, dollars, setDollars, volatility, proof }: FirePro
     <>
       <StatGrid cols={4}>
         <StatCell proof={tile("p50")} label="Typical market" value={s.fiYears.p50 ? String(s.fiYears.p50) : "Not in 60 yrs"} sub={`median of ${PATHS.toLocaleString()} market paths`} />
-        <StatCell proof={tile("p10")} label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : "—"} tone="pos" sub={<NotFigure why="what the percentile means">best 10%: 1 path in 10 is FI by then</NotFigure>} />
+        <StatCell proof={tile("p10")} label="Good markets" value={s.fiYears.p10 ? String(s.fiYears.p10) : NA} tone="pos" sub={<NotFigure why="what the percentile means">best 10%: 1 path in 10 is FI by then</NotFigure>} />
         <StatCell proof={tile("p90")} label="Bad markets" value={s.fiYears.p90 ? String(s.fiYears.p90) : "Not in 60 yrs"} tone="warn" sub={<NotFigure why="what the percentile means">{s.fiYears.p90 ? "worst 10%: 9 paths in 10 are FI by then" : "worst 10% of paths aren't FI within 60 years"}</NotFigure>} />
-        <StatCell proof={tile("by-fi")} label={f.fi ? `FI by ` : "Chance of FI"} value={byPlanFi != null ? pct(byPlanFi, 0) : "—"} sub="chance by the steady-return plan's FI year" />
+        <StatCell proof={tile("by-fi")} label={f.fi ? `FI by ` : "Chance of FI"} value={byPlanFi != null ? pct(byPlanFi, 0) : NA} sub="chance by the steady-return plan's FI year" />
       </StatGrid>
       {s.coveredThroughout != null && (
         <Callout
@@ -83,10 +83,10 @@ function Fan({ f, s, dollars, setDollars }: Omit<FireProps, "d"> & { s: ReturnTy
               formatter={(v, name) => [Array.isArray(v) ? `${tipUsd(v[0])} – ${tipUsd(v[1])}` : tipUsd(v), String(name)]}
             />
             <Legend {...ui.legend} />
-            <Area type="monotone" dataKey="outer" name="10th–90th percentile" stroke="none" fill={chart.series[0]} fillOpacity={0.15} isAnimationActive={false} />
-            <Area type="monotone" dataKey="inner" name="25th–75th percentile" stroke="none" fill={chart.series[0]} fillOpacity={0.3} isAnimationActive={false} />
-            <Line type="monotone" dataKey="median" name="Median path" stroke={chart.series[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="plan" name="Steady-return plan" stroke={chart.lineBalance} strokeDasharray="4 3" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Area type="linear" dataKey="outer" name="10th–90th percentile" stroke="none" fill={chart.series[0]} fillOpacity={0.15} isAnimationActive={false} />
+            <Area type="linear" dataKey="inner" name="25th–75th percentile" stroke="none" fill={chart.series[0]} fillOpacity={0.3} isAnimationActive={false} />
+            <Line type="linear" dataKey="median" name="Median path" stroke={chart.series[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line type="linear" dataKey="plan" name="Steady-return plan" stroke={chart.lineBalance} strokeDasharray="4 3" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             {plan.walkAwayYear && <ReferenceLine x={String(plan.walkAwayYear)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: "Walk away", fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />}
           </ComposedChart>
         </RechartsResponsive>
@@ -110,7 +110,7 @@ function Odds({ s, f }: { s: ReturnType<typeof stressTest>; f: FireProps["f"] })
             <YAxis {...ui.yAxis} width={44} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v: number) => `${v}%`} />
             <Tooltip {...ui.tooltip} labelFormatter={(v) => `By Jan 1, ${v}`} formatter={(v) => [`${v}%`, "Chance of FI"]} />
             <ReferenceLine y={50} stroke={chart.axisLine} strokeDasharray="3 3" />
-            <Area type="monotone" dataKey="share" name="Chance of FI" stroke={chart.series[2]} fill={chart.series[2]} fillOpacity={0.25} strokeWidth={2} isAnimationActive={false} />
+            <Area type="linear" dataKey="share" name="Chance of FI" stroke={chart.series[2]} fill={chart.series[2]} fillOpacity={0.25} strokeWidth={2} isAnimationActive={false} />
             {f.fi && <ReferenceLine x={String(f.fi.year)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: `plan FI ${yearAge(f.fi.year, f.plan)}`, fill: chart.legend, fontSize: 11, position: "insideBottomRight" }} />}
           </AreaChart>
         </RechartsResponsive>

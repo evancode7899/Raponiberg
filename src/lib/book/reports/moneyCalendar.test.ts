@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { CLASSIFIER_VERSION } from "../../classifier/version";
 import { NO_HOUSEHOLD } from "../../household/patterns";
 import type { StubLine } from "../../ingest/payroll/types";
+import { estimateInstallments } from "../../dates/taxDates";
 import { buildTaxReport } from "../../tax/buildTaxReport";
+import { installmentsDue } from "../../tax/computeReturn";
 import type { TaxProfile } from "../../tax/profile";
 import { normalizeRetirementSettings } from "../../taxAccounts/settings";
 import type { Book, BookAccount, BookRow, BookStub } from "../load";
@@ -142,6 +144,37 @@ describe("money calendar", () => {
     const fed = r.items.find((i) => i.id === "2025-file-fed.balance");
     expect(fed?.date).toBe("2026-04-15");
     expect(fed?.proof).toEqual({ report: "tax-estimate", year: 2025, basis: "projected", key: "fed.balance" });
+  });
+
+  it("keeps last year's Q4 estimate through its due date in January", () => {
+    const jan = { ...book, today: "2026-01-05" };
+    const late = buildMoneyCalendar(jan.today, yearsOf(jan));
+    expect(late.items.find((i) => i.id === "2025-q4-federal")?.date).toBe("2026-01-15");
+    expect(late.items.some((i) => i.id === "2025-q3-federal")).toBe(false);
+  });
+
+  it("asks at each date for what brings payments up to that many quarters, to the cent", () => {
+    const [, y26] = yearsOf(book);
+    const tax = y26!.tax;
+    if (tax.blocked) throw new Error("2026 is blocked");
+    // $1,000.01 short on the year; as of August, the April and June dates went by unpaid.
+    const sh = { requiredAnnualPayment: 9_000_01, withholding: 8_000_00, estimatesPaid: 0, underDeMinimis: false };
+    const owing = (today: string, paid = 0) => {
+      const left = estimateInstallments(2026).filter((x) => x.date >= today);
+      const dues = installmentsDue({ ...sh, estimatesPaid: paid }, left.map((x) => x.quarter));
+      const due = { ...tax.plan.federal, safeHarborShortfall: 1_000_01 - paid, installments: left.map((x, i) => ({ ...x, cents: dues[i]! })) };
+      return buildMoneyCalendar(today, [{ ...y26!, tax: { ...tax, plan: { ...tax.plan, federal: due, ny: { ...due } } } }]).items;
+    };
+    const fed = (items: ReturnType<typeof owing>) => items.filter((i) => /^2026-q\d-federal$/.test(i.id)).map((i) => [i.date, i.cents]);
+    expect(fed(owing("2026-03-10"))).toEqual([["2026-04-15", 250_00], ["2026-06-15", 250_01], ["2026-09-15", 250_00], ["2027-01-15", 250_00]]);
+    expect(fed(owing("2026-08-01"))).toEqual([["2026-09-15", 750_01], ["2027-01-15", 250_00]]);
+    // April's and June's paid in full: only a quarter each is left.
+    expect(fed(owing("2026-08-01", 500_01))).toEqual([["2026-09-15", 250_00], ["2027-01-15", 250_00]]);
+    // Paid ahead: the September date asks for nothing, so it isn't on the calendar.
+    expect(fed(owing("2026-08-01", 800_00))).toEqual([["2027-01-15", 200_01]]);
+    // New York's dates, where the year has New York tax.
+    const ny = owing("2026-08-01").filter((i) => /^2026-q\d-ny$/.test(i.id));
+    expect(ny.map((i) => [i.title, i.cents])).toEqual([["New York Q3 estimated tax", 750_01], ["New York Q4 estimated tax", 250_00]]);
   });
 
   it("puts the year in progress's Q4 estimate on January 15", () => {

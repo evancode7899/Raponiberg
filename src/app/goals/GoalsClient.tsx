@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger, notify } from "@/components/ui/Feedback";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
@@ -8,7 +9,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, type ProofTarget } from "@/components/ui/proof/context";
 import type { GoalFigure } from "@/lib/book/proof/planningProof";
 import type { GoalProgress, GoalsReport } from "@/lib/book/reports/goals";
-import { formatPercentRatio, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import type { Goal, GoalSettings } from "@/lib/goals/settings";
 import type { AccountGroup } from "@/lib/ledger/loadLedger";
 import Link from "next/link";
@@ -59,7 +60,7 @@ const TYPES: { type: GoalType; label: string; blurb: string; preset: Omit<Goal, 
 ];
 const typeOf = (g: Goal): GoalType => (g.funding === "TRACK" ? "MILESTONE" : g.kind === "EMERGENCY_FUND" ? "EMERGENCY" : "SAVE");
 
-const fmtMonth = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—");
+const fmtMonth = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : NA);
 const monthIndex = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -190,10 +191,12 @@ export function GoalsClient({ requiresApiSecret }: { requiresApiSecret: boolean 
             upsert(g);
             setEditing(null);
           }}
-          onDelete={() => {
-            if (!window.confirm("Delete this goal? Its target, date and funding choices are removed.")) return;
-            saveGoals(goals.filter((g) => g.id !== editing.id));
+          onDelete={async () => {
+            if (!(await askDanger("Delete this goal?", "Delete", "Its target, date and funding choices are removed."))) return;
+            const before = goals;
+            await saveGoals(goals.filter((g) => g.id !== editing.id));
             setEditing(null);
+            notify(`Deleted ${editing.name}.`, { undo: () => saveGoals(before) });
           }}
         />
       )}
@@ -352,7 +355,7 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
         <span className="num text-2xl font-semibold tracking-tight text-fg">
           {blocked ? <BlockedValue blockers={g.blockers} /> : <ProofValue proof={goalProof(g, "current", g.currentCents)}>{usd0(g.currentCents)}</ProofValue>}
           <span className="ml-1.5 text-sm font-normal text-muted">
-            of {g.targetCents == null ? "—" : <ProofValue proof={goalProof(g, "target", g.targetCents)}>{usd0(g.targetCents)}</ProofValue>}
+            of {g.targetCents == null ? NA : <ProofValue proof={goalProof(g, "target", g.targetCents)}>{usd0(g.targetCents)}</ProofValue>}
           </span>
         </span>
         {g.targetCents != null && (

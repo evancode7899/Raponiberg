@@ -1,3 +1,4 @@
+import { addDays } from "../../dates/isoDate.ts";
 import type { GarageReport } from "../../car/report.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
 import { analyzeFire, firePlans, firstYearIncome, stressTest } from "../../fire/fire.ts";
@@ -93,9 +94,9 @@ export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKin
  * each preset range and the run before it, each year, the year-over-year sides, Trends'
  * windows, each with what the tabs draw over it), and Recurring's twelve months of each
  * recurring merchant's charges. Built with the page's own helpers and pickers, so the
- * recipes are the ones it renders, and only those.
+ * recipes are the ones it renders, and only those. `budgeted`: the categories with a saved target.
  */
-export function cashFlowWindowFigures(r: Pick<SpendingReport, "months" | "recurring">): PageFigure[] {
+export function cashFlowWindowFigures(r: Pick<SpendingReport, "months" | "recurring">, budgeted: string[] = []): PageFigure[] {
   const page = "Cash flow";
   const seen = new Set<string>();
   const out: PageFigure[] = [];
@@ -105,7 +106,7 @@ export function cashFlowWindowFigures(r: Pick<SpendingReport, "months" | "recurr
     seen.add(k);
     out.push({ page, descriptor, shown: cents(c) });
   };
-  for (const { months, draws } of cashFlowWindowDraws(r)) for (const f of windowFigures(months, draws)) add(f.descriptor, f.cents);
+  for (const { months, draws } of cashFlowWindowDraws(r, budgeted)) for (const f of windowFigures(months, draws)) add(f.descriptor, f.cents);
   // Recurring lists each habit's last twelve months of charges (its bills, a year of the usual charge: a derived figure).
   if (r.months.length) for (const c of r.recurring.filter((x) => x.kind === "habit")) add(cashFlowDescriptor("spending", r.months, undefined, { merchantKey: c.key, charges: true }), c.last12Cents);
   return out;
@@ -113,7 +114,7 @@ export function cashFlowWindowFigures(r: Pick<SpendingReport, "months" | "recurr
 
 // ------------------------------------------------------------------ Net worth
 
-/** Net worth today, assets, debts, each group and account, the twelve months' change, and each month's change. */
+/** Net worth today, assets, debts, each group and account (a zero balance too: the page lists every account), the twelve months' change, and each month as it was built. */
 export function netWorthFigures(r: NetWorthReport): PageFigure[] {
   const out: PageFigure[] = [];
   const at = r.current.asOf;
@@ -125,7 +126,7 @@ export function netWorthFigures(r: NetWorthReport): PageFigure[] {
       { page, descriptor: { report: "net-worth", metric: "balance", date: at, side: "debts" }, shown: cents(r.summary.debtsCents) },
     );
     for (const g of r.summary.groups) out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: at, accountIds: g.accountIds }, shown: cents(g.cents) });
-    for (const a of r.accounts) if (a.currentCents !== 0) out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: at, accountIds: [a.id] }, shown: cents(a.currentCents) });
+    for (const a of r.accounts) out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: at, accountIds: [a.id] }, shown: cents(a.currentCents) });
   }
   const t = r.summary.trailing12;
   if (t && !t.blockers.length) {
@@ -135,18 +136,32 @@ export function netWorthFigures(r: NetWorthReport): PageFigure[] {
       { page, descriptor: { report: "dashboard", figure: "markets", start: t.start, end: t.end }, shown: cents(t.growthCents) },
     );
   }
+  out.push(...netWorthBuiltFigures(r));
+  return out;
+}
+
+/**
+ * Net worth › How it was built, at one granularity (the page offers months, quarters and
+ * years): each period's opening, closing and change, and the account balances its drill lists.
+ * An account first on file or closed inside a quarter or year is in that period's drill at a
+ * date no month's lists it on, so each granularity is enumerated on its own.
+ */
+export function netWorthBuiltFigures(r: Pick<NetWorthReport, "granularity" | "periods">): PageFigure[] {
+  const out = new Map<string, PageFigure>();
+  const add = (descriptor: ProofDescriptor, c: number) => out.set(descriptorKey(descriptor), { page: "Net worth", descriptor, shown: cents(c) });
   for (const p of r.periods) {
     if (p.blockers.length) continue;
-    out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: p.end }, shown: cents(p.household.closingCents) });
-    out.push({ page, descriptor: { report: "net-worth", metric: "change", granularity: r.granularity, start: p.start, end: p.end }, shown: cents(p.household.closingCents - p.household.openingCents) });
+    const before = addDays(p.start, -1);
+    add({ report: "net-worth", metric: "balance", date: before }, p.household.openingCents);
+    add({ report: "net-worth", metric: "balance", date: p.end }, p.household.closingCents);
+    add({ report: "net-worth", metric: "change", granularity: r.granularity, start: p.start, end: p.end }, p.household.closingCents - p.household.openingCents);
     // How it was built › a period opened: each account's opening (unless it first appears in the period) and closing balance.
-    const before = new Date(Date.parse(`${p.start}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
     for (const a of p.byAccount) {
-      if (!a.newlyTrackedCents) out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: before, accountIds: [a.accountId] }, shown: cents(a.openingCents) });
-      out.push({ page, descriptor: { report: "net-worth", metric: "balance", date: p.end, accountIds: [a.accountId] }, shown: cents(a.closingCents) });
+      if (!a.newlyTrackedCents) add({ report: "net-worth", metric: "balance", date: before, accountIds: [a.accountId] }, a.openingCents);
+      add({ report: "net-worth", metric: "balance", date: p.end, accountIds: [a.accountId] }, a.closingCents);
     }
   }
-  return out;
+  return [...out.values()];
 }
 
 /** Net worth › What changed: each period's opening, closing, change, saving, markets, income, spending, the steps with proofs of their own, and each category that moved. */
@@ -199,7 +214,8 @@ export function homeFigures(s: ReturnType<typeof buildHomeSummary>): PageFigure[
   }
   if (cf.lastMonth) add(cf.lastMonth.proof, cf.lastMonth.spendingCents);
   for (const c of cf.categories) {
-    if (c.lastMonthCents) add(c.proof, c.lastMonthCents);
+    // Nothing spent in it last month is a figure too: its change from the average needs it.
+    add(c.proof, c.lastMonthCents);
     if (c.totalCents) add(c.totalProof, c.totalCents);
   }
   return out;

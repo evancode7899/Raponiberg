@@ -5,7 +5,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, unswept } from "@/components/ui/proof/context";
 import { Badge, btn, Callout, Card, NotFigure, Segmented, WhatIf } from "@/components/ui/kit";
 import type { HomeSpending } from "@/lib/book/reports/homeFunds";
-import { formatPercentRatio, formatUsd } from "@/lib/formatMoney";
+import { formatPercentRatio, formatUsd, NA } from "@/lib/formatMoney";
 import { computeBudgetScenario, computeMaxApproval, defaultHomeBudgetInputs, type HomeBudgetInputs, type MaxApprovalResult } from "@/lib/home-budget/homeBudgetModel";
 import { useMemo } from "react";
 import type { HomeProof, LenderState, Patch } from "./HomeBudgetClient";
@@ -117,7 +117,7 @@ export function AffordTab({
                 <ProofValue proof={monthlyProof}>{formatUsd(at.monthlyTotalHousing)}</ProofValue>
               </span>
               /mo all-in — {ofGross ? <ProofValue proof={ofGross}>{formatPercentRatio(ins.housingCostMaxOfGross, 1)}</ProofValue> : formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross,{" "}
-              {ofTakeHome ? <ProofValue proof={ofTakeHome}>{formatPercentRatio(takeHome > 0 ? at.monthlyTotalHousing / takeHome : 0, 0)}</ProofValue> : "—"} of take-home. Every dollar of the{" "}
+              {ofTakeHome ? <ProofValue proof={ofTakeHome}>{formatPercentRatio(takeHome > 0 ? at.monthlyTotalHousing / takeHome : 0, 0)}</ProofValue> : NA} of take-home. Every dollar of the{" "}
               <span className="num font-semibold text-fg">
                 <ProofValue proof={proof("cash", ins.cashForHome)}>{formatUsd(ins.cashForHome)}</ProofValue>
               </span>{" "}

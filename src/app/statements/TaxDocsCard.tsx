@@ -1,6 +1,7 @@
 "use client";
 
 import type { Api } from "@/components/ledger/useApi";
+import { NA } from "@/lib/formatMoney";
 import { Badge, btn, Card, ErrorNote } from "@/components/ui/kit";
 import { formatDisplayDateTime } from "@/lib/displayTime";
 import type { TaxDocsSummary } from "@/lib/taxdocs/summary";
@@ -66,7 +67,7 @@ export function TaxDocsCard({ api, refreshKey }: { api: Api; refreshKey: number 
             <ul className="mt-3 flex flex-col gap-1.5 text-xs">
               {summary.years.map((y) => (
                 <li key={String(y.year)} className="flex flex-wrap items-center gap-1.5">
-                  <span className="num w-12 font-medium text-fg">{y.year ?? "—"}</span>
+                  <span className="num w-12 font-medium text-fg">{y.year ?? NA}</span>
                   {y.kinds.map((k) => (
                     <Badge key={k.kind} tone={k.kind.startsWith("RETURN_") ? "pos" : k.kind === "OTHER" || k.kind === "FOREIGN" ? "neutral" : "info"}>
                       {k.count > 1 ? `${k.count} × ` : ""}

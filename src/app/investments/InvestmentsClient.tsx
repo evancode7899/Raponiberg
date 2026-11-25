@@ -10,7 +10,7 @@ import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Field, Loading, NotFi
 import { compositeOf, sumOf, type ProofRef, type ProofTarget } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ClassAmount, ClassId, InvestmentsReport, PositionRow } from "@/lib/book/reports/investments";
-import { axisUsd, formatPercentRatio, usd0, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { ASSET_CLASSES, classLabel, type AssetClass, type Weights } from "@/lib/investments/securities";
 import type { FundsPage } from "@/lib/funds/page";
 import type { InvestmentSettings } from "@/lib/investments/settings";
@@ -34,10 +34,10 @@ export function classColor(p: ChartPalette, c: ClassId) {
 }
 
 const segmentsOf = (p: ChartPalette, xs: ClassAmount[], proof?: (cls: string) => ProofRef): ShareSegment[] => xs.map((x) => ({ id: x.cls, label: classLabel(x.cls), cents: x.cents, color: classColor(p, x.cls), ...(proof ? { proof: proof(x.cls) } : {}) }));
-const pct = (r: number | null | undefined, d = 1) => (r == null ? "—" : formatPercentRatio(r, d));
+const pct = (r: number | null | undefined, d = 1) => (r == null ? NA : formatPercentRatio(r, d));
 /** A position's figure (price, cost, gain, ratio, fee, cost-20y), from the page's derived list. */
 const posFig = (d: DerivedFigure[], p: PositionRow, col: string) => derivedTarget("investments", d, "position", positionKey(p, col));
-const ratio = (r: number | null) => (r == null ? "—" : `${(r * 100).toFixed(r < 0.001 ? 3 : 2)}%`);
+const ratio = (r: number | null) => (r == null ? NA : `${(r * 100).toFixed(r < 0.001 ? 3 : 2)}%`);
 
 /** The proof behind an account's value, or the household total (no account). */
 const accountTarget = (accountId: string | null, shownCents: number): ProofTarget => ({ descriptor: { report: "investments", ...(accountId ? { accountId } : {}) }, shownCents });
@@ -386,12 +386,12 @@ function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                           <Badge tone="warn">unclassified</Badge>
                         )}
                       </td>
-                      <td className={table.tdR}>{p.quantity == null ? "—" : p.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })}</td>
-                      <td className={table.tdR}>{p.price == null ? "—" : <ProofValue proof={posFig(d, p, "price")}>{`${p.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}</ProofValue>}</td>
+                      <td className={table.tdR}>{p.quantity == null ? NA : p.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })}</td>
+                      <td className={table.tdR}>{p.price == null ? NA : <ProofValue proof={posFig(d, p, "price")}>{`${p.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}</ProofValue>}</td>
                       <td className={`${table.tdR} font-medium`}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
-                      <td className={`${table.tdR} text-muted`}>{p.costBasisCents == null ? "—" : <ProofValue proof={posFig(d, p, "cost")}>{usd0(p.costBasisCents)}</ProofValue>}</td>
-                      <td className={`${table.tdR} ${p.unrealizedCents == null ? "" : p.unrealizedCents < 0 ? "text-neg" : "text-pos"}`}>{p.unrealizedCents == null ? "—" : <ProofValue proof={posFig(d, p, "gain")}>{usdDelta(p.unrealizedCents)}</ProofValue>}</td>
-                      <td className={`${table.tdR} text-muted`}>{p.expenseRatio == null ? "—" : <ProofValue proof={posFig(d, p, "ratio")}>{ratio(p.expenseRatio)}</ProofValue>}</td>
+                      <td className={`${table.tdR} text-muted`}>{p.costBasisCents == null ? NA : <ProofValue proof={posFig(d, p, "cost")}>{usd0(p.costBasisCents)}</ProofValue>}</td>
+                      <td className={`${table.tdR} ${p.unrealizedCents == null ? "" : p.unrealizedCents < 0 ? "text-neg" : "text-pos"}`}>{p.unrealizedCents == null ? NA : <ProofValue proof={posFig(d, p, "gain")}>{usdDelta(p.unrealizedCents)}</ProofValue>}</td>
+                      <td className={`${table.tdR} text-muted`}>{p.expenseRatio == null ? NA : <ProofValue proof={posFig(d, p, "ratio")}>{ratio(p.expenseRatio)}</ProofValue>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -456,7 +456,7 @@ function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                   </td>
                   <td className={table.td}>
                     <select className={selectCls} value={v.cls} onChange={(e) => setPicks({ ...picks, [u.key]: { ...v, cls: e.target.value as AssetClass | "" } })}>
-                      <option value="">—</option>
+                      <option value="">Not set</option>
                       {ASSET_CLASSES.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.label}
@@ -601,7 +601,7 @@ function Gains({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) 
                     <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                     <td className={`${table.tdR} text-muted`}><ProofValue proof={posFig(d, p, "cost")}>{usd0(p.costBasisCents)}</ProofValue></td>
                     <td className={`${table.tdR} text-neg`}><ProofValue proof={posFig(d, p, "gain")}>{usdDelta(p.unrealizedCents)}</ProofValue></td>
-                    <td className={table.tdR}>{p.costBasisCents && p.costBasisCents > 0 ? <ProofValue proof={compositeOf("share", [posFig(d, p, "gain"), posFig(d, p, "cost")], { ratio: p.unrealizedCents! / p.costBasisCents })}>{pct(p.unrealizedCents! / p.costBasisCents)}</ProofValue> : "—"}</td>
+                    <td className={table.tdR}>{p.costBasisCents && p.costBasisCents > 0 ? <ProofValue proof={compositeOf("share", [posFig(d, p, "gain"), posFig(d, p, "cost")], { ratio: p.unrealizedCents! / p.costBasisCents })}>{pct(p.unrealizedCents! / p.costBasisCents)}</ProofValue> : NA}</td>
                   </tr>
                 ))}
               </tbody>
@@ -709,8 +709,8 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
               <Tooltip {...ui.tooltip} formatter={(v, n) => [usd0(Math.round(Number(v) * 100)), n === "value" ? "Value" : "Money in"]} />
               <Legend {...ui.legend} formatter={(v) => (v === "value" ? "Value" : "Money in")} />
-              <Line type="monotone" dataKey="invested" stroke={p.principal} strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="value" stroke={p.growth} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="invested" stroke={p.principal} strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="linear" dataKey="value" stroke={p.growth} strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </RechartsResponsive>
         </div>

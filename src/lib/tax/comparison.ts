@@ -49,7 +49,7 @@ export function taxComparison(r: Pick<TaxReport, "scenarios" | "people">) {
         const rs = c.r ? [c.r] : (c.sum ?? []);
         return rs.every((x) => x.federal.itemizes) ? "itemized" : rs.some((x) => x.federal.itemizes) ? "mixed" : "standard";
       }),
-      help: "Standard deduction 2026: $32,200 joint, $16,100 separate. SALT cap $40,400 joint / $20,200 separate.",
+      help: "The standard deduction, or the itemized total where that's larger (state and local taxes up to the year's SALT cap).",
     },
     usd("qbi", "QBI deduction", (x) => x.federal.qbiDeduction, { indent: true }),
     usd("taxable", "Federal taxable income", (x) => x.federal.taxableIncome, { strong: true }),
@@ -65,7 +65,7 @@ export function taxComparison(r: Pick<TaxReport, "scenarios" | "people">) {
     usd("ct-taxable", "CT taxable income", (x) => x.ct.taxableIncome),
     usd("ct-brackets", "Tax from brackets", (x) => x.ct.initialTax, { indent: true }),
     usd("ct-addback", "2% phase-out + benefit recapture", (x) => x.ct.addBack + x.ct.recapture, { indent: true }),
-    usd("ct-credits", "Credits", (x) => -(x.ct.personalCredit + x.ct.childTaxCredit + x.ct.otherStateCredit), { indent: true }),
+    usd("ct-credits", "Credits", (x) => -(x.ct.personalCredit + x.ct.otherStateCredit), { indent: true }),
     usd("ct", "Connecticut tax", (x) => x.ct.totalTax, { strong: true }),
     ...(hasNy
       ? [

@@ -2,13 +2,18 @@
  * Tax-law constants by tax year. Every money amount is integer cents.
  *
  * Sources:
+ * - Federal 2027: IRS Rev. Proc. 2026-35 (inflation adjustments), Rev. Proc. 2026-24 (HSA),
+ *   Notice 2026-66 (retirement limits), SSA 2027 wage base, IRC §164(b)(7) (SALT cap, 101% a year).
  * - Federal 2026: IRS Rev. Proc. 2025-32 (inflation adjustments incl. the One Big
  *   Beautiful Bill Act), SSA 2026 wage base. Federal 2025: Rev. Proc. 2024-40 as
  *   amended by the OBBBA (standard deduction, SALT cap, child tax credit).
  * - Connecticut: Form CT-1040 TCS (Rev. 12/25) Tables A–E. Connecticut does not index
- *   these, so 2026 reuses them; the 2026 CT child tax credit is from 2026 sSB 6.
+ *   these, so 2026 and 2027 reuse them. No Connecticut child tax credit: 2026 sSB 6's was never
+ *   enacted (OLR report 2026-R-0076 lists the 2026 tax acts). Paid Leave: 0.5% for 2027 too
+ *   (ctpaidleave.org, "has voted to maintain the contribution rate at 0.5% for 2027"; C.G.S. §31-49g caps it there).
  * - New York: IT-201-I / IT-203-I rate schedules, tax computation worksheets and the NYC
- *   school tax credit. New York doesn't index its brackets either.
+ *   school tax credit. New York doesn't index its brackets either. 2026 and 2027 on: Tax Law
+ *   §601(a)(1), (b)(1), (c)(1) (vii) and (viii), the first five rates down 0.1 point a year through 2032.
  *
  * A new tax year is a new entry here; nothing else hard-codes a rate or threshold.
  */
@@ -134,7 +139,6 @@ export type CtParams = {
   personalCredit: ByStatus<[number, number][]>;
   /** Contributions to CHET (CT's 529) deductible per return. */
   chetDeduction: ByStatus<number>;
-  childCredit: { perChild: number; maxChildren: number; fullBelow: ByStatus<number>; zeroAbove: ByStatus<number> } | null;
   /** Paid Family & Medical Leave employee contribution (payroll, not income tax). */
   pfmlRate: number;
 };
@@ -145,6 +149,8 @@ export type RecaptureTier = { start: number; step: number; per: number; max: num
 /** Pay 90% of this year's tax, or 100% of last year's (110% above the high-AGI line), or owe under $1,000 at filing. */
 export type SafeHarborRules = { currentShare: number; priorShare: number; priorShareHighAgi: number; deMinimis: number };
 export const SAFE_HARBOR_RULES: SafeHarborRules = { currentShare: 0.9, priorShare: 1, priorShareHighAgi: 1.1, deMinimis: $(1_000) };
+/** New York's (IT-2105 instructions): the same tests, with a $300 line and 110% above $150,000 of last year's New York AGI ($75,000 separately). */
+export const NY_SAFE_HARBOR: SafeHarborRules & { highAgi: ByStatus<number> } = { ...SAFE_HARBOR_RULES, deMinimis: $(300), highAgi: byStatus($(150_000), $(150_000), $(75_000), $(150_000)) };
 
 const FED_2026: FederalParams = {
   brackets: byStatus(
@@ -216,6 +222,56 @@ const FED_2026: FederalParams = {
   safeHarborHighAgi: byStatus($(150_000), $(150_000), $(75_000), $(150_000)),
   // Rev. Proc. 2025-32 §4.02; unchanged from 2025.
   kiddie: { exempt: $(1_350), threshold: $(2_700), parentElectionMax: $(13_500) },
+};
+
+/**
+ * Rev. Proc. 2026-35 (2027 inflation adjustments), Rev. Proc. 2026-24 (HSA), Notice 2026-66
+ * (retirement limits), SSA 2027 wage base. The SALT cap and its phase-out start rise 1% a
+ * year through 2029 (IRC §164(b)(7)). What isn't listed isn't indexed, so it is 2026's.
+ */
+const FED_2027: FederalParams = {
+  ...FED_2026,
+  brackets: byStatus(
+    [12_800, 52_025, 109_125, 208_325, 264_550, 661_375].map($),
+    [25_600, 104_050, 218_250, 416_650, 529_100, 793_650].map($),
+    [12_800, 52_025, 109_125, 208_325, 264_550, 396_825].map($),
+    [18_250, 69_650, 109_100, 208_300, 264_550, 661_350].map($),
+  ),
+  standardDeduction: byStatus($(16_600), $(33_200), $(16_600), $(24_925)),
+  capitalGains: byStatus(
+    { zeroMax: $(51_050), fifteenMax: $(563_200) },
+    { zeroMax: $(102_100), fifteenMax: $(633_600) },
+    { zeroMax: $(51_050), fifteenMax: $(316_800) },
+    { zeroMax: $(68_350), fifteenMax: $(598_400) },
+  ),
+  childTaxCredit: { ...FED_2026.childTaxCredit, perChild: $(2_300), refundablePerChild: $(1_800) },
+  salt: {
+    ...FED_2026.salt,
+    cap: byStatus($(40_804), $(40_804), $(20_402), $(40_804)),
+    phaseoutStart: byStatus($(510_050), $(510_050), $(255_025), $(510_050)),
+  },
+  qbiThreshold: byStatus($(208_300), $(416_600), $(208_325), $(208_300)),
+  qbiMinimum: { deduction: $(415), activeIncome: $(1_030) },
+  amt: {
+    exemption: byStatus($(93_000), $(144_700), $(72_350), $(93_000)),
+    phaseoutStart: byStatus($(515_950), $(1_031_900), $(515_950), $(515_950)),
+    phaseoutRate: 0.5,
+    rate28Above: byStatus($(252_500), $(252_500), $(126_250), $(252_500)),
+  },
+  socialSecurity: { wageBase: $(192_300), rate: 0.062 },
+  limits: { k401: $(25_500), ira: $(7_500), hsaSelf: $(4_500), hsaFamily: $(9_000) },
+  retirement: {
+    ...FED_2026.retirement,
+    k401CatchUp: $(8_500),
+    k401CatchUp60to63: $(11_750),
+    annualAdditions: $(75_000),
+    rothIraPhaseout: byStatus({ start: $(158_000), end: $(173_000) }, { start: $(250_000), end: $(260_000) }, { start: 0, end: $(10_000) }, { start: $(158_000), end: $(173_000) }),
+    tradIraCoveredPhaseout: byStatus({ start: $(83_000), end: $(93_000) }, { start: $(133_000), end: $(153_000) }, { start: 0, end: $(10_000) }, { start: $(83_000), end: $(93_000) }),
+    tradIraSpouseCoveredPhaseout: { start: $(250_000), end: $(260_000) },
+    // Held against 2026's FICA wages (Notice 2026-66).
+    rothCatchUpWageThreshold: $(155_000),
+  },
+  kiddie: { exempt: $(1_400), threshold: $(2_800), parentElectionMax: $(14_000) },
 };
 
 const FED_2025: FederalParams = {
@@ -483,18 +539,7 @@ const CT_2025: CtParams = {
     ]),
   ),
   chetDeduction: byStatus($(5_000), $(10_000), $(5_000), $(5_000)),
-  childCredit: null,
   pfmlRate: 0.005,
-};
-
-const CT_2026: CtParams = {
-  ...CT_2025,
-  childCredit: {
-    perChild: $(600),
-    maxChildren: 3,
-    fullBelow: byStatus($(100_000), $(200_000), $(100_000), $(160_000)),
-    zeroAbove: byStatus($(109_000), $(209_000), $(109_000), $(169_000)),
-  },
 };
 
 /**
@@ -573,13 +618,15 @@ const NY_2025: NyParams = {
   },
 };
 
-/** FY2026 budget: the first five New York rates drop 0.1 point for 2026 (and another 0.1 from 2027). */
-const NY_2026: NyParams = {
+/** New York's first five rates (Tax Law §601, 2025's budget): 0.1 point off 2025's for 2026, 0.2 for 2027 through 2032; the brackets and the other rates stay. */
+const nyCut = (points: number): NyParams => ({
   ...NY_2025,
   brackets: Object.fromEntries(
-    Object.entries(NY_2025.brackets).map(([fs, rows]) => [fs, rows.map(([u, rate], i) => [u, i < 5 ? Math.round((rate - 0.001) * 10_000) / 10_000 : rate] as [number, number])]),
+    Object.entries(NY_2025.brackets).map(([fs, rows]) => [fs, rows.map(([u, rate], i) => [u, i < 5 ? Math.round((rate - points) * 10_000) / 10_000 : rate] as [number, number])]),
   ) as ByStatus<[number, number][]>,
-};
+});
+const NY_2026 = nyCut(0.001);
+const NY_2027 = nyCut(0.002);
 
 /** 2022: the middle-class cuts were still phasing in, so the fourth and fifth rates were 5.85% and 6.25% (5.5% and 6% from 2023). */
 const NY_2022: NyParams = {
@@ -639,15 +686,39 @@ export const TAX_YEARS: Record<number, TaxYearParams> = {
   2026: {
     year: 2026,
     federal: FED_2026,
-    ct: CT_2026,
+    ct: CT_2025,
     ny: NY_2026,
     notes: [
       "Federal: Rev. Proc. 2025-32 (2026 inflation adjustments incl. OBBBA changes).",
-      "Connecticut: 2025 CT-1040 TCS tables (not inflation-indexed; 2026 forms are not out yet). CT child tax credit per 2026 sSB 6.",
-      "New York: 2025 brackets with the FY2026 budget's 0.1-point cut to the first five rates (2026 forms are not out yet); New York City unchanged.",
+      "Connecticut: 2025 CT-1040 TCS tables (not inflation-indexed; 2026 forms are not out yet; no rate change or child tax credit was enacted for 2026).",
+      "New York: 2025 brackets with Tax Law §601's 0.1-point cut to the first five rates (2026 forms are not out yet); New York City unchanged.",
+    ],
+  },
+  2027: {
+    year: 2027,
+    federal: FED_2027,
+    ct: CT_2025,
+    ny: NY_2027,
+    notes: [
+      "Federal: Rev. Proc. 2026-35 and 2026-24, Notice 2026-66.",
+      "Connecticut: 2025 CT-1040 TCS tables (not inflation-indexed; no rate change or child tax credit was enacted for 2027 in the 2026 session). Paid Leave at 0.5%, as its board set for 2027.",
+      "New York: 2025 brackets with Tax Law §601's 0.2-point cut to the first five rates (2027 forms are not out yet); New York City unchanged.",
     ],
   },
 };
+
+/**
+ * The tax years that have begun by `today`, oldest first. A year's law goes in as soon as it's
+ * published, months early; pages, routes and the proof sweep offer only years that have
+ * started, so listing next year's law never opens a year with no pay or statements in it.
+ */
+export function startedTaxYears(today: string): number[] {
+  const year = Number(today.slice(0, 4));
+  return Object.keys(TAX_YEARS)
+    .map(Number)
+    .filter((y) => y <= year)
+    .sort((x, y) => x - y);
+}
 
 export function taxYearParams(year: number): TaxYearParams {
   const p = TAX_YEARS[year];

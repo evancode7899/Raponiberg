@@ -15,7 +15,7 @@ import { estimateDescriptor, expectedBonuses, figureReads, paidYearDescriptor, s
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { buildForecast } from "@/lib/forecast/forecast";
 import type { ForecastData } from "@/lib/forecast/load";
-import { formatPercentRatio, formatUsdCents, usd0 } from "@/lib/formatMoney";
+import { formatPercentRatio, formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const TABS = ["overview", "schedule", "payouts"] as const;
@@ -43,7 +43,7 @@ const KIND: Record<PaymentKind, { title: string; tag: string | null; part: strin
   MAKEWHOLE: { title: "Make-whole bonus (outside the headline bonus)", tag: "make-whole", part: "make-whole" },
 };
 
-const ratio = (part: number, whole: number | null) => (whole ? formatPercentRatio(part / whole, 1) : "—");
+const ratio = (part: number, whole: number | null) => (whole ? formatPercentRatio(part / whole, 1) : NA);
 
 /** A person's calendar year of pay as the stubs give it (year to date on each employer's last stub). */
 const yearPay = (asOf: string, personId: string, year: number, lines: PayLine[], cents: number) => ({ descriptor: yearPayDescriptor(personId, year, lines, asOf), shownCents: cents });
@@ -59,7 +59,7 @@ const heldBy = (r: BonusesReport | null, proof: ProofTarget) => {
   return r && d.report === "bonuses" && d.figure !== "estimate" ? figureReads(r, d).blockers : [];
 };
 
-/** A Bonuses figure: its proof, or "missing data" with the finding when one withholds it. */
+/** A Bonuses figure: its proof, or "n.a." with the finding when one withholds it. */
 function BonusValue({ proof, children, drawn }: { proof: ProofTarget; children: ReactNode; drawn?: FigureProps["drawn"] }) {
   const held = heldBy(useContext(Report), proof);
   return held.length ? <BlockedValue blockers={held} /> : <ProofValue proof={proof} drawn={drawn}>{children}</ProofValue>;
@@ -401,7 +401,7 @@ function StubOnly({ r }: { r: BonusesReport }) {
                         {y.baseCents ? (
                           <ProofValue proof={compositeOf("share", [yearPay(r.today, y.personId, y.year, ["bonus"], y.bonusCents), yearPay(r.today, y.personId, y.year, ["base"], y.baseCents)], { ratio: y.bonusCents / y.baseCents })}>{ratio(y.bonusCents, y.baseCents)}</ProofValue>
                         ) : (
-                          "—"
+                          NA
                         )}
                       </td>
                     </tr>

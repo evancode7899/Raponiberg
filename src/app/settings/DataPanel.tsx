@@ -1,5 +1,6 @@
 "use client";
 
+import { askDanger } from "@/components/ui/Feedback";
 import { apiSecretHeaders, type Api } from "@/components/ledger/useApi";
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
 import { btn, Callout, Card, downloadResponse, ErrorNote, Field, inputCls, selectCls } from "@/components/ui/kit";
@@ -134,8 +135,8 @@ export function DataPanel({ api, requiresDbSecret }: { api: Api; requiresDbSecre
               type="button"
               className={btn.secondary}
               disabled={busy != null || !importFile}
-              onClick={() => {
-                if (!importFile || !confirm(`Replace the live database with ${importFile.name}? The current one is backed up first.`)) return;
+              onClick={async () => {
+                if (!importFile || !(await askDanger(`Replace the live database with ${importFile.name}?`, "Replace", "The current one is backed up first."))) return;
                 void run("import", async () => {
                   const fd = new FormData();
                   fd.set("file", importFile);
@@ -192,7 +193,7 @@ export function DataPanel({ api, requiresDbSecret }: { api: Api; requiresDbSecre
       <Card title="Danger zone" className="border-neg/40">
         <p className="text-xs leading-relaxed text-fg-2">
           Wiping deletes every account, statement, transaction, pay stub, rule and setting. The audit log is kept so the wipe stays traceable, and the stored
-          statement PDFs on disk are left alone, so you can import them again. Download a backup first. Type <span className="font-mono font-semibold text-neg">{WIPE_CONFIRM_PHRASE}</span> to
+          statement PDFs on disk are left alone, so you can import them again. A complete copy of the database is kept in data/backups first. Type <span className="font-mono font-semibold text-neg">{WIPE_CONFIRM_PHRASE}</span> to
           enable it.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -211,7 +212,8 @@ export function DataPanel({ api, requiresDbSecret }: { api: Api; requiresDbSecre
                 if (!res.ok) await fail(res, "Wipe");
                 setWipeTyped("");
                 notifyLedgerChanged();
-                return "Database wiped. Import statements to start again.";
+                const j = (await res.json()) as { previousDatabaseBackedUpTo?: string };
+                return `Database wiped. Import statements to start again.${j.previousDatabaseBackedUpTo ? ` The copy kept first: ${j.previousDatabaseBackedUpTo}` : ""}`;
               })
             }
           >

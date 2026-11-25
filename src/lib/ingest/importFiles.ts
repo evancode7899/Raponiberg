@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { statSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { dataDir, isDemo } from "../dataDir.ts";
@@ -216,8 +217,10 @@ export async function storedDocumentIndex(db: Pick<PrismaClient, "sourceDocument
  * Re-reads the statements whose parser has changed since they were imported, from the
  * statements folder, so a parser update reaches the ledger without anyone running a
  * command. Run when the server starts; the folder scan does the same on every click.
+ * With no statements folder (the demo, or before STATEMENTS_DIR is set) there is nothing to re-read.
  */
 export async function rereadOutdatedStatements(db: PrismaClient): Promise<number> {
+  if (!statSync(statementsFolder(), { throwIfNoEntry: false })?.isDirectory()) return 0;
   const scan = await findNewFolderFiles(db, statementsFolder(), { outdatedOnly: true });
   if (scan.files.length === 0) return 0;
   const { outcomes } = await importStatementFiles(db, scan.files);

@@ -8,12 +8,12 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
-import { axisUsd, formatPercentRatio, formatUsd, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
-import { yoyWindows } from "@/lib/book/reports/cashFlowWindows";
-import { KINDS, mergeCategories, merchantMovers, MONTH_NAMES, monthKey, SPEND_CATEGORIES, sum, totals } from "./model";
+import { compareCategories, yearCategories, yoyWindows } from "@/lib/book/reports/cashFlowWindows";
+import { KINDS, merchantMovers, MONTH_NAMES, monthKey, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
@@ -66,16 +66,6 @@ export function YoyTab({ ctx }: { ctx: Ctx }) {
   );
 }
 
-/** Spending by category in both periods, biggest change first. */
-function compareCategories(now: SpendingMonth[], then: SpendingMonth[]) {
-  const n = new Map(mergeCategories(now, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
-  const t = new Map(mergeCategories(then, (m) => m.spendingByCategory).map((c) => [c.category, c.cents]));
-  return [...new Set([...n.keys(), ...t.keys()])]
-    .map((category) => ({ category, now: n.get(category) ?? 0, then: t.get(category) ?? 0 }))
-    .filter((c) => c.now || c.then)
-    .sort((x, y) => Math.abs(y.now - y.then) - Math.abs(x.now - x.then));
-}
-
 function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: SpendingMonth[] }) {
   const { chart } = ctx;
   const a = useMemo(() => totals(now), [now]);
@@ -104,10 +94,10 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
         />
         <StatCell proof={ctx.dp("savings-rate", windowKey(now))}
           label="Savings rate (take-home)"
-          value={a.savingsRate == null ? "—" : formatPercentRatio(a.savingsRate, 0)}
+          value={a.savingsRate == null ? NA : formatPercentRatio(a.savingsRate, 0)}
           sub={
             b.savingsRate == null ? (
-              "—"
+              NA
             ) : (
               <>
                 <ProofValue proof={ctx.dp("savings-rate", windowKey(then))}>{formatPercentRatio(b.savingsRate, 0)}</ProofValue> a year earlier
@@ -199,8 +189,8 @@ function MoverCard({ title, rows, ctx, now, then }: { title: string; rows: { key
                 {m.name}
               </button>
               <span className="num shrink-0 text-xs text-muted">
-                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : noFigure("nothing spent here in that span")}>{usd0(m.then)}</ProofValue> →{" "}
-                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : noFigure("nothing spent here in that span")} className="text-fg">
+                <ProofValue proof={m.then ? ctx.proof("spending", then, { merchantKey: m.key, shownCents: m.then }) : noFigure("nothing spent here in that span", true)}>{usd0(m.then)}</ProofValue> →{" "}
+                <ProofValue proof={m.now ? ctx.proof("spending", now, { merchantKey: m.key, shownCents: m.now }) : noFigure("nothing spent here in that span", true)} className="text-fg">
                   {usd0(m.now)}
                 </ProofValue>
                 {!m.then && <span className="ml-1.5 text-info">new</span>}
@@ -360,7 +350,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} />
             <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-            <Tooltip {...ui.tooltip} itemSorter={(it) => -Number(it.dataKey)} formatter={(v, n) => [v == null ? "—" : formatUsd(Math.round(Number(v))), String(n)]} />
+            <Tooltip {...ui.tooltip} itemSorter={(it) => -Number(it.dataKey)} formatter={(v, n) => [v == null ? NA : formatUsd(Math.round(Number(v))), String(n)]} />
             <Legend {...ui.legend} />
             {shown.map((s) => (
               <Line
@@ -400,7 +390,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
     ...KINDS.map((k) => ({ label: k.label, f: (m: SpendingMonth) => m.kinds[k.id], proof: { metric: "spending" as const, spendingKind: k.kind }, goodWhenDown: true, indent: true })),
     { label: "Saved from take-home", f: (m) => m.netCents, proof: { metric: "net" }, strong: true },
   ];
-  const categoryRows: YearRow[] = SPEND_CATEGORIES.filter((c) => report.months.some((m) => m.spendingByCategory.some((x) => x.category === c && x.cents))).map((c) => ({
+  const categoryRows: YearRow[] = yearCategories(report.months).map((c) => ({
     label: c,
     f: (m: SpendingMonth) => m.spendingByCategory.find((x) => x.category === c)?.cents ?? 0,
     proof: { metric: "spending" as const, category: c },
@@ -493,7 +483,7 @@ function YearTable({ ctx }: { ctx: Ctx }) {
                 const p = i ? rate(years[i - 1]!.months) : null;
                 return (
                   <td key={y.y} className={`${table.tdR} font-semibold`}>
-                    {r == null ? "—" : <ProofValue proof={ctx.dp("savings-rate", windowKey(y.months))}>{formatPercentRatio(r, 0)}</ProofValue>}
+                    {r == null ? NA : <ProofValue proof={ctx.dp("savings-rate", windowKey(y.months))}>{formatPercentRatio(r, 0)}</ProofValue>}
                     <div className="text-xs font-normal leading-none text-muted">{r != null && p != null ? `${r >= p ? "+" : "−"}${Math.abs(Math.round((r - p) * 100))} pts` : " "}</div>
                   </td>
                 );

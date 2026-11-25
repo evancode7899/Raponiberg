@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
     }
     await prisma.transferRejection.upsert({ where: { legKey: legKey(ids) }, create: { legKey: legKey(ids) }, update: {} });
     recordRejected(await legFingerprints(prisma, ids));
+    await logAuditEvent({ action: "transfer_rejected", actor: AUDIT_ACTOR_APP, payload: { transactionIds: ids } });
     const maintenance = await refreshDerived(prisma);
     return NextResponse.json({ ok: true, maintenance });
   }

@@ -6,10 +6,11 @@ import type { Api } from "@/components/ledger/useApi";
 import type { ChartPalette } from "@/components/shell/chartPalette";
 import { btn, Loading, NotFigure } from "@/components/ui/kit";
 import { ONE_OFF_MIN_CENTS } from "@/lib/book/definitions";
+export { Sparkline } from "@/components/charts/Sparkline";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth, WithheldMonth } from "@/lib/book/reports/spending";
-import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Ctx } from "./CashFlowClient";
@@ -37,22 +38,6 @@ export function Dot({ color, className = "" }: { color: string; className?: stri
   return <span aria-hidden className={`inline-block h-2.5 w-2.5 shrink-0 rounded-[3px] ${className}`} style={{ background: color }} />;
 }
 
-/** Tiny trend line; the last point is marked. */
-export function Sparkline({ values, color, width = 84, height = 22 }: { values: number[]; color: string; width?: number; height?: number }) {
-  if (values.length < 2) return <span className="inline-block" style={{ width, height }} />;
-  const max = Math.max(1, ...values);
-  const min = Math.min(0, ...values);
-  const x = (i: number) => 2 + (i / (values.length - 1)) * (width - 4);
-  const y = (v: number) => height - 2 - ((v - min) / (max - min || 1)) * (height - 4);
-  const d = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
-  return (
-    <svg width={width} height={height} aria-hidden className="shrink-0 overflow-visible">
-      <path d={d} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r={2.25} fill={color} />
-    </svg>
-  );
-}
-
 /**
  * A change between two figures. For spending, up is bad (`goodWhenDown`); the arrow and
  * sign carry the direction so it never rests on color alone.
@@ -63,7 +48,7 @@ export function Sparkline({ values, color, width = 84, height = 22 }: { values: 
  * the change is then a composite figure that clears from theirs (proof/composite.ts).
  */
 export function Delta({ now, before, goodWhenDown = false, asPercent = true, of, per }: { now: number; before: number | null; goodWhenDown?: boolean; asPercent?: boolean; of?: [ProofRef, ProofRef]; per?: [number, number] }) {
-  if (before == null) return <span className="text-xs text-faint">—</span>;
+  if (before == null) return <span className="text-xs text-faint">{NA}</span>;
   const diff = now - before;
   const rate = asPercent && before > 0;
   const change = of && compositeOf(rate ? "growth" : "diff", of, rate ? { ratio: diff / before } : { cents: diff }, per);
@@ -115,7 +100,7 @@ export function WithheldStrip({ after, before, through }: { after: WithheldMonth
   }
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-surface-2 px-3 py-2 text-xs text-muted">
-      <span className="font-medium text-fg-2">Proven through {through ?? "—"}.</span>
+      <span className="font-medium text-fg-2">Proven through {through ?? NA}.</span>
       {items.map((x, i) => (
         <span key={i}>
           {i ? "· " : ""}

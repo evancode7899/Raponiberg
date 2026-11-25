@@ -1,10 +1,11 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { NA } from "@/lib/formatMoney";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { firstYearIncome, fiYear, savingsRateCurve, sensitivityGrid, spendingCuts } from "@/lib/fire/fire";
+import { fiLevers, firstYearIncome, fiYear, LEVER_YEARLY, savingsRateCurve, sensitivityGrid, spendingCuts } from "@/lib/fire/fire";
 import { useMemo } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceDot, Tooltip, XAxis, YAxis } from "recharts";
 import { Living } from "./OverviewTab";
@@ -19,19 +20,16 @@ const WRS = [0.03, 0.035, 0.04, 0.045, 0.05];
 export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
   const { plan } = f;
   const base = f.fi?.year ?? null;
-  const delta = (y: number | null) => (y == null || base == null ? (y == null ? (base == null ? "—" : "never") : "reaches FI") : y === base ? "same" : y < base ? `${base - y} yr${base - y === 1 ? "" : "s"} sooner` : `${y - base} yr${y - base === 1 ? "" : "s"} later`);
+  const delta = (y: number | null) => (y == null || base == null ? (y == null ? (base == null ? NA : "never") : "reaches FI") : y === base ? "same" : y < base ? `${base - y} yr${base - y === 1 ? "" : "s"} sooner` : `${y - base} yr${y - base === 1 ? "" : "s"} later`);
   const deltaTone = (y: number | null) => (y == null ? "text-warn" : base == null || y < base ? "text-pos" : y > base ? "text-warn" : "text-muted");
 
   const curve = useMemo(() => savingsRateCurve(plan, RATES), [plan]);
   const cuts = useMemo(() => spendingCuts(plan, CUTS), [plan]);
   const grid = useMemo(() => sensitivityGrid(plan, RETURNS, WRS), [plan]);
   const compare = useMemo(() => {
-    const raise = 12 * 1_000_00;
-    return {
-      spendLess: fiYear({ ...plan, livingCost: Math.max(0, plan.livingCost - raise) }),
-      earnMore: fiYear({ ...plan, salary: plan.salary + raise }),
-      earnMoreNet: Math.round(raise * plan.takeHomeRate),
-    };
+    const at = (key: "spend" | "earn") => levers.find((l) => l.key === key)!.fiYear;
+    const levers = fiLevers(plan);
+    return { spendLess: at("spend"), earnMore: at("earn"), earnMoreNet: Math.round(LEVER_YEARLY * plan.takeHomeRate) };
   }, [plan]);
   const creep = useMemo(
     () =>
@@ -151,7 +149,7 @@ export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
                     const tint = y == null ? "bg-neg-soft" : base == null ? "bg-pos-soft" : y < base ? "bg-pos-soft" : y > base ? "bg-warn-soft" : "";
                     return (
                       <td key={w} className={`${table.tdR} ${tint} ${mine ? "outline outline-2 -outline-offset-2 outline-accent font-semibold" : ""}`} title={y ? yearAge(y, plan) : "not within 60 years"}>
-                        {y ?? "—"}
+                        {y ?? NA}
                       </td>
                     );
                   })}
@@ -191,7 +189,7 @@ function SavingsRateChart({ f, curve, d, pf }: { f: FireProps["f"]; curve: Retur
             <XAxis dataKey="rate" type="number" domain={[5, 85]} ticks={[10, 20, 30, 40, 50, 60, 70, 80]} tickFormatter={(v: number) => `${v}%`} {...ui.xAxis} />
             <YAxis {...ui.yAxis} width={40} allowDecimals={false} tickFormatter={(v: number) => `${v}y`} />
             <Tooltip {...ui.tooltip} labelFormatter={(v) => `Saving ${v}%`} formatter={(v) => [v == null ? "not within 60 years" : `${v} years`, "To FI"]} />
-            <Line type="monotone" dataKey="years" name="Years to FI" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
+            <Line type="linear" dataKey="years" name="Years to FI" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
             {mine && <ReferenceDot x={mine.rate} y={mine.years} r={6} fill={chart.series[1]} stroke={chart.tooltipBg} strokeWidth={2} label={{ value: "You", position: "top", fill: chart.legend, fontSize: 11 }} />}
           </LineChart>
         </RechartsResponsive>

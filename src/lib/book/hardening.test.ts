@@ -290,6 +290,13 @@ describe("tax law for the year is in the app", () => {
     // The year in progress runs only to the data edge; a finished year is withheld whole.
     expect(taxBlockers(b, 2030).some((f) => f.id === "tax.params:2030")).toBe(true);
   });
+
+  it("says in November that next year's law is missing, and withholds nothing of this year's for it", () => {
+    const b = makeBook({ accounts: [bank(), card()], matches: paired, today: "2031-11-20" });
+    expect(findings(b, "tax.params").map((f) => f.id)).toContain("tax.params:2032");
+    expect(findings(makeBook({ accounts: [bank(), card()], matches: paired, today: "2031-11-10" }), "tax.params").map((f) => f.id)).not.toContain("tax.params:2032");
+    expect(taxBlockers(b, 2031).some((f) => f.id === "tax.params:2032")).toBe(false);
+  });
 });
 
 describe("net worth reconciles month by month", () => {

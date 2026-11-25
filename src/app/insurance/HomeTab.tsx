@@ -2,7 +2,7 @@
 
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { Badge, Card, EmptyState, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { usd0 } from "@/lib/formatMoney";
+import { NA, usd0 } from "@/lib/formatMoney";
 import { limitKey } from "@/lib/book/derived/insurance";
 import type { HomeView } from "@/lib/insurance/cover";
 import type { InsurancePage } from "@/lib/insurance/page";
@@ -47,9 +47,9 @@ export function HomeTab({ data, figs }: { data: InsurancePage; figs: readonly De
 
       <StatGrid cols={4}>
         <StatCell proof={derivedTarget("insurance", figs, "home-premium", pn)} label="Premium" value={usd0(p.totalPremiumCents)} sub={p.termMonths ? `For the ${p.termMonths}-month term` : "For the term"} />
-        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "P", personal))} label={personal >= 0 ? p.property[personal]!.name : "Property"} value={personal >= 0 ? p.property[personal]!.limit : "—"} sub={p.lossSettlement[0] ?? undefined} />
-        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "L", liability))} label="Personal liability" value={liability >= 0 ? p.liability[liability]!.limit : "—"} sub={liability >= 0 && p.liability[liability]!.per ? p.liability[liability]!.per! : undefined} />
-        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "D", 0))} label="Deductible" value={p.deductibles[0]?.text ?? "—"} sub={p.deductibles[0] ? p.deductibles[0].name : undefined} />
+        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "P", personal))} label={personal >= 0 ? p.property[personal]!.name : "Property"} value={personal >= 0 ? p.property[personal]!.limit : NA} sub={p.lossSettlement[0] ?? undefined} />
+        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "L", liability))} label="Personal liability" value={liability >= 0 ? p.liability[liability]!.limit : NA} sub={liability >= 0 && p.liability[liability]!.per ? p.liability[liability]!.per! : undefined} />
+        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "D", 0))} label="Deductible" value={p.deductibles[0]?.text ?? NA} sub={p.deductibles[0] ? p.deductibles[0].name : undefined} />
       </StatGrid>
 
       <SubTabs

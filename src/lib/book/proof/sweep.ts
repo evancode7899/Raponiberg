@@ -4,6 +4,7 @@ import { CAR_KEY, normalizeGarage } from "../../car/settings.ts";
 import { buildHomeSummary } from "../../dashboard/homeSummary.ts";
 import { taxLink } from "../../forecast/forecast.ts";
 import { loadForecast } from "../../forecast/load.ts";
+import { loadBudget } from "../../budget/settings.ts";
 import { GOALS_KEY, normalizeGoals } from "../../goals/settings.ts";
 import { loadHsaReport } from "../../hsa/loadReport.ts";
 import { INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings } from "../../investments/settings.ts";
@@ -17,7 +18,7 @@ import { perBook } from "./common.ts";
 import { normalizeMortgageInputs } from "../../mortgage/inputs.ts";
 import { buildMortgageLinks } from "../../mortgage/links.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
-import { TAX_YEARS } from "../../tax/params.ts";
+import { startedTaxYears } from "../../tax/params.ts";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxAccounts/settings.ts";
 import { bonusesOf } from "../reports/bonuses.ts";
 import { buildGoals, goalForecastOf } from "../reports/goals.ts";
@@ -49,6 +50,7 @@ import {
   hsaFigures,
   investmentsFigures,
   netWorthChangeFigures,
+  netWorthBuiltFigures,
   netWorthFigures,
   sourceFigures,
   taxEstimateFigures,
@@ -161,10 +163,11 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
 
   await page("Home", () => homeFigures(buildHomeSummary(book)));
   await page("Net worth", () => netWorthFigures(buildNetWorth(book, { granularity: "month" })));
+  for (const granularity of ["quarter", "year"] as const) await page("Net worth", () => netWorthBuiltFigures(buildNetWorth(book, { granularity })));
   for (const granularity of ["month", "quarter", "year"] as const) await page("Net worth › What changed", () => netWorthChangeFigures(buildNetWorthChanges(book, { granularity })));
-  await page("Cash flow", () => {
+  await page("Cash flow", async () => {
     const r = buildSpendingReport(book, profileSettings);
-    return [...cashFlowFigures(r.months), ...cashFlowWindowFigures(r)];
+    return [...cashFlowFigures(r.months), ...cashFlowWindowFigures(r, Object.keys((await loadBudget(db)).targets))];
   });
   await page("Investments", async () => investmentsFigures(buildInvestments(book, await loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings))));
   await page("Annual", () => annualFigures(buildAnnualProfile(book, profileSettings, book.taxProfile.dependents), buildAccountRollforwards(book), forecast ? yearEstimate(data) : null));
@@ -182,11 +185,11 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
   await page("Mortgage", async () => mortgagePageFigures(normalizeMortgageInputs(readPageInputs("pf-mortgage-v2")), (await perBook(ctx, "mortgage-links", () => buildMortgageLinks(db, book))).links));
   const retirement = await loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);
   // The calendar reads the same two reports for its years: kept from here rather than built again.
-  const supported = Object.keys(TAX_YEARS).map(Number);
+  const supported = startedTaxYears(book.today);
   const onCalendar = calendarYears(book.today, supported);
   const calendar: Partial<CalendarYear>[] = onCalendar.map((y) => ({ year: y }));
   const keep = (y: number) => calendar.find((c) => c.year === y);
-  for (const y of supported.filter((y) => y <= year)) {
+  for (const y of supported) {
     await page(`Taxes ${y}`, () => {
       const r = buildTaxReport(book, y, { forecast: link });
       const c = keep(y);

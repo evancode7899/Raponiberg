@@ -3,11 +3,11 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { ShareBar } from "@/components/charts/ShareBar";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Badge, btn, Card, NotFigure, Segmented, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
+import { RowButton, Badge, btn, Card, NotFigure, Segmented, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
 import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { COST_LINES, LINE_INFO, type CostLine } from "@/lib/car/report";
 import { SHARED } from "@/lib/car/settings";
-import { axisUsd, formatPercentRatio, usd0 } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis } from "recharts";
 import type { CarCtx } from "./CarClient";
@@ -79,7 +79,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
           }
         />
         <StatCell proof={ctx.dp("miles-driven")} label="Miles driven" value={miles(r.odometer.driven)} sub={r.odometer.perYear ? `~${miles(r.odometer.perYear)} a year · odometer ${miles(r.odometer.current)}` : undefined} />
-        <StatCell proof={ctx.dp("mpg")} label="Fuel economy" value={r.fuel.mpg ? `${r.fuel.mpg.toFixed(1)} mpg` : "—"} sub={r.fuel.recentMpg ? `${r.fuel.recentMpg.toFixed(1)} over the last ${Math.min(5, r.fuel.fills.length)} fills` : "log gallons and odometer"} />
+        <StatCell proof={ctx.dp("mpg")} label="Fuel economy" value={r.fuel.mpg ? `${r.fuel.mpg.toFixed(1)} mpg` : NA} sub={r.fuel.recentMpg ? `${r.fuel.recentMpg.toFixed(1)} over the last ${Math.min(5, r.fuel.fills.length)} fills` : "log gallons and odometer"} />
       </StatGrid>
 
       <Alerts ctx={ctx} />
@@ -128,9 +128,9 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                       <td className={table.tdR}>
                         <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l }, c) : ctx.dp("outlook", outlookKey(r.carId, l))}>{usd0(c)}</ProofValue>
                       </td>
-                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, l))} drawn={proven ? undefined : { per: 100 }}>{perMile(c / view.miles)}</ProofValue> : "—"}</td>
-                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, l))}>{usd0(c / view.months)}</ProofValue> : "—"}</td>
-                      <td className={`${table.tdR} text-muted`}>{view.total ? <ProofValue proof={compositeOf("share", [lineRef(l, c), totalRef], { ratio: c / view.total })}>{formatPercentRatio(c / view.total, 0)}</ProofValue> : "—"}</td>
+                      <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, l))} drawn={proven ? undefined : { per: 100 }}>{perMile(c / view.miles)}</ProofValue> : NA}</td>
+                      <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, line: l, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, l))}>{usd0(c / view.months)}</ProofValue> : NA}</td>
+                      <td className={`${table.tdR} text-muted`}>{view.total ? <ProofValue proof={compositeOf("share", [lineRef(l, c), totalRef], { ratio: c / view.total })}>{formatPercentRatio(c / view.total, 0)}</ProofValue> : NA}</td>
                     </tr>
                   );
                 })}
@@ -139,8 +139,8 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
                   <td className={table.tdR}>
                     <ProofValue proof={proven ? carProof(r.carId, { span: proven }, view.total) : ctx.dp("outlook", outlookKey(r.carId, "total"))}>{usd0(view.total)}</ProofValue>
                   </td>
-                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, "total"))} drawn={proven ? undefined : { per: 100 }}>{perMile(view.total / view.miles)}</ProofValue> : "—"}</td>
-                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, "total"))}>{usd0(view.total / view.months)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{view.miles > 0 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "mile" }, null) : ctx.dp("outlook-per-mile", outlookKey(r.carId, "total"))} drawn={proven ? undefined : { per: 100 }}>{perMile(view.total / view.miles)}</ProofValue> : NA}</td>
+                  <td className={table.tdR}>{view.months >= 1 ? <ProofValue proof={proven ? carProof(r.carId, { span: proven, per: "month" }, null) : ctx.dp("outlook-per-month", outlookKey(r.carId, "total"))}>{usd0(view.total / view.months)}</ProofValue> : NA}</td>
                   <td className={table.tdR} />
                 </tr>
               </tbody>
@@ -151,7 +151,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
             {view.total && fixedLines.length ? (
               <ProofValue proof={compositeOf("share", [sumOf(fixedLines.map((l) => lineRef(l, view.lines[l] ?? 0)), fixedCents), totalRef], { ratio: fixedCents / view.total })}>{formatPercentRatio(fixedCents / view.total, 0)}</ProofValue>
             ) : (
-              "—"
+              NA
             )}{" "}
             of the total: the more you drive, the less each mile costs.
           </p>
@@ -187,7 +187,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
               {BUCKETS.map((b) => (
                 <Bar key={b.id} yAxisId="usd" dataKey={b.id} name={b.label} stackId="c" fill={bucketColor(chart, b.id)} maxBarSize={28} isAnimationActive={false} />
               ))}
-              <Line yAxisId="mi" type="monotone" dataKey="miles" name="Miles" stroke={chart.lineBalance} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Line yAxisId="mi" type="linear" dataKey="miles" name="Miles" stroke={chart.lineBalance} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </ComposedChart>
           </RechartsResponsive>
         </div>
@@ -201,7 +201,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={16} />
               <YAxis {...ui.yAxis} tickFormatter={(v: number) => `$${v.toFixed(2)}`} domain={[0, "auto"]} />
               <Tooltip {...ui.tooltip} formatter={(v) => [`$${Number(v).toFixed(2)} a mile`, "All-in, cumulative"]} />
-              <Line type="monotone" dataKey="perMile" name="All-in per mile" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 2 }} connectNulls isAnimationActive={false} />
+              <Line type="linear" dataKey="perMile" name="All-in per mile" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 2 }} connectNulls isAnimationActive={false} />
             </ComposedChart>
           </RechartsResponsive>
         </div>
@@ -363,12 +363,12 @@ function Garage({ ctx }: { ctx: CarCtx }) {
                 <td className={table.td}>
                   <span className="font-medium text-fg">{c.name}</span> {c.sold && <Badge tone="neutral">sold</Badge>}
                 </td>
-                <td className={`${table.tdR} text-muted`}>{c.configured ? `${miles(c.odometer.daysOwned / 30.44, 0)} mo` : "—"}</td>
-                <td className={table.tdR}>{c.odometer.perYear ? miles(c.odometer.perYear) : "—"}</td>
-                <td className={table.tdR}>{c.configured ? <ProofValue proof={carProof(c.carId, { span: "toDate" }, c.totals.tco)}>{usd0(c.totals.tco)}</ProofValue> : "—"}</td>
-                <td className={table.tdR}>{c.configured && c.totals.perMile != null ? <ProofValue proof={carProof(c.carId, { span: "toDate", per: "mile" }, null)}>{perMile(c.totals.perMile)}</ProofValue> : "—"}</td>
-                <td className={table.tdR}>{c.configured ? <ProofValue proof={carProof(c.carId, { span: "last12" }, c.last12.total)}>{usd0(c.last12.total)}</ProofValue> : "—"}</td>
-                <td className={table.tdR}>{c.sold || !c.configured ? "—" : <ProofValue proof={ctx.dp("outlook", outlookKey(c.carId, "total"))}>{usd0(c.outlook12.total)}</ProofValue>}</td>
+                <td className={`${table.tdR} text-muted`}>{c.configured ? `${miles(c.odometer.daysOwned / 30.44, 0)} mo` : NA}</td>
+                <td className={table.tdR}>{c.odometer.perYear ? miles(c.odometer.perYear) : NA}</td>
+                <td className={table.tdR}>{c.configured ? <ProofValue proof={carProof(c.carId, { span: "toDate" }, c.totals.tco)}>{usd0(c.totals.tco)}</ProofValue> : NA}</td>
+                <td className={table.tdR}>{c.configured && c.totals.perMile != null ? <ProofValue proof={carProof(c.carId, { span: "toDate", per: "mile" }, null)}>{perMile(c.totals.perMile)}</ProofValue> : NA}</td>
+                <td className={table.tdR}>{c.configured ? <ProofValue proof={carProof(c.carId, { span: "last12" }, c.last12.total)}>{usd0(c.last12.total)}</ProofValue> : NA}</td>
+                <td className={table.tdR}>{c.sold || !c.configured ? NA : <ProofValue proof={ctx.dp("outlook", outlookKey(c.carId, "total"))}>{usd0(c.outlook12.total)}</ProofValue>}</td>
               </tr>
             ))}
             <tr className="border-t-[3px] border-double border-line-strong font-semibold">
@@ -417,7 +417,7 @@ function RecentLog({ ctx }: { ctx: CarCtx }) {
             const entry = i.entryIds.length ? s.entries.find((e) => e.id === i.entryIds[0]) : null;
             return (
               <li key={i.id}>
-                <button type="button" className="flex w-full items-center gap-3 py-1.5 text-left text-xs hover:bg-surface-2" onClick={() => (entry ? editEntry(entry) : goTo("log"))}>
+                <RowButton label={entry ? `Edit ${i.label ?? i.item}` : "Open the log"} className="flex w-full items-center gap-3 py-1.5 text-left text-xs" onClick={() => (entry ? editEntry(entry) : goTo("log"))}>
                   <span className="num w-24 shrink-0 text-muted">{fmtDate(i.date)}</span>
                   <span className="min-w-0 flex-1 truncate text-fg" title={i.item}>
                     {i.label ?? i.item}
@@ -426,7 +426,7 @@ function RecentLog({ ctx }: { ctx: CarCtx }) {
                   </span>
                   <span className="num shrink-0 text-muted">{i.odometer != null ? `${miles(i.odometer)} mi` : ""}</span>
                   <span className="num w-20 shrink-0 text-right text-fg-2">{isReading(i) ? "" : <ProofValue proof={logProof(i.id, i.cents)}>{usd2(i.cents)}</ProofValue>}</span>
-                </button>
+                </RowButton>
               </li>
             );
           })}

@@ -89,7 +89,7 @@ export function SensitivityTab({ ins, proof, salaryLinked }: { ins: HomeBudgetIn
                 <YAxis {...ui.yAxis} tickFormatter={axisUsd} width={64} />
                 <Tooltip {...ui.tooltip} labelFormatter={(l) => `Home ${formatUsd(Number(l))}`} formatter={(v) => [formatUsd(Number(v)), "Left / month"]} />
                 <ReferenceLine y={0} stroke={chart.axisLine} />
-                <Line type="monotone" dataKey="left" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 3, fill: chart.series[0] }} isAnimationActive={false} />
+                <Line type="linear" dataKey="left" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 3, fill: chart.series[0] }} isAnimationActive={false} />
               </LineChart>
             </RechartsResponsive>
           </div>
@@ -103,7 +103,7 @@ export function SensitivityTab({ ins, proof, salaryLinked }: { ins: HomeBudgetIn
                 <XAxis dataKey="rate" type="number" domain={[RATES[0]!, RATES.at(-1)!]} ticks={RATES.filter((_, i) => i % 2 === 0)} {...ui.xAxis} tickFormatter={(v: number) => `${+(v * 100).toFixed(1)}%`} />
                 <YAxis {...ui.yAxis} tickFormatter={axisUsd} width={64} domain={["auto", "auto"]} />
                 <Tooltip {...ui.tooltip} labelFormatter={(l) => `Rate ${(Number(l) * 100).toFixed(2)}%`} formatter={(v) => [formatUsd(Number(v)), "Max price"]} />
-                <Line type="monotone" dataKey="max" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
+                <Line type="linear" dataKey="max" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
                 <ReferenceDot x={ins.annualMortgageRate} y={curMax} r={5} fill={chart.series[1]} stroke={chart.tooltipBg} />
               </LineChart>
             </RechartsResponsive>

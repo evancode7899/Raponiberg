@@ -1,6 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ledger/LedgerBits";
+import { NA } from "@/lib/formatMoney";
 import { NotFigure } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { taxesDerived } from "@/lib/book/derived/taxes";
@@ -21,7 +22,7 @@ export function TaxComparison({ r }: { r: TaxResponse }) {
     </ProofValue>
   );
   const show = (row: CompareRow, v: number | null, j: number): string => {
-    if (v == null) return "—";
+    if (v == null) return NA;
     if (row.kind === "pct") return pct(v);
     if (row.kind === "bracket") return pct(v, 0);
     if (row.kind === "balance") return balanceText(v);
@@ -30,7 +31,7 @@ export function TaxComparison({ r }: { r: TaxResponse }) {
   };
   const rows: Row[] = cmp.rows.map((row) => ({
     label: lawLabel(row.label),
-    values: row.values.map((v, j) => (v == null ? (row.kind === "bracket" ? "" : "—") : cell("compare", row.id, cmp.cols[j]!.id, show(row, v, j), row.kind === "balance" ? "zero" : undefined))),
+    values: row.values.map((v, j) => (v == null ? (row.kind === "bracket" ? "" : NA) : cell("compare", row.id, cmp.cols[j]!.id, show(row, v, j), row.kind === "balance" ? "zero" : undefined))),
     ...(row.strong ? { strong: true } : {}),
     ...(row.indent ? { indent: true } : {}),
     ...(row.help ? { help: row.help } : {}),

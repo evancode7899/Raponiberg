@@ -2,7 +2,7 @@
 
 import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
+import { formatPercentRatio, NA, usd0 } from "@/lib/formatMoney";
 
 /** `proof`: the figure the segment is, so the legend draws its amount and share as figures. */
 export type ShareSegment = { id: string; label: string; cents: number; color: string; proof?: ProofRef };
@@ -49,7 +49,7 @@ export function ShareLegend({ segments }: { segments: ShareSegment[] }) {
           <span className="min-w-0 flex-1 truncate text-fg-2">{s.label}</span>
           <span className="num text-fg">{s.proof ? <ProofValue proof={s.proof}>{usd0(s.cents)}</ProofValue> : usd0(s.cents)}</span>
           <span className="num w-12 text-right text-muted">
-            {!total ? "—" : s.proof && whole && s.cents > 0 ? <ProofValue proof={compositeOf("share", [s.proof, whole], { ratio: s.cents / total })}>{formatPercentRatio(s.cents / total, 1)}</ProofValue> : formatPercentRatio(s.cents / total, 1)}
+            {!total ? NA : s.proof && whole && s.cents > 0 ? <ProofValue proof={compositeOf("share", [s.proof, whole], { ratio: s.cents / total })}>{formatPercentRatio(s.cents / total, 1)}</ProofValue> : formatPercentRatio(s.cents / total, 1)}
           </span>
         </li>
       ))}

@@ -7,7 +7,7 @@ import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
 import { loadJsonSetting } from "@/lib/settingsStore";
 import { buildTaxReport } from "@/lib/tax/buildTaxReport";
-import { TAX_YEARS } from "@/lib/tax/params";
+import { startedTaxYears } from "@/lib/tax/params";
 import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "@/lib/taxAccounts/settings";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     await cachedBuilt(prisma, "calendar", async (book) => {
       const [settings, { forecast }] = await Promise.all([loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings), loadForecast(prisma, book)]);
       const link = forecast ? taxLink(forecast) : null;
-      const years = calendarYears(book.today, Object.keys(TAX_YEARS).map(Number));
+      const years = calendarYears(book.today, startedTaxYears(book.today));
       return buildMoneyCalendar(
         book.today,
         years.map((year) => ({ year, tax: buildTaxReport(book, year, { forecast: link }), accounts: buildTaxAccounts(book, year, settings, link) })),

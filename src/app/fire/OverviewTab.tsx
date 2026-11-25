@@ -7,7 +7,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, sumOf, unswept } from "@/components/ui/proof/context";
 import { FAT_SHARE, fireNumber, fiYear, LEAN_SHARE, livingIn, type FireRow } from "@/lib/fire/fire";
 import type { FireFigure } from "@/lib/book/proof/planningProof";
-import { axisUsd } from "@/lib/formatMoney";
+import { axisUsd, NA } from "@/lib/formatMoney";
 import type { OutlookSeeds } from "@/lib/profile/basePay";
 import type { AnnualProfileReport } from "@/lib/profile/buildAnnualProfile";
 import { monthLabel } from "@/app/forecast/forecastUi";
@@ -81,7 +81,7 @@ export function OverviewTab({
         <StatCell label="Runway (liquid)" value={`${now.liquidYears.toFixed(1)} yrs`} proof={pf("runway", null)} sub="taxable money ÷ a year's living cost" />
         <StatCell
           label="Coast FIRE"
-          value={now.coastNumber != null && now.netWorth >= now.coastNumber ? "Reached" : f.coast ? String(f.coast.year) : plan.birthYear == null ? "Needs age" : "—"}
+          value={now.coastNumber != null && now.netWorth >= now.coastNumber ? "Reached" : f.coast ? String(f.coast.year) : plan.birthYear == null ? "Needs age" : NA}
           proof={pf("coast-year", null)}
           sub={f.retireYear ? `stop saving, still FI at ${f.retireYear - plan.birthYear!}` : "add birth years in Settings"}
         />
@@ -305,13 +305,13 @@ function TargetChart({ f, r, dollars, setDollars }: Omit<FireProps, "d"> & { r: 
             <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={[0, yMax]} allowDataOverflow />
             <Tooltip {...ui.tooltip} labelFormatter={(v) => (Number.isInteger(Number(v)) ? `Jan 1, ${v}` : "Latest proven")} formatter={(v, name) => [tipUsd(v), String(name)]} />
             <Legend {...ui.legend} />
-            <Line type="monotone" dataKey="fat" name="Fat FIRE" stroke={chart.neutral} strokeDasharray="2 3" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
-            <Line type="monotone" dataKey="fire" name="FIRE number" stroke={chart.series[1]} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-            <Line type="monotone" dataKey="lean" name="Lean FIRE" stroke={chart.series[3]} strokeDasharray="5 3" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
+            <Line type="linear" dataKey="fat" name="Fat FIRE" stroke={chart.neutral} strokeDasharray="2 3" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
+            <Line type="linear" dataKey="fire" name="FIRE number" stroke={chart.series[1]} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+            <Line type="linear" dataKey="lean" name="Lean FIRE" stroke={chart.series[3]} strokeDasharray="5 3" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
             {data.some((d) => d.coast != null) && (
-              <Line type="monotone" dataKey="coast" name="Coast FIRE" stroke={chart.series[4]} strokeDasharray="1 3" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
+              <Line type="linear" dataKey="coast" name="Coast FIRE" stroke={chart.series[4]} strokeDasharray="1 3" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
             )}
-            <Line type="monotone" dataKey="plan" name="Net worth (plan)" stroke={chart.series[0]} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false} />
+            <Line type="linear" dataKey="plan" name="Net worth (plan)" stroke={chart.series[0]} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false} />
             <Line dataKey="actual" name="Net worth (proven)" stroke="none" dot={{ r: 4, fill: chart.lineBalance, stroke: chart.tooltipBg, strokeWidth: 2 }} activeDot={{ r: 5 }} isAnimationActive={false} />
             {f.fi && <ReferenceLine x={f.fi.year} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: `FI ${f.fi.year}`, fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />}
             {plan.walkAwayYear && plan.walkAwayYear !== f.fi?.year && (

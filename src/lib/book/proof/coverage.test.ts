@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { proofTarget, type Report } from "@/app/cash-flow/model";
 import { cashFlowDerived, categoryKey, merchantKeyOf, paceKey, windowKey } from "../derived/cashFlow";
 import { derivedTarget, type DerivedFigure } from "../derived/types";
-import { isUnswept } from "./clearance";
-import { last12At, merchantMovers, mergeCategories, monthDrillMerchants, momentumWindows, PRESET_RANGES, quietMerchants, sliceRange, sliceStart, topPayers, yoyWindows, byYear, type CashFlowRecipe } from "../reports/cashFlowWindows";
+import { clearanceOf, isUnswept, type SweepState } from "./clearance";
+import { compositeOf } from "./compose";
+import { categoryMerchants, compareCategories, last12At, merchantMovers, mergeCategories, monthDrillMerchants, momentumWindows, PRESET_RANGES, quietMerchants, sliceRange, sliceStart, spendingMover, topPayers, yoyWindows, byYear, type CashFlowRecipe } from "../reports/cashFlowWindows";
 import type { SpendingMonth } from "../reports/spending";
 import { cashFlowWindowFigures, derivedFigures } from "./figures";
 import { descriptorKey } from "./key";
@@ -124,6 +125,10 @@ describe("swept = rendered: Cash flow", () => {
       for (const metric of ["income", "spending"] as const) draw(metric, s.prior);
       const prior = new Set(cats(s.prior));
       for (const c of cats(ms)) if (prior.has(c)) draw("spending", s.prior, { category: c });
+      // Overview's latest month against a typical one, and the category its insight names, on both sides.
+      for (const c of mergeCategories(ms, (m) => m.spendingByCategory)) if (c.cents > 0) draw("spending", ms.slice(-1), { category: c.category });
+      const mover = spendingMover(s);
+      if (mover) for (const side of [ms, s.prior]) draw("spending", side, { category: mover.c });
       // Merchants › went quiet, over the twelve months before it.
       const lo = sliceStart(report, s);
       const recent = all.slice(Math.max(0, lo - 12), lo);
@@ -133,7 +138,8 @@ describe("swept = rendered: Cash flow", () => {
     for (const [, ms] of byYear(all)) {
       for (const metric of ["income", "spending", "net"] as const) draw(metric, ms);
       for (const spendingKind of ["bill", "big", "everyday"] as const) draw("spending", ms, { spendingKind });
-      for (const c of cats(ms)) draw("spending", ms, { category: c });
+      // The year table lists every category any month spent in, in every year.
+      for (const c of cats(all)) draw("spending", ms, { category: c });
     }
     for (const mode of ["month", "ytd", "12m"] as const) {
       const y = yoyWindows(all, mode);
@@ -142,7 +148,8 @@ describe("swept = rendered: Cash flow", () => {
       for (const [ms, side] of [[y.now, "now"], [y.then, "then"]] as const) {
         for (const metric of ["income", "spending", "net"] as const) draw(metric, ms);
         draw("spending", ms, { spendingKind: "everyday" });
-        for (const c of cats(ms)) draw("spending", ms, { category: c });
+        // A category spent in on either side is drawn on both.
+        for (const c of new Set([...cats(y.now), ...cats(y.then)])) draw("spending", ms, { category: c });
         for (const x of [...up, ...down]) if (x[side]) draw("spending", ms, { merchantKey: x.key });
       }
     }
@@ -151,11 +158,68 @@ describe("swept = rendered: Cash flow", () => {
     for (const metric of ["income", "spending"] as const) draw(metric, last12At(all, hi));
     draw("spending", last12At(all, hi), { spendingKind: "everyday" });
     draw("spending", all.slice(hi - 2, hi + 1), { spendingKind: "everyday" });
-    for (const ms of [m.recent, m.before]) for (const c of cats(ms)) draw("spending", ms, { category: c });
+    for (const ms of [m.recent, m.before]) for (const c of new Set([...cats(m.recent), ...cats(m.before)])) draw("spending", ms, { category: c });
     // Recurring: each habit's charges over the twelve months to the end.
     for (const c of report.recurring.filter((x) => x.kind === "habit")) draw("spending", report.months, { merchantKey: c.key, charges: true });
     expect([...drawn].filter((k) => !swept.has(k))).toEqual([]);
     expect([...swept].filter((k) => !drawn.has(k))).toEqual([]);
+  });
+
+  it("holds the zero side of a comparison: a category that began or stopped is swept on both sides", () => {
+    // Pat's pottery began in March 2030 and stopped after October: money in one year of three.
+    const began = months.map((m) => {
+      if (m.start < "2030-03-01" || m.start > "2030-10-31") return m;
+      const cents = 8_000;
+      return { ...m, spendingCents: m.spendingCents + cents, netCents: m.netCents - cents, spendingByCategory: [...m.spendingByCategory, { category: "Shopping & gifts", group: null, cents }] };
+    });
+    const figures = cashFlowWindowFigures({ months: began, recurring: [] });
+    const cleared = Object.fromEntries(figures.map((f) => [descriptorKey(f.descriptor), f.shown!]));
+    const state: SweepState = { stamp: "x", status: "ready", cleared, basis: {}, problems: {} };
+    const shows = (ms: SpendingMonth[], cents: number) => {
+      const t = proofTarget("spending", ms, undefined, { category: "Shopping & gifts", shownCents: cents });
+      if (isUnswept(t)) throw new Error("no recipe");
+      return { t, state: clearanceOf(t, state, "x").state };
+    };
+    // Year over year, last twelve months: nothing a year earlier (the twelve before end in February 2030).
+    const y = yoyWindows(began, "12m");
+    expect(y.missing).toEqual([]);
+    const row = compareCategories(y.now, y.then).find((c) => c.category === "Shopping & gifts")!;
+    expect(row).toEqual({ category: "Shopping & gifts", now: 64_000, then: 0 });
+    expect(shows(y.then, 0).state).toBe("cleared");
+    const change = compositeOf("diff", [shows(y.now, 64_000).t, shows(y.then, 0).t], { cents: 64_000 });
+    expect(isUnswept(change) ? "none" : clearanceOf(change, state, "x").state).toBe("cleared");
+    // The year table: 2029 and 2031 spent nothing in it.
+    for (const [year, ms] of byYear(began)) expect(shows(ms, year === "2030" ? 64_000 : 0).state, year).toBe("cleared");
+    // Trends' heating up, cooling down; and a zero the page gets wrong is still withheld.
+    const m = momentumWindows(began, began.length - 1);
+    expect(shows(m.recent, 0).state).toBe("cleared");
+    expect(shows(m.recent, 100).state).toBe("withheld");
+  });
+
+  it("holds a category the Budget has a target for, whether or not anything was spent in it", () => {
+    const keys = new Set(cashFlowWindowFigures({ months, recurring: [] }, ["Transportation"]).map((f) => descriptorKey(f.descriptor)));
+    for (const range of PRESET_RANGES) {
+      const ms = sliceRange(report, range, { from: "", to: "" }).months;
+      for (const run of [ms, ms.slice(-1)]) expect(keys.has(key("spending", run, { category: "Transportation" })), range).toBe(true);
+    }
+  });
+
+  it("holds a merchant's part of one category, where it has rows in another too", () => {
+    // Corner Grocer's cafe counter: from 2030 on, part of it is Dining.
+    const mixed = months.map((m) => ({
+      ...m,
+      merchants: m.merchants.map((x) => (x.key === "CORNER GROCER" && m.start >= "2030-01-01" ? { ...x, split: [{ category: "Groceries", cents: x.cents - 1_500, count: 1 }, { category: "Dining", cents: 1_500, count: 1 }] } : x)),
+    }));
+    const all = sliceRange({ months: mixed }, "all", { from: "", to: "" }).months;
+    const grocer = months.reduce((s, m) => s + (m.merchants.find((x) => x.key === "CORNER GROCER")?.cents ?? 0), 0);
+    const counter = mixed.filter((m) => m.merchants.some((x) => "split" in x)).length * 1_500;
+    expect(categoryMerchants(all, "Groceries").find((x) => x.key === "CORNER GROCER")).toMatchObject({ cents: grocer - counter, whole: false });
+    expect(categoryMerchants(all, "Dining").find((x) => x.key === "CORNER GROCER")).toMatchObject({ cents: counter, whole: false });
+    // A merchant with one category keeps its plain recipe.
+    expect(categoryMerchants(all, "Housing & utilities")).toMatchObject([{ key: "SPRINGFIELD POWER", whole: true }]);
+    const shown = new Map(cashFlowWindowFigures({ months: mixed, recurring: [] }).map((f) => [descriptorKey(f.descriptor), f.shown]));
+    expect(shown.get(key("spending", all, { merchantKey: "CORNER GROCER", category: "Groceries" }))).toEqual({ cents: grocer - counter });
+    expect(shown.get(key("spending", all, { merchantKey: "CORNER GROCER" }))).toEqual({ cents: grocer });
   });
 
   it("enumerates every derived figure a tab asks for, at the key it asks with", () => {

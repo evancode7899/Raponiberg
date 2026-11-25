@@ -9,7 +9,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, Loading, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { ProofDescriptor } from "@/lib/book/proof";
 import type { ChangeMover, HighlightSeg, NetWorthChange, NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
-import { axisUsd, formatUsd, usd0, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { unswept } from "@/lib/book/proof/clearance";
@@ -22,7 +22,7 @@ const UNIT: Record<Granularity, string> = { month: "month", quarter: "quarter", 
 
 /** A difference from typical, coloured by whether it helped net worth: the figure less its average, both proven. */
 function Delta({ cents, of, ofCents = cents }: { cents: number | null; of?: [ProofRef, ProofRef]; ofCents?: number | null }) {
-  if (cents == null) return <span className="text-faint">—</span>;
+  if (cents == null) return <span className="text-faint">{NA}</span>;
   return (
     <span className={Math.round(cents / 100) === 0 ? "text-muted" : cents > 0 ? "text-pos" : "text-neg"}>
       {of && ofCents != null ? <ProofValue proof={compositeOf("diff", of, { cents: ofCents })}>{usdDelta(cents)}</ProofValue> : usdDelta(cents)}
@@ -170,7 +170,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
                   <td className={table.tdR}>
                     <ProofValue proof={own}>{s.key === "spending" ? usd0(p.spendingCents) : usd0(s.cents)}</ProofValue>
                   </td>
-                  {t && <td className={`${table.tdR} text-muted`}>{s.typicalCents == null ? "—" : <ProofValue proof={avg}>{s.key === "spending" ? usd0(-s.typicalCents) : usd0(s.typicalCents)}</ProofValue>}</td>}
+                  {t && <td className={`${table.tdR} text-muted`}>{s.typicalCents == null ? NA : <ProofValue proof={avg}>{s.key === "spending" ? usd0(-s.typicalCents) : usd0(s.typicalCents)}</ProofValue>}</td>}
                   {t && (
                     <td className={table.tdR}>
                       <Delta cents={s.typicalCents == null ? null : s.cents - s.typicalCents} of={[own, avg]} ofCents={s.typicalCents == null ? null : s.key === "spending" ? p.spendingCents - (t?.spendingCents ?? 0) : s.cents - s.typicalCents} />

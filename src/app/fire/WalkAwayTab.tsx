@@ -109,8 +109,8 @@ function Crossover({ f, rows, dollars, setDollars }: Omit<FireProps, "d"> & { ro
             <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
             <Tooltip {...ui.tooltip} labelFormatter={(v) => `Stop on Jan 1, ${v}`} formatter={(v, name) => [`${tipUsd(v)}/mo`, String(name)]} />
             <Legend {...ui.legend} />
-            <Line type="monotone" dataKey="living" name="Living cost" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="income" name="Walk-away income" stroke={chart.series[0]} strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            <Line type="linear" dataKey="living" name="Living cost" stroke={chart.series[1]} strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line type="linear" dataKey="income" name="Walk-away income" stroke={chart.series[0]} strokeWidth={2.5} dot={false} isAnimationActive={false} />
             {f.fi && <ReferenceLine x={String(f.fi.year)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: `FI ${f.fi.year}`, fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />}
           </ComposedChart>
         </RechartsResponsive>

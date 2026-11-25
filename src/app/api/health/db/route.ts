@@ -1,12 +1,14 @@
+import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { prisma } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 type MigrationRow = {
   migration_name: string;
   finished_at: string | null;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!checkApiAuth(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const [accounts, categories, transactions, budgetLines, auditEvents] =
       await Promise.all([

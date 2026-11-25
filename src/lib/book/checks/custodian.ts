@@ -1,4 +1,4 @@
-import { TAX_YEARS } from "../../tax/params.ts";
+import { startedTaxYears } from "../../tax/params.ts";
 import { money } from "../coverage.ts";
 import { accountRef } from "../findingKeys.ts";
 import type { Book } from "../load.ts";
@@ -14,8 +14,7 @@ import type { Collector } from "./collector.ts";
  * year's tax figures are withheld until the misread is fixed or explained.
  */
 export function checkCustodianContributions(book: Book, c: Collector) {
-  const currentYear = Number(book.today.slice(0, 4));
-  const years = Object.keys(TAX_YEARS).map(Number).filter((y) => y <= currentYear);
+  const years = startedTaxYears(book.today);
   for (const year of years) {
     const ties: CustodianTie[] = [...book.persons.flatMap((p) => iraYear(book, p.id, year).custodian), ...chetYear(book, year).custodian];
     for (const t of ties) {

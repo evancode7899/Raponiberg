@@ -1,6 +1,7 @@
 "use client";
 
 import { BlockedNote } from "@/components/ledger/Blocked";
+import { NA } from "@/lib/formatMoney";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { btn, Callout, ErrorNote, Loading, PageBody } from "@/components/ui/kit";
@@ -166,7 +167,7 @@ function Feeds({ f, s, dirty, dp }: { f: Forecast; s: OutlookSeeds; dirty: boole
         <Feed
           href="/fire"
           page={next[0] ? <NotFigure why="a round milestone mark">{`Net worth ${next[0].label}`}</NotFigure> : "Milestones"}
-          value={next[0] ? keyLabel(next[0].key!) : "—"}
+          value={next[0] ? keyLabel(next[0].key!) : NA}
           sub={next[0] ? <NotFigure why="round milestone marks">{[ageAt(next[0].key!), next[1] && `${next[1].label} ${keyLabel(next[1].key!)}`].filter(Boolean).join(" · ")}</NotFigure> : "none ahead"}
         />
       </div>

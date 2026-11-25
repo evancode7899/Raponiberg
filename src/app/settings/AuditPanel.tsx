@@ -1,6 +1,7 @@
 "use client";
 
 import type { Api } from "@/components/ledger/useApi";
+import { NA } from "@/lib/formatMoney";
 import { btn, Card, downloadResponse, ErrorNote, inputCls, Loading, table } from "@/components/ui/kit";
 import { formatDisplayDateTime } from "@/lib/displayTime";
 import { useEffect, useMemo, useState } from "react";
@@ -76,7 +77,7 @@ export function AuditPanel({ api }: { api: Api }) {
                   <td className={`${table.td} whitespace-nowrap font-mono text-xs text-fg`}>{e.action}</td>
                   <td className={`${table.td} whitespace-nowrap text-xs text-muted`}>{e.actor}</td>
                   <td className={`${table.td} w-full max-w-0 font-mono text-[11px] text-muted`}>
-                    {isOpen ? <pre className="whitespace-pre-wrap break-all text-fg-2">{JSON.stringify(e.payloadJson, null, 2)}</pre> : <div className="truncate">{payload || "—"}</div>}
+                    {isOpen ? <pre className="whitespace-pre-wrap break-all text-fg-2">{JSON.stringify(e.payloadJson, null, 2)}</pre> : <div className="truncate">{payload || NA}</div>}
                   </td>
                 </tr>
               );

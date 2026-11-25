@@ -1,3 +1,4 @@
+import { AUDIT_ACTOR_SETTINGS, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { checkAppPassword, isDefaultAppPassword, writeAppPassword } from "@/lib/appPassword";
 import { isDemo } from "@/lib/dataDir";
@@ -41,16 +42,18 @@ function appOrigin(request: NextRequest): string {
   return host ? `http://${host}` : new URL(request.url).origin;
 }
 
-/** Body: { password } — sets a new lock-screen password (Settings › General). */
+/** Body: { current, password } — sets a new lock-screen password (Settings › General), given the one in use. */
 export async function PUT(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as { password?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { current?: unknown; password?: unknown } | null;
+  if (!checkAppPassword(body?.current)) return NextResponse.json({ error: "That isn't the current password" }, { status: 403 });
   try {
     writeAppPassword(body?.password);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not save" }, { status: 400 });
   }
+  await logAuditEvent({ action: "app_password_changed", actor: AUDIT_ACTOR_SETTINGS });
   return NextResponse.json({ ok: true });
 }

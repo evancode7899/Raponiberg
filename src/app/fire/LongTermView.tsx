@@ -111,10 +111,10 @@ export function LongTermView({
                   label={{ value: "Near term: no estimated bonus", fill: chart.legend, fontSize: 11, position: "insideTop" }}
                 />
               )}
-              <Area type="monotone" dataKey="illiquid" name="Illiquid" stackId="p" stroke={chart.series[2]} fill={chart.series[2]} fillOpacity={0.4} isAnimationActive={false} connectNulls />
-              <Area type="monotone" dataKey="liquid" name="Liquid" stackId="p" stroke={chart.series[1]} fill={chart.series[1]} fillOpacity={0.4} isAnimationActive={false} connectNulls />
-              {hasBonus && <Line type="monotone" dataKey="baseOnly" name="No bonuses" stroke={chart.lineBalance} strokeDasharray="5 4" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls />}
-              <Line type="monotone" dataKey="actual" name="Proven" stroke={chart.lineBalance} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} connectNulls />
+              <Area type="linear" dataKey="illiquid" name="Illiquid" stackId="p" stroke={chart.series[2]} fill={chart.series[2]} fillOpacity={0.4} isAnimationActive={false} connectNulls />
+              <Area type="linear" dataKey="liquid" name="Liquid" stackId="p" stroke={chart.series[1]} fill={chart.series[1]} fillOpacity={0.4} isAnimationActive={false} connectNulls />
+              {hasBonus && <Line type="linear" dataKey="baseOnly" name="No bonuses" stroke={chart.lineBalance} strokeDasharray="5 4" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls />}
+              <Line type="linear" dataKey="actual" name="Proven" stroke={chart.lineBalance} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} connectNulls />
               {plan.walkAwayYear && <ReferenceLine x={String(plan.walkAwayYear)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: "Walk away", fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />}
               {fiYear && fiYear !== plan.walkAwayYear && (
                 <ReferenceLine x={String(fiYear)} stroke={chart.series[0]} strokeDasharray="2 2" label={{ value: "FI", fill: chart.legend, fontSize: 11, position: "insideTopRight" }} />
