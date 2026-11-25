@@ -3,6 +3,7 @@ import { byYear, cashFlowWindows, last12At, median, mergeCategories, mergeMercha
 import type { CategoryAmount } from "../reports/cashFlow.ts";
 import { CHARGE_BUCKETS, type MerchantMonth, type SpendingMonth, type SpendingReport } from "../reports/spending.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
+import { SEASON_METRICS, yearEndEstimate, type SeasonMetric } from "../reports/seasonality.ts";
 
 /** How many merchants Merchants › Where it goes draws as tiles; the rest it sums. */
 export const MAP_TOP = 40;
@@ -122,6 +123,7 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
         add("merchant-pattern", `${x.name}: pattern`, t(rec ? (rec.kind === "bill" ? "Bill" : "Habit") : "Irregular"), [ln("Recurring detection", t(rec ? `${rec.kind}, ${rec.active ? "active" : "stopped"}` : "not recurring"))], k);
       }
   }
+  out.push(...yearEndDerived(rep.months));
   // Recurring.
   const bills = rep.recurring.filter((x) => x.kind === "bill");
   const active = bills.filter((x) => x.active);
@@ -161,6 +163,40 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
     lines: [...Object.entries(targets).map(([cat, v], i) => ln(cat, c(v), i ? "+" : undefined, { source: "assumption" })), ln("Monthly budget", c(budgeted), "=")],
   });
   return out;
+}
+
+// ------------------------------------------------------------------ Year over year › where the year lands
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** A year-end estimate's key: the year and which spending. */
+export const yearEndKey = (year: number, metric: SeasonMetric) => `${year}|${metric}`;
+
+/**
+ * Year over year › where the year lands (reports/seasonality.ts), for spending and everyday
+ * spending: an estimate, named one, never part of a proven total. The year so far is proven;
+ * each month left is the middle of the same month in earlier years, a line marked estimate.
+ */
+export function yearEndDerived(months: SpendingMonth[]): DerivedFigure[] {
+  return (Object.keys(SEASON_METRICS) as SeasonMetric[]).flatMap((metric) => {
+    const e = yearEndEstimate(months, SEASON_METRICS[metric].f);
+    if (!e) return [];
+    const what = SEASON_METRICS[metric].label;
+    return [
+      {
+        figure: "year-end",
+        key: yearEndKey(e.year, metric),
+        describes: `Estimate: ${what.toLowerCase()} for all of ${e.year}, not a proven figure`,
+        value: c(e.estimateCents),
+        lines: [
+          ln(`${what}, January – ${MONTHS[e.through]}`, c(e.soFarCents), undefined, { source: "proven" }),
+          ...e.rest.map((x) => ln(`${MONTHS[x.month]}: the middle of ${x.years} earlier ${MONTHS[x.month]}${x.years === 1 ? "" : "s"}`, c(x.cents), "+", { source: "estimate" })),
+          ln("Where the year lands", c(e.estimateCents), "=", { source: "estimate", note: "An estimate: months not yet on file. Never added into a proven total." }),
+        ],
+        parts: e.alike.map((a) => ({ label: `If the rest went as in ${a.year}`, value: c(a.cents) })),
+      },
+    ];
+  });
 }
 
 // ------------------------------------------------------------------ Patterns › pace

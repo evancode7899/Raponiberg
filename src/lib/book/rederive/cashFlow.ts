@@ -254,6 +254,21 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       case "recurring-annual":
       case "recurring-change":
         return { none: "The recurring-charge detector's reading of one merchant's charges (its usual charge, its latest, its cadence): the merchant's spending figure re-adds the same rows." };
+      case "year-end": {
+        // Spending re-added from the rows: the year so far, and each month left at the middle of the same month before.
+        const [year, metric] = k.split("|");
+        if (metric !== "spending") return { none: "Everyday spending is a band of spending the recurring-charge detector draws: the months it adds are each proven as everyday spending." };
+        const y = Number(year);
+        const starts = rep.months.map((m) => m.start);
+        const soFar = starts.filter((s) => s.startsWith(`${y}-`)).reduce((s, start) => s + month(start).spending, 0);
+        const through = Math.max(...starts.filter((s) => s.startsWith(`${y}-`)).map((s) => Number(s.slice(5, 7))));
+        let rest = 0;
+        for (let mo = through + 1; mo <= 12; mo++) {
+          const same = starts.filter((s) => Number(s.slice(0, 4)) < y && Number(s.slice(5, 7)) === mo).map((s) => month(s).spending);
+          rest += median(same);
+        }
+        return [centsRoute(ROWS, v, soFar + rest, "the year so far re-added, plus each month left at the middle of the same month in earlier years")];
+      }
       case "budget-monthly":
         return { none: "The saved budget targets, as typed: an input, nothing to re-derive." };
       default:

@@ -10,7 +10,9 @@ import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState } from "react";
-import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis } from "recharts";
+import { seasonBands, yearEndEstimate, type SeasonMetric } from "@/lib/book/reports/seasonality";
+import { yearEndKey } from "@/lib/book/derived/cashFlow";
 import type { Ctx } from "./CashFlowClient";
 import { compareCategories, yearCategories, yoyWindows } from "@/lib/book/reports/cashFlowWindows";
 import { KINDS, merchantMovers, MONTH_NAMES, monthKey, sum, totals } from "./model";
@@ -298,8 +300,21 @@ function AllYears({ ctx }: { ctx: Ctx }) {
     };
   });
   const shown = series.filter((s) => s.values.some((v) => v != null));
-  const rows = MONTH_NAMES.map((name, i) => Object.fromEntries([["name", name], ...shown.map((s) => [String(s.y), s.values[i] == null ? null : s.values[i]! / 100])]));
   const latest = shown.at(-1);
+  // Seasonality: the same month in earlier years, as a band (low to high) and its middle, behind this year's months.
+  const seasonal = (metric === "spending" || metric === "everyday") && view === "monthly" && latest ? seasonBands(report.months, latest.y, f) : null;
+  // With one earlier year its own line is the band: drawn once two or more give it a spread.
+  const banded = seasonal?.some((b) => b && b.n >= 2) ?? false;
+  const rows = MONTH_NAMES.map((name, i) => {
+    const b = seasonal?.[i];
+    return Object.fromEntries([
+      ["name", name],
+      ...shown.map((s) => [String(s.y), s.values[i] == null ? null : s.values[i]! / 100]),
+      ...(banded ? [["band", b && b.n >= 2 ? [b.low / 100, b.high / 100] : null], ["middle", b ? b.mid / 100 : null]] : []),
+    ]);
+  });
+  // Where the year lands, for spending: an estimate (named one), never part of a proven total.
+  const yearEnd = (metric === "spending" || metric === "everyday") && view === "cumulative" ? yearEndEstimate(report.months, f) : null;
   const age = (y: number) => (latest ? latest.y - y : 0);
   const color = (y: number) => (age(y) === 0 ? chart.series[0]! : age(y) === 1 ? chart.series[6]! : chart.neutral);
 
@@ -328,7 +343,9 @@ function AllYears({ ctx }: { ctx: Ctx }) {
       subtitle={
         view === "cumulative"
           ? "Running total from January: a line above last year's means more so far. A year without a proven January has no running total."
-          : "Each month on its own. A gap is a month that isn't proven."
+          : metric === "spending" || metric === "everyday"
+            ? "Each month on its own, over the band the same month spanned in earlier years (low to high) and its middle. A gap is a month that isn't proven."
+            : "Each month on its own. A gap is a month that isn't proven."
       }
       actions={
         <>
@@ -379,10 +396,18 @@ function AllYears({ ctx }: { ctx: Ctx }) {
               </span>
             )}
           </span>
+          {yearEnd && (
+            <span title="The year so far, plus each month left at the middle of the same month in earlier years. Months not yet on file: an estimate, never added into a proven total." className="cursor-help">
+              <span className="text-muted">Estimate for all of {yearEnd.year}:</span>{" "}
+              <span className="num font-medium">
+                <ProofValue proof={ctx.dp("year-end", yearEndKey(yearEnd.year, metric as SeasonMetric))}>{usdCompact(yearEnd.estimateCents)}</ProofValue>
+              </span>
+            </span>
+          )}
           {pace.projected != null && (
-            <span title={`This year's total so far, scaled by how ${pace.prevYear}'s grew from ${MONTH_NAMES[pace.m]} to December.`} className="cursor-help">
+            <span title={`An estimate: this year's total so far, scaled by how ${pace.prevYear}'s grew from ${MONTH_NAMES[pace.m]} to December.`} className="cursor-help">
               <span className="text-muted">
-                On {pace.prevYear}&apos;s curve, {latest.y} lands near
+                Estimate on {pace.prevYear}&apos;s curve:
               </span>{" "}
               <span className="num font-medium">
                 <ProofValue proof={compositeOf("scale", [paceProof(latest.y, pace.m, pace.now), paceProof(pace.prevYear, 11, pace.full!), paceProof(pace.prevYear, pace.m, pace.then)], { cents: pace.projected })}>{usdCompact(pace.projected)}</ProofValue>
@@ -393,12 +418,18 @@ function AllYears({ ctx }: { ctx: Ctx }) {
       )}
       <div className="h-[300px] w-full min-w-0">
         <RechartsResponsive>
-          <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          <ComposedChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} />
             <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-            <Tooltip {...ui.tooltip} itemSorter={(it) => -Number(it.dataKey)} formatter={(v, n) => [v == null ? NA : formatUsd(Math.round(Number(v))), String(n)]} />
-            <Legend {...ui.legend} />
+            <Tooltip
+              {...ui.tooltip}
+              itemSorter={(it) => (it.dataKey === "band" || it.dataKey === "middle" ? 1 : -Number(it.dataKey))}
+              formatter={(v, n) => (n === "band" ? [Array.isArray(v) ? v.map((x) => formatUsd(Math.round(Number(x)))).join(" – ") : NA, "Earlier years, low – high"] : [v == null ? NA : formatUsd(Math.round(Number(v))), n === "middle" ? "Earlier years, middle" : String(n)])}
+            />
+            <Legend {...ui.legend} formatter={(n) => (n === "band" ? "earlier years, low – high" : n === "middle" ? "earlier years, middle" : n)} />
+            {banded && <Area dataKey="band" stroke="none" fill={chart.neutral} fillOpacity={0.22} isAnimationActive={false} connectNulls={false} />}
+            {banded && <Line dataKey="middle" stroke={chart.neutral} strokeDasharray="4 3" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />}
             {shown.map((s) => (
               <Line
                 key={s.y}
@@ -411,7 +442,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
                 isAnimationActive={false}
               />
             ))}
-          </LineChart>
+          </ComposedChart>
         </RechartsResponsive>
       </div>
     </Card>
