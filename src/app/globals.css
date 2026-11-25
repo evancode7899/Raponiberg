@@ -3,8 +3,8 @@
 /*
  * Design tokens. Every component styles itself with the semantic utilities below
  * (bg-surface, text-muted, border-line, text-pos …), so a theme is nothing more than
- * a set of values for these variables. Three themes: light, dark and terminal
- * (the default — black field, amber accent, monospace).
+ * a set of values for these variables. Three themes: light, dark and terminal (the default),
+ * which also sets density and geometry (--spacing, --radius-*).
  */
 @theme inline {
   --color-canvas: var(--canvas);
@@ -149,54 +149,132 @@ html[data-theme="dark"] {
   --slider-thumb-border: #1a1a19;
 }
 
-/* --- Terminal (default) --- */
-html[data-theme="bloomberg"] {
+/* --- Terminal (default) ---
+ * An amber-phosphor trading desk: true black, amber labels, white values, square panels on
+ * hairlines. It sets density and geometry as well as color: every padding, gap and height is a
+ * multiple of --spacing, so one variable tightens the whole app.
+ */
+html[data-theme="terminal"] {
   color-scheme: dark;
-  --ui-font: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
-  --canvas: #05070a;
-  --surface: #0d1117;
-  --surface-2: #131922;
-  --surface-3: #1c232d;
-  --line: #222a35;
-  --line-strong: #35404e;
-  --fg: #e6edf3;
-  --fg-2: #c9d1d9;
-  --muted: #8b949e;
-  --faint: #7d8794;
-  --accent: #ffa028;
-  --accent-fg: #0d1117;
-  --accent-soft: #2e1f08;
-  --pos: #3fb950;
-  --pos-soft: #0f2a16;
-  --neg: #ff7b72;
-  --neg-soft: #33130f;
-  --warn: #e3b341;
-  --warn-soft: #2e2408;
-  --info: #58a6ff;
-  --info-soft: #0c2340;
-  --focus: #ffa028;
+  --ui-font: "Bahnschrift", "Roboto Condensed", "Arial Narrow", "Segoe UI", ui-sans-serif, sans-serif;
+  --spacing: 0.19rem;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --canvas: #000000;
+  --surface: #040403;
+  --surface-2: #12100b;
+  --surface-3: #221d13;
+  --line: #2b261c;
+  --line-strong: #514630;
+  --fg: #f6f2e9;
+  --fg-2: #ddd5c4;
+  --muted: #b9ad97;
+  --faint: #948a78;
+  --label: #e0a04a;
+  --accent: #ffb545;
+  --accent-fg: #140d00;
+  --accent-soft: #2f2108;
+  --pos: #47d18c;
+  --pos-soft: #08291a;
+  --neg: #ff7468;
+  --neg-soft: #38110e;
+  --warn: #f5d264;
+  --warn-soft: #302707;
+  --info: #79bdff;
+  --info-soft: #0c253f;
+  --focus: #79bdff;
   --shadow: none;
 
-  --chart-grid: #1c232d;
-  --chart-axis: #8b949e;
-  --chart-axis-line: #35404e;
-  --chart-tooltip-bg: #05070a;
-  --chart-tooltip-fg: #e6edf3;
-  --chart-tooltip-border: #ffa028;
-  --chart-legend: #c9d1d9;
-  --chart-series-0: #3987e5;
-  --chart-series-1: #d95926;
-  --chart-series-2: #199e70;
-  --chart-series-3: #c98500;
-  --chart-series-4: #d55181;
-  --chart-series-5: #008300;
-  --chart-series-6: #9085e9;
-  --chart-series-7: #e66767;
-  --chart-neutral: #4a5361;
+  --chart-grid: #1d1a13;
+  --chart-axis: #dba14f;
+  --chart-axis-line: #514630;
+  --chart-tooltip-bg: #0a0905;
+  --chart-tooltip-fg: #f6f2e9;
+  --chart-tooltip-border: #ffb545;
+  --chart-legend: #ddd5c4;
+  --chart-series-0: #5fb0f5;
+  --chart-series-1: #ffa53c;
+  --chart-series-2: #3fc48b;
+  --chart-series-3: #f0d060;
+  --chart-series-4: #e58bb8;
+  --chart-series-5: #8fd14f;
+  --chart-series-6: #a99cf0;
+  --chart-series-7: #ff7468;
+  --chart-neutral: #6b6250;
   --chart-line-balance: #ffffff;
-  --slider-track: #35404e;
-  --slider-thumb: #ffa028;
-  --slider-thumb-border: #0d1117;
+  --slider-track: #514630;
+  --slider-thumb: #ffb545;
+  --slider-thumb-border: #140d00;
+}
+
+html[data-theme="terminal"] body {
+  font-stretch: 86%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.32;
+}
+/* A panel's title is a strip along its top, not a heading floating in padding. */
+html[data-theme="terminal"] [data-panel-head] {
+  align-items: center;
+  padding: 2px 8px;
+  min-height: 22px;
+  background: linear-gradient(#1b160b, #130f07);
+  border-bottom: 1px solid var(--line);
+}
+html[data-theme="terminal"] [data-panel-head] h2 {
+  color: var(--accent);
+  font-weight: 600;
+}
+/*
+ * A long explanation is one line; pointing at the panel's head lays the rest over what's below.
+ * It never takes room of its own, so nothing on the page moves under the pointer.
+ */
+html[data-theme="terminal"] [data-panel-sub] {
+  position: relative;
+  max-width: none;
+  height: 1.35em;
+  line-height: 1.35;
+}
+html[data-theme="terminal"] [data-panel-words] {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+html[data-theme="terminal"] [data-panel-head]:hover [data-panel-words],
+html[data-theme="terminal"] [data-panel-head]:focus-within [data-panel-words] {
+  position: absolute;
+  inset: -1px auto auto -5px;
+  z-index: 30;
+  width: max-content;
+  max-width: min(100%, 60rem);
+  padding: 1px 5px 3px;
+  -webkit-line-clamp: unset;
+  background: var(--surface-2);
+  outline: 1px solid var(--line-strong);
+}
+html[data-theme="terminal"] [data-panel-body] {
+  padding: 7px 8px 8px;
+}
+/* Labels are amber: table heads, small capitals, chart axes and legends. Sentences aren't. */
+html[data-theme="terminal"] :is(th, dt, .uppercase.text-muted, thead) {
+  color: var(--label);
+}
+/* Section labels read as labels; rows alternate just enough to follow across. */
+html[data-theme="terminal"] tbody tr:nth-child(even) > td {
+  background-color: color-mix(in srgb, var(--surface-2) 45%, transparent);
+}
+html[data-theme="terminal"] tbody tr:hover > td {
+  background-color: var(--accent-soft);
+}
+html[data-theme="terminal"] [role="tab"][aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+html[data-theme="terminal"] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+html[data-theme="terminal"] select {
+  color: var(--info);
 }
 
 body {

@@ -112,7 +112,7 @@ export function ProofValue({ children, className = "", ...props }: FigureProps &
         open?.(target, { ...c, basis }, quality);
       }}
       title={standing(basis, quality)}
-      className={`cursor-pointer rounded-sm text-inherit underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${className}`}
+      className={`cursor-pointer rounded-sm text-inherit decoration-accent decoration-dotted underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${className}`}
     >
       {children}
     </button>

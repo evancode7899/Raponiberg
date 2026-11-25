@@ -1,0 +1,91 @@
+"use client";
+
+import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
+import { axisUsd, formatUsd, NA } from "@/lib/formatMoney";
+import { Area, Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceDot, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+
+/** The desk's charts share one crosshair: pointing at a month in one marks it in the others. */
+const SYNC = { syncId: "desk", syncMethod: "value" as const };
+
+export type Range = "6m" | "12m" | "all";
+const SHOWN: Record<Range, number> = { "6m": 6, "12m": 12, all: Infinity };
+const shortMonth = (l: string) => l.replace(/ 20(\d\d)$/, " ’$1");
+
+/** Month-end net worth, straight between month-ends (nothing is known in between), with its high marked. */
+export function NetWorthLine({ series, range, average }: { series: { label: string; cents: number | null }[]; range: Range; average: boolean }) {
+  const p = useChartPalette();
+  const ui = chartChrome(p);
+  const from = Number.isFinite(SHOWN[range]) ? Math.max(0, series.length - SHOWN[range]) : 0;
+  const rows = series.slice(from).map((x, i) => {
+    const last = series.slice(Math.max(0, from + i - 2), from + i + 1).map((y) => y.cents);
+    const avg = last.length === 3 && last.every((v) => v != null) ? (last[0]! + last[1]! + last[2]!) / 300 : null;
+    return { label: x.label, value: x.cents == null ? null : x.cents / 100, avg };
+  });
+  const high = rows.filter((r) => r.value != null).sort((a, b) => b.value! - a.value!)[0];
+  return (
+    <div className="absolute inset-0 p-1">
+      <RechartsResponsive>
+        <ComposedChart data={rows} {...SYNC} margin={{ top: 14, right: 14, left: 0, bottom: 0 }}>
+          <CartesianGrid {...ui.grid} />
+          <XAxis dataKey="label" {...ui.xAxis} minTickGap={36} height={20} />
+          <YAxis {...ui.yAxis} width={54} tickFormatter={axisUsd} domain={["auto", "auto"]} />
+          <Tooltip {...ui.tooltip} cursor={{ stroke: p.axis, strokeDasharray: "3 3" }} formatter={(v, name) => [formatUsd(Math.round(Number(v))), name === "avg" ? "3-month average" : "Net worth"]} />
+          <Area type="linear" dataKey="value" stroke={p.series[0]} strokeWidth={1.75} fill={p.series[0]} fillOpacity={0.12} isAnimationActive={false} activeDot={{ r: 3 }} />
+          {average && <Line type="linear" dataKey="avg" stroke={p.series[1]} strokeDasharray="4 3" dot={false} isAnimationActive={false} />}
+          {high && <ReferenceDot x={high.label} y={high.value!} r={3.5} fill="none" stroke={p.lineBalance} label={{ value: "high", position: "left", fill: p.axis, fontSize: 11 }} />}
+        </ComposedChart>
+      </RechartsResponsive>
+    </div>
+  );
+}
+
+export type CashMonth = { label: string; income: number | null; spending: number | null };
+
+/** Where the scale stops: past the third-largest bar, so a bonus month or two doesn't flatten the rest. Null when none stands out. */
+export function cashCap(months: CashMonth[]): number | null {
+  const all = months
+    .flatMap((m) => [m.income, m.spending])
+    .filter((v): v is number => v != null)
+    .sort((a, b) => b - a);
+  const ref = all[Math.min(2, all.length - 1)];
+  return ref && all[0]! > ref * 1.6 ? Math.ceil((ref * 1.15) / 1000) * 1000 : null;
+}
+
+/** Income and spending by month; a bar past the scale is cut there and hatched, and the panel lists it. */
+export function CashBars({ months, cap }: { months: CashMonth[]; cap: number | null }) {
+  const p = useChartPalette();
+  const ui = chartChrome(p);
+  const past = (v: number | null) => cap != null && v != null && v > cap;
+  const rows = months.map((m) => ({ label: m.label, income: past(m.income) ? cap : m.income, spending: past(m.spending) ? cap : m.spending, raw: m }));
+  return (
+    <RechartsResponsive>
+      <ComposedChart data={rows} {...SYNC} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={1}>
+        <defs>
+          <pattern id="deskOver" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="5" height="5" fill={p.income} />
+            <line x1="0" y1="0" x2="0" y2="5" stroke={p.tooltipBg} strokeWidth="2" />
+          </pattern>
+        </defs>
+        <CartesianGrid {...ui.grid} />
+        <XAxis dataKey="label" {...ui.xAxis} height={20} minTickGap={14} tickFormatter={shortMonth} />
+        <YAxis {...ui.yAxis} width={50} tickFormatter={axisUsd} domain={[0, cap ?? "auto"]} />
+        <Tooltip
+          {...ui.tooltip}
+          formatter={(_v, name, item) => {
+            const raw = (item.payload as (typeof rows)[number]).raw;
+            const v = name === "income" ? raw.income : raw.spending;
+            return [v == null ? NA : formatUsd(Math.round(v)), name === "income" ? "Income" : "Spending"];
+          }}
+        />
+        {cap != null && <ReferenceLine y={cap} stroke={p.axisLine} strokeDasharray="2 3" />}
+        <Bar dataKey="income" maxBarSize={20} isAnimationActive={false} fill={p.income}>
+          {rows.map((r) => (
+            <Cell key={r.label} fill={past(r.raw.income) ? "url(#deskOver)" : p.income} />
+          ))}
+        </Bar>
+        <Bar dataKey="spending" maxBarSize={20} isAnimationActive={false} fill={p.spending} />
+      </ComposedChart>
+    </RechartsResponsive>
+  );
+}

@@ -64,7 +64,7 @@ export default function HelpPage() {
       </section>
 
       <p className="text-[11px] text-faint">
-        The terminal look is inspired by Bloomberg Professional layout patterns (command line, mnemonics, monospace grid). Not affiliated with Bloomberg L.P.
+        The Terminal theme borrows habits common to market terminals (a command line, short codes, dense panels). It isn&apos;t affiliated with any vendor of one.
       </p>
     </div>
   );

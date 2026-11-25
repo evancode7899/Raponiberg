@@ -1,14 +1,14 @@
 export const STORAGE_THEME = "pf-theme";
 export const STORAGE_FONT_SCALE = "pf-font-scale";
 
-export type AppTheme = "light" | "dark" | "bloomberg";
+export type AppTheme = "light" | "dark" | "terminal";
 export type FontScale = "sm" | "md" | "lg";
 
-export const THEMES: AppTheme[] = ["light", "dark", "bloomberg"];
+export const THEMES: AppTheme[] = ["light", "dark", "terminal"];
 export const FONT_SCALES: FontScale[] = ["sm", "md", "lg"];
 
 export function isAppTheme(v: string | null | undefined): v is AppTheme {
-  return v === "light" || v === "dark" || v === "bloomberg";
+  return v === "light" || v === "dark" || v === "terminal";
 }
 
 export function isFontScale(v: string | null | undefined): v is FontScale {

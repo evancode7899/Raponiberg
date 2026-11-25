@@ -42,6 +42,7 @@ export async function register() {
       reports: [
         "/api/ledger/attention",
         "/api/dashboard/home-summary",
+        "/api/dashboard/briefing",
         "/api/dashboard/net-worth?granularity=month",
         "/api/dashboard/cash-flow",
         "/api/integrity",

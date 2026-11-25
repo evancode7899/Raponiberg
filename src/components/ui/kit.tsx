@@ -267,15 +267,15 @@ export function Card({
       className={`min-w-0 rounded-lg border shadow-[var(--shadow)] ${overview ? "border-line-strong bg-surface-2" : "border-line bg-surface"} ${className}`}
     >
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-3.5">
+        <header data-panel-head="" className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-3.5">
           <div className="min-w-0 flex-1">
             {title && <h2 className="text-[13px] font-semibold text-fg">{title}</h2>}
-            {subtitle && <div className="mt-0.5 max-w-3xl text-xs leading-relaxed text-muted">{subtitle}</div>}
+            {subtitle && <div data-panel-sub="" className="mt-0.5 max-w-3xl text-xs leading-relaxed text-muted"><div data-panel-words="">{subtitle}</div></div>}
           </div>
           {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      {children !== undefined && <div className={`min-w-0 px-4 pb-4 ${title || actions ? "pt-3" : "pt-4"} ${bodyClassName}`}>{children}</div>}
+      {children !== undefined && <div data-panel-body="" className={`min-w-0 px-4 pb-4 ${title || actions ? "pt-3" : "pt-4"} ${bodyClassName}`}>{children}</div>}
     </section>
   );
 }

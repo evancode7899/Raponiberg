@@ -7,7 +7,6 @@ import { buildNetWorth } from "../book/reports/netWorth.ts";
 import { latestProvenMonthEnd } from "../book/reports/spending.ts";
 import { addDays, endOfMonth, startOfMonth } from "../dates/isoDate.ts";
 import { isLiquid, liquidCents, savingsRate } from "../book/definitions.ts";
-import { homeEncouragement } from "./homeEncouragement.ts";
 
 
 /** First day of the month `n` months before the month containing `iso`. */
@@ -171,7 +170,6 @@ export function buildHomeSummary(book: Book) {
       checksPassing: book.integrity.checks.filter((c) => c.failed === 0 && c.missing === 0).length,
       checksTotal: book.integrity.checks.length,
     },
-    encouragement: homeEncouragement({ netWorthDeltaCents: change(closingAt(-13)).cents }),
   };
 }
 

@@ -11,7 +11,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 const NAV_COLLAPSED_KEY = "pf-nav-collapsed";
-const THEME_LABEL: Record<AppTheme, string> = { light: "Light", dark: "Dark", bloomberg: "Terminal" };
+const THEME_LABEL: Record<AppTheme, string> = { light: "Light", dark: "Dark", terminal: "Terminal" };
 
 /** Pages call this after changing the ledger so the sidebar badge refreshes (and no page draws from answers given before the change). */
 export function notifyLedgerChanged() {
@@ -81,7 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [theme, setTheme] = useState<AppTheme>("bloomberg");
+  const [theme, setTheme] = useState<AppTheme>("terminal");
   const [shuttingDown, setShuttingDown] = useState(false);
   /** null until this tab's unlock flag has been read, so the app never flashes before the lock screen. */
   const [locked, setLocked] = useState<boolean | null>(null);

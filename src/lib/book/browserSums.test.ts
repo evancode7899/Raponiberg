@@ -13,7 +13,6 @@ import { describe, expect, it } from "vitest";
  * a file that already has one.
  */
 const ALLOWED: Record<string, { count: number; why: string }> = {
-  "src/app/HomeClient.tsx": { count: 1, why: "share-of-assets denominator for the composition bar (percentages, not a figure)" },
   "src/app/annual/AnnualStatement.tsx": { count: 1, why: "orders spending categories by their total across the years shown (sort key only)" },
   "src/app/api/transfers/route.ts": { count: 1, why: "the transfer editor's difference between the legs the owner picked (a pairing's check, not a figure)" },
   "src/app/bonuses/BonusesClient.tsx": { count: 2, why: "an expected award's parts and their shares of it, drawn as the shown value of a composite share of a composite sum (F6), which clears only at its parts' cleared values" },
