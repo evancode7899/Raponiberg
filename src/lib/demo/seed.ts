@@ -7,6 +7,7 @@ import { CAR_KEY, normalizeGarage } from "../car/settings.ts";
 import { GOALS_KEY, normalizeGoals } from "../goals/settings.ts";
 import { hsaFilePath } from "../hsa/store.ts";
 import { healthPlansFile } from "../medical/plans.ts";
+import { forecastSnapshotsFile } from "../forecast/snapshots.ts";
 import { medicalDocsFile } from "../medical/store.ts";
 import { commitDocument } from "../ingest/commitDocument.ts";
 import { refreshDerived } from "../ledger/maintenance.ts";
@@ -34,6 +35,7 @@ export async function seedDemo(db: PrismaClient, opts: DemoOptions = {}): Promis
   writeFileSync(hsaFilePath(), JSON.stringify(data.hsa, null, 2) + "\n");
   writeFileSync(medicalDocsFile(), JSON.stringify(data.medical.docs, null, 1) + "\n");
   writeFileSync(healthPlansFile(), JSON.stringify(data.medical.plans, null, 2) + "\n");
+  writeFileSync(forecastSnapshotsFile(), JSON.stringify({ version: 1, snapshots: data.forecastSnapshots }, null, 2) + "\n");
   for (const doc of data.documents) {
     const text = JSON.stringify(doc);
     const r = await commitDocument(db, {

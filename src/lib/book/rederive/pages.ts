@@ -263,3 +263,21 @@ export const FORECAST_WHY = "The forecast's own schedule and balances on the sav
 export const BUILT_WHY = "A part of the period's roll-forward as the report splits it: the change proof re-adds opening + those flows = closing from each account's timeline, and the closing balance is proven from its statements.";
 export const TAXES_WHY = "The tax engine's own lines for each return (joint, each spouse separately), as the Worksheet states them: the tax estimate's proofs re-derive the engine's inputs from the Book.";
 export const FUNDS_WHY = "As the manager's notices and capital statements print it: each notice is its own source, and the chain re-adds what's worked from them.";
+
+/**
+ * Forecast › vs actual: the forecast side is the snapshot as it was kept (a projection, never
+ * re-run), the actual side adds What changed's months, each one its own proof that the sweep
+ * follows through the line's link; the miss is held to the two figures beside it.
+ */
+export function rederiveVsActual(figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const byKey = new Map(figures.filter((f) => f.figure === "vs-forecast" || f.figure === "vs-actual").map((f) => [`${f.figure}|${f.key}`, f.value]));
+  return rederiveList(figures, (f) => {
+    if (f.figure === "vs-forecast") return { none: "The forecast as it was kept on that day: a projection held as it was, never worked out again with what is known since." };
+    if (f.figure === "vs-actual") return { none: "The proven months added up: each is What changed's own figure for that month (income and spending from Cash flow, saving and markets from net worth), re-derived by its own proof, which its line opens." };
+    if (f.figure !== "vs-miss") return null;
+    const fc = byKey.get(`vs-forecast|${f.key}`);
+    const ac = byKey.get(`vs-actual|${f.key}`);
+    if (!fc || !ac || !("cents" in fc) || !("cents" in ac)) return null;
+    return [centsRoute("the projected figure less the actual one beside it", f.value, fc.cents - ac.cents, "forecast less actual")];
+  });
+}

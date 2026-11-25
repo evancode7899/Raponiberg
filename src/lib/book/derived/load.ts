@@ -20,7 +20,9 @@ import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { integrityDerived } from "./integrity.ts";
 import { marginalDerived, taxesDerived } from "./taxes.ts";
-import { forecastDerived } from "./forecast.ts";
+import { forecastDerived, vsActualDerived } from "./forecast.ts";
+import { forecastVsActual } from "../../forecast/vsActual.ts";
+import { readForecastSnapshots } from "../../forecast/snapshots.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
 import { builtDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived, recordsDerived, rollforwardsDerived } from "./netWorth.ts";
 import { buildAccountRollforwards } from "../../profile/rollforwards.ts";
@@ -45,7 +47,7 @@ import { rederiveCashFlow } from "../rederive/cashFlow.ts";
 import { rederiveNetWorth, rederiveRollforwards } from "../rederive/netWorth.ts";
 import { rederiveInvestments } from "../rederive/investments.ts";
 import { rederiveCar } from "../rederive/car.ts";
-import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical } from "../rederive/pages.ts";
+import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical, rederiveVsActual } from "../rederive/pages.ts";
 
 /**
  * Each page's derived figures, from its report built as the page's route builds it, once
@@ -124,8 +126,10 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
   },
   forecast: async ({ book, db }) => {
     const { forecast, data } = await loadForecast(db, book);
-    const figures = forecast && data.profile.seeds ? forecastDerived(forecast, data.profile.seeds) : [];
-    return { figures, rederived: declared(FORECAST_WHY)(figures), scope: null, through: book.horizon.netWorth };
+    // Forecast › vs actual: every kept forecast against the months proven since (it needs no forecast of today's).
+    const vs = vsActualDerived(forecastVsActual(readForecastSnapshots(), buildNetWorthChanges(book, { granularity: "month" }).periods));
+    const figures = [...(forecast && data.profile.seeds ? forecastDerived(forecast, data.profile.seeds) : []), ...vs];
+    return { figures, rederived: { ...declared(FORECAST_WHY)(figures), ...rederiveVsActual(figures) }, scope: null, through: book.horizon.netWorth };
   },
   calendar: async (ctx) => {
     const ys = await taxYears(ctx);

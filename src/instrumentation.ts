@@ -50,6 +50,7 @@ export async function register() {
         "/api/integrity",
         "/api/profile",
         "/api/forecast",
+        "/api/forecast/vs-actual",
         "/api/tax",
         "/api/investments",
         "/api/tax-accounts",

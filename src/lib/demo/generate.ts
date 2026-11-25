@@ -10,6 +10,7 @@ import { EMPTY_SETTINGS, type HsaExpense, type HsaFile } from "../hsa/store.ts";
 import type { TaxProfile } from "../tax/profile.ts";
 import type { HealthPlansFile } from "../medical/plans.ts";
 import type { MedicalDocsFile } from "../medical/types.ts";
+import type { ForecastSnapshot, SnapshotMonth } from "../forecast/vsActual.ts";
 import { demoMedical } from "./medical.ts";
 
 /**
@@ -48,6 +49,8 @@ export type DemoData = {
   hsa: HsaFile;
   /** The health plan and its explanations of benefits (Medical page; data/demo/medical-*.json). */
   medical: { docs: MedicalDocsFile; plans: HealthPlansFile };
+  /** A forecast kept before the latest months were proven (Forecast › vs actual; data/demo/forecast-snapshots.json). */
+  forecastSnapshots: ForecastSnapshot[];
   /** Closing balance of every account in the last month, cents. */
   closing: Record<string, number>;
 };
@@ -638,7 +641,7 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
     ignoredMerchants: [],
     settings: { ...EMPTY_SETTINGS, openedOn: "2024-01-01" },
   };
-  return { documents, taxProfile, awards, budget, goals, car: demoCar(documents), hsa, medical: demoMedical(documents), closing: Object.fromEntries(Object.entries(balance)) };
+  return { documents, taxProfile, awards, budget, goals, car: demoCar(documents), hsa, medical: demoMedical(documents), forecastSnapshots: demoForecastSnapshots(), closing: Object.fromEntries(Object.entries(balance)) };
 }
 
 /**
@@ -648,6 +651,24 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
  * A second car, an older Honda bought in March 2026, with its own fill-ups and a parking
  * permit shared between the two.
  */
+/**
+ * A forecast kept at the end of 2025, as Forecast › vs actual holds it to the months proven
+ * since: invented round numbers, a little optimistic on markets and short on spending.
+ */
+function demoForecastSnapshots(): ForecastSnapshot[] {
+  const months: SnapshotMonth[] = Array.from({ length: 24 }, (_, i) => {
+    const y = 2026 + Math.floor(i / 12);
+    const m = (i % 12) + 1;
+    // A bonus month: the forecast expected one, smaller than what came.
+    const income = m === 2 ? 640_000_00 : 41_000_00;
+    const spending = 38_500_00;
+    const saved = income - spending + 7_000_00;
+    const markets = 62_000_00;
+    return { key: `${y}-${String(m).padStart(2, "0")}`, income, spending, saved, markets, change: saved + markets };
+  });
+  return [{ id: "2025-12-31T17:00:00.000Z", savedAt: "2025-12-31T17:00:00.000Z", reason: "drivers saved", startKey: "2025-12", months }];
+}
+
 function demoCar(documents: ParsedDocument[]): GarageSettings {
   const fills = documents
     .flatMap((d) => d.sections.flatMap((s) => s.transactions))

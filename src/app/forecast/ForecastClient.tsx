@@ -3,7 +3,8 @@
 import { BlockedNote } from "@/components/ledger/Blocked";
 import { NA } from "@/lib/formatMoney";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
-import { cachedResponse, useApi } from "@/components/ledger/useApi";
+import { cachedResponse, useApi, type Api } from "@/components/ledger/useApi";
+import { VsActual } from "./VsActual";
 import { btn, Callout, ErrorNote, Loading, PageBody } from "@/components/ui/kit";
 import { fiYear } from "@/lib/fire/fire";
 import { balancesAt, buildForecast, forecastFeeds, type Forecast } from "@/lib/forecast/forecast";
@@ -62,13 +63,13 @@ export function ForecastClient({ requiresApiSecret }: { requiresApiSecret: boole
       ) : !data.profile.seeds ? (
         <BlockedNote what="the forecast's starting point" blockers={data.profile.seedBlockers} limit={12} withheld />
       ) : (
-        <Body data={data} s={data.profile.seeds} a={a} setA={setA} onSave={save} />
+        <Body data={data} s={data.profile.seeds} a={a} setA={setA} onSave={save} api={api} />
       )}
     </PageBody>
   );
 }
 
-function Body({ data, s, a, setA, onSave }: { data: ForecastData; s: OutlookSeeds; a: OutlookAssumptions; setA: (a: OutlookAssumptions) => void; onSave: () => Promise<void> }) {
+function Body({ data, s, a, setA, onSave, api }: { data: ForecastData; s: OutlookSeeds; a: OutlookAssumptions; setA: (a: OutlookAssumptions) => void; onSave: () => Promise<void>; api: Api }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const saved = data.profile.settings.outlook;
@@ -139,6 +140,7 @@ function Body({ data, s, a, setA, onSave }: { data: ForecastData; s: OutlookSeed
         <Feeds f={f} s={s} dirty={dirty} dp={dp} />
         <ForecastLedger f={f} r={data.profile} provable={!dirty} />
         <BonusPayments f={f} currentYear={s.currentYear} dp={dp} />
+        <VsActual api={api} dirty={dirty} />
       </div>
     </div>
   );

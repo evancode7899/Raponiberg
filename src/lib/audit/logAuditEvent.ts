@@ -44,7 +44,8 @@ export type AuditAction =
   | "feed_item_reminded"
   | "feed_decision_undone"
   | "calendar_item_done"
-  | "calendar_item_reopened";
+  | "calendar_item_reopened"
+  | "forecast_kept";
 
 /** Routes authenticated with `x-api-secret` (when secret is set). */
 export const AUDIT_ACTOR_API = "api";
