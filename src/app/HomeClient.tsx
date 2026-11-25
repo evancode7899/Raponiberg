@@ -4,6 +4,8 @@ import { BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { btn, Card, Drawer, ErrorNote, Loading, PageBody, usePersistentState } from "@/components/ui/kit";
+import { notify } from "@/components/ui/Feedback";
+import type { Mark } from "@/lib/marks";
 import { Desk } from "@/components/ui/Panel";
 import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -13,11 +15,12 @@ import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/format
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Range } from "./dashboard/charts";
-import { BalancePanel, BridgePanel, CashPanel, day, DuePanel, FeedPanel, MoversPanel, NetWorthPanel, PlanPanel, PortfolioPanel, proofOf, tone, type Summary } from "./dashboard/panels";
+import { BalancePanel, BridgePanel, CashPanel, day, DuePanel, FeedPanel, type FeedDecide, MoversPanel, NetWorthPanel, PlanPanel, PortfolioPanel, proofOf, tone, type Summary } from "./dashboard/panels";
 
 const SUMMARY = "/api/dashboard/home-summary";
 const BRIEFING = "/api/dashboard/briefing";
 const UPCOMING = "/api/dashboard/upcoming";
+const FEED = "/api/dashboard/feed";
 type Upcoming = { due: BriefingDue[] };
 const RANGE_KEYS: Record<string, Range> = { "1": "6m", "2": "12m", "3": "all" };
 
@@ -32,6 +35,8 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
   const [brief, setBrief] = useState(() => cachedResponse<Briefing>(BRIEFING));
   // Card credits and policy dates: read apart from the briefing, whose other panels never wait for them.
   const [upcoming, setUpcoming] = useState(() => cachedResponse<Upcoming>(UPCOMING));
+  // The owner's decisions on the feed: read beside the briefing, never part of it (saving one rebuilds nothing).
+  const [marks, setMarks] = useState<Mark[] | null>(() => cachedResponse<{ marks: Mark[] }>(FEED)?.marks ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,7 +45,20 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
     api.call<Summary>(SUMMARY).then(setData).catch(failed);
     api.call<Briefing>(BRIEFING).then(setBrief).catch(failed);
     api.call<Upcoming>(UPCOMING).then(setUpcoming).catch(failed);
+    api.call<{ marks: Mark[] }>(FEED).then((r) => setMarks(r.marks)).catch(failed);
   }, [api]);
+
+  const decide = useMemo<FeedDecide | null>(() => {
+    if (!api.ready || marks == null) return null;
+    const send = (json: Record<string, unknown>) => api.call<{ marks: Mark[] }>(FEED, { method: "POST", json }).then((r) => setMarks(r.marks));
+    return (item, how) => {
+      const undo = () => send({ op: "undo", id: item.id });
+      const words = how.op === "dismiss" ? "Dismissed until it changes" : how.op === "remind" ? `Back ${how.words}` : "Restored";
+      void send(how.op === "undo" ? { op: "undo", id: item.id } : { op: how.op, id: item.id, says: item.says, ...(how.op === "remind" ? { until: how.until } : {}) })
+        .then(() => notify(words, how.op === "undo" ? { tone: "info" } : { tone: "info", undo }))
+        .catch((e: Error) => notify(e.message, { tone: "bad" }));
+    };
+  }, [api, marks]);
 
   if (data?.hasStatements)
     return (
@@ -51,7 +69,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
             <ErrorNote>{error}</ErrorNote>
           </div>
         )}
-        <Terminal d={data} b={brief} upcoming={upcoming?.due ?? NONE} />
+        <Terminal d={data} b={brief} upcoming={upcoming?.due ?? NONE} marks={marks} decide={decide} />
       </>
     );
   return (
@@ -78,7 +96,7 @@ const NONE: BriefingDue[] = [];
 /** The calendar's dates and the rest, by date: what's done last. */
 const byDate = (a: BriefingDue, b: BriefingDue) => Number(a.done) - Number(b.done) || a.date.localeCompare(b.date);
 
-function Terminal({ d, b, upcoming }: { d: Summary; b: Briefing | null; upcoming: BriefingDue[] }) {
+function Terminal({ d, b, upcoming, marks, decide }: { d: Summary; b: Briefing | null; upcoming: BriefingDue[]; marks: Mark[] | null; decide: FeedDecide | null }) {
   const [view, setView] = usePersistentState<{ range: Range; average: boolean }>("pf-desk-view", () => ({ range: "all", average: false }));
   const [keys, setKeys] = useState(false);
   const due = useMemo(() => [...(b?.due ?? NONE), ...upcoming].sort(byDate), [b, upcoming]);
@@ -119,7 +137,7 @@ function Terminal({ d, b, upcoming }: { d: Summary; b: Briefing | null; upcoming
         {b ? (
           <>
             <PlanPanel goals={b.goals} fire={b.fire} />
-            <FeedPanel feed={b.feed} />
+            <FeedPanel feed={b.feed} marks={marks} today={b.today} decide={decide} />
           </>
         ) : (
           <Waiting span="xl:col-span-9" />

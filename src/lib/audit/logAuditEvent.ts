@@ -39,7 +39,12 @@ export type AuditAction =
   | "bonus_warning_reviewed"
   | "bonus_review_reopened"
   | "integrity_exception_added"
-  | "integrity_exception_retired";
+  | "integrity_exception_retired"
+  | "feed_item_dismissed"
+  | "feed_item_reminded"
+  | "feed_decision_undone"
+  | "calendar_item_done"
+  | "calendar_item_reopened";
 
 /** Routes authenticated with `x-api-secret` (when secret is set). */
 export const AUDIT_ACTOR_API = "api";

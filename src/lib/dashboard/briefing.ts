@@ -73,6 +73,8 @@ export type Briefing = {
 };
 
 const HOLDINGS = 8;
+/** Feed items the briefing lists: more than the panel shows, so ones the owner dismissed leave room for the next. */
+const FEED_LISTED = 40;
 
 export function buildBriefing(x: BriefingInputs): Briefing {
   const derivedChange = [...changeStepsDerived(x.changes), ...changeTypicalDerived(x.changes)];
@@ -191,7 +193,7 @@ export function buildBriefing(x: BriefingInputs): Briefing {
     },
     events: eventsOf(x.netWorth, x.changes),
     trends,
-    feed: buildFeed({ today: x.book.today, spending: x.spending, netWorth: x.netWorth, changes: x.changes.periods, change: last, calendar: x.calendar.items, goals: x.goals.goals }),
+    feed: buildFeed({ today: x.book.today, spending: x.spending, netWorth: x.netWorth, changes: x.changes.periods, change: last, calendar: x.calendar.items, goals: x.goals.goals }, FEED_LISTED),
   };
 }
 

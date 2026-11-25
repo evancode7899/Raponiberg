@@ -26,6 +26,8 @@ export type FeedItem = {
   tone: "good" | "bad" | "warn" | "info";
   area: "NW" | "CF" | "CAL" | "GOAL";
   segs: FeedSeg[];
+  /** What it says, as words: a dismissed item returns once this changes (a countdown to a date is left out, so a date drawing nearer is still the same item). */
+  says: string;
   href: string;
   /** What orders the list: dollars at stake, times how soon or how unusual. */
   score: number;
@@ -60,7 +62,7 @@ export function records(nw: NetWorthReport, changes: readonly NetWorthChange[] =
   const { last } = x;
   const derived = recordsDerived(nw, changes);
   const out: FeedItem[] = [];
-  const push = (i: Omit<FeedItem, "area" | "href"> & { href?: string }) => out.push({ area: "NW", href: "/net-worth", ...i });
+  const push = (i: Omit<FeedItem, "area" | "href" | "says"> & { href?: string }) => out.push({ area: "NW", href: "/net-worth", says: segsText(i.segs), ...i });
   const before = run.slice(0, -1);
   const peak = before.reduce((m, p) => (p.cents > m.cents ? p : m), before[0]!);
   const streak = x.currentRise?.months ?? 0;
@@ -114,6 +116,9 @@ export function records(nw: NetWorthReport, changes: readonly NetWorthChange[] =
 export const highlightSegs = (h: HighlightSeg[]): FeedSeg[] =>
   h.map((s): FeedSeg => (typeof s === "string" ? s : { text: s.text, proof: { descriptor: s.descriptor, shownCents: s.cents ?? null, ...(s.ratio != null ? { shown: { ratio: s.ratio } } : {}) } }));
 
+/** A sentence as plain words. */
+export const segsText = (segs: readonly FeedSeg[]) => segs.map((s) => (typeof s === "string" ? s : s.text)).join("");
+
 export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
   const items: FeedItem[] = [...records(x.netWorth, x.changes)];
   if (x.change)
@@ -123,6 +128,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         tone: x.change!.changeCents >= 0 ? "good" : "warn",
         area: "NW",
         segs: highlightSegs(h),
+        says: segsText(highlightSegs(h)),
         href: "/net-worth?tab=changes",
         score: 8_000_00 + Math.min(4_000_00, Math.abs(x.change!.changeCents) / 100),
       }),
@@ -142,6 +148,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         tone: i.tone,
         area: "CF",
         segs: [...i.title, ". ", ...i.body],
+        says: segsText([...i.title, ". ", ...i.body]),
         href: `/cash-flow${i.action?.tab ? `?tab=${i.action.tab}` : ""}`,
         score: (i.rank === 0 ? 5_000_00 : 2_000_00) + Math.min(4_000_00, i.weight / 10),
       });
@@ -156,6 +163,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
       tone: left <= 14 ? "warn" : "info",
       area: "CAL",
       segs: [`${c.title}: `, fig(usd0(Math.abs(c.cents)), proof), c.perPaycheck ? " a paycheck" : "", left === 0 ? ", now." : `, due ${formatDisplayDateFromYmd(c.date)} (${left} day${left === 1 ? "" : "s"}).`],
+      says: `${c.title}: ${usd0(Math.abs(c.cents))}${c.perPaycheck ? " a paycheck" : ""}, due ${c.date}`,
       href: "/calendar",
       score: 3_000_00 + Math.min(4_000_00, Math.abs(c.cents) / 20) + (60 - left) * 50_00,
     });
@@ -173,6 +181,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         fig(usd0(g.currentCents), cur),
         ".",
       ],
+      says: `${g.goal.name}: ${g.status}, ${usd0(g.currentCents)}`,
       href: "/goals",
       score: g.status === "REACHED" ? 1_000_00 : 4_500_00,
     });
