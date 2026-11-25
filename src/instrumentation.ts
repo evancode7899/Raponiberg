@@ -46,6 +46,7 @@ export async function register() {
         "/api/dashboard/upcoming",
         "/api/dashboard/net-worth?granularity=month",
         "/api/dashboard/cash-flow",
+        "/api/cash-flow/anomalies",
         "/api/integrity",
         "/api/profile",
         "/api/forecast",

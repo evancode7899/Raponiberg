@@ -435,6 +435,18 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
     spend("platinum", PLATINUM);
     add("platinum", ymd(year, month, 3), "PLATINUM UBER CASH CREDIT", 1_500, "Credits");
     if (month === 2) add("platinum", ymd(year, month, 1), "PLATINUM CARD ANNUAL FEE", -69_500, "Fees");
+    // Fixed events (no random draws, so nothing else moves) for Cash flow › Unusual to find: a streaming
+    // subscription and a monthly statement credit that stop after May 2026, a charge that went through
+    // twice in May 2026, and a merchant first charged in June 2026.
+    if (key <= "2026-05") {
+      add("sapphire", ymd(year, month, 14), "HULU", -1_799, "Purchases");
+      add("platinum", ymd(year, month, 9), "PLATINUM DIGITAL ENTERTAINMENT CREDIT", 2_000, "Credits");
+    }
+    if (key === "2026-05") {
+      add("sapphire", ymd(year, month, 10), "BARNES & NOBLE", -8_400, "Purchases");
+      add("sapphire", ymd(year, month, 11), "BARNES & NOBLE", -8_400, "Purchases");
+    }
+    if (key === "2026-06") add("platinum", ymd(year, month, 9), "TARGET", -61_240, "Purchases");
 
     // Savings: interest monthly, a top-up from checking in March and September.
     if (month === 3 || month === 9) {

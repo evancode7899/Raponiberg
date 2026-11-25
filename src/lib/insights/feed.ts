@@ -6,6 +6,7 @@ import type { CalendarItem } from "../book/reports/moneyCalendar.ts";
 import type { GoalProgress } from "../book/reports/goals.ts";
 import type { NetWorthReport } from "../book/reports/netWorth.ts";
 import type { HighlightSeg, NetWorthChange } from "../book/reports/netWorthChanges.ts";
+import { anomalyProof, type Anomaly } from "../book/reports/anomalies.ts";
 import { latestClosed, monthStory } from "../book/reports/monthStory.ts";
 import { netWorthRecords, provenRun, roundMark } from "../book/reports/records.ts";
 import { sliceRange } from "../book/reports/cashFlowWindows.ts";
@@ -41,6 +42,8 @@ export type FeedInputs = {
   /** What changed, month by month, oldest first. */
   changes?: readonly NetWorthChange[];
   change: NetWorthChange | null;
+  /** What looks unusual in the proven months (reports/anomalies.ts). */
+  anomalies?: readonly Anomaly[];
   calendar: CalendarItem[];
   goals: GoalProgress[];
 };
@@ -161,6 +164,20 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         score: (i.rank === 0 ? 5_000_00 : 2_000_00) + Math.min(4_000_00, i.weight / 10),
       });
     }
+  }
+  // What looks unusual: a possible duplicate, a bill or credit that hasn't come, a price that crept up.
+  const cfDerived = x.spending.months.length ? cashFlowDerived(x.spending) : [];
+  for (const a of (x.anomalies ?? []).filter((y) => y.kind !== "new-merchant").slice(0, 4)) {
+    const amount = fig(usd0(a.cents), anomalyProof(a, (figure, key) => derivedTarget("cash-flow", cfDerived, figure, key)));
+    const segs: FeedSeg[] =
+      a.kind === "duplicate"
+        ? [`Possible duplicate: ${a.merchant}, `, amount, ` twice, ${formatDisplayDateFromYmd(a.rows[0]!.date)} and ${formatDisplayDateFromYmd(a.rows[1]!.date)}.`]
+        : a.kind === "missing-bill"
+          ? [`${a.merchant} usually charges `, amount, `; the one due ${formatDisplayDateFromYmd(a.dueOn!)} hasn't come.`]
+          : a.kind === "missing-credit"
+            ? [`The ${a.merchant} credit (last `, amount, `) didn't come in ${a.date.slice(0, 7)}.`]
+            : [`${a.merchant} crept up `, amount, ` a charge, ${a.detail}.`];
+    items.push({ id: `cf-unusual:${a.id}`, tone: a.kind === "price-creep" ? "info" : "warn", area: "CF", segs, says: segsText(segs), href: "/cash-flow?tab=unusual", score: (a.kind === "duplicate" ? 6_500_00 : 4_000_00) + Math.min(2_000_00, a.cents) });
   }
   for (const c of x.calendar) {
     const left = daysBetween(x.today, c.date);
