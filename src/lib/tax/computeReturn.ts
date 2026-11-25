@@ -979,7 +979,7 @@ export type SafeHarbor = {
   estimatesPaid: number;
   /** Additional payments needed to be penalty-proof. */
   shortfall: number;
-  /** Owed at filing is under the de-minimis ($1,000) line: no penalty either way. */
+  /** The year's tax less withholding is under the de-minimis line ($1,000; New York $300): no penalty either way (estimates paid don't count toward it). */
   underDeMinimis: boolean;
 };
 
@@ -1015,6 +1015,23 @@ export function safeHarbor(opts: {
     withholding: opts.withholding,
     estimatesPaid: opts.estimatesPaid,
     shortfall: pos(required - paid),
-    underDeMinimis: opts.currentYearTax - paid < rules.deMinimis,
+    underDeMinimis: opts.currentYearTax - opts.withholding < rules.deMinimis,
   };
+}
+
+/**
+ * What each estimated-tax date left asks for, by the law's regular method (IRC §6654(d)(1),
+ * C.G.S. §12-722, New York Tax Law §685(c)): by the year's k-th date, k quarters of the
+ * required annual payment must be in, withholding counting in four equal parts whenever it
+ * was withheld. So the next date carries what earlier ones missed, and the rest are a
+ * quarter each. `left`: the quarters still to come. Adds up to the shortfall.
+ */
+export function installmentsDue(sh: Pick<SafeHarbor, "requiredAnnualPayment" | "withholding" | "estimatesPaid" | "underDeMinimis">, left: readonly number[]): number[] {
+  const owed = sh.underDeMinimis ? 0 : pos(sh.requiredAnnualPayment - sh.withholding);
+  let paid = sh.estimatesPaid;
+  return left.map((quarter) => {
+    const due = pos((quarter === 4 ? owed : Math.round((owed * quarter) / 4)) - paid);
+    paid += due;
+    return due;
+  });
 }

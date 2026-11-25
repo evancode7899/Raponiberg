@@ -149,6 +149,8 @@ export type RecaptureTier = { start: number; step: number; per: number; max: num
 /** Pay 90% of this year's tax, or 100% of last year's (110% above the high-AGI line), or owe under $1,000 at filing. */
 export type SafeHarborRules = { currentShare: number; priorShare: number; priorShareHighAgi: number; deMinimis: number };
 export const SAFE_HARBOR_RULES: SafeHarborRules = { currentShare: 0.9, priorShare: 1, priorShareHighAgi: 1.1, deMinimis: $(1_000) };
+/** New York's (IT-2105 instructions): the same tests, with a $300 line and 110% above $150,000 of last year's New York AGI ($75,000 separately). */
+export const NY_SAFE_HARBOR: SafeHarborRules & { highAgi: ByStatus<number> } = { ...SAFE_HARBOR_RULES, deMinimis: $(300), highAgi: byStatus($(150_000), $(150_000), $(75_000), $(150_000)) };
 
 const FED_2026: FederalParams = {
   brackets: byStatus(

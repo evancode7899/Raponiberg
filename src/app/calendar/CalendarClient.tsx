@@ -110,7 +110,11 @@ function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" |
           </ul>
         </Callout>
       )}
-      <p className="text-xs text-muted">Estimates from your statements and pay stubs, not tax advice.</p>
+      <p className="text-xs leading-relaxed text-muted">
+        Estimated tax uses the regular method: by each date a quarter more of the year&apos;s safe-harbor payment must be in, with withholding counted as paid evenly through the year, so the next date
+        includes what earlier ones missed. The annualized-income method, which can ask for less early on when income comes late in the year, isn&apos;t worked out here. Estimates from your statements and
+        pay stubs, not tax advice.
+      </p>
     </div>
   );
 }
