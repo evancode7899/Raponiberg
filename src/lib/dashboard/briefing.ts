@@ -1,7 +1,7 @@
 import { calendarDerived } from "../book/derived/planning.ts";
-import { changeStepKey, changeStepsDerived, changeTypicalDerived, typicalKey } from "../book/derived/netWorth.ts";
+import { builtDerived, changeStepKey, changeStepsDerived, changeTypicalDerived, netWorthDerived, typicalKey } from "../book/derived/netWorth.ts";
 import { investmentsDerived, positionKey } from "../book/derived/investments.ts";
-import { derivedTarget } from "../book/derived/types.ts";
+import { cellKey, derivedTarget } from "../book/derived/types.ts";
 import type { Book } from "../book/load.ts";
 import { unswept } from "../book/proof/clearance.ts";
 import { compositeOf, sumOf, type ProofRef } from "../book/proof/compose.ts";
@@ -14,7 +14,7 @@ import type { NetWorthReport } from "../book/reports/netWorth.ts";
 import type { NetWorthChangesReport } from "../book/reports/netWorthChanges.ts";
 import type { SpendingReport } from "../book/reports/spending.ts";
 import type { FireSettings } from "../book/proof/planningProof.ts";
-import { analyzeFire, firePlans } from "../fire/fire.ts";
+import { analyzeFire, fiLevers, firePlans, type FiLever } from "../fire/fire.ts";
 import type { Forecast } from "../forecast/forecast.ts";
 import { buildFeed, type FeedItem } from "../insights/feed.ts";
 import { classLabel } from "../investments/securities.ts";
@@ -41,9 +41,12 @@ export type BriefingInputs = {
 };
 
 export type BriefingStep = { key: string; label: string; cents: number; fromCents: number; toCents: number; typicalCents: number | null; note: string; proof: ProofRef; typicalProof: ProofRef };
-export type BriefingDue = { id: string; date: string; title: string; cents: number | null; kind: "save" | "tax" | "file" | "vest"; href: string; done: boolean; perPaycheck: boolean; detail: string; proof: ProofRef };
+/** `dateOnly`: a date with no amount of its own (a policy's renewal): the amount stays blank. */
+export type BriefingDue = { id: string; date: string; title: string; cents: number | null; kind: "save" | "tax" | "file" | "vest" | "credit" | "policy"; href: string; done: boolean; perPaycheck: boolean; dateOnly?: boolean; detail: string; proof: ProofRef };
 export type BriefingGoal = { id: string; name: string; status: string; currentCents: number; targetCents: number | null; lands: string | null; blockers: GoalsReport["goals"][number]["blockers"]; currentProof: ProofRef; targetProof: ProofRef; landsProof: ProofRef };
-export type BriefingHolding = { key: string; name: string; cents: number; gainCents: number | null; proof: ProofRef; gainProof: ProofRef };
+export type BriefingHolding = { key: string; name: string; cents: number; accounts: string[]; gainCents: number | null; proof: ProofRef; gainProof: ProofRef };
+/** The portfolio's time-weighted return: the latest month, a year, and since the proven stretch begins. */
+export type BriefingReturns = { from: string; total: number; totalProof: ProofRef; annualized: number | null; annualizedProof: ProofRef; month: { label: string; ratio: number; proof: ProofRef } | null } | null;
 export type Briefing = {
   today: string;
   change: {
@@ -57,8 +60,11 @@ export type Briefing = {
   } | null;
   due: BriefingDue[];
   goals: BriefingGoal[];
-  fire: { fiYear: number | null; fiProof: ProofRef; progress: number; progressProof: ProofRef; numberCents: number; numberProof: ProofRef } | null;
-  portfolio: { asOf: string; totalCents: number; totalProof: ProofRef; blocked: boolean; classes: { cls: string; label: string; cents: number; share: number; proof: ProofRef; shareProof: ProofRef }[]; holdings: BriefingHolding[] };
+  /** `levers`: the FIRE page's what-ifs (Levers), the FI year with one thing changed. */
+  fire: { fiYear: number | null; fiProof: ProofRef; progress: number; progressProof: ProofRef; numberCents: number; numberProof: ProofRef; levers: FiLever[] } | null;
+  portfolio: { asOf: string; totalCents: number; totalProof: ProofRef; blocked: boolean; classes: { cls: string; label: string; cents: number; share: number; proof: ProofRef; shareProof: ProofRef; driftCents: number | null; driftProof: ProofRef }[]; holdings: BriefingHolding[]; /** Whether a target allocation is set, so drift means something. */ hasTarget: boolean; returns: BriefingReturns };
+  /** What happened in a month, flagged on the net worth chart: in words, never an amount. */
+  events: { label: string; text: string }[];
   /** Each spending category's last twelve proven months, oldest first: a trend line's shape, never drawn as numbers. */
   trends: Record<string, number[]>;
   feed: FeedItem[];
@@ -104,19 +110,22 @@ export function buildBriefing(x: BriefingInputs): Briefing {
 
   const inv = x.investments;
   const invDerived = investmentsDerived(inv, x.returnRate);
-  // The same security across accounts is one line (the concentration list's), largest first.
-  const holdings: BriefingHolding[] = inv.positions
-    .filter((p) => p.kind !== "ACCOUNT")
-    .sort((a, b) => b.valueCents - a.valueCents)
-    .slice(0, HOLDINGS)
-    .map((p) => ({
-      key: positionKey(p, "value"),
-      name: p.symbol ?? p.name,
-      cents: p.valueCents,
-      gainCents: p.unrealizedCents,
-      proof: ref({ report: "investments", accountId: p.accountId, position: p.key, ...(p.lot ? { lot: p.lot } : {}) }, p.valueCents),
-      gainProof: derivedTarget("investments", invDerived, "position", positionKey(p, "gain")),
-    }));
+  // The same security across accounts is one line (the Investments page's concentration list), largest first.
+  // Its gain adds its positions' gains, and shows only where every one of them prints a cost.
+  const holdings: BriefingHolding[] = inv.concentration.slice(0, HOLDINGS).map((k) => {
+    const lots = inv.positions.filter((p) => p.key === k.key);
+    const gain = lots.length && lots.every((p) => p.unrealizedCents != null) ? lots.reduce((s, p) => s + p.unrealizedCents!, 0) : null;
+    return {
+      key: k.key,
+      name: k.symbol ?? k.name,
+      cents: k.cents,
+      accounts: k.accounts,
+      gainCents: gain,
+      proof: derivedTarget("investments", invDerived, "concentration", k.key),
+      gainProof: gain == null ? unswept("a position's cost isn't printed") : sumOf(lots.map((p) => derivedTarget("investments", invDerived, "position", positionKey(p, "gain"))), gain),
+    };
+  });
+  const driftOf = new Map((inv.drift ?? []).map((d) => [d.cls as string, d.deltaCents]));
 
   const classProof = (cls: string) => derivedTarget("investments", invDerived, "class", cls);
   const everyClass = sumOf(inv.allocation.map((a) => classProof(a.cls)), inv.allocation.reduce((s, a) => s + a.cents, 0));
@@ -172,12 +181,56 @@ export function buildBriefing(x: BriefingInputs): Briefing {
       totalCents: inv.totalCents,
       totalProof: ref({ report: "investments" }, inv.totalCents),
       blocked: inv.blockers.length > 0,
-      classes: inv.allocation.map((a) => ({ cls: a.cls, label: classLabel(a.cls), cents: a.cents, share: a.share, proof: classProof(a.cls), shareProof: compositeOf("share", [classProof(a.cls), everyClass], { ratio: a.share }) })),
+      classes: inv.allocation.map((a) => ({ cls: a.cls, label: classLabel(a.cls), cents: a.cents, share: a.share, proof: classProof(a.cls), shareProof: compositeOf("share", [classProof(a.cls), everyClass], { ratio: a.share }), driftCents: driftOf.get(a.cls) ?? null, driftProof: derivedTarget("investments", invDerived, "drift", a.cls) })),
       holdings,
+      hasTarget: inv.drift != null,
+      returns: returnsOf(x.netWorth),
     },
+    events: eventsOf(x.netWorth, x.changes),
     trends,
     feed: buildFeed({ today: x.book.today, spending: x.spending, netWorth: x.netWorth, change: last, calendar: x.calendar.items, goals: x.goals.goals }),
   };
+}
+
+/** The portfolio's return as Net worth › Investment returns and How it was built state it. */
+function returnsOf(nw: NetWorthReport): BriefingReturns {
+  const p = nw.proven.returns.portfolio;
+  if (!p) return null;
+  const derived = netWorthDerived(nw);
+  const last = nw.periods.at(-1);
+  return {
+    from: p.from,
+    total: p.total,
+    totalProof: derivedTarget("net-worth", derived, "return-total"),
+    annualized: p.annualized,
+    annualizedProof: derivedTarget("net-worth", derived, "return-annualized"),
+    month:
+      last && !last.blockers.length && last.household.portfolioReturn != null
+        ? { label: last.label, ratio: last.household.portfolioReturn, proof: derivedTarget("net-worth", builtDerived(nw), "built", cellKey(nw.granularity, `${last.start}:return`, "household")) }
+        : null,
+  };
+}
+
+/** Months worth a flag on the net worth chart, from the reports' own figures: when finances merged, an account first on file, and the months that stand out. */
+export function eventsOf(nw: Pick<NetWorthReport, "periods" | "accounts" | "mergeDate">, changes: Pick<NetWorthChangesReport, "periods">): Briefing["events"] {
+  const out: Briefing["events"] = [];
+  const run = nw.periods.filter((p) => !p.blockers.length);
+  const merged = nw.mergeDate ? run.find((p) => p.start <= nw.mergeDate! && nw.mergeDate! <= p.end) : undefined;
+  if (merged) out.push({ label: merged.label, text: "finances merged" });
+  const names = new Map(nw.accounts.map((a) => [a.id, a.name]));
+  for (const p of run.slice(1)) {
+    const fresh = p.byAccount.filter((a) => a.newlyTrackedCents !== 0);
+    if (fresh.length) out.push({ label: p.label, text: fresh.length === 1 ? `${names.get(fresh[0]!.accountId) ?? "an account"} first on file` : `${fresh.length} accounts first on file` });
+  }
+  // A month can only stand out against a year of others.
+  if (changes.periods.length >= 12) {
+    const top = (pick: (c: NetWorthChangesReport["periods"][number]) => number) => changes.periods.reduce((m, c) => (pick(c) > pick(m) ? c : m), changes.periods[0]!);
+    out.push({ label: top((c) => c.marketsCents).label, text: "best month for markets" });
+    const worst = top((c) => -c.marketsCents);
+    if (worst.marketsCents < 0) out.push({ label: worst.label, text: "worst month for markets" });
+    out.push({ label: top((c) => c.savedCents).label, text: "most saved in a month" }, { label: top((c) => c.spendingCents).label, text: "most spent in a month" });
+  }
+  return out;
 }
 
 /** Where the FIRE page says the plan stands, on the saved settings (the recipe the sweep holds). */
@@ -189,5 +242,5 @@ function fireOf(x: BriefingInputs): Briefing["fire"] {
   const plans = firePlans(x.forecast);
   const f = analyzeFire(plans.full, plans.base, { asOf: seeds.start.asOf, retirementAge: a.retirementAge });
   const pf = (figure: "fi-year" | "progress" | "fire-number", shownCents: number | null): ProofRef => ({ descriptor: { report: "planning", page: "fire", figure, fire }, shownCents });
-  return { fiYear: f.fi?.year ?? null, fiProof: pf("fi-year", null), progress: f.now.progress, progressProof: pf("progress", null), numberCents: f.now.fireNumber, numberProof: pf("fire-number", f.now.fireNumber) };
+  return { fiYear: f.fi?.year ?? null, fiProof: pf("fi-year", null), progress: f.now.progress, progressProof: pf("progress", null), numberCents: f.now.fireNumber, numberProof: pf("fire-number", f.now.fireNumber), levers: fiLevers(f.plan) };
 }

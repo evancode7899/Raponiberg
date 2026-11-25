@@ -19,12 +19,33 @@ const netWorth = (cents: (number | null)[]): NetWorthReport =>
 
 const text = (f: { segs: (string | { text: string })[] }) => f.segs.map((s) => (typeof s === "string" ? s : s.text)).join("");
 
+describe("what the feed names", () => {
+  const goal = (status: string) => ({ goal: { id: "g1", name: "Lake cabin 2030" }, status, currentCents: 1_234_500 });
+  const feed = (status: string) => buildFeed({ today: "2026-07-15", spending: { months: [], recurring: [], oneOffs: [] } as unknown as SpendingReport, netWorth: netWorth([100_00]), change: null, calendar: [], goals: [goal(status)] as never });
+
+  it("names a goal, as the owner's own text, never as a figure", () => {
+    for (const [status, words] of [["BEHIND", "Lake cabin 2030 is behind its date, at $12,345."], ["NO_PACE", "Lake cabin 2030 isn't reached in the forecast, at $12,345."], ["REACHED", "Lake cabin 2030 is funded, at $12,345."]] as const) {
+      const [item] = feed(status);
+      expect(text(item!)).toBe(words);
+      expect(item!.segs[0]).toEqual({ text: "Lake cabin 2030", notFigure: "the goal's name, as you typed it" });
+    }
+  });
+
+  it("names the round mark passed, apart from the balance it proves", () => {
+    const item = records(netWorth([880_000_00, 890_000_00, 910_000_00, 915_000_00])).find((r) => r.id.startsWith("mark:"))!;
+    expect(text(item)).toBe("Passed $900,000 in 2025-03, closing at $910,000.");
+    expect(item.segs.filter((s) => typeof s !== "string").map((s) => ("notFigure" in (s as object) ? "words" : "figure"))).toEqual(["words", "figure"]);
+    const million = records(netWorth([1_480_000_00, 1_490_000_00, 1_510_000_00])).find((r) => r.id.startsWith("mark:"))!;
+    expect(text(million)).toBe("Passed $1.5 million in 2025-03, closing at $1,510,000.");
+  });
+});
+
 describe("records", () => {
   it("says a new high, how long the run is, and proves the balance it names", () => {
     const [r] = records(netWorth([100_00, 120_00, 130_00, 150_00]));
     expect(text(r!)).toBe("New high: net worth closed 2025-04 at $150, up 3 months running.");
     const fig = r!.segs.find((s) => typeof s !== "string")!;
-    expect(typeof fig !== "string" && "descriptor" in fig.proof && descriptorKey(fig.proof.descriptor)).toBe(descriptorKey({ report: "net-worth", metric: "balance", date: "2025-04-30" }));
+    expect(typeof fig !== "string" && "proof" in fig && "descriptor" in fig.proof && descriptorKey(fig.proof.descriptor)).toBe(descriptorKey({ report: "net-worth", metric: "balance", date: "2025-04-30" }));
   });
 
   it("says when it's well below a high, and nothing for a small dip", () => {
@@ -76,7 +97,7 @@ describe("the feed", () => {
       inputs([item({ id: "soon" }), item({ id: "done", done: true }), item({ id: "far", date: "2026-12-31" }), item({ id: "past", date: "2026-07-01" }), item({ id: "zero", cents: 0 })]),
     );
     expect(feed.filter((f) => f.area === "CAL").map((f) => f.id)).toEqual(["due:soon"]);
-    expect(text(feed.find((f) => f.id === "due:soon")!)).toBe("Example payment: $5,000, in 5 days.");
+    expect(text(feed.find((f) => f.id === "due:soon")!)).toBe("Example payment: $5,000, due Jul 20, 2026 (5 days).");
   });
 
   it("puts the nearer of two equal deadlines first, and lists nothing twice", () => {
@@ -88,6 +109,6 @@ describe("the feed", () => {
     const feed = buildFeed(inputs(Array.from({ length: 30 }, (_, i) => item({ id: `d${i}`, cents: 100_000 + i }))), 8);
     expect(feed).toHaveLength(8);
     expect(feed.map((f) => f.score)).toEqual([...feed.map((f) => f.score)].sort((a, b) => b - a));
-    for (const f of feed) for (const s of f.segs) if (typeof s !== "string") expect("descriptor" in s.proof).toBe(true);
+    for (const f of feed) for (const s of f.segs) if (typeof s !== "string" && "proof" in s) expect("descriptor" in s.proof).toBe(true);
   });
 });

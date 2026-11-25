@@ -168,6 +168,14 @@ export type OverviewPolicy = {
   payments: { rowId: string; date: string; cents: number }[];
 };
 
+/** What's coming up across the policies, soonest first: premiums due, renewals, and a life policy's own dates. */
+export function upcomingDates(data: CoverReport & { policies: PolicyView[]; today: string }, all: OverviewPolicy[] = overviewPolicies(data.policies, data)) {
+  const out: { line: CoverLine; key: string; insurer: string; date: string; label: string }[] = [];
+  for (const p of all) if (p.next && p.next.date >= data.today) out.push({ line: p.line, key: p.key, insurer: p.insurer, date: p.next.date, label: p.next.label });
+  for (const v of data.policies) for (const d of v.dates) if (!d.past) out.push({ line: "LIFE", key: v.policy.policyNumber, insurer: v.policy.insurer, date: d.date, label: d.label });
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** The year of cover a life policy costs now: the level premium, or the year's guaranteed maximum after it. */
 function lifeAnnual(v: PolicyView): number | null {
   if (v.status === "ENDED") return null;

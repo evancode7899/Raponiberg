@@ -1,4 +1,3 @@
-import { addDays } from "../dates/isoDate.ts";
 import { cashFlowDerived } from "../book/derived/cashFlow.ts";
 import { derivedTarget } from "../book/derived/types.ts";
 import type { ProofRef } from "../book/proof/compose.ts";
@@ -8,6 +7,7 @@ import type { NetWorthReport } from "../book/reports/netWorth.ts";
 import type { NetWorthChange } from "../book/reports/netWorthChanges.ts";
 import { sliceRange } from "../book/reports/cashFlowWindows.ts";
 import type { SpendingReport } from "../book/reports/spending.ts";
+import { formatDisplayDateFromYmd } from "../displayTime.ts";
 import { usd0 } from "../formatMoney.ts";
 import { buildInsights, proofTarget, type Seg } from "./cashFlow.ts";
 
@@ -16,11 +16,14 @@ import { buildInsights, proofTarget, type Seg } from "./cashFlow.ts";
  * in spending, records, deadlines close by and goals. Every number in it is a figure another
  * page already shows, with that page's proof; nothing is worked out here but the order.
  */
+/** Words, a figure with its proof, or text that only looks like a figure (a goal's name, a round number), saying what it is. */
+export type FeedSeg = Seg | { text: string; notFigure: string };
+
 export type FeedItem = {
   id: string;
   tone: "good" | "bad" | "warn" | "info";
   area: "NW" | "CF" | "CAL" | "GOAL";
-  segs: Seg[];
+  segs: FeedSeg[];
   href: string;
   /** What orders the list: dollars at stake, times how soon or how unusual. */
   score: number;
@@ -51,6 +54,9 @@ function provenRun(nw: NetWorthReport) {
   }
   return out;
 }
+
+/** A round mark in words: "$1.5 million", "$900,000". */
+const roundMark = (cents: number) => (cents >= 1_000_000_00 ? `$${(cents / 1_000_000_00).toLocaleString("en-US", { maximumFractionDigits: 1 })} million` : usd0(cents));
 
 /** High-water marks and round numbers passed, from proven month-ends alone. */
 export function records(nw: NetWorthReport): FeedItem[] {
@@ -90,7 +96,7 @@ export function records(nw: NetWorthReport): FeedItem[] {
       id: `mark:${mark}`,
       tone: "good",
       area: "NW",
-      segs: [`Passed a round mark in ${run[crossed]!.label}, closing at `, fig(usd0(run[crossed]!.cents), balanceAt(run[crossed]!.end, run[crossed]!.cents)), "."],
+      segs: ["Passed ", { text: roundMark(mark), notFigure: "a round number, not a figure of yours" }, ` in ${run[crossed]!.label}, closing at `, fig(usd0(run[crossed]!.cents), balanceAt(run[crossed]!.end, run[crossed]!.cents)), "."],
       href: "/net-worth",
       score: 5_000_00,
     });
@@ -138,7 +144,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
       id: `due:${c.id}`,
       tone: left <= 14 ? "warn" : "info",
       area: "CAL",
-      segs: [`${c.title}: `, fig(usd0(Math.abs(c.cents)), proof), c.perPaycheck ? " a paycheck" : "", left === 0 ? ", now." : `, in ${left} day${left === 1 ? "" : "s"}.`],
+      segs: [`${c.title}: `, fig(usd0(Math.abs(c.cents)), proof), c.perPaycheck ? " a paycheck" : "", left === 0 ? ", now." : `, due ${formatDisplayDateFromYmd(c.date)} (${left} day${left === 1 ? "" : "s"}).`],
       href: "/calendar",
       score: 3_000_00 + Math.min(4_000_00, Math.abs(c.cents) / 20) + (60 - left) * 50_00,
     });
@@ -150,7 +156,12 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
       id: `goal:${g.goal.id}:${g.status}`,
       tone: g.status === "REACHED" ? "good" : "warn",
       area: "GOAL",
-      segs: g.status === "REACHED" ? ["Goal funded, at ", fig(usd0(g.currentCents), cur), "."] : [g.status === "BEHIND" ? "A goal is behind its date, at " : "A goal isn't reached in the forecast, at ", fig(usd0(g.currentCents), cur), "."],
+      segs: [
+        { text: g.goal.name, notFigure: "the goal's name, as you typed it" },
+        g.status === "REACHED" ? " is funded, at " : g.status === "BEHIND" ? " is behind its date, at " : " isn't reached in the forecast, at ",
+        fig(usd0(g.currentCents), cur),
+        ".",
+      ],
       href: "/goals",
       score: g.status === "REACHED" ? 1_000_00 : 4_500_00,
     });
@@ -161,6 +172,3 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 }
-
-/** The first day of the window a feed looks back over: a year before the proven date. */
-export const feedFrom = (through: string) => addDays(through, -365);

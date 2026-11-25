@@ -91,13 +91,13 @@ function cardPerksInputs(book: Book): Inputs {
  * statements and rows from the cached Book, joined per request to the rewards summaries
  * read from the statements (rewardsScan.ts) and the owner's choices.
  */
-export async function loadCardPerksPage(db: Db, year?: number, book?: Book): Promise<CardPerksResponse> {
+export async function loadCardPerksPage(db: Db, year?: number, book?: Book, opts: { /** False: only what's already read off the statements (the Dashboard never starts a read). */ read?: boolean } = {}): Promise<CardPerksResponse> {
   const [settings, inputs] = await Promise.all([
     loadJsonSetting(db, CARD_PERKS_KEY, normalizeCardPerks),
     // The sweep passes its own Book; the route reads the cached one. Either way the inputs go through JSON, as the cache serves them.
     book ? Promise.resolve(JSON.parse(JSON.stringify(cardPerksInputs(book))) as Inputs) : cachedReport(db, "card-perks-inputs", cardPerksInputs).then((t) => JSON.parse(t) as Inputs),
   ]);
-  const rewards = cardRewards(inputs.docs);
+  const rewards = cardRewards(inputs.docs, opts.read !== false);
 
   const snapshots: StatementRewards[] = [];
   for (const [docId, e] of Object.entries(rewards.file.docs)) {

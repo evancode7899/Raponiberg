@@ -83,10 +83,10 @@ const g = globalThis as unknown as { __pfCardRewards?: Promise<void> | null };
  * The rewards read so far, and how many card statements still wait to be read. Starts
  * reading them in the background when any do; the page asks again until none are left.
  */
-export function cardRewards(docs: CardDoc[]): CardRewardsState {
+export function cardRewards(docs: CardDoc[], start = true): CardRewardsState {
   const file = readCardRewards();
   const pending = docs.filter((d) => stale(file, d)).length;
-  if (pending && !g.__pfCardRewards) {
+  if (start && pending && !g.__pfCardRewards) {
     g.__pfCardRewards = readAll(docs)
       .catch(() => undefined)
       .finally(() => {

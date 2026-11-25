@@ -3,18 +3,18 @@
 import { Sparkline } from "@/components/charts/Sparkline";
 import { BlockedValue } from "@/components/ledger/Blocked";
 import { groupColor, useChartPalette } from "@/components/shell/chartPalette";
-import { NotFigure, Segmented } from "@/components/ui/kit";
+import { NotFigure, Segmented, WhatIf } from "@/components/ui/kit";
 import { grid, Panel } from "@/components/ui/Panel";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { unswept } from "@/lib/book/proof/clearance";
 import type { ProofDescriptor } from "@/lib/book/proof";
-import type { Briefing } from "@/lib/dashboard/briefing";
+import type { Briefing, BriefingDue } from "@/lib/dashboard/briefing";
 import type { HomeSummary } from "@/lib/dashboard/homeSummary";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import Link from "next/link";
-import { CashBars, cashCap, NetWorthLine, type Range } from "./charts";
+import { CashBars, cashCap, NetWorthLine, pastScale, type Range } from "./charts";
 
 export type Summary = HomeSummary;
 
@@ -38,7 +38,7 @@ function Open({ href, children }: { href: string; children: React.ReactNode }) {
 
 // ------------------------------------------------------------------ net worth
 
-export function NetWorthPanel({ nw, range, setRange, average, setAverage }: { nw: Summary["netWorth"]; range: Range; setRange: (r: Range) => void; average: boolean; setAverage: (on: boolean) => void }) {
+export function NetWorthPanel({ nw, events, range, setRange, average, setAverage }: { nw: Summary["netWorth"]; events: Briefing["events"]; range: Range; setRange: (r: Range) => void; average: boolean; setAverage: (on: boolean) => void }) {
   return (
     <Panel
       code="NW"
@@ -66,7 +66,7 @@ export function NetWorthPanel({ nw, range, setRange, average, setAverage }: { nw
         </span>
       }
     >
-      <NetWorthLine series={nw.series} range={range} average={average} />
+      <NetWorthLine series={nw.series} events={events} range={range} average={average} />
     </Panel>
   );
 }
@@ -148,7 +148,7 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
 
 // ------------------------------------------------------------------ what's due
 
-export function DuePanel({ due, today }: { due: Briefing["due"]; today: string }) {
+export function DuePanel({ due, today }: { due: BriefingDue[]; today: string }) {
   const open = due.filter((d) => !d.done);
   return (
     <Panel code="DUE" title="Next up" href="/calendar" note={`${open.length} open`} className="xl:col-span-3">
@@ -172,8 +172,8 @@ export function DuePanel({ due, today }: { due: Briefing["due"]; today: string }
                 </td>
                 <td className={grid.td}>{short(d.date)}</td>
                 <td className={`${grid.td} ${!d.done && left <= 30 ? "font-semibold text-warn" : "text-muted"}`}>{left <= 0 ? "now" : left}</td>
-                <td className={`${grid.td} ${back || d.kind === "vest" ? "text-pos" : ""}`}>
-                  {d.cents == null ? (
+                <td className={`${grid.td} ${back || d.kind === "vest" || d.kind === "credit" ? "text-pos" : ""}`}>
+                  {d.dateOnly ? null : d.cents == null ? (
                     NA
                   ) : (
                     <>
@@ -227,12 +227,14 @@ export function MoversPanel({ cf, trends }: { cf: Summary["cashFlow"]; trends: B
                 <td className={grid.name}>
                   <Open href={`/statements?tab=transactions&category=${encodeURIComponent(c.category)}&from=${lm.start}&to=${lm.end}`}>{c.category}</Open>
                 </td>
-                <td className={grid.td}>{c.lastMonthCents ? <ProofValue proof={proofOf(c.proof, c.lastMonthCents)}>{usd0(c.lastMonthCents)}</ProofValue> : "—"}</td>
+                <td className={grid.td}>
+                  <ProofValue proof={proofOf(c.proof, c.lastMonthCents)}>{usd0(c.lastMonthCents)}</ProofValue>
+                </td>
                 <td className={`${grid.td} text-muted`}>
                   <ProofValue proof={avg}>{usd0(c.avgCents)}</ProofValue>
                 </td>
                 <td className={`${grid.td} font-medium`} style={Math.abs(over) < 2500 ? undefined : { background: `color-mix(in srgb, var(${over > 0 ? "--neg" : "--pos"}) ${heat}%, transparent)` }}>
-                  {Math.abs(over) < 100 || !c.lastMonthCents ? "—" : <ProofValue proof={compositeOf("diff", [proofOf(c.proof, c.lastMonthCents), proofOf(c.totalProof, c.totalCents)], { cents: c.lastMonthCents - c.totalCents / c.months }, [1, c.months])}>{usdDelta(over)}</ProofValue>}
+                  {Math.abs(over) < 100 || !c.totalCents ? "—" : <ProofValue proof={compositeOf("diff", [proofOf(c.proof, c.lastMonthCents), proofOf(c.totalProof, c.totalCents)], { cents: c.lastMonthCents - c.totalCents / c.months }, [1, c.months])}>{usdDelta(over)}</ProofValue>}
                 </td>
                 <td className={grid.td}>{trends?.[c.category] && <Sparkline values={trends[c.category]!} color={p.series[0]!} width={64} height={14} />}</td>
               </tr>
@@ -249,10 +251,7 @@ export function MoversPanel({ cf, trends }: { cf: Summary["cashFlow"]; trends: B
 export function CashPanel({ cf }: { cf: Summary["cashFlow"] }) {
   const months = cf.months.map((m) => ({ label: m.label, income: m.incomeCents == null ? null : m.incomeCents / 100, spending: m.spendingCents == null ? null : m.spendingCents / 100 }));
   const cap = cashCap(months);
-  const over = cap == null ? [] : cf.months.flatMap((m) => [
-        ...((m.incomeCents ?? 0) / 100 > cap ? [{ m, what: "income" as const, cents: m.incomeCents! }] : []),
-        ...((m.spendingCents ?? 0) / 100 > cap ? [{ m, what: "spending" as const, cents: m.spendingCents! }] : []),
-      ]);
+  const over = pastScale(cf.months, cap);
   return (
     <Panel code="CF" title="Cash flow" href="/cash-flow" note="12 months" className="xl:col-span-4" bodyClassName="flex flex-col">
       <div className="relative min-h-[9rem] flex-1">
@@ -281,14 +280,46 @@ export function CashPanel({ cf }: { cf: Summary["cashFlow"] }) {
 // ------------------------------------------------------------------ portfolio
 
 export function PortfolioPanel({ p: port }: { p: Briefing["portfolio"] }) {
+  const ret = port.returns;
   return (
-    <Panel code="INV" title="Portfolio" href="/investments" note={`as of ${day(port.asOf)}`} className="xl:col-span-4">
+    <Panel code="INV" title="Portfolio" href="/investments" note={`as of ${day(port.asOf)}`} className="xl:col-span-4" bodyClassName="flex flex-col">
+      {ret && (
+        <dl className="flex shrink-0 flex-wrap gap-x-4 border-b border-line px-2 py-1 text-[11.5px] text-muted" title="Time-weighted and net of fees, from Net worth › Investment returns.">
+          {ret.month && (
+            <div className="flex gap-1.5">
+              <dt>Return {ret.month.label}</dt>
+              <dd className={`num font-semibold ${ret.month.ratio < 0 ? "text-neg" : "text-pos"}`}>
+                <ProofValue proof={ret.month.proof}>{formatPercentRatio(ret.month.ratio, 1)}</ProofValue>
+              </dd>
+            </div>
+          )}
+          <div className="flex gap-1.5">
+            <dt>since {day(ret.from)}</dt>
+            <dd className={`num font-semibold ${ret.total < 0 ? "text-neg" : "text-pos"}`}>
+              <ProofValue proof={ret.totalProof}>{formatPercentRatio(ret.total, 1)}</ProofValue>
+            </dd>
+          </div>
+          {ret.annualized != null && (
+            <div className="flex gap-1.5">
+              <dt>a year</dt>
+              <dd className="num font-semibold text-fg">
+                <ProofValue proof={ret.annualizedProof}>{formatPercentRatio(ret.annualized, 2)}</ProofValue>
+              </dd>
+            </div>
+          )}
+        </dl>
+      )}
       <table className={grid.table}>
         <thead>
           <tr>
             <th className={grid.th}>Holding</th>
             <th className={grid.th}>Value</th>
             <th className={grid.th}>Weight</th>
+            {port.hasTarget && (
+              <th className={grid.th} title="What to buy (or sell) to reach your target allocation.">
+                To target
+              </th>
+            )}
             <th className={grid.th}>Unrealized</th>
           </tr>
         </thead>
@@ -307,18 +338,22 @@ export function PortfolioPanel({ p: port }: { p: Briefing["portfolio"] }) {
               <td className={grid.td}>
                 <ProofValue proof={c.shareProof}>{formatPercentRatio(c.share, 1)}</ProofValue>
               </td>
+              {port.hasTarget && <td className={grid.td}>{c.driftCents == null ? <span className="text-faint">{NA}</span> : c.driftCents === 0 ? "—" : <ProofValue proof={c.driftProof}>{usdDelta(c.driftCents)}</ProofValue>}</td>}
               <td className={grid.td} />
             </tr>
           ))}
           {port.holdings.map((h) => (
             <tr key={h.key} data-desk-row="" tabIndex={-1} className={grid.row}>
               <td className={`${grid.name} !pl-4`}>
-                <Open href="/investments?tab=holdings">{h.name}</Open>
+                <Open href="/investments?tab=holdings">
+                  <span title={h.accounts.join(", ")}>{h.name}</span>
+                </Open>
               </td>
               <td className={grid.td}>
                 <ProofValue proof={h.proof}>{usd0(h.cents)}</ProofValue>
               </td>
               <td className={grid.td} />
+              {port.hasTarget && <td className={grid.td} />}
               <td className={`${grid.td} ${tone(h.gainCents)}`}>{h.gainCents == null ? <span className="text-faint">{NA}</span> : <ProofValue proof={h.gainProof}>{usdDelta(h.gainCents)}</ProofValue>}</td>
             </tr>
           ))}
@@ -382,6 +417,17 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 };
 const monthOf = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : NA);
 
+const LEVER: Record<string, string> = { spend: "Spend $1k/mo less", earn: "earn $12k/yr more", return: "1 pt less return" };
+/** How far a lever moves the FI year, in words. */
+function leverWords(y: number | null, base: number | null): string {
+  if (y === base) return "no change";
+  if (y == null) return "not within 60 years";
+  if (base == null) return `FI in ${y}`;
+  const n = Math.abs(y - base);
+  return `${n} yr${n === 1 ? "" : "s"} ${y < base ? "sooner" : "later"}`;
+}
+const leverTone = (y: number | null, base: number | null) => (y === base ? "" : y != null && (base == null || y < base) ? "text-pos" : "text-warn");
+
 export function PlanPanel({ goals, fire }: { goals: Briefing["goals"]; fire: Briefing["fire"] }) {
   return (
     <Panel code="PLAN" title="Plans" href="/goals" note="from the forecast" className="xl:col-span-3">
@@ -408,6 +454,21 @@ export function PlanPanel({ goals, fire }: { goals: Briefing["goals"]; fire: Bri
               </td>
               <td className={`${grid.td} text-pos`}>
                 <ProofValue proof={fire.fiProof}>{fire.fiYear ?? "60+ yrs"}</ProofValue>
+              </td>
+            </tr>
+          )}
+          {fire && fire.levers.length > 0 && (
+            <tr>
+              <td colSpan={4} className="border-b border-line/60 px-2 pb-1 pl-4 text-[11px] leading-snug text-muted">
+                {/* FIRE › Levers' own what-ifs: scenarios, not figures of yours. */}
+                <WhatIf why="FIRE › Levers: the FI year with one thing changed" inline>
+                  {fire.levers.map((l, i) => (
+                    <span key={l.key}>
+                      {i > 0 && " · "}
+                      {LEVER[l.key]}: <span className={leverTone(l.fiYear, fire.fiYear)}>{leverWords(l.fiYear, fire.fiYear)}</span>
+                    </span>
+                  ))}
+                </WhatIf>
               </td>
             </tr>
           )}
@@ -459,6 +520,10 @@ export function FeedPanel({ feed }: { feed: Briefing["feed"] }) {
                 {f.segs.map((s, j) =>
                   typeof s === "string" ? (
                     s
+                  ) : "notFigure" in s ? (
+                    <NotFigure key={j} why={s.notFigure}>
+                      {s.text}
+                    </NotFigure>
                   ) : (
                     <span key={j} className="font-semibold text-fg">
                       <ProofValue proof={s.proof}>{s.text}</ProofValue>

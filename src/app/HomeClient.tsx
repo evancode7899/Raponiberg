@@ -3,19 +3,22 @@
 import { BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
-import { btn, Card, ErrorNote, Loading, PageBody, usePersistentState } from "@/components/ui/kit";
+import { btn, Card, Drawer, ErrorNote, Loading, PageBody, usePersistentState } from "@/components/ui/kit";
 import { Desk } from "@/components/ui/Panel";
 import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import type { Briefing } from "@/lib/dashboard/briefing";
+import { DASHBOARD_KEYS } from "@/components/shell/shortcuts";
+import type { Briefing, BriefingDue } from "@/lib/dashboard/briefing";
 import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Range } from "./dashboard/charts";
 import { BalancePanel, BridgePanel, CashPanel, day, DuePanel, FeedPanel, MoversPanel, NetWorthPanel, PlanPanel, PortfolioPanel, proofOf, tone, type Summary } from "./dashboard/panels";
 
 const SUMMARY = "/api/dashboard/home-summary";
 const BRIEFING = "/api/dashboard/briefing";
+const UPCOMING = "/api/dashboard/upcoming";
+type Upcoming = { due: BriefingDue[] };
 const RANGE_KEYS: Record<string, Range> = { "1": "6m", "2": "12m", "3": "all" };
 
 /**
@@ -27,6 +30,8 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
   const api = useApi(requiresApiSecret);
   const [data, setData] = useState(() => cachedResponse<Summary>(SUMMARY));
   const [brief, setBrief] = useState(() => cachedResponse<Briefing>(BRIEFING));
+  // Card credits and policy dates: read apart from the briefing, whose other panels never wait for them.
+  const [upcoming, setUpcoming] = useState(() => cachedResponse<Upcoming>(UPCOMING));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,6 +39,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
     const failed = (e: Error) => setError(e.message);
     api.call<Summary>(SUMMARY).then(setData).catch(failed);
     api.call<Briefing>(BRIEFING).then(setBrief).catch(failed);
+    api.call<Upcoming>(UPCOMING).then(setUpcoming).catch(failed);
   }, [api]);
 
   if (data?.hasStatements)
@@ -45,7 +51,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
             <ErrorNote>{error}</ErrorNote>
           </div>
         )}
-        <Terminal d={data} b={brief} />
+        <Terminal d={data} b={brief} upcoming={upcoming?.due ?? NONE} />
       </>
     );
   return (
@@ -67,8 +73,26 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
   );
 }
 
-function Terminal({ d, b }: { d: Summary; b: Briefing | null }) {
+const NONE: BriefingDue[] = [];
+
+/** The calendar's dates and the rest, by date: what's done last. */
+const byDate = (a: BriefingDue, b: BriefingDue) => Number(a.done) - Number(b.done) || a.date.localeCompare(b.date);
+
+function Terminal({ d, b, upcoming }: { d: Summary; b: Briefing | null; upcoming: BriefingDue[] }) {
   const [view, setView] = usePersistentState<{ range: Range; average: boolean }>("pf-desk-view", () => ({ range: "all", average: false }));
+  const [keys, setKeys] = useState(false);
+  const due = useMemo(() => [...(b?.due ?? NONE), ...upcoming].sort(byDate), [b, upcoming]);
+  // ? lists the keys, from anywhere on the page but a field being typed in.
+  useEffect(() => {
+    const onHelp = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== "?" || e.ctrlKey || e.metaKey || e.altKey || (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable))) return;
+      e.preventDefault();
+      setKeys((on) => !on);
+    };
+    window.addEventListener("keydown", onHelp);
+    return () => window.removeEventListener("keydown", onHelp);
+  }, []);
   const onKey = (key: string) => {
     if (RANGE_KEYS[key]) setView((v) => ({ ...v, range: RANGE_KEYS[key]! }));
     else if (key === "m") setView((v) => ({ ...v, average: !v.average }));
@@ -77,13 +101,13 @@ function Terminal({ d, b }: { d: Summary; b: Briefing | null }) {
   };
   return (
     <div className="xl:flex xl:h-full xl:min-h-[42rem] xl:flex-col">
-      <Tape d={d} b={b} />
+      <Tape d={d} b={b} due={due} />
       <Desk onKey={onKey}>
-        <NetWorthPanel nw={d.netWorth} range={view.range} setRange={(range) => setView((v) => ({ ...v, range }))} average={view.average} setAverage={(average) => setView((v) => ({ ...v, average }))} />
+        <NetWorthPanel nw={d.netWorth} events={b?.events ?? NO_EVENTS} range={view.range} setRange={(range) => setView((v) => ({ ...v, range }))} average={view.average} setAverage={(average) => setView((v) => ({ ...v, average }))} />
         {b ? (
           <>
             <BridgePanel change={b.change} />
-            <DuePanel due={b.due} today={b.today} />
+            <DuePanel due={due} today={b.today} />
           </>
         ) : (
           <Waiting span="xl:col-span-6" />
@@ -101,10 +125,24 @@ function Terminal({ d, b }: { d: Summary; b: Briefing | null }) {
           <Waiting span="xl:col-span-9" />
         )}
       </Desk>
-      <Status d={d} />
+      <Status d={d} onKeys={() => setKeys(true)} />
+      <Drawer open={keys} onClose={() => setKeys(false)} title="Keys on the Dashboard" subtitle="Every page's keys are on Help." width="24rem">
+        <dl className="divide-y divide-line text-[13px]">
+          {DASHBOARD_KEYS.map(([k, what]) => (
+            <div key={k} className="flex items-baseline gap-4 py-2">
+              <dt className="w-28 shrink-0">
+                <kbd className="font-mono text-xs text-accent">{k}</kbd>
+              </dt>
+              <dd className="text-fg-2">{what}</dd>
+            </div>
+          ))}
+        </dl>
+      </Drawer>
     </div>
   );
 }
+
+const NO_EVENTS: Briefing["events"] = [];
 
 /** A panel's place while its data is on the way, so nothing jumps when it arrives. */
 function Waiting({ span }: { span: string }) {
@@ -125,10 +163,10 @@ function Cell({ label, children, cls = "" }: { label: string; children: ReactNod
 }
 
 /** The headline figures on one line. */
-function Tape({ d, b }: { d: Summary; b: Briefing | null }) {
+function Tape({ d, b, due }: { d: Summary; b: Briefing | null; due: BriefingDue[] }) {
   const nw = d.netWorth;
   const l12 = d.cashFlow.last12;
-  const next = b?.due.find((x) => !x.done && x.date > b.today);
+  const next = b ? due.find((x) => !x.done && x.date > b.today) : undefined;
   const change = (c: Summary["netWorth"]["change"]["month"]) => (c.cents == null ? <BlockedValue blockers={c.blockers} /> : <ProofValue proof={proofOf("proof" in c ? c.proof : null, c.cents)}>{usdDelta(c.cents)}</ProofValue>);
   return (
     <dl className="app-scroll flex min-h-[1.8rem] shrink-0 items-center overflow-x-auto whitespace-nowrap bg-surface text-[12.5px]" aria-label="Headline figures">
@@ -180,7 +218,7 @@ function Tape({ d, b }: { d: Summary; b: Briefing | null }) {
 }
 
 /** One line: the dates everything is proven through, what needs you, and the keys. */
-function Status({ d }: { d: Summary }) {
+function Status({ d, onKeys }: { d: Summary; onKeys: () => void }) {
   const i = d.integrity;
   const needs: { text: string; href: string; cls: string }[] = [
     ...(i.failing ? [{ text: `${i.failing} check${i.failing === 1 ? "" : "s"} failing`, href: "/statements?tab=issues", cls: "text-neg" }] : []),
@@ -204,7 +242,9 @@ function Status({ d }: { d: Summary }) {
       ) : (
         <span className="text-pos">Nothing needs you</span>
       )}
-      <span className="ml-auto hidden lg:inline">← → panel · ↑ ↓ row · Enter open · 1 2 3 range · M average · / command</span>
+      <button type="button" onClick={onKeys} className="ml-auto hidden outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-focus lg:inline">
+        ← → panel · ↑ ↓ row · Enter open · 1 2 3 range · M average · / command · ? keys
+      </button>
     </footer>
   );
 }

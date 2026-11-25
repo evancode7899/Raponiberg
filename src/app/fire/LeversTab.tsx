@@ -5,7 +5,7 @@ import { NA } from "@/lib/formatMoney";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { firstYearIncome, fiYear, savingsRateCurve, sensitivityGrid, spendingCuts } from "@/lib/fire/fire";
+import { fiLevers, firstYearIncome, fiYear, LEVER_YEARLY, savingsRateCurve, sensitivityGrid, spendingCuts } from "@/lib/fire/fire";
 import { useMemo } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceDot, Tooltip, XAxis, YAxis } from "recharts";
 import { Living } from "./OverviewTab";
@@ -27,12 +27,9 @@ export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
   const cuts = useMemo(() => spendingCuts(plan, CUTS), [plan]);
   const grid = useMemo(() => sensitivityGrid(plan, RETURNS, WRS), [plan]);
   const compare = useMemo(() => {
-    const raise = 12 * 1_000_00;
-    return {
-      spendLess: fiYear({ ...plan, livingCost: Math.max(0, plan.livingCost - raise) }),
-      earnMore: fiYear({ ...plan, salary: plan.salary + raise }),
-      earnMoreNet: Math.round(raise * plan.takeHomeRate),
-    };
+    const at = (key: "spend" | "earn") => levers.find((l) => l.key === key)!.fiYear;
+    const levers = fiLevers(plan);
+    return { spendLess: at("spend"), earnMore: at("earn"), earnMoreNet: Math.round(LEVER_YEARLY * plan.takeHomeRate) };
   }, [plan]);
   const creep = useMemo(
     () =>

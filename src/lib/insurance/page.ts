@@ -6,6 +6,7 @@ import { buildCoverReport, type CoverReport } from "./cover.ts";
 import { INSURANCE_NOTES_KEY, normalizeInsuranceNotes, type InsuranceNotes } from "./notes.ts";
 import { buildInsuranceReport, type InsuranceReport, type PremiumRow } from "./report.ts";
 import { refreshInsuranceDocs } from "./scan.ts";
+import { readInsuranceDocs } from "./store.ts";
 import type { AutoPolicy, AutoRenewal, BillingNotice, PaymentReceipt, PolicyForm, PolicyStatus, PropertyPolicy, TermPolicy } from "./types.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -38,9 +39,9 @@ const ledgerOf = (book: Book): Ledger => ({
   accounts: Object.fromEntries(book.accounts.map((a) => [a.id, a.name])),
 });
 
-export async function loadInsurancePage(db: Db, book?: Book): Promise<InsurancePage> {
+export async function loadInsurancePage(db: Db, book?: Book, opts: { /** False: the folder as last scanned (the Dashboard never scans it). */ scan?: boolean } = {}): Promise<InsurancePage> {
   const [docs, notes, ledger] = await Promise.all([
-    refreshInsuranceDocs(db),
+    opts.scan === false ? readInsuranceDocs() : refreshInsuranceDocs(db),
     loadJsonSetting(db, INSURANCE_NOTES_KEY, normalizeInsuranceNotes),
     // The sweep passes its own Book; the route reads the cached one (through JSON either way).
     (book ? Promise.resolve(JSON.stringify(ledgerOf(book))) : cachedReport(db, "insurance-rows", ledgerOf)).then((t) => JSON.parse(t) as Ledger),

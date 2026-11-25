@@ -214,7 +214,8 @@ export function homeFigures(s: ReturnType<typeof buildHomeSummary>): PageFigure[
   }
   if (cf.lastMonth) add(cf.lastMonth.proof, cf.lastMonth.spendingCents);
   for (const c of cf.categories) {
-    if (c.lastMonthCents) add(c.proof, c.lastMonthCents);
+    // Nothing spent in it last month is a figure too: its change from the average needs it.
+    add(c.proof, c.lastMonthCents);
     if (c.totalCents) add(c.totalProof, c.totalCents);
   }
   return out;

@@ -5,6 +5,7 @@ import { noFigure } from "../book/proof/clearance.ts";
 import { compositeOf, type ProofRef } from "../book/proof/compose.ts";
 import { cashFlowDescriptor, median, mergeCategories, SPEND_CATEGORIES, spendingMover, sum, type CashFlowRecipe, type Slice } from "../book/reports/cashFlowWindows.ts";
 import type { SpendingMonth, SpendingReport } from "../book/reports/spending.ts";
+import { formatDisplayDateFromYmd } from "../displayTime.ts";
 import { formatPercentRatio, usd0, usdCompact } from "../formatMoney.ts";
 
 type Report = SpendingReport;
@@ -249,7 +250,7 @@ export function buildInsights(slice: Slice, r: Report, x: InsightProofs): Insigh
       weight: big.cents,
       tone: "info",
       title: ["Largest single expense: ", fig(usd0(big.cents), { descriptor: { report: "row", rowId: big.rowId }, shownCents: -big.cents })],
-      body: [`${big.merchant} (${big.category}) on ${big.date}. Mark big one-offs so your typical spending isn't skewed.`],
+      body: [`${big.merchant} (${big.category}) on ${formatDisplayDateFromYmd(big.date)}. Mark big one-offs so your typical spending isn't skewed.`],
       action: { label: "Review one-offs", tab: "spending" },
     });
   }

@@ -8,8 +8,9 @@ import { RowButton, Card, StatCell, StatGrid, table } from "@/components/ui/kit"
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
+import { cashCap, OverPattern, pastScale } from "../dashboard/charts";
 import { useMemo } from "react";
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashTab, Ctx } from "./CashFlowClient";
 import { buildInsights, categoryCents, median, mergeCategories, totals, type Insight, type Seg } from "./model";
 import { categoryColor, Delta, Dot, openMonthOnClick } from "./parts";
@@ -32,7 +33,11 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   const t = useMemo(() => totals(slice.months), [slice]);
   const p = useMemo(() => (slice.prior.length ? totals(slice.prior) : null), [slice]);
   const insights = useMemo(() => buildInsights(slice, report, ctx), [slice, report, ctx]);
-  const rows = slice.months.map((m) => ({ label: m.label, income: m.incomeCents / 100, spending: m.spendingCents / 100, net: m.netCents / 100 }));
+  // A bonus or a one-off month past the scale is cut there and hatched, so the other months stay readable; it's listed under the chart.
+  const cap = useMemo(() => cashCap(slice.months.map((m) => ({ label: m.label, income: m.incomeCents / 100, spending: m.spendingCents / 100 }))), [slice]);
+  const cut = (v: number) => (cap == null ? v : Math.max(-cap, Math.min(cap, v)));
+  const rows = slice.months.map((m) => ({ label: m.label, income: cut(m.incomeCents / 100), spending: cut(m.spendingCents / 100), net: cut(m.netCents / 100), raw: { Income: m.incomeCents / 100, Spending: m.spendingCents / 100, Net: m.netCents / 100 } }));
+  const over = pastScale(slice.months, cap);
   const last = slice.months.at(-1)!;
   const cats = mergeCategories(slice.months, (m) => m.spendingByCategory).filter((c) => c.cents > 0);
   const rest = slice.months.length > 1 ? slice.months.slice(0, -1) : slice.months;
@@ -82,24 +87,56 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <Card
+          className="flex flex-col"
+          bodyClassName="flex min-h-0 flex-1 flex-col"
           title="Income vs spending"
           subtitle="Each month from bank and card statements. Transfers between your own accounts never count. The dashed line is your average month of spending. Click a month to audit it."
         >
-          <div className="h-[320px] w-full min-w-0">
+          {/* Fills the height beside Insights: the chart is laid over its box, so it never sets it. */}
+          <div className="relative min-h-[320px] w-full min-w-0 flex-1">
+            <div className="absolute inset-0">
             <RechartsResponsive>
               <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2} className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
+                <defs>
+                  <OverPattern id="cfOver" color={chart.income} bg={chart.tooltipBg} />
+                  <OverPattern id="cfOverSpent" color={chart.spending} bg={chart.tooltipBg} />
+                </defs>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
-                <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-                <Tooltip {...ui.tooltip} formatter={(v, n) => [formatUsd(Math.round(Number(v))), String(n)]} />
+                <YAxis {...ui.yAxis} tickFormatter={axisUsd} domain={["auto", cap ?? "auto"]} />
+                <Tooltip {...ui.tooltip} formatter={(v, n, item) => [formatUsd(Math.round((item?.payload as (typeof rows)[number] | undefined)?.raw[String(n) as "Income" | "Spending" | "Net"] ?? Number(v))), String(n)]} />
                 <Legend {...ui.legend} />
+                {cap != null && <ReferenceLine y={cap} stroke={chart.axisLine} strokeDasharray="2 3" />}
                 <ReferenceLine y={t.avgSpending / 100} stroke={chart.spending} strokeDasharray="4 4" strokeOpacity={0.8} />
-                <Bar dataKey="income" name="Income" fill={chart.income} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
-                <Bar dataKey="spending" name="Spending" fill={chart.spending} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+                <Bar dataKey="income" name="Income" fill={chart.income} maxBarSize={22} isAnimationActive={false}>
+                  {slice.months.map((m) => (
+                    <Cell key={m.start} fill={cap != null && m.incomeCents / 100 > cap ? "url(#cfOver)" : chart.income} />
+                  ))}
+                </Bar>
+                <Bar dataKey="spending" name="Spending" fill={chart.spending} maxBarSize={22} isAnimationActive={false}>
+                  {slice.months.map((m) => (
+                    <Cell key={m.start} fill={cap != null && m.spendingCents / 100 > cap ? "url(#cfOverSpent)" : chart.spending} />
+                  ))}
+                </Bar>
                 <Line type="linear" dataKey="net" name="Net" stroke={chart.lineBalance} dot={{ r: 3 }} strokeWidth={2} isAnimationActive={false} />
               </ComposedChart>
             </RechartsResponsive>
+            </div>
           </div>
+          {over.length > 0 && (
+            <p className="mt-2 text-xs text-muted">
+              Off the scale, hatched:{" "}
+              {over.map((x, i) => (
+                <span key={`${x.m.start}${x.what}`}>
+                  {i > 0 && " · "}
+                  {x.m.label} {x.what}{" "}
+                  <span className="num font-medium text-fg">
+                    <ProofValue proof={ctx.proof(x.what, [x.m], { shownCents: x.cents })}>{usd0(x.cents)}</ProofValue>
+                  </span>
+                </span>
+              ))}
+            </p>
+          )}
         </Card>
         <Card title="Insights" subtitle={`What stands out in ${slice.label}.`}>
           {insights.length === 0 ? (

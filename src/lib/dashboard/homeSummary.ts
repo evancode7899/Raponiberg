@@ -3,7 +3,7 @@ import type { Book } from "../book/load.ts";
 import type { ProofDescriptor } from "../book/proof/index.ts";
 import { refs } from "../book/reports/blockerRef.ts";
 import { buildCashFlowReport } from "../book/reports/cashFlow.ts";
-import { buildNetWorth } from "../book/reports/netWorth.ts";
+import { buildNetWorth, type NetWorthPeriodWithBlockers } from "../book/reports/netWorth.ts";
 import { latestProvenMonthEnd } from "../book/reports/spending.ts";
 import { addDays, endOfMonth, startOfMonth } from "../dates/isoDate.ts";
 import { isLiquid, liquidCents, savingsRate } from "../book/definitions.ts";
@@ -15,6 +15,10 @@ function monthsBack(iso: string, n: number): string {
   for (let i = 0; i < n; i++) d = startOfMonth(addDays(d, -1));
   return d;
 }
+
+/** Month-end net worth over all proven history: every month from the first that can be proven (one that can't since then is a gap). */
+export const provenSeries = (periods: readonly Pick<NetWorthPeriodWithBlockers, "end" | "label" | "blockers" | "household">[]) =>
+  periods.slice(Math.max(0, periods.findIndex((p) => !p.blockers.length))).map((p) => ({ end: p.end, label: p.label, cents: p.blockers.length ? null : p.household.closingCents, quality: p.household.closingQuality }));
 
 /**
  * Home dashboard payload from the Book: net worth with its recent changes and
@@ -119,7 +123,7 @@ export function buildHomeSummary(book: Book) {
           },
       driversBlockers: t12Blockers,
       groups: known ? groups : [],
-      series: periods.slice(-24).map((p) => ({ end: p.end, label: p.label, cents: p.blockers.length ? null : p.household.closingCents, quality: p.household.closingQuality })),
+      series: provenSeries(periods),
       mergeDate: nw.mergeDate,
     },
     cashFlow: {

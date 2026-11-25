@@ -1,3 +1,4 @@
+import { APP_KEYS, CATEGORIZE_KEYS, DASHBOARD_KEYS } from "@/components/shell/shortcuts";
 import { NAV_GROUPS, TERMINAL_COMMANDS } from "@/components/shell/terminalCommands";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -7,11 +8,10 @@ export const metadata: Metadata = {
   description: "Every function, its mnemonic, and keyboard shortcuts",
 };
 
-const SHORTCUTS: [string, string][] = [
-  ["Ctrl K  or  /", "Jump to the command bar from anywhere"],
-  ["Enter", "Go to the highlighted function"],
-  ["↑ ↓", "Move through command-bar matches"],
-  ["Esc", "Close the command list, a side panel or the menu"],
+const SHORTCUTS = [
+  { where: "Keyboard", keys: APP_KEYS },
+  { where: "Keyboard: Dashboard", keys: DASHBOARD_KEYS },
+  { where: "Keyboard: Statements › Categorize, with a merchant focused", keys: CATEGORIZE_KEYS },
 ];
 
 export default function HelpPage() {
@@ -51,17 +51,19 @@ export default function HelpPage() {
         );
       })}
 
-      <section>
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-faint">Keyboard</h2>
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
-          {SHORTCUTS.map(([k, what]) => (
-            <li key={k} className="flex items-baseline gap-4 px-4 py-2.5 text-[13px]">
-              <kbd className="w-28 shrink-0 font-mono text-xs text-accent">{k}</kbd>
-              <span className="text-fg-2">{what}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {SHORTCUTS.map((s) => (
+        <section key={s.where}>
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-faint">{s.where}</h2>
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+            {s.keys.map(([k, what]) => (
+              <li key={k} className="flex items-baseline gap-4 px-4 py-2.5 text-[13px]">
+                <kbd className="w-28 shrink-0 font-mono text-xs text-accent">{k}</kbd>
+                <span className="text-fg-2">{what}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
 
       <p className="text-[11px] text-faint">
         The Terminal theme borrows habits common to market terminals (a command line, short codes, dense panels). It isn&apos;t affiliated with any vendor of one.
