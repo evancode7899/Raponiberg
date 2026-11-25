@@ -6,6 +6,7 @@ import type { CalendarItem } from "../book/reports/moneyCalendar.ts";
 import type { GoalProgress } from "../book/reports/goals.ts";
 import type { NetWorthReport } from "../book/reports/netWorth.ts";
 import type { HighlightSeg, NetWorthChange } from "../book/reports/netWorthChanges.ts";
+import { latestClosed, monthStory } from "../book/reports/monthStory.ts";
 import { netWorthRecords, provenRun, roundMark } from "../book/reports/records.ts";
 import { sliceRange } from "../book/reports/cashFlowWindows.ts";
 import type { SpendingReport } from "../book/reports/spending.ts";
@@ -133,6 +134,13 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         score: 8_000_00 + Math.min(4_000_00, Math.abs(x.change!.changeCents) / 100),
       }),
     );
+  // A month just proven: what stood out in it (its story's last line), while it's news.
+  const closed = x.changes ? latestClosed(x.changes) : null;
+  if (closed && daysBetween(closed.end, x.today) <= 45) {
+    const story = monthStory(closed);
+    const segs = [`${closed.label} is proven. `, ...highlightSegs(story.sentences.at(-1)!)];
+    items.push({ id: `month-closed:${closed.start}`, tone: "info", area: "NW", segs, says: segsText(segs), href: "/net-worth?tab=changes", score: 7_000_00 });
+  }
   const slice = sliceRange(x.spending, "12m", { from: "", to: "" });
   if (slice.months.length) {
     const derived = cashFlowDerived(x.spending);

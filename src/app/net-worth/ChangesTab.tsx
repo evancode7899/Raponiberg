@@ -13,6 +13,7 @@ import { axisUsd, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { unswept } from "@/lib/book/proof/clearance";
+import { monthStory } from "@/lib/book/reports/monthStory";
 
 type Granularity = NetWorthChangesReport["granularity"];
 
@@ -107,6 +108,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
       : `the first proven ${unit}, so there's nothing before it to compare with`;
   return (
     <>
+      {granularity === "month" && <StoryCard p={p} />}
       <Card
         tone="overview"
         title={
@@ -207,6 +209,48 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
         </div>
       )}
     </>
+  );
+}
+
+/** The month in five sentences and one picture (reports/monthStory.ts): its numbers are this tab's own figures. */
+function StoryCard({ p }: { p: NetWorthChange }) {
+  const s = useMemo(() => monthStory(p), [p]);
+  const chart = useChartPalette();
+  const ui = chartChrome(chart);
+  return (
+    <Card title={`${s.label} in five lines`} subtitle={p.through ? `So far: through ${p.through}.` : "Pay, spending, saving, markets and what stood out, each number opening its proof."}>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <ol className="space-y-1 text-sm leading-relaxed text-fg-2">
+          {s.sentences.map((h, k) => (
+            <li key={k} className="flex gap-2">
+              <span className="num w-3 shrink-0 text-faint">{k + 1}</span>
+              <span>
+                <Highlight segs={h} />
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div className="flex h-[160px] min-w-0 flex-col" aria-label="This month against its average">
+          <div className="flex shrink-0 justify-end gap-3 text-[11px] text-muted">
+            <span><span aria-hidden className="mr-1 inline-block h-2 w-2" style={{ background: chart.lineBalance }} />{p.label}</span>
+            <span><span aria-hidden className="mr-1 inline-block h-2 w-2" style={{ background: chart.neutral }} />average</span>
+          </div>
+          <div className="min-h-0 flex-1">
+          <RechartsResponsive>
+            <BarChart data={s.bars} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={1}>
+              <CartesianGrid {...ui.grid} />
+              <XAxis dataKey="label" {...ui.xAxis} interval={0} />
+              <YAxis {...ui.yAxis} tickFormatter={axisUsd} width={44} />
+              <ReferenceLine y={0} stroke={chart.axisLine} />
+              <Tooltip {...ui.tooltip} formatter={(v, name) => [formatUsd(Math.round(Number(v))), name === "now" ? p.label : "Average"]} />
+              <Bar dataKey="now" fill={chart.lineBalance} maxBarSize={22} isAnimationActive={false} />
+              <Bar dataKey="typical" fill={chart.neutral} maxBarSize={22} isAnimationActive={false} />
+            </BarChart>
+          </RechartsResponsive>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
