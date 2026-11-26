@@ -87,6 +87,9 @@ describe("what-if", () => {
   });
 
   it("extra wages are withheld at supplemental rates and stop Social Security at the wage base", () => {
+    const [roth] = applyWhatIf([person("a", 100_000)], { ...NO_WHAT_IF, extraRothConversion: $(20_000) }, P);
+    expect(roth!.retirementTaxable).toBe($(20_000));
+    expect(roth!.w2s[0]!.federalWithheld).toBe(person("a", 100_000).w2s[0]!.federalWithheld);
     const [p] = applyWhatIf([person("a", 180_000)], { ...NO_WHAT_IF, people: { a: { extraWages: $(10_000), extraPretax401k: 0 } } }, P);
     expect(p!.w2s[0]!.federalWithheld).toBe($(2_200));
     expect(p!.w2s[0]!.box3SsWages).toBe(P.federal.socialSecurity.wageBase);

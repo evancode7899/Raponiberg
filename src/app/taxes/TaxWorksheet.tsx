@@ -266,7 +266,7 @@ function WhatIfPanel({ r, whatIf, onChange, basis }: { r: TaxResponse; whatIf: W
             Reset what-if
           </button>
         )}
-        {!open && <span className="text-xs text-muted">Try a bigger bonus, more 401(k), selling investments or giving to charity — nothing is saved.</span>}
+        {!open && <span className="text-xs text-muted">Try a bigger bonus, more 401(k), selling investments, giving to charity or a Roth conversion — nothing is saved.</span>}
       </div>
       {open && (
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -293,6 +293,7 @@ function WhatIfPanel({ r, whatIf, onChange, basis }: { r: TaxResponse; whatIf: W
           <MoneyField label="Sell investments: short-term gain" help="Negative for a loss (tax-loss harvesting)." cents={whatIf.extraShortTermGain} allowNegative onChange={(c) => onChange({ ...whatIf, extraShortTermGain: c })} />
           <MoneyField label="Sell investments: long-term gain" help="Negative for a loss." cents={whatIf.extraLongTermGain} allowNegative onChange={(c) => onChange({ ...whatIf, extraLongTermGain: c })} />
           <MoneyField label="Extra charitable gifts (cash)" cents={whatIf.extraCharitable} onChange={(c) => onChange({ ...whatIf, extraCharitable: c })} />
+          <MoneyField label="Convert to Roth" help="Pre-tax IRA or 401(k) money moved to Roth: taxed as ordinary income this year, nothing withheld." cents={whatIf.extraRothConversion} onChange={(c) => onChange({ ...whatIf, extraRothConversion: c })} />
         </div>
       )}
     </div>
