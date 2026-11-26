@@ -11,8 +11,12 @@ import { icsFile } from "@/lib/dates/ics";
 import { usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { notify } from "@/components/ui/Feedback";
+import type { Mark } from "@/lib/marks";
+import type { BriefingDue } from "@/lib/dashboard/briefing";
 
 const CALENDAR_URL = "/api/calendar";
+const DONE_URL = "/api/calendar/done";
 
 const KIND: Record<CalendarKind, string> = { save: "Save", tax: "Tax", file: "Return" };
 
@@ -25,27 +29,46 @@ export function CalendarClient({ requiresApiSecret }: { requiresApiSecret: boole
   const [r, setR] = useState(() => cachedResponse<MoneyCalendarReport>(CALENDAR_URL));
   const [error, setError] = useState<string | null>(null);
   const [show, setShow] = useState<"open" | "all">("open");
+  const [marks, setMarks] = useState<Mark[]>([]);
+  const [upcoming, setUpcoming] = useState<BriefingDue[]>([]);
   useEffect(() => {
     if (!api.ready) return;
     api
       .call<MoneyCalendarReport>(CALENDAR_URL)
       .then(setR)
       .catch((e: Error) => setError(e.message));
+    api.call<{ marks: Mark[] }>(DONE_URL).then((x) => setMarks(x.marks)).catch(() => {});
+    // Card credits closing and policy dates: the Dashboard's Next up, on the month grid.
+    api.call<{ due: BriefingDue[] }>("/api/dashboard/upcoming").then((x) => setUpcoming(x.due)).catch(() => {});
   }, [api]);
+  // Done stays done: a date marked done is done whatever the engines say later.
+  const doneIds = useMemo(() => new Set(marks.map((m) => m.id)), [marks]);
+  const toggle = (i: CalendarItem, done: boolean) =>
+    api
+      .call<{ marks: Mark[] }>(DONE_URL, { method: "POST", json: { op: done ? "done" : "open", id: i.id } })
+      .then((x) => {
+        setMarks(x.marks);
+        notify(done ? `Done: ${i.title}` : `Open again: ${i.title}`, { tone: "info", undo: () => void toggle(i, !done) });
+      })
+      .catch((e: Error) => notify(e.message, { tone: "bad" }));
+  const shownR = useMemo(() => (r ? { ...r, items: r.items.map((i) => ({ ...i, done: i.done || doneIds.has(i.id), marked: doneIds.has(i.id) })) } : null), [r, doneIds]);
 
   return (
     <PageBody width="medium">
       <ApiSecretField api={api} />
       {error && <ErrorNote>{error}</ErrorNote>}
-      {!r ? api.ready && !error && <Loading label="Lining up every deadline with its amount…" /> : <Calendar r={r} show={show} setShow={setShow} />}
+      {!shownR ? api.ready && !error && <Loading label="Lining up every deadline with its amount…" /> : <Calendar r={shownR} show={show} setShow={setShow} toggle={toggle} upcoming={upcoming} />}
     </PageBody>
   );
 }
 
-function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" | "all"; setShow: (s: "open" | "all") => void }) {
+type Shown = CalendarItem & { marked: boolean };
+
+function Calendar({ r, show, setShow, toggle, upcoming }: { r: Omit<MoneyCalendarReport, "items"> & { items: Shown[] }; show: "open" | "all"; setShow: (s: "open" | "all") => void; toggle: (i: CalendarItem, done: boolean) => void; upcoming: BriefingDue[] }) {
+  const [layout, setLayout] = useState<"list" | "month">("list");
   const shown = useMemo(() => (show === "open" ? r.items.filter((i) => !i.done) : r.items), [r, show]);
   const groups = useMemo(() => {
-    const m = new Map<string, CalendarItem[]>();
+    const m = new Map<string, Shown[]>();
     for (const i of shown) m.set(i.date, [...(m.get(i.date) ?? []), i]);
     return [...m];
   }, [shown]);
@@ -84,7 +107,12 @@ function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" |
         </div>
       </Card>
 
-      {groups.length === 0 ? (
+      <div className="flex justify-end">
+        <Segmented size="xs" ariaLabel="Layout" options={[{ value: "list", label: "List" }, { value: "month", label: "Month grid" }]} value={layout} onChange={setLayout} />
+      </div>
+      {layout === "month" ? (
+        <MonthGrid today={r.today} items={r.items} upcoming={upcoming} />
+      ) : groups.length === 0 ? (
         <EmptyState title="Nothing left to do before the next deadline" />
       ) : (
         groups.map(([date, items]) => {
@@ -93,7 +121,7 @@ function Calendar({ r, show, setShow }: { r: MoneyCalendarReport; show: "open" |
             <Card key={date} title={d === 0 ? "Now" : `By ${longDate(date)}`} subtitle={d === 0 ? "Only paychecks still to come can change these, so sooner is better." : inDays(d)}>
               <ul className="divide-y divide-line">
                 {items.map((i) => (
-                  <Item key={i.id} i={i} showYear={twoYears} />
+                  <Item key={i.id} i={i} showYear={twoYears} toggle={toggle} />
                 ))}
               </ul>
             </Card>
@@ -133,18 +161,24 @@ function saveIcs(items: CalendarItem[]) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-function Item({ i, showYear }: { i: CalendarItem; showYear: boolean }) {
+function Item({ i, showYear, toggle }: { i: Shown; showYear: boolean; toggle: (i: CalendarItem, done: boolean) => void }) {
   const refund = i.kind === "file" && i.cents != null && i.cents < 0;
   // Zero formats as a dash (accounting style); on a to-do list it reads better in words.
   const amount = i.cents == null ? null : i.cents === 0 ? (i.kind === "save" ? "Filled" : "None due") : refund ? usd0(-i.cents) : usd0(i.cents);
   return (
     <li className={`flex flex-wrap items-start gap-x-3 gap-y-1 py-2.5 first:pt-0 last:pb-0 ${i.done ? "opacity-60" : ""}`}>
-      <span
-        aria-label={i.done ? "Done" : "Open"}
-        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold ${i.done ? "border-pos bg-pos-soft text-pos" : "border-line-strong text-faint"}`}
+      <button
+        type="button"
+        aria-pressed={i.done}
+        aria-label={i.done ? `Done: ${i.title}` : `Mark done: ${i.title}`}
+        // Done by the engines (a room filled) stays done on its own; one you marked can be opened again.
+        disabled={i.done && !i.marked}
+        title={i.done && !i.marked ? "Done: nothing left to do" : i.marked ? "You marked it done: click to open it again" : "Mark it done: it stays done"}
+        onClick={() => toggle(i, !i.done)}
+        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-focus ${i.done ? "border-pos bg-pos-soft text-pos" : "border-line-strong text-faint hover:border-accent"}`}
       >
         {i.done ? "✓" : ""}
-      </span>
+      </button>
       <div className="min-w-0 flex-1 basis-56">
         <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-fg">
           {i.title}
@@ -165,5 +199,56 @@ function Item({ i, showYear }: { i: CalendarItem; showYear: boolean }) {
         </Link>
       </div>
     </li>
+  );
+}
+
+/**
+ * The month grid: this month and the next two, every dated thing on its day (the calendar's
+ * deadlines, card credits closing, policy dates), what's done struck through. Titles only:
+ * the amounts are on the list, each with its proof.
+ */
+function MonthGrid({ today, items, upcoming }: { today: string; items: Shown[]; upcoming: BriefingDue[] }) {
+  const byDay = new Map<string, { id: string; title: string; done: boolean; href: string }[]>();
+  for (const x of [...items.map((i) => ({ id: i.id, date: i.date, title: i.title, done: i.done, href: i.href })), ...upcoming.map((u) => ({ id: u.id, date: u.date, title: u.title, done: u.done, href: u.href }))])
+    byDay.set(x.date, [...(byDay.get(x.date) ?? []), x]);
+  const months = [0, 1, 2].map((k) => {
+    const d = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 + k, 1));
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+  });
+  return (
+    <div className="flex flex-col gap-4">
+      {months.map(({ y, m }) => {
+        const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+        const lead = (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7;
+        return (
+          <Card key={`${y}-${m}`} title={new Date(Date.UTC(y, m, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}>
+            <div className="grid grid-cols-7 gap-px bg-line text-[11px]">
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => (
+                <div key={w} className="bg-surface-2 px-1 py-0.5 text-muted">
+                  {w}
+                </div>
+              ))}
+              {Array.from({ length: lead }, (_, k) => (
+                <div key={`lead${k}`} className="bg-surface" />
+              ))}
+              {Array.from({ length: days }, (_, k) => {
+                const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(k + 1).padStart(2, "0")}`;
+                const list = byDay.get(iso) ?? [];
+                return (
+                  <div key={iso} className={`min-h-[4.2rem] bg-surface px-1 py-0.5 ${iso === today ? "ring-1 ring-inset ring-accent" : ""} ${iso < today ? "opacity-50" : ""}`}>
+                    <div className="num text-faint">{k + 1}</div>
+                    {list.map((x) => (
+                      <Link key={x.id} href={x.href} title={x.title} className={`block truncate leading-tight hover:underline ${x.done ? "text-faint line-through" : "text-fg-2"}`}>
+                        {x.title}
+                      </Link>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
   );
 }
