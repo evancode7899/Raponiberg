@@ -5,12 +5,14 @@ import { Badge, btn, selectCls, table, type Tone } from "@/components/ui/kit";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { noFigure } from "@/lib/book/proof/clearance";
-import { sortRows, SortTh, useSort, type Sort, type SortKey } from "@/components/ui/sort";
+import type { Sort, SortKey } from "@/components/ui/sort";
+import { DataTable, type Column } from "@/components/ui/DataTable";
+import { notify } from "@/components/ui/Feedback";
 import { isGenericMerchantKey } from "@/lib/classifier/merchants";
 import { CATEGORIES, LANE_LABELS, type Lane } from "@/lib/classifier/taxonomy";
 import { formatUsdFromCents, NA } from "@/lib/formatMoney";
 import type { ReimbursementsResponse } from "@/app/api/reimbursements/route";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PaidBackDrawer } from "./PaidBackDrawer";
 import type { Api } from "./useApi";
 
@@ -81,11 +83,13 @@ export function LaneBadge({ lane }: { lane: Lane | null }) {
 }
 
 /**
- * Transactions with inline recategorizing: pick a category, then apply it to this row
- * only (locked against the classifier) or teach it for every row from the merchant. A
- * spending row can also be marked as paid back (PaidBackDrawer).
- * Date, description and amount headers sort the table; pass `sort` + `onSort` when the
- * server sorts (the rows are one page of many), otherwise the rows are sorted here.
+ * Transactions on the shared table (DataTable: sort, filter, columns, copy, J/K), with inline
+ * recategorizing: pick a category, then apply it to this row only (locked against the
+ * classifier) or teach it for every row from the merchant. Pick several rows to file them
+ * together, or mark them reviewed. Every change says what it did, with Undo (the batch-answers
+ * endpoint keeps what each answer replaced). A spending row can also be marked as paid back
+ * (PaidBackDrawer). Pass `sort` + `onSort` when the server sorts (the rows are one page of
+ * many), otherwise the rows are sorted here. Long lists draw only the rows in view.
  */
 export function TransactionTable({
   api,
@@ -104,10 +108,6 @@ export function TransactionTable({
   sort?: Sort;
   onSort?: (k: SortKey) => void;
 }) {
-  const local = useSort();
-  const sort = serverSort ?? local.sort;
-  const toggle = onSort ?? local.toggle;
-  const shown = serverSort ? rows : sortRows(rows, sort, { date: (r) => r.date, amount: (r) => r.amountCents, name: (r) => r.payee });
   const [paidBack, setPaidBack] = useState<Record<string, number>>({});
   const [paidBackFor, setPaidBackFor] = useState<string | null>(null);
   const [paidBackVersion, setPaidBackVersion] = useState(0);
@@ -122,128 +122,203 @@ export function TransactionTable({
     setPaidBackVersion((v) => v + 1);
     onChanged();
   }, [onChanged]);
+  const answer = useAnswer(api, onChanged);
+
+  const columns = useMemo<Column<TxnRow>[]>(
+    () => [
+      { id: "date", label: "Date", date: (r) => r.date.slice(0, 10), className: `${table.td} num whitespace-nowrap text-muted` },
+      {
+        id: "name",
+        label: "Description",
+        text: (r) => [r.payee ?? NA, r.detail].filter(Boolean).join(" · "),
+        sort: (r) => r.payee ?? "",
+        className: `${table.td} w-full max-w-0 min-w-[12rem]`,
+        cell: (r) => (
+          <>
+            <div className="truncate text-fg" title={r.payee ?? undefined}>
+              {r.payee ?? NA}
+            </div>
+            {r.detail && (
+              <div className="truncate text-2xs text-muted" title={r.detail}>
+                {r.detail}
+              </div>
+            )}
+          </>
+        ),
+      },
+      ...(showAccount ? [{ id: "account", label: "Account", text: (r: TxnRow) => r.account.name, sort: (r: TxnRow) => r.account.name, className: `${table.td} whitespace-nowrap text-xs text-muted` }] : []),
+      { id: "merchant", label: "Merchant", optional: true, text: (r) => r.merchantKey ?? "", sort: (r) => r.merchantKey ?? "", className: `${table.td} whitespace-nowrap font-mono text-2xs text-muted` },
+      {
+        id: "lane",
+        label: "Counts as",
+        text: (r) => (r.lane ? LANE_SHORT[r.lane].label : NA),
+        sort: (r) => (r.lane ? LANE_SHORT[r.lane].label : ""),
+        cell: (r) => (
+          <>
+            <LaneBadge lane={r.lane} />
+            {r.needsReview && (
+              <span className="ml-1">
+                <Badge tone="warn" title="The classifier wasn't sure — confirm it on Statements › Categorize">
+                  ?
+                </Badge>
+              </span>
+            )}
+          </>
+        ),
+      },
+      { id: "category", label: "Category", text: (r) => r.category?.name ?? "Other", sort: (r) => r.category?.name ?? "Other", cell: (r) => <CategoryCell r={r} answer={answer} /> },
+      { id: "filedBy", label: "Filed by", optional: true, text: (r) => (r.userLocked ? "you" : (r.classifiedBy ?? "")), sort: (r) => (r.userLocked ? "you" : (r.classifiedBy ?? "")), className: `${table.td} whitespace-nowrap text-xs text-muted` },
+      {
+        id: "amount",
+        label: "Amount",
+        align: "right",
+        sort: (r) => Math.abs(r.amountCents),
+        // The row as its statement prints it, how it is filed and where it counts (book/proof/rowProof).
+        figure: (r) => ({ text: formatUsdFromCents(r.amountCents), proof: { descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents } }),
+        className: `${table.tdR} font-medium`,
+        cell: (r) => <AmountCell r={r} paidBackCents={paidBack[r.id] ?? 0} onPaidBack={() => setPaidBackFor(r.id)} />,
+      },
+    ],
+    [showAccount, answer, paidBack],
+  );
+
   return (
-    <div className={table.wrap} style={maxHeight ? { maxHeight, overflowY: "auto" } : undefined}>
-      <table className={table.table}>
-        <thead className={`${table.head} sticky top-0 z-10 bg-surface`}>
-          <tr>
-            <SortTh k="date" label="Date" sort={sort} toggle={toggle} />
-            <SortTh k="name" label="Description" sort={sort} toggle={toggle} />
-            {showAccount && <th className={table.th}>Account</th>}
-            <th className={table.th}>Counts as</th>
-            <th className={table.th}>Category</th>
-            <SortTh k="amount" label="Amount" sort={sort} toggle={toggle} right />
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((r) => (
-            <Row key={r.id} r={r} api={api} onChanged={onChanged} showAccount={showAccount} paidBackCents={paidBack[r.id] ?? 0} onPaidBack={() => setPaidBackFor(r.id)} />
-          ))}
-        </tbody>
-      </table>
+    <>
+      <DataTable
+        id="transactions"
+        label="Transactions"
+        rows={rows}
+        columns={columns}
+        rowKey={(r) => r.id}
+        maxHeight={maxHeight}
+        rowHeight={42}
+        {...(serverSort ? { sort: serverSort, onSort: (k: string) => onSort?.(k as SortKey) } : { defaultSort: { key: "date", desc: true } })}
+        filterPlaceholder="Filter the rows listed…"
+        select={{ actions: (picked, clear) => <BulkEdit picked={picked} answer={answer} onDone={clear} /> }}
+      />
       <PaidBackDrawer api={api} expenseId={paidBackFor} onClose={() => setPaidBackFor(null)} onChanged={onPaidBackChanged} />
+    </>
+  );
+}
+
+type Answer = (ids: string[], change: { category?: string; lane?: Lane; applyToMerchant?: boolean; reviewed?: boolean }, said: string) => Promise<boolean>;
+
+/**
+ * Files rows (one or many) through the batch-answers endpoint, and says what changed with an
+ * Undo that puts back exactly what the answer replaced (the server keeps it: lib/review/answerRows).
+ */
+function useAnswer(api: Api, onChanged: () => void): Answer {
+  return useCallback<Answer>(
+    async (ids, change, said) => {
+      try {
+        const r = await api.call<{ undoId?: string; affected?: number }>("/api/transactions/answers", { method: "POST", json: { ids, ...change } });
+        notifyLedgerChanged();
+        onChanged();
+        const n = r.affected ?? ids.length;
+        notify(`${said}${n > ids.length ? ` (${n.toLocaleString()} rows with the merchant)` : ""}.`, {
+          undo: r.undoId
+            ? async () => {
+                await api.call(`/api/transactions/answers?undo=${encodeURIComponent(r.undoId!)}`, { method: "DELETE" });
+                notifyLedgerChanged();
+                onChanged();
+                notify("Put back as it was.", { tone: "info" });
+              }
+            : undefined,
+        });
+        return true;
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Couldn't save that.", { tone: "bad" });
+        return false;
+      }
+    },
+    [api, onChanged],
+  );
+}
+
+function BulkEdit({ picked, answer, onDone }: { picked: TxnRow[]; answer: Answer; onDone: () => void }) {
+  const [category, setCategory] = useState(picked[0]?.category?.name ?? "Other");
+  const [lane, setLane] = useState<Lane | "">("");
+  const [busy, setBusy] = useState(false);
+  const ids = picked.map((r) => r.id);
+  const n = `${ids.length.toLocaleString()} row${ids.length === 1 ? "" : "s"}`;
+  const run = async (change: Parameters<Answer>[1], said: string) => {
+    setBusy(true);
+    if (await answer(ids, change, said)) onDone();
+    setBusy(false);
+  };
+  return (
+    <>
+      <CategorySelect value={category} onChange={setCategory} />
+      <LaneSelect value={lane} onChange={setLane} />
+      <button type="button" className={btn.primary} disabled={busy} onClick={() => void run({ category, ...(lane ? { lane } : {}) }, `Filed ${n} as ${category}`)}>
+        File {n}
+      </button>
+      {picked.some((r) => r.needsReview) && (
+        <button type="button" className={btn.secondary} disabled={busy} onClick={() => void run({ reviewed: true }, `Marked ${n} reviewed`)}>
+          Mark reviewed
+        </button>
+      )}
+    </>
+  );
+}
+
+function CategoryCell({ r, answer }: { r: TxnRow; answer: Answer }) {
+  const current = r.category?.name ?? "Other";
+  const [pick, setPick] = useState(current);
+  const [busy, setBusy] = useState(false);
+  // A new answer from the server is the row's category now (adjusted during render, not in an effect).
+  const [seen, setSeen] = useState(current);
+  if (current !== seen) {
+    setSeen(current);
+    setPick(current);
+  }
+  const changed = pick !== current;
+  const save = async (applyToMerchant: boolean) => {
+    setBusy(true);
+    const ok = await answer([r.id], { category: pick, applyToMerchant }, applyToMerchant ? `Every ${r.merchantKey} row is now ${pick}` : `${r.payee ?? "The row"} is now ${pick}`);
+    if (!ok) setPick(current);
+    setBusy(false);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <CategorySelect value={pick} onChange={setPick} className={r.userLocked ? "border-info/60" : ""} />
+      {changed && (
+        <>
+          <button type="button" className={btn.primary} disabled={busy} onClick={() => void save(false)} title="Change this row only">
+            This row
+          </button>
+          {!isGenericMerchantKey(r.merchantKey) && (
+            <button type="button" className={btn.secondary} disabled={busy} onClick={() => void save(true)} title={`Teach a rule: every row from ${r.merchantKey}`}>
+              All {r.merchantKey}
+            </button>
+          )}
+          <button type="button" className={btn.ghost} onClick={() => setPick(current)} aria-label="Cancel">
+            ✕
+          </button>
+        </>
+      )}
     </div>
   );
 }
 
-function Row({
-  r,
-  api,
-  onChanged,
-  showAccount,
-  paidBackCents,
-  onPaidBack,
-}: {
-  r: TxnRow;
-  api: Api;
-  onChanged: () => void;
-  showAccount: boolean;
-  paidBackCents: number;
-  onPaidBack: () => void;
-}) {
-  const current = r.category?.name ?? "Other";
-  const [pick, setPick] = useState(current);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const changed = pick !== current;
-
-  const save = async (applyToMerchant: boolean) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.call(`/api/transactions/${r.id}`, { method: "PATCH", json: { category: pick, applyToMerchant } });
-      notifyLedgerChanged();
-      onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function AmountCell({ r, paidBackCents, onPaidBack }: { r: TxnRow; paidBackCents: number; onPaidBack: () => void }) {
   return (
-    <tr className={`group ${table.trHover}`}>
-      <td className={`${table.td} num whitespace-nowrap text-muted`}>{r.date.slice(0, 10)}</td>
-      <td className={`${table.td} w-full max-w-0 min-w-[12rem]`}>
-        <div className="truncate text-fg" title={r.payee ?? undefined}>
-          {r.payee ?? NA}
-        </div>
-        {r.detail && (
-          <div className="truncate text-[11px] text-muted" title={r.detail}>
-            {r.detail}
-          </div>
-        )}
-      </td>
-      {showAccount && <td className={`${table.td} whitespace-nowrap text-xs text-muted`}>{r.account.name}</td>}
-      <td className={table.td}>
-        <LaneBadge lane={r.lane} />
-        {r.needsReview && (
-          <span className="ml-1">
-            <Badge tone="warn" title="The classifier wasn't sure — confirm it on Statements › Categorize">
-              ?
-            </Badge>
-          </span>
-        )}
-      </td>
-      <td className={table.td}>
-        <div className="flex flex-wrap items-center gap-1">
-          <CategorySelect value={pick} onChange={setPick} className={r.userLocked ? "border-info/60" : ""} />
-          {changed && (
-            <>
-              <button type="button" className={btn.primary} disabled={busy} onClick={() => void save(false)} title="Change this row only">
-                This row
-              </button>
-              {!isGenericMerchantKey(r.merchantKey) && (
-                <button type="button" className={btn.secondary} disabled={busy} onClick={() => void save(true)} title={`Teach a rule: every row from ${r.merchantKey}`}>
-                  All {r.merchantKey}
-                </button>
-              )}
-              <button type="button" className={btn.ghost} onClick={() => setPick(current)} aria-label="Cancel">
-                ✕
-              </button>
-            </>
+    <span className={r.amountCents > 0 ? "text-pos" : "text-fg"}>
+      <ProofValue proof={{ descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents }}>{formatUsdFromCents(r.amountCents)}</ProofValue>
+      {r.lane === "EXPENSE" && r.amountCents < 0 && (
+        <div className="mt-0.5 text-2xs font-normal">
+          {paidBackCents > 0 ? (
+            <button type="button" onClick={onPaidBack} title="Paid back by a reimbursement: see or change the links">
+              <Badge tone="pos">{paidBackCents >= -r.amountCents ? "paid back" : `${formatUsdFromCents(paidBackCents)} paid back`}</Badge>
+            </button>
+          ) : (
+            <button type="button" className={`${btn.link} opacity-0 focus:opacity-100 group-hover:opacity-100`} onClick={onPaidBack} title="Link this charge to the reimbursement that paid it back">
+              Paid back?
+            </button>
           )}
         </div>
-        {error && <div className="mt-1 text-xs text-neg">{error}</div>}
-      </td>
-      <td className={`${table.tdR} font-medium ${r.amountCents > 0 ? "text-pos" : "text-fg"}`}>
-        {/* The row as its statement prints it, how it is filed and where it counts (book/proof/rowProof). */}
-        <ProofValue proof={{ descriptor: { report: "row", rowId: r.id }, shownCents: r.amountCents }}>{formatUsdFromCents(r.amountCents)}</ProofValue>
-        {r.lane === "EXPENSE" && r.amountCents < 0 && (
-          <div className="mt-0.5 text-[11px] font-normal">
-            {paidBackCents > 0 ? (
-              <button type="button" onClick={onPaidBack} title="Paid back by a reimbursement: see or change the links">
-                <Badge tone="pos">{paidBackCents >= -r.amountCents ? "paid back" : `${formatUsdFromCents(paidBackCents)} paid back`}</Badge>
-              </button>
-            ) : (
-              <button type="button" className={`${btn.link} opacity-0 focus:opacity-100 group-hover:opacity-100`} onClick={onPaidBack} title="Link this charge to the reimbursement that paid it back">
-                Paid back?
-              </button>
-            )}
-          </div>
-        )}
-      </td>
-    </tr>
+      )}
+    </span>
   );
 }
 

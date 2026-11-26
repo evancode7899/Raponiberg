@@ -320,9 +320,14 @@ export function TransactionsPanel({ requiresApiSecret }: { requiresApiSecret: bo
                 <div className="mt-3 flex items-center gap-3 text-xs text-muted">
                   Showing the {newestFirst ? "latest" : "first"} {data.transactions.length.toLocaleString()} of {data.total.count.toLocaleString()}
                   {newestFirst ? "" : " in this order"}.
-                  {limit < 2000 && (
-                    <button type="button" className={btn.secondary} onClick={() => setLimit(Math.min(2000, limit * 3))} data-audit-more="">
+                  {limit < 20_000 && (
+                    <button type="button" className={btn.secondary} onClick={() => setLimit(Math.min(20_000, limit * 3))} data-audit-more="">
                       Show more
+                    </button>
+                  )}
+                  {limit < 20_000 && (
+                    <button type="button" className={btn.ghost} onClick={() => setLimit(20_000)}>
+                      Show all
                     </button>
                   )}
                 </div>

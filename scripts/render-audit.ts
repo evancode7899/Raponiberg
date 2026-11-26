@@ -226,6 +226,8 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
   if (TODAY) await context.clock.setFixedTime(new Date(`${TODAY}T12:00:00`));
   // The flag the lock screen sets once its password is accepted (components/shell/LockScreen.tsx).
   if (UNLOCK) await context.addInitScript(() => sessionStorage.setItem("pf-unlocked", "1"));
+  // Long tables draw only the rows in view (components/ui/DataTable.tsx); the audit reads every row a list holds.
+  await context.addInitScript(() => sessionStorage.setItem("pf-draw-every-row", "1"));
   // The audit only looks: any write (a saved input, a decision) is refused, so the data the sweep cleared is the data drawn.
   await context.route(/\/api\//, (r) => {
     const q = r.request();
