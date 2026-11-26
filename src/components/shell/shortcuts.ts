@@ -10,6 +10,7 @@ export const APP_KEYS: Shortcut[] = [
   ["[  ]", "Previous and next tab of the page"],
   ["?", "Show the keys for where you are"],
   ["SAVE name", "In the command bar: keep this page, tab and filters as a view; type its name to come back"],
+  ["SPLIT code", "In the command bar: that page beside this one (SPLIT alone closes it)"],
 ];
 
 /** Every table's keys (components/shell/KeyMap.tsx, components/ui/DataTable.tsx). */

@@ -5,6 +5,8 @@ import { figuresOfSummary } from "@/components/shell/commandFigures";
 import { suggest, type CommandContext, type Suggestion } from "@/components/shell/commandSearch";
 import { notify } from "@/components/ui/Feedback";
 import { openProof } from "@/components/ui/proof/ProofProvider";
+import { openSplit } from "@/components/shell/SplitView";
+import { TOUR_EVENT } from "@/components/shell/Tour";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import { localToday } from "@/lib/dates/isoDate";
 import type { CommandIndex } from "@/lib/commandIndex";
@@ -113,7 +115,9 @@ export function TerminalCommandBar({ onShutdown }: { onShutdown?: () => void }) 
       setOpen(false);
       inputRef.current?.blur();
       if (s.action === "shutdown") return onShutdown?.();
+      if (s.action === "tour") return void window.dispatchEvent(new Event(TOUR_EVENT));
       if (s.action === "save-view") return void saveView(s.arg ?? "");
+      if (s.action === "split") return openSplit(s.href || null);
       if (s.proof) return openProof(s.proof as ProofTarget);
       router.push(s.href);
     },

@@ -128,3 +128,17 @@ describe("periods", () => {
     expect(periodOf("dining", "2031-03-31")).toBeNull();
   });
 });
+
+describe("split view", () => {
+  it("SPLIT code puts that page beside this one, SPLIT alone closes it", () => {
+    expect(suggest("split tax")[0]).toMatchObject({ code: "SPLIT", action: "split", href: "/taxes" });
+    expect(suggest("split cf trends")[0]).toMatchObject({ action: "split", href: "/cash-flow?tab=trends" });
+    expect(suggest("split")[0]).toMatchObject({ action: "split", href: "" });
+  });
+});
+
+describe("tour", () => {
+  it("TOUR starts the guided tour rather than opening a page", () => {
+    expect(suggest("tour")[0]).toMatchObject({ code: "TOUR", action: "tour" });
+  });
+});

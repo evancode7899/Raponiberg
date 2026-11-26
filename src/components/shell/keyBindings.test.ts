@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { csvOfCells, JUMPS, jumpTo, keySections, PAGE_KEYS, stepTab } from "./keyBindings";
 import { PAGE_TABS } from "./commandSearch";
 import { APP_KEYS, CATEGORIZE_KEYS, DASHBOARD_KEYS, TABLE_KEYS } from "./shortcuts";
-import { TERMINAL_COMMANDS } from "./terminalCommands";
+import { NAV_GROUPS, TERMINAL_COMMANDS } from "./terminalCommands";
 
 /** Where each page with tabs draws them (as in commandSearch.test.ts). */
 const TAB_SOURCES: Record<string, string> = {
@@ -78,5 +78,10 @@ describe("the sidebar's groups", () => {
     const protection = TERMINAL_COMMANDS.filter((c) => c.group === "Protection").map((c) => c.mnemonic);
     expect(protection).toEqual(["INS", "MED", "HSA"]);
     for (const href of ["/insurance", "/medical", "/hsa"]) expect(Object.values(JUMPS)).toContain(href);
+  });
+
+  it("are five, with Data and Settings together", () => {
+    expect(NAV_GROUPS).toEqual(["Overview", "Net worth & planning", "Income & expenses", "Protection", "Data & settings"]);
+    for (const c of TERMINAL_COMMANDS) expect(NAV_GROUPS, c.mnemonic).toContain(c.group);
   });
 });

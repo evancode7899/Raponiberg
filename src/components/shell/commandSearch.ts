@@ -15,7 +15,7 @@ export type Suggestion = {
   label: string;
   hint: string;
   href: string;
-  action?: TerminalCommand["action"] | "save-view";
+  action?: TerminalCommand["action"] | "save-view" | "split";
   /** For SAVE: the name to save the view under. */
   arg?: string;
   /** A figure: picking it opens its proof rather than a page. */
@@ -126,6 +126,12 @@ export function suggest(raw: string, limit = 14, ctx: CommandContext = {}): Sugg
   if (first === "save") {
     const name = typed.slice(typed.indexOf(" ") + 1).trim();
     return more.length ? [{ id: "save", code: "SAVE", label: `Save this view as “${name}”`, hint: "this page, its tab and its filters, to come back to by name", href: "", action: "save-view", arg: name }] : [];
+  }
+  // SPLIT code: that page beside this one; SPLIT alone closes the split.
+  if (first === "split") {
+    if (!more.length) return [{ id: "split", code: "SPLIT", label: "Close the split view", hint: "back to one page", href: "", action: "split" }];
+    const target = suggest(typed.slice(typed.indexOf(" ") + 1), 6, ctx).find((s) => s.href && !s.action && !s.proof);
+    return target ? [{ id: `split:${target.href}`, code: "SPLIT", label: `${target.label} beside this page`, hint: target.hint, href: target.href, action: "split" }] : [];
   }
   // A period anywhere after the first word narrows the rows; the rest are the words.
   const today = ctx.today ?? new Date().toISOString().slice(0, 10);
