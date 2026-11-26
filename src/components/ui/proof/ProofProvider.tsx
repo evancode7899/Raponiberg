@@ -76,16 +76,23 @@ export function ProofProvider({ children }: { children: ReactNode }) {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let staleTries = 0;
+    // One read at a time: the page's data often arrives before the first answer does, and a
+    // second read then would fetch the whole sweep again (megabytes on a big Book). What lands
+    // is checked against the page's data below, and read again if it's stale.
+    let inflight = false;
     const later = (ms: number) => {
       clearTimeout(timer);
       timer = setTimeout(read, ms);
     };
     const read = () => {
       clearTimeout(timer);
+      if (inflight) return;
+      inflight = true;
       fetch("/api/proof/sweep", { headers: apiSecretHeaders() })
         .then(async (r) => sweepAnswer(r.status, await r.json().catch(() => null)))
         .catch((e: Error) => sweepAnswer(null, null, e.message))
         .then((next) => {
+          inflight = false;
           if (!live) return;
           // The same verdicts keep the same state: a new one redraws every figure on the page.
           setSweep((old) => (old.stamp === next.stamp && old.status === next.status && old.status === "ready" ? old : next));
