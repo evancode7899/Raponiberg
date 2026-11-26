@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { financialIndependenceYear, projectOutlook, retirementTax, walkAwayTable, type OutlookPlan } from "../profile/outlook";
 import { DEFAULT_OUTLOOK } from "../profile/settings";
 import { taxYearParams } from "../tax/params";
-import { accessBridge, analyzeFire, drawFor, firePlans, extended, fireNumber, fiLevers, fiTornado, fiYear, tornadoSpan, randomReturns, savingsRateCurve, sensitivityGrid, spendingCuts, stressTest } from "./fire";
+import { accessBridge, analyzeFire, drawFor, firePlans, extended, fireNumber, fiLevers, fiTornado, fiYear, sequenceRisk, tornadoSpan, randomReturns, savingsRateCurve, sensitivityGrid, spendingCuts, stressTest } from "./fire";
 
 // All amounts below are invented.
 const fp = taxYearParams(2026).federal;
@@ -208,5 +208,21 @@ describe("what moves the FI date most", () => {
     expect(ret.low.fiYear ?? Infinity).toBeGreaterThanOrEqual(base);
     const living = bars.find((b) => b.key === "living")!;
     expect(living.low.fiYear!).toBeLessThanOrEqual(base);
+  });
+});
+
+describe("sequence risk", () => {
+  it("pays less income when the bad years come first, on the same average return", () => {
+    const p = { ...plan, walkAwayYear: plan.start.year + 3 };
+    const s = sequenceRisk(p)!;
+    expect(s.spanYears).toBe(10);
+    expect(s.first.income).toBeLessThan(s.last.income);
+    expect(s.first.shortYears).toBeGreaterThanOrEqual(s.last.shortYears);
+    // Draws are a share of the balance: the order leaves the end where it is.
+    expect(Math.abs(s.first.end - s.last.end)).toBeLessThan(100);
+  });
+
+  it("has nothing to show without a walk-away year", () => {
+    expect(sequenceRisk({ ...plan, walkAwayYear: null })).toBeNull();
   });
 });

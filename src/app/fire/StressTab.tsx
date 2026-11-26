@@ -3,7 +3,9 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, NotFigure, StatCell, StatGrid, WhatIf } from "@/components/ui/kit";
-import { stressTest } from "@/lib/fire/fire";
+import { SEQUENCE_CRASH, sequenceRisk, stressTest } from "@/lib/fire/fire";
+import { table } from "@/components/ui/kit";
+import { usd0 } from "@/lib/formatMoney";
 import { axisUsd, NA } from "@/lib/formatMoney";
 import { useDeferredValue, useMemo } from "react";
 import { Area, AreaChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
@@ -43,6 +45,7 @@ export function StressTab({ f, dollars, setDollars, volatility, proof }: FirePro
       )}
       <Fan f={f} s={s} dollars={dollars} setDollars={setDollars} />
       <Odds s={s} f={f} />
+      <SequenceCard plan={plan} />
       <p className="text-[11px] text-muted">
         <NotFigure why="your settings and how the model works">
           Returns are drawn at random each year (lognormal, average {pct(plan.returnRate)}, standard deviation {pct(volatility, 0)} — set under Markets); a stock-heavy portfolio has
@@ -115,6 +118,45 @@ function Odds({ s, f }: { s: ReturnType<typeof stressTest>; f: FireProps["f"] })
           </AreaChart>
         </RechartsResponsive>
       </div>
+    </Card>
+  );
+}
+
+/**
+ * Sequence risk by example (lib/fire/fire.ts sequenceRisk): the first ten retired years on the
+ * plan's average return, the two bad years first or last. A calculator, like the paths above.
+ */
+function SequenceCard({ plan }: { plan: FireProps["f"]["plan"] }) {
+  const s = useMemo(() => sequenceRisk(plan), [plan]);
+  if (!s) return null;
+  const crash = SEQUENCE_CRASH.map((x) => `${Math.round(x * 100)}%`).join(" and ");
+  return (
+    <Card
+      title="Bad years first or last"
+      subtitle={`The first ${s.spanYears} retired years from ${plan.walkAwayYear} earn the plan's average return either way, with a ${crash} year at the start or at the end. Draws are a set share of the balance, so the end balance is the same; what changes is the income along the way.`}
+    >
+      <WhatIf why="the plan rerun with the same average return in two orders" className={table.wrap}>
+        <table className={`${table.table} min-w-[30rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th} />
+              <th className={table.thR}>Income over the {s.spanYears} years, after tax</th>
+              <th className={table.thR}>Years short of living cost</th>
+              <th className={table.thR}>Net worth, {plan.horizonYear}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[s.first, s.last].map((p) => (
+              <tr key={p.label} className={table.tr}>
+                <td className={table.td}>{p.label}</td>
+                <td className={table.tdR}>{usd0(p.income)}</td>
+                <td className={`${table.tdR} ${p.shortYears ? "text-warn" : ""}`}>{p.shortYears || "—"}</td>
+                <td className={table.tdR}>{usd0(p.end)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </WhatIf>
     </Card>
   );
 }
