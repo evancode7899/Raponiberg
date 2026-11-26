@@ -47,6 +47,8 @@ export type AuditAction =
   | "calendar_item_reopened"
   | "forecast_kept"
   | "cancel_list_added"
+  | "fire_scenario_saved"
+  | "fire_scenario_removed"
   | "cancel_list_removed";
 
 /** Routes authenticated with `x-api-secret` (when secret is set). */

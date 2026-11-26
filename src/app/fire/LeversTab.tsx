@@ -6,7 +6,11 @@ import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { fiLevers, firstYearIncome, fiTornado, fiYear, LEVER_YEARLY, savingsRateCurve, sensitivityGrid, spendingCuts, type TornadoBar } from "@/lib/fire/fire";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { applyScenario, scenarioOutcome, type FireScenario } from "@/lib/fire/scenarios";
+import { useApi } from "@/components/ledger/useApi";
+import { notify } from "@/components/ui/Feedback";
+import { btn, inputCls, MoneyInput } from "@/components/ui/kit";
 import { CartesianGrid, Line, LineChart, ReferenceDot, Tooltip, XAxis, YAxis } from "recharts";
 import { Living } from "./OverviewTab";
 import { pct, short, usd, yearAge, type FireProof, type FireProps } from "./ui";
@@ -45,6 +49,7 @@ export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
   return (
     <>
       <Tornado plan={plan} base={base} />
+      <Scenarios plan={plan} />
       <SavingsRateChart f={f} curve={curve} d={d} pf={pf} />
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <Card
@@ -247,6 +252,108 @@ function Tornado({ plan, base }: { plan: FireProps["f"]["plan"]; base: number | 
           );
         })}
       </WhatIf>
+    </Card>
+  );
+}
+
+/**
+ * Saved scenarios side by side (lib/fire/scenarios.ts): the plan as set, then each kept
+ * scenario's changes run through the same engine. Kept in the data folder by name; a calculator.
+ */
+function Scenarios({ plan }: { plan: FireProps["f"]["plan"] }) {
+  const api = useApi(false);
+  const [list, setList] = useState<FireScenario[]>([]);
+  const [draft, setDraft] = useState({ name: "", workYears: 0, livingMonthly: 0, oneOffAmount: 0, oneOffYear: plan.start.year + 1 });
+  useEffect(() => {
+    if (!api.ready) return;
+    api
+      .call<{ scenarios: FireScenario[] }>("/api/fire/scenarios")
+      .then((x) => setList(x.scenarios))
+      .catch(() => {});
+  }, [api]);
+  const post = (json: Record<string, unknown>, said: string) =>
+    api
+      .call<{ scenarios: FireScenario[] }>("/api/fire/scenarios", { method: "POST", json })
+      .then((x) => {
+        setList(x.scenarios);
+        notify(said, { tone: "info" });
+      })
+      .catch((e: Error) => notify(e.message, { tone: "bad" }));
+  const cols = useMemo(() => [{ id: "plan", name: "As planned", o: scenarioOutcome(plan) }, ...list.map((s) => ({ id: s.id, name: s.name, o: scenarioOutcome(applyScenario(plan, s)) }))], [plan, list]);
+  const row = (label: string, v: (o: (typeof cols)[number]["o"]) => string) => (
+    <tr className={table.tr}>
+      <td className={table.td}>{label}</td>
+      {cols.map((c) => (
+        <td key={c.id} className={table.tdR}>
+          {v(c.o)}
+        </td>
+      ))}
+    </tr>
+  );
+  const save = () =>
+    post(
+      { op: "save", name: draft.name, workYears: draft.workYears, livingDelta: draft.livingMonthly * 12, oneOff: draft.oneOffAmount > 0 ? { year: draft.oneOffYear, amount: draft.oneOffAmount } : null },
+      `Kept: ${draft.name}`,
+    ).then(() => setDraft((d) => ({ ...d, name: "" })));
+  return (
+    <Card title="Scenarios side by side" subtitle="The plan as set, then each scenario you keep: more or fewer years of work, a change in living cost, a one-off cost like a down payment. Kept by name in the data folder.">
+      <WhatIf why="the plan rerun with each scenario's changes" className={table.wrap}>
+        <table className={`${table.table} min-w-[32rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th} />
+              {cols.map((c) => (
+                <th key={c.id} className={table.thR}>
+                  {c.name}
+                  {c.id !== "plan" && (
+                    <button type="button" className={`${btn.ghost} ml-1 !px-1 !py-0 text-[11px]`} aria-label={`Remove ${c.name}`} onClick={() => void post({ op: "remove", id: c.id }, `Removed: ${c.name}`)}>
+                      ✕
+                    </button>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {row("FI year", (o) => (o.fiYear == null ? "not in 60 yrs" : String(o.fiYear)))}
+            {row("Walk away", (o) => (o.walkAwayYear == null ? "—" : String(o.walkAwayYear)))}
+            {row("Net worth at walk-away", (o) => (o.netWorthAtWalkAway == null ? "—" : short(o.netWorthAtWalkAway)))}
+            {row("First retired year: income ÷ living cost", (o) => (o.firstCoverage == null ? "—" : pct(o.firstCoverage, 0)))}
+            {row(`Net worth, ${plan.horizonYear}`, (o) => short(o.endNetWorth))}
+          </tbody>
+        </table>
+      </WhatIf>
+      <form
+        className="mt-3 flex flex-wrap items-end gap-2 text-xs"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (draft.name.trim()) void save();
+        }}
+      >
+        <label className="flex flex-col gap-0.5">
+          <span className="text-muted">Name</span>
+          <input className={`${inputCls} w-40`} value={draft.name} placeholder="One more year" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-muted">Years more work</span>
+          <input className={`${inputCls} w-20`} type="number" min={-20} max={20} value={draft.workYears} onChange={(e) => setDraft({ ...draft, workYears: Number(e.target.value) || 0 })} />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-muted">Living cost a month more</span>
+          <MoneyInput cents={draft.livingMonthly} ariaLabel="Living cost a month more" onChange={(c) => setDraft({ ...draft, livingMonthly: c ?? 0 })} />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-muted">One-off cost</span>
+          <MoneyInput cents={draft.oneOffAmount} allowNegative={false} ariaLabel="One-off cost" onChange={(c) => setDraft({ ...draft, oneOffAmount: c ?? 0 })} />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-muted">in</span>
+          <input className={`${inputCls} w-20`} type="number" value={draft.oneOffYear} onChange={(e) => setDraft({ ...draft, oneOffYear: Number(e.target.value) || plan.start.year + 1 })} />
+        </label>
+        <button type="submit" className={btn.secondary} disabled={!draft.name.trim()}>
+          Keep scenario
+        </button>
+      </form>
     </Card>
   );
 }
