@@ -8,6 +8,9 @@ import type { CardPerksPage } from "@/lib/cardPerks/page";
 import type { CardScore } from "@/lib/cardPerks/types";
 import { usd0 } from "@/lib/formatMoney";
 import { CardFace, fmtCpp, fmtRate, shortName, TERMS, useCardFigures } from "./parts";
+import { nextPurchase } from "@/lib/cardPerks/nextPurchase";
+import { inputCls } from "@/components/ui/kit";
+import { useState } from "react";
 
 export function OptimizerTab({ r }: { r: CardPerksPage }) {
   const byId = new Map(r.cards.map((c) => [c.accountId, c]));
@@ -22,6 +25,7 @@ export function OptimizerTab({ r }: { r: CardPerksPage }) {
           title="Which card to reach for"
           subtitle={`The open card that earns the most on each kind of purchase${points.length ? `, with points at ${[...new Set(points.map((c) => `${c.program.name} ${fmtCpp(c.centsPerPoint)}`))].join(", ")}` : ""} (change point values on Setup).`}
         >
+          <NextPurchase r={r} byId={byId} />
           <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             {o.tips.map((t) => {
               const c = byId.get(t.accountId);
@@ -111,6 +115,29 @@ function SplitBar({ parts, byId, total, share }: { parts: { accountId: string; s
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** The next purchase (lib/cardPerks/nextPurchase.ts): a few words, and the card to reach for. The command line opens it as "CARD <words>". */
+function NextPurchase({ r, byId }: { r: CardPerksPage; byId: Map<string, CardScore> }) {
+  // The command line's "CARD <words>" arrives as ?q= (the tab renders only in the browser, once the report is in).
+  const [words, setWords] = useState(() => (typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("q") ?? "")));
+  const hit = nextPurchase(words, r.optimizer.tips);
+  const c = hit ? byId.get(hit.tip.accountId) : undefined;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+      <label className="flex items-center gap-2">
+        <span className="text-muted">Next purchase</span>
+        <input className={`${inputCls} w-56`} value={words} placeholder="whole foods, flights, uber…" onChange={(e) => setWords(e.target.value)} aria-label="What the next purchase is" />
+      </label>
+      {hit && c && (
+        <span className="text-fg-2">
+          <span className="text-muted">{hit.type.label}:</span> reach for <span className="font-medium text-fg">{shortName(c)}</span>,{" "}
+          <NotFigure why={TERMS}>{fmtRate(c.rewards.kind, hit.tip.rate)}</NotFigure>
+        </span>
+      )}
+      {words.trim().length >= 2 && !hit && <span className="text-muted">No open card with rewards to suggest.</span>}
     </div>
   );
 }

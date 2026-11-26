@@ -38,6 +38,8 @@ const TABS: (Suggestion & { page: TerminalCommand; words: string })[] = Object.e
 const SPENDING = CATEGORIES.filter((c) => c.kind === "EXPENSE").map((c) => c.name);
 
 const toSuggestion = (c: TerminalCommand): Suggestion => ({ id: c.mnemonic, code: c.mnemonic, label: c.label, hint: c.description ?? "", href: c.href, ...(c.action ? { action: c.action } : {}) });
+/** "CARD whole foods": the card to reach for (Card perks › Best card's next purchase). */
+const nextCard = (words: string): Suggestion => ({ id: `card:${words}`, code: "CARD", label: `Which card for “${words}”`, hint: "Card perks › Best card", href: `/card-perks?tab=best-card&q=${encodeURIComponent(words)}` });
 const search = (words: string): Suggestion => ({ id: `find:${words}`, code: "FIND", label: `Search transactions for “${words}”`, hint: "every statement row", href: `/statements?tab=transactions&q=${encodeURIComponent(words)}` });
 
 export function suggest(raw: string, limit = 14): Suggestion[] {
@@ -47,6 +49,7 @@ export function suggest(raw: string, limit = 14): Suggestion[] {
   const rest = more.join(" ");
   const find = /^(find|search|f)$/.test(first!) && rest ? rest : null;
   if (find) return [search(find)];
+  if (/^(card|which)$/.test(first!) && rest) return [nextCard(rest.replace(/^card\s+(for\s+)?/, ""))];
 
   const out: Suggestion[] = [];
   const add = (s: Suggestion) => {

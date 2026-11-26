@@ -24,6 +24,9 @@ const TYPES: { key: string; label: string; test: (r: PerkRow, text: string) => b
   { key: "other", label: "Everything else", test: () => true },
 ];
 
+/** The kinds of purchase the optimizer and the wallet tips go by, in the order they're tried. */
+export const SPEND_TYPES: readonly { key: string; label: string }[] = TYPES;
+
 export const spendType = (r: PerkRow) => {
   const text = `${r.payee} ${r.detail ?? ""}`;
   return TYPES.find((t) => t.test(r, text))!;
