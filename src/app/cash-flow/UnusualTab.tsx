@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, EmptyState, ErrorNote, Loading, table } from "@/components/ui/kit";
+import { Card, EmptyState, ErrorNote, Loading, NotFigure, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { anomalyProof, anomalyRowProof as rowProof, RULES, type AnomaliesReport, type AnomalyKind } from "@/lib/book/reports/anomalies";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
@@ -37,7 +37,7 @@ export function UnusualTab({ ctx }: { ctx: Ctx }) {
       {ORDER.map((kind) => {
         const items = r.items.filter((i) => i.kind === kind);
         return (
-          <Card key={kind} title={`${RULES[kind].title} (${items.length})`} subtitle={RULES[kind].how}>
+          <Card key={kind} title={`${RULES[kind].title} (${items.length})`} subtitle={<NotFigure why="the rule's thresholds, not figures of yours">{RULES[kind].how}</NotFigure>}>
             {items.length === 0 ? (
               <p className="text-xs text-muted">None.</p>
             ) : (

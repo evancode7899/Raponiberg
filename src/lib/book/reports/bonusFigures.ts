@@ -6,6 +6,12 @@ import type { PayDescriptor, PayLine } from "../proof/payProof.ts";
 import type { BonusesReport, BonusPayment, BonusYear, Tranche, VestWindow, WindowStatus } from "./bonuses.ts";
 
 /** One of the Bonuses page's figures, as its proof names it (bonusesProof.ts BonusesDescriptor). */
+/** What the letters awarded one person in one year but deferred (including to a deferral plan), as each letter states it, and the awards it adds. */
+export function deferredAwarded<A extends { personId: string; year: number; deferredCents: number; planDeferredCents: number }>(awards: readonly A[], personId: string, year: number): { cents: number; awards: A[] } {
+  const of = awards.filter((a) => a.personId === personId && a.year === year && a.deferredCents + a.planDeferredCents > 0);
+  return { cents: of.reduce((s, a) => s + a.deferredCents + a.planDeferredCents, 0), awards: of };
+}
+
 export type BonusFigureRef =
   | { figure: "window"; window: string; measure: "scheduled" | "paid" }
   | { figure: "tranche"; letterId: string; year: number; window: string; kind: string }

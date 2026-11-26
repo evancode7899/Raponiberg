@@ -15,7 +15,7 @@ export const PAGE_TABS: Record<string, [id: string, label: string][]> = {
   "/fire": [["plan", "Plan"], ["walk-away", "Walk-away income"], ["levers", "Levers"], ["stress", "Stress test"], ["playbook", "Playbook"]],
   "/home-budget": [["price", "Test a price"], ["rent", "Rent vs buy"], ["sensitivity", "Sensitivity"], ["mortgage", "Prepay vs invest"]],
   "/tax-accounts": [["inputs", "Inputs"]],
-  "/cash-flow": [["spending", "Spending"], ["trends", "Trends"], ["patterns", "Patterns"], ["yoy", "Year over year"], ["merchants", "Merchants"], ["recurring", "Recurring bills"], ["budget", "Budget"], ["income", "Income & savings"]],
+  "/cash-flow": [["spending", "Spending"], ["trends", "Trends"], ["patterns", "Patterns"], ["yoy", "Year over year"], ["merchants", "Merchants"], ["recurring", "Recurring bills"], ["unusual", "Unusual: duplicates, missing bills"], ["budget", "Budget"], ["income", "Income & savings"]],
   "/annual": [["one-offs", "One-off expenses"]],
   "/bonuses": [["schedule", "Vesting schedule"], ["payouts", "Bonus paychecks"]],
   "/taxes": [["worksheet", "Worksheet"], ["compare", "Joint vs separate"], ["income", "Income & W-2"], ["payments", "Payments"], ["w4", "W-4"], ["filed", "Filed return"], ["inputs", "Inputs"]],

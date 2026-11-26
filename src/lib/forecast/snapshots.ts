@@ -37,10 +37,10 @@ export function readForecastSnapshots(file = forecastSnapshotsFile()): ForecastS
  * Keeps the forecast as it stands. Unless `always`, nothing is kept when it projects the same
  * months as the latest snapshot (saving an unrelated setting). Returns the snapshot kept, or null.
  */
-export function keepForecast(f: Forecast, opts: { always?: boolean; reason: string; now?: Date; file?: string }): ForecastSnapshot | null {
+export function keepForecast(f: Forecast, opts: { always?: boolean; reason: string; now: Date; file?: string }): ForecastSnapshot | null {
   const file = opts.file ?? forecastSnapshotsFile();
   const all = readForecastSnapshots(file);
-  const snap = snapshotOf(f, (opts.now ?? new Date()).toISOString(), opts.reason);
+  const snap = snapshotOf(f, opts.now.toISOString(), opts.reason);
   const last = all.at(-1);
   if (!opts.always && last && JSON.stringify(last.months) === JSON.stringify(snap.months)) return null;
   const next = [...all, snap].slice(-MAX);

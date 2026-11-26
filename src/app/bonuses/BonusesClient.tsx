@@ -11,7 +11,7 @@ import type { PaymentKind } from "@/lib/bonuses/awardStore";
 import type { AwardMeasure, BonusesDescriptor } from "@/lib/book/proof/bonusesProof";
 import type { PayLine } from "@/lib/book/proof/payProof";
 import type { AwardRow, BonusesReport, BonusPayment, BonusWarning, Tranche, VestWindow, WindowStatus } from "@/lib/book/reports/bonuses";
-import { estimateDescriptor, expectedBonuses, figureReads, paidYearDescriptor, stubPayFigure, yearPayDescriptor } from "@/lib/book/reports/bonusFigures";
+import { deferredAwarded, estimateDescriptor, expectedBonuses, figureReads, paidYearDescriptor, stubPayFigure, yearPayDescriptor } from "@/lib/book/reports/bonusFigures";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { annualPayDescriptor } from "@/lib/profile/annualPay";
 import { buildForecast } from "@/lib/forecast/forecast";
@@ -204,7 +204,6 @@ function PayHistory({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null
   const years = fdata?.profile.years ?? [];
   const rows = years.flatMap((y) => (y.people ?? []).filter((p) => p.member && p.hasPay).map((p) => ({ y, p })));
   if (!rows.length) return null;
-  const deferredOf = (personId: string, year: number) => r.awards.filter((a) => a.personId === personId && a.year === year && a.deferredCents + a.planDeferredCents > 0);
   return (
     <Card title="Total pay by year" subtitle="Paid on the stubs each year, and what the letters awarded that year but deferred (at the value each letter states). The deferred part isn't added in: it's in the bonus of the year it pays out.">
       <div className={table.wrap}>
@@ -225,8 +224,7 @@ function PayHistory({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null
               const pay = (line: PayLine | PayLine[], cents: number): ProofTarget => ({ descriptor: annualPayDescriptor(y, p, line), shownCents: cents });
               const parts = [pay("base", p.salary), pay("bonus", p.bonus), pay(["employer-k401", "employer-hsa"], p.employer)];
               const total = p.salary + p.bonus + p.employer;
-              const deferred = deferredOf(p.personId, y.year);
-              const dCents = deferred.reduce((s, a) => s + a.deferredCents + a.planDeferredCents, 0);
+              const { cents: dCents, awards: deferred } = deferredAwarded(r.awards, p.personId, y.year);
               return (
                 <tr key={`${y.year}|${p.personId}`} className={table.trHover}>
                   <td className={`${table.td} num font-medium`}>

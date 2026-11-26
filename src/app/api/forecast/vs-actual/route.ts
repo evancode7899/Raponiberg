@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const { forecast } = await loadForecast(prisma);
   if (!forecast) return NextResponse.json({ error: "There's no forecast to keep: its starting point isn't proven yet." }, { status: 409 });
   try {
-    const snap = keepForecast(forecast, { always: true, reason: "kept by hand" });
+    const snap = keepForecast(forecast, { always: true, reason: "kept by hand", now: new Date() });
     await logAuditEvent({ action: "forecast_kept", actor: AUDIT_ACTOR_APP, payload: { id: snap!.id, months: snap!.months.length } });
     return NextResponse.json({ kept: snap!.id });
   } catch (e) {

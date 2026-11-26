@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest) {
   if ("outlook" in body) {
     try {
       const { forecast } = await loadForecast(prisma);
-      const snap = forecast ? keepForecast(forecast, { reason: "drivers saved" }) : null;
+      const snap = forecast ? keepForecast(forecast, { reason: "drivers saved", now: new Date() }) : null;
       if (snap) await logAuditEvent({ action: "forecast_kept", actor: AUDIT_ACTOR_APP, payload: { id: snap.id, months: snap.months.length } });
     } catch (e) {
       console.error("Keeping the forecast failed:", e instanceof Error ? e.message : e);

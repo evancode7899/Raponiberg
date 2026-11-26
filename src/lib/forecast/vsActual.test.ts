@@ -36,10 +36,10 @@ describe("forecast vs actual", () => {
   it("keeps a forecast as it was, and only when it moved", () => {
     const file = path.join(mkdtempSync(path.join(tmpdir(), "snaps-")), "forecast-snapshots.json");
     expect(readForecastSnapshots(file)).toEqual([]);
-    expect(keepForecast(forecast([500, 600]), { reason: "a", file })).not.toBeNull();
-    expect(keepForecast(forecast([500, 600]), { reason: "b", file })).toBeNull();
-    expect(keepForecast(forecast([500, 600]), { reason: "c", file, always: true })).not.toBeNull();
-    expect(keepForecast(forecast([500, 700]), { reason: "d", file })).not.toBeNull();
+    expect(keepForecast(forecast([500, 600]), { reason: "a", file, now: new Date(Date.UTC(2026, 0, 1)) })).not.toBeNull();
+    expect(keepForecast(forecast([500, 600]), { reason: "b", file, now: new Date(Date.UTC(2026, 0, 2)) })).toBeNull();
+    expect(keepForecast(forecast([500, 600]), { reason: "c", file, always: true, now: new Date(Date.UTC(2026, 0, 3)) })).not.toBeNull();
+    expect(keepForecast(forecast([500, 700]), { reason: "d", file, now: new Date(Date.UTC(2026, 0, 4)) })).not.toBeNull();
     expect(readForecastSnapshots(file).map((s) => s.reason)).toEqual(["a", "c", "d"]);
     writeFileSync(file, "{");
     expect(() => readForecastSnapshots(file)).toThrow(/damaged/);
