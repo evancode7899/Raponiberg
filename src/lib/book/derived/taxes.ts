@@ -6,6 +6,7 @@ import { overviewCells } from "../../tax/overviewExtras.ts";
 import { W4_REACHES, w4Cells } from "../../tax/w4Extras.ts";
 import { c, ln, r, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 import { bracketFill } from "../../tax/bracketFill.ts";
+import { harborQuarters } from "../../tax/harborQuarters.ts";
 import { estimateColumns, type EstimateKey } from "../../tax/estimateLines.ts";
 import { taxYearParams } from "../../tax/params.ts";
 
@@ -30,9 +31,37 @@ export function taxesDerived(report: TaxReport): DerivedFigure[] {
     ...tableFigures("overview", y, overviewCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...W4_REACHES.flatMap((reach) => tableFigures("w4", `${y}:${reach}`, w4Cells(report, reach).map((x) => ({ ...x, describes: `${y} ${x.describes}, the new W-4 reaching paycheck ${Number(reach) + 1} from now` })))),
     ...bracketDerived(report),
+    ...tableFigures("harbor", y, harborCells(report)),
     ...tableFigures("income", y, incomeCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...(["projected", "ytd"] as const).flatMap((basis) => tableFigures("worksheet", `${y}:${basis}`, worksheetCells(report, basis).map((x) => ({ ...x, describes: `${y} ${basis === "ytd" ? "to date" : "projected"}: ${x.describes}` })))),
   ];
+}
+
+/** The safe-harbor tracker's authorities (Payments): federal, Connecticut, and New York when the year has a New York return. */
+export function harborsOf(report: TaxReport) {
+  const h = report.safeHarbor;
+  return [
+    { id: "FEDERAL" as const, name: "Federal", sh: h.federal },
+    { id: "CT" as const, name: "Connecticut", sh: h.ct },
+    ...(h.ny ? [{ id: "OTHER_STATE" as const, name: "New York", sh: h.ny }] : []),
+  ].map((a) => ({ ...a, quarters: harborQuarters(a.sh, report.year, report.payments, a.id, report.today) }));
+}
+
+/** Payments › safe harbor quarter by quarter (tax/harborQuarters.ts): rows `<authority>:<quarter>`, columns required, withheld, estimates, short. */
+function harborCells(report: TaxReport): TableCell[] {
+  return harborsOf(report).flatMap((a) =>
+    a.quarters.flatMap((q) => {
+      const row = `${a.id}:${q.quarter}`;
+      const at = `${a.name}, by the Q${q.quarter} due date (${q.date})`;
+      return [
+        { row, col: "required", describes: `${at}: ${q.quarter} quarter${q.quarter > 1 ? "s" : ""} of the required annual payment`, value: c(q.requiredCents) },
+        { row, col: "withheld", describes: `${at}: ${q.quarter} quarter${q.quarter > 1 ? "s" : ""} of the year's withholding`, value: c(q.withheldCents) },
+        { row, col: "estimates", describes: `${at}: estimated payments on file by then`, value: c(q.estimatesCents) },
+        { row, col: "short", describes: `${at}: short of the required amount`, value: c(q.shortCents) },
+        // A zero draws a dash, not a figure.
+      ].filter((x) => !("cents" in x.value) || x.value.cents !== 0);
+    }),
+  );
 }
 
 /** A bracket's key: the year and the bracket (0 = 10%). */
