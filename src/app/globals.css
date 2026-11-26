@@ -370,6 +370,12 @@ html:not([data-theme="terminal"]) [data-panel-head]:focus-within [data-panel-wor
   outline: 1px solid var(--line-strong);
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
 }
+/* The Dashboard narrowed by a linked category or month, or by a panel's own command line (components/ui/Panel.tsx). */
+[data-desk-row][data-link-hidden],
+[data-desk-row][data-line-hidden] {
+  display: none;
+}
+
 /* A card with nothing in it is its title alone: no empty box below. */
 [data-panel-body]:empty {
   display: none;

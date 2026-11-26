@@ -26,6 +26,8 @@ export const DASHBOARD_KEYS: Shortcut[] = [
   ["← →  or  H L", "Previous and next panel"],
   ["↑ ↓  or  K J", "Previous and next row"],
   ["Enter", "Open the row, or the panel's page"],
+  ["Space", "On a row about a category or month: narrow the other panels to it (Esc lets go)"],
+  [":", "The panel's own command line: words narrow its rows, a code runs"],
   ["1  2  3", "Net worth over 6 months, 12 months, or all proven history"],
   ["M", "3-month average on or off"],
   ["/", "Command bar"],
