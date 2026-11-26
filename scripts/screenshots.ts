@@ -16,14 +16,15 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(path.join(ROOT, "package.json"));
 
-export const SHOTS: { name: string; at: string }[] = [
+/** ready: what shows the view is drawn, when it isn't a cleared figure. */
+export const SHOTS: { name: string; at: string; ready?: string }[] = [
   { name: "dashboard", at: "/" },
   { name: "net-worth", at: "/net-worth" },
   { name: "cash-flow", at: "/cash-flow" },
   { name: "taxes", at: "/taxes" },
   { name: "forecast", at: "/forecast" },
   { name: "insurance", at: "/insurance?tab=auto" },
-  { name: "checks", at: "/statements?tab=checks" },
+  { name: "checks", at: "/statements?tab=checks", ready: "[data-trust]" },
 ];
 export const THEMES = ["terminal", "dark", "light"] as const;
 
@@ -62,7 +63,8 @@ async function main() {
       for (const s of SHOTS) {
         const page = await ctx.newPage();
         await page.goto(base + s.at, { timeout: 60_000 });
-        await page.waitForFunction(() => document.querySelectorAll('[data-clearance="cleared"]').length > 0 && !document.querySelector('[data-clearance="verifying"], [data-skeleton]'), null, { timeout: 90_000 });
+        if (s.ready) await page.locator(s.ready).first().waitFor({ timeout: 90_000 });
+        else await page.waitForFunction(() => document.querySelectorAll('[data-clearance="cleared"]').length > 0 && !document.querySelector('[data-clearance="verifying"], [data-skeleton]'), null, { timeout: 90_000 });
         await page.waitForTimeout(600);
         const file = path.join(out, fileOf(s.name, theme, i === 0));
         await page.screenshot({ path: file });

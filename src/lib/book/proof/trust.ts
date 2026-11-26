@@ -13,7 +13,7 @@ export type Trust = {
   rederived: number;
   /** Can't be re-derived (a typed input, a model's draw): each proof says why. */
   declared: number;
-  /** Re-run on a route of their own kind, or on the page's own report only. */
+  /** Re-derived by their own kind of proof from the Book; and re-run on the page's own report only. */
   ownRoute: number;
   unchecked: number;
   estimates: number;
