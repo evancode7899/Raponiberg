@@ -1,5 +1,7 @@
 "use client";
 
+import { MONTHS_LONG } from "@/lib/dates/display";
+
 import { BlockedNote } from "@/components/ledger/Blocked";
 import { cardPerksDerived } from "@/lib/book/derived/cardPerks";
 import { derivedTarget } from "@/lib/book/derived/types";
@@ -141,7 +143,7 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
 /** When the card terms (fees, credits, earn rates) were read: issuers change them, and the app fetches nothing to check. */
 function CatalogAge({ today }: { today: string }) {
   const a = catalogAge(today);
-  const when = new Date(`${a.asOf}-01T12:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const when = `${MONTHS_LONG[Number(a.asOf.slice(5, 7)) - 1]} ${a.asOf.slice(0, 4)}`;
   return (
     <p className={`text-xs ${a.stale ? "text-warn" : "text-muted"}`}>
       Card terms (annual fees, credits, earn rates) are as of {when}

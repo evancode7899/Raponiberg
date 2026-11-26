@@ -11,7 +11,7 @@ import { icsFile } from "@/lib/dates/ics";
 import { usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { weekdayLabel } from "@/lib/dates/display";
+import { MONTHS_LONG, weekdayLabel } from "@/lib/dates/display";
 import { notify } from "@/components/ui/Feedback";
 import type { Mark } from "@/lib/marks";
 import type { BriefingDue } from "@/lib/dashboard/briefing";
@@ -231,7 +231,7 @@ function MonthGrid({ today, items, upcoming, extra }: { today: string; items: Sh
         const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
         const lead = (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7;
         return (
-          <Card key={`${y}-${m}`} title={new Date(Date.UTC(y, m, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}>
+          <Card key={`${y}-${m}`} title={`${MONTHS_LONG[m]} ${y}`}>
             <div className="grid grid-cols-7 gap-px bg-line text-[11px]">
               {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => (
                 <div key={w} className="bg-surface-2 px-1 py-0.5 text-muted">
