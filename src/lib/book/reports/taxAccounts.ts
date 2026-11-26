@@ -70,6 +70,10 @@ export type PersonAccounts = {
     excessNote: { ok: boolean; text: string; tail: string } | null;
     room: number;
     perPaycheckToMax: number | null;
+    /** The year in progress, paycheck by paycheck (k401Fill): deferrals added up on each stub, then each paycheck left at the regular deferral. */
+    fill: { date: string; cents: number; projected: boolean }[];
+    /** The year in progress: the limit spread evenly over the year, through the latest stub (k401Pace). */
+    pace: { through: string; evenCents: number } | null;
     employers: EmployerPlan[];
     /** Employer match captured: what the formula pays at projected deferrals, and the deferral that earns all of it. */
     match: { rate: number; upTo: number; fullMatchDeferral: number; shortfall: number } | null;
@@ -332,6 +336,8 @@ export function buildTaxAccounts(book: Book, year: number, settings: RetirementS
         excessNote,
         room,
         perPaycheckToMax: remainingPaychecks ? Math.ceil(room / remainingPaychecks) : null,
+        fill: isCurrentYear ? k401Fill(book.stubs.filter((s) => s.personId === person.id && s.payDate.startsWith(`${year}-`)), active?.remaining ?? [], active?.projection?.perCheck ?? null, limit) : [],
+        pace: isCurrentYear && active?.last ? k401Pace(limit, active.last) : null,
         employers: empRows,
         match,
         rothCatchUpRequired,
@@ -506,4 +512,35 @@ export function orderSteps(steps: Step[], ctx: { marginalRate: number | null }):
   void ctx;
   const rank = (s: Step) => order.indexOf(s.id.split("-")[0]!);
   return [...steps].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
+ * Account limits › 401(k) by paycheck: each stub's deferrals (pre-tax and Roth, as the stub
+ * prints them this period) added up by pay date, then each paycheck left at the regular
+ * paycheck's deferral, stopping at the limit.
+ */
+export function k401Fill(stubs: readonly { payDate: string; lines: readonly { kind: string; current: number | null }[] }[], remaining: readonly string[], perCheck: Pick<PayrollAmounts, "retirementPretax" | "retirementRoth"> | null, limit: number): { date: string; cents: number; projected: boolean }[] {
+  let run = 0;
+  const out: { date: string; cents: number; projected: boolean }[] = [];
+  for (const s of [...stubs].sort((a, b) => a.payDate.localeCompare(b.payDate))) {
+    const d = s.lines.reduce((t, l) => t + (l.kind === "RETIREMENT_PRETAX" || l.kind === "RETIREMENT_ROTH" ? (l.current ?? 0) : 0), 0);
+    if (!d && !out.length) continue;
+    run += d;
+    out.push({ date: s.payDate, cents: run, projected: false });
+  }
+  const each = perCheck ? perCheck.retirementPretax + perCheck.retirementRoth : 0;
+  for (const date of remaining) {
+    if (!each) break;
+    run = run >= limit ? run : Math.min(limit, run + each);
+    out.push({ date, cents: run, projected: true });
+  }
+  return out;
+}
+
+/** The limit spread evenly over the year, through a day: where an even pace to the limit would be by then. */
+export function k401Pace(limit: number, through: string): { through: string; evenCents: number } {
+  const y = Number(through.slice(0, 4));
+  const days = (Date.UTC(y + 1, 0, 1) - Date.UTC(y, 0, 1)) / 86_400_000;
+  const day = (Date.UTC(y, Number(through.slice(5, 7)) - 1, Number(through.slice(8, 10))) - Date.UTC(y, 0, 1)) / 86_400_000 + 1;
+  return { through, evenCents: Math.round((limit * day) / days) };
 }

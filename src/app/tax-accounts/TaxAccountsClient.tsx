@@ -14,7 +14,11 @@ import type { Amount, PersonAccounts, TaxAccountsReport } from "@/lib/book/repor
 import { formatPercentRatio, usd0 } from "@/lib/formatMoney";
 import { EMPTY_PERSON, type HsaCoverage, type RetirementSettings } from "@/lib/taxAccounts/settings";
 import Link from "next/link";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { compositeOf } from "@/components/ui/proof/context";
+import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { useChartPalette } from "@/components/shell/chartPalette";
+import { Line, LineChart, ReferenceLine, YAxis } from "recharts";
 import { unswept } from "@/lib/book/proof/clearance";
 
 const TABS = ["people", "inputs"] as const;
@@ -282,6 +286,7 @@ function PersonCard({ p, r }: { p: PersonAccounts; r: TaxAccountsReport }) {
               )
             }
           />
+          <K401Pace r={r} p={p} used={k({ figure: "used" }, p.k401.total.ytd)} />
           <Meter label={`HSA (${p.hsa.coverage === "NONE" ? "not eligible" : `${p.hsa.coverage.toLowerCase()} coverage${p.hsa.assumed ? ", assumed" : p.hsa.coverageSource === "PLAN" ? ", per the plan on file" : ""}`})`} used={p.hsa.total.ytd} projected={p.hsa.total.projected} limit={p.hsa.limit}
             proofs={{ used: h({ figure: "used" }, p.hsa.total.ytd), projected: h({ figure: "projected" }, p.hsa.total.projected), limit: h({ figure: "limit" }, p.hsa.limit) }}
             sub={
@@ -456,5 +461,45 @@ function Inputs({ data, save }: { data: Data; save: (s: RetirementSettings) => v
         </Field>
       </div>
     </Card>
+  );
+}
+
+/**
+ * 401(k) mid-year pace and fill by paycheck (reports/taxAccounts.ts k401Pace, k401Fill):
+ * deferred so far against the limit spread evenly through the latest stub, and a line of the
+ * running total paycheck by paycheck (dashed: the paychecks left) up to the limit.
+ */
+function K401Pace({ r, p, used }: { r: TaxAccountsReport; p: PersonAccounts; used: ProofTarget }) {
+  const chart = useChartPalette();
+  const derived = useMemo(() => accountLimitsDerived(r), [r]);
+  const pace = p.k401.pace;
+  if (!pace || !p.k401.fill.length) return null;
+  const even = derivedTarget("account-limits", derived, "k401-pace", `${r.year}|${p.id}`);
+  const diff = p.k401.total.ytd - pace.evenCents;
+  const data = p.k401.fill.map((x, i) => ({ date: x.date, done: x.projected ? null : x.cents, left: x.projected || (i < p.k401.fill.length - 1 && p.k401.fill[i + 1]!.projected) ? x.cents : null }));
+  return (
+    <div className="-mt-2 text-xs text-muted">
+      <p>
+        By {pace.through}, an even pace to the limit is <ProofValue proof={even}>{usd0(pace.evenCents)}</ProofValue>
+        {diff ? (
+          <>
+            : {diff > 0 ? "ahead" : "behind"} by <ProofValue proof={compositeOf("diff", [used, even], { cents: diff })}>{usd0(Math.abs(diff))}</ProofValue>
+          </>
+        ) : (
+          ": right on it"
+        )}
+        .
+      </p>
+      <div className="mt-1 h-12 w-full min-w-0" aria-hidden title="Deferred so far by paycheck, then the paychecks left at the regular deferral">
+        <RechartsResponsive>
+          <LineChart data={data} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+            <YAxis hide domain={[0, Math.max(p.k401.limit, ...p.k401.fill.map((x) => x.cents))]} />
+            <ReferenceLine y={p.k401.limit} stroke={chart.axisLine} strokeDasharray="3 3" />
+            <Line dataKey="done" stroke={chart.lineBalance} strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
+            <Line dataKey="left" stroke={chart.lineBalance} strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} connectNulls={false} />
+          </LineChart>
+        </RechartsResponsive>
+      </div>
+    </div>
   );
 }
