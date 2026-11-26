@@ -11,6 +11,8 @@ import type { TaxProfile } from "../tax/profile.ts";
 import type { HealthPlansFile } from "../medical/plans.ts";
 import type { MedicalDocsFile } from "../medical/types.ts";
 import { demoMedical } from "./medical.ts";
+import { DEMO_AUTO_MONTHLY, DEMO_RENTERS_PREMIUM, demoInsurance } from "./insurance.ts";
+import type { InsuranceDocsFile } from "../insurance/types.ts";
 
 /**
  * The demo household: made up from scratch, never from the owner's ledger. One simulation
@@ -48,6 +50,8 @@ export type DemoData = {
   hsa: HsaFile;
   /** The health plan and its explanations of benefits (Medical page; data/demo/medical-*.json). */
   medical: { docs: MedicalDocsFile; plans: HealthPlansFile };
+  /** The renters and auto policies, as if read off their declarations (Insurance page; data/demo/insurance-documents.json). */
+  insurance: InsuranceDocsFile;
   /** Closing balance of every account in the last month, cents. */
   closing: Record<string, number>;
 };
@@ -406,7 +410,8 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
     add("checking", businessDay(ymd(year, month, 1)), "BEACON PROPERTY MGMT RENT PAYMENT", -1_450_000, "Withdrawals");
     add("checking", ymd(year, month, 6), "EVERSOURCE ENERGY BILL PAY", -between(month >= 6 && month <= 8 ? 340 : 190, month >= 6 && month <= 8 ? 520 : 330), "Withdrawals");
     add("checking", ymd(year, month, 8), "BRIGHT HORIZONS DAYCARE TUITION", -(year === 2025 ? 345_000 : 362_500), "Withdrawals");
-    add("checking", ymd(year, month, 18), "GEICO AUTO INSURANCE", -28_640, "Withdrawals");
+    add("checking", ymd(year, month, 18), "GEICO AUTO INSURANCE", -DEMO_AUTO_MONTHLY, "Withdrawals");
+    if (month === 3) add("checking", ymd(year, 3, 2), "STATE FARM INSURANCE PREM", -DEMO_RENTERS_PREMIUM, "Withdrawals");
     const tax = { "2025-04": [4_500_000, 1_150_000], "2025-06": [2_000_000, 500_000], "2025-09": [2_000_000, 500_000], "2026-01": [2_000_000, 500_000], "2026-04": [3_800_000, 900_000], "2026-06": [2_000_000, 500_000] }[key];
     if (tax) {
       add("checking", businessDay(ymd(year, month, 15)), "IRS USATAXPYMT", -tax[0]!, "Withdrawals");
@@ -626,7 +631,7 @@ export function generateDemoData(opts: DemoOptions = {}): DemoData {
     ignoredMerchants: [],
     settings: { ...EMPTY_SETTINGS, openedOn: "2024-01-01" },
   };
-  return { documents, taxProfile, awards, budget, goals, car: demoCar(documents), hsa, medical: demoMedical(documents), closing: Object.fromEntries(Object.entries(balance)) };
+  return { documents, taxProfile, awards, budget, goals, car: demoCar(documents), hsa, medical: demoMedical(documents), insurance: demoInsurance(opts.from ?? "2025-01", opts.through ?? "2026-06"), closing: Object.fromEntries(Object.entries(balance)) };
 }
 
 /**
