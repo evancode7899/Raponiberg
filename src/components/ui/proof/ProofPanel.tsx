@@ -1,6 +1,7 @@
 "use client";
 
-import { lastDataStamp } from "@/components/ledger/useApi";
+import { apiSecretHeaders, lastDataStamp } from "@/components/ledger/useApi";
+import { PINS_CHANGED_EVENT } from "./context";
 import { notify } from "@/components/ui/Feedback";
 import { proofText } from "@/lib/book/proof/proofText";
 import { Badge, btn, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
@@ -28,7 +29,8 @@ const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd
  * Statements → Issues.
  *
  * Copy puts the proof on the clipboard as plain text (proofText.ts). Pin keeps it: the next
- * figure opened shows beside it, so two proofs can be read side by side.
+ * figure opened shows beside it, so two proofs can be read side by side, and the command line
+ * finds it by name (data/pins.json, lib/pins.ts) until it's unpinned.
  */
 export function ProofPanel({
   stack,
@@ -95,7 +97,10 @@ export function ProofPanel({
           <button type="button" className={btn.secondary} onClick={copy} title="Copy this proof as plain text: the figure, how it adds up, its statements and checks">
             Copy as text
           </button>
-          <button type="button" className={btn.secondary} aria-pressed={isPinned} onClick={() => onPin(isPinned ? null : top)} title={isPinned ? "Stop keeping this proof" : "Keep this proof: the next figure you open shows beside it"}>
+          <button type="button" className={btn.secondary} aria-pressed={isPinned} onClick={() => {
+              onPin(isPinned ? null : top);
+              void savePin(p, !isPinned);
+            }} title={isPinned ? "Stop keeping this proof" : "Keep this proof: the next figure you open shows beside it"}>
             {isPinned ? "Unpin" : "Pin"}
           </button>
         </div>
@@ -106,7 +111,14 @@ export function ProofPanel({
             <div className="mb-3 flex items-baseline gap-2 text-xs">
               <span className="font-mono font-bold text-accent">PINNED</span>
               <span className="min-w-0 flex-1 truncate font-medium text-fg">{beside.proof?.describes}</span>
-              <button type="button" className="font-medium text-accent hover:underline" onClick={() => onPin(null)}>
+              <button
+                type="button"
+                className="font-medium text-accent hover:underline"
+                onClick={() => {
+                  onPin(null);
+                  if (beside.proof) void savePin(beside.proof, false);
+                }}
+              >
                 Unpin
               </button>
             </div>
@@ -121,6 +133,16 @@ export function ProofPanel({
       )}
     </Drawer>
   );
+}
+
+/** Keeps a pinned figure for the command line (by what it describes), or takes it off. */
+async function savePin(p: Proof, on: boolean) {
+  const name = p.describes.slice(0, 80);
+  const res = on
+    ? await fetch("/api/pins", { method: "POST", headers: { ...apiSecretHeaders(), "content-type": "application/json" }, body: JSON.stringify({ kind: "figure", name, descriptor: p.descriptor }) }).catch(() => null)
+    : await fetch(`/api/pins?kind=figure&name=${encodeURIComponent(name)}`, { method: "DELETE", headers: apiSecretHeaders() }).catch(() => null);
+  if (res?.ok) window.dispatchEvent(new Event(PINS_CHANGED_EVENT));
+  else if (on) notify("Pinned here, but the command line couldn't keep it.", { tone: "bad" });
 }
 
 /** One proof: whether the page may show it, then the proof itself once it arrives. */

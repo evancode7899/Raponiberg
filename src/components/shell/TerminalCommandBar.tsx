@@ -7,7 +7,7 @@ import { notify } from "@/components/ui/Feedback";
 import { openProof } from "@/components/ui/proof/ProofProvider";
 import { openSplit } from "@/components/shell/SplitView";
 import { TOUR_EVENT } from "@/components/shell/Tour";
-import type { ProofTarget } from "@/components/ui/proof/context";
+import { PINS_CHANGED_EVENT, type ProofTarget } from "@/components/ui/proof/context";
 import { localToday } from "@/lib/dates/isoDate";
 import type { CommandIndex } from "@/lib/commandIndex";
 import type { HomeSummary } from "@/lib/dashboard/homeSummary";
@@ -46,8 +46,7 @@ async function loadContext(): Promise<CommandContext> {
   };
 }
 
-/** Pins changed somewhere (the line, the proof drawer): the line reads them again. */
-export const PINS_CHANGED_EVENT = "pf:pins-changed";
+export { PINS_CHANGED_EVENT };
 
 /** Saves the page as it is now (its tab and filters) under a name, with Undo. */
 async function saveView(name: string) {

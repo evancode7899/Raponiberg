@@ -8,6 +8,9 @@ import type { Quality } from "@/lib/ledger/timeline";
 import { createContext, useContext } from "react";
 
 export { unswept, type Unswept } from "@/lib/book/proof/clearance";
+
+/** Pins changed somewhere (the command line's SAVE, the proof drawer's Pin): the command line reads them again. */
+export const PINS_CHANGED_EVENT = "pf:pins-changed";
 export { compositeOf, sumOf, targetOf, type ProofRef, type ProofTarget } from "@/lib/book/proof/compose";
 
 /**
