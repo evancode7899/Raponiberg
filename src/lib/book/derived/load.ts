@@ -24,7 +24,7 @@ import { forecastDerived, vsActualDerived } from "./forecast.ts";
 import { forecastVsActual } from "../../forecast/vsActual.ts";
 import { readForecastSnapshots } from "../../forecast/snapshots.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
-import { builtDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived, recordsDerived, rollforwardsDerived } from "./netWorth.ts";
+import { builtDerived, changeSplitDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived, recordsDerived, rollforwardsDerived } from "./netWorth.ts";
 import { buildAccountRollforwards } from "../../profile/rollforwards.ts";
 import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
@@ -101,7 +101,7 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const built = [r, ...(["quarter", "year"] as const).map((granularity) => buildNetWorth(book, { granularity }))].flatMap(builtDerived);
     // Account roll-forwards: each account since its first statement on file, held to its own statements.
     const rolls = rollforwardsDerived(buildAccountRollforwards(book)).map((f) => ({ ...f, scope: { query: { affects: "NET_WORTH" as const, from: book.ledger.firstDay ?? from, to: r.current.asOf, accountIds: [f.key!] }, checks: NET_WORTH_CHECKS } }));
-    const figures = [...netWorthDerived(r), ...recordsDerived(r, changes[0]!.periods), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeTypicalDerived), ...built, ...rolls];
+    const figures = [...netWorthDerived(r), ...recordsDerived(r, changes[0]!.periods), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeSplitDerived), ...changes.flatMap(changeTypicalDerived), ...built, ...rolls];
     // Built's returns are re-derived (rederiveNetWorth); its other cells are declared.
     return { figures, rederived: { ...declared(BUILT_WHY)(built), ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), ...rederiveRollforwards(book, rolls) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },

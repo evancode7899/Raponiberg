@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { changeStepKey, changeStepsDerived, changeTypicalDerived, typicalKey } from "@/lib/book/derived/netWorth";
+import { changeSplitDerived, changeStepKey, changeStepsDerived, changeTypicalDerived, splitKey, typicalKey } from "@/lib/book/derived/netWorth";
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
@@ -65,7 +65,7 @@ export function ChangesTab({ r, granularity, setGranularity }: { r: NetWorthChan
   if (!r.periods.length) return <EmptyState title={`No ${UNIT[granularity]} that both net worth and cash flow can prove yet`} />;
   const i = picked ? Math.max(0, r.periods.findIndex((p) => p.start === picked)) : r.periods.length - 1;
   const p = r.periods[i]!;
-  const steps = [...changeStepsDerived(r), ...changeTypicalDerived(r)];
+  const steps = [...changeStepsDerived(r), ...changeTypicalDerived(r), ...changeSplitDerived(r)];
   const go = (j: number) => setPicked(r.periods[j]!.start);
   const picker = (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -142,6 +142,8 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
         <StatCell label="…from markets" value={usdDelta(p.marketsCents)} proof={proofOf(p.proofs.markets, p.marketsCents)} sub={typicalSub("markets", t?.marketsCents) ?? "growth, net of fees"} />
         <StatCell label="Closing" value={usd0(p.closingCents)} proof={proofOf(p.proofs.closing, p.closingCents)} sub={`end of ${p.through ?? p.end}`} />
       </StatGrid>
+
+      <SplitCard p={p} granularity={granularity} steps={steps} />
 
       <Card title="From opening to closing" subtitle="Each bar starts where the one before it ends; the last is the whole change. Hover a step's name in the table below for what it holds.">
         <Waterfall p={p} />
@@ -337,5 +339,60 @@ function Waterfall({ p }: { p: NetWorthChange }) {
         </BarChart>
       </RechartsResponsive>
     </div>
+  );
+}
+
+/**
+ * Where the change came from (reports/netWorthChanges.ts split): saving from income, one-time
+ * money (balances already in accounts when they first appear), markets, and in transit at the
+ * edges. One bar split by size, and the four parts with their share of the change.
+ */
+function SplitCard({ p, granularity, steps }: { p: NetWorthChange; granularity: Granularity; steps: DerivedFigure[] }) {
+  const s = p.split;
+  const change = proofOf(p.proofs.change, p.changeCents);
+  const rows: { key: string; label: string; cents: number; proof: ProofRef; tone: string; hint: string }[] = [
+    { key: "saving", label: "Saving from income", cents: s.savingCents, proof: derivedTarget("net-worth", steps, "change-split", splitKey(granularity, p.start, "saving")), tone: "bg-pos", hint: "Pay and other income less spending, retirement money from pay included." },
+    { key: "one-time", label: "One-time", cents: s.oneTimeCents, proof: derivedTarget("net-worth", steps, "change-split", splitKey(granularity, p.start, "one-time")), tone: "bg-accent", hint: "Balances already in accounts when their first statement on file begins: money that arrived on the books, not saved in the period." },
+    { key: "markets", label: "Markets", cents: s.marketsCents, proof: proofOf(p.proofs.markets, s.marketsCents), tone: "bg-info", hint: "Market change, net of fees." },
+    { key: "transit", label: "In transit", cents: s.transitCents, proof: derivedTarget("net-worth", steps, "change-split", splitKey(granularity, p.start, "transit")), tone: "bg-faint", hint: "Money mid-move between your own accounts at the edges, or a confirmed transfer cost." },
+  ];
+  const shown = rows.filter((x) => x.cents !== 0 || x.key === "saving" || x.key === "markets");
+  const scale = shown.reduce((t, x) => t + Math.abs(x.cents), 0);
+  return (
+    <Card title="Where the change came from" subtitle="Saving, one-time money and markets, and what was in transit at the edges: they add up to the change to the cent.">
+      {scale > 0 && (
+        <div aria-hidden className="mb-3 flex h-2.5 w-full overflow-hidden bg-surface-3">
+          {shown.map((x) => (
+            <span key={x.key} className={`${x.tone} ${x.cents < 0 ? "opacity-40" : ""}`} style={{ width: `${(Math.abs(x.cents) / scale) * 100}%` }} />
+          ))}
+        </div>
+      )}
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[26rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Part</th>
+              <th className={table.thR}>{p.label}</th>
+              <th className={table.thR}>Of the change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((x) => (
+              <tr key={x.key} className={table.tr}>
+                <td className={table.td}>
+                  <span className="cursor-help" title={x.hint}>
+                    {x.label}
+                  </span>
+                </td>
+                <td className={table.tdR}>{x.cents ? <ProofValue proof={x.proof}>{usdDelta(x.cents)}</ProofValue> : "—"}</td>
+                <td className={table.tdR}>
+                  {!x.cents ? "—" : p.changeCents ? <ProofValue proof={compositeOf("share", [x.proof, change], { ratio: x.cents / p.changeCents })}>{formatPercentRatio(x.cents / p.changeCents, 0)}</ProofValue> : NA}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { endOfMonth, periodLabel } from "../../dates/isoDate";
 import type { HouseholdPeriod, NetWorthPeriod } from "../../ledger/netWorthReport";
 import type { CashFlowPeriod, CategoryAmount } from "./cashFlow";
-import { highlightText, netWorthChangesOf } from "./netWorthChanges";
+import { highlightText, netWorthChangesOf, splitOf } from "./netWorthChanges";
 
 // An invented household, Jan – Jun 2025: every amount is made up.
 
@@ -68,6 +68,13 @@ const PAY = 612_345;
 const exact = () => "EXACT" as const;
 const typicalMonth: Lanes ={ incomeCents: PAY, spendingCents: -310_000, retirementEmployeeCents: 45_000, growthNetOfFeesCents: 20_000 };
 
+describe("the change's split", () => {
+  it("takes balances first on file out of saving, and closes on in transit", () => {
+    expect(splitOf(1_000_00, 900_00, 300_00, 150_00)).toEqual({ savingCents: 600_00, oneTimeCents: 300_00, marketsCents: 150_00, transitCents: -50_00 });
+    expect(splitOf(0, 0, 0, 0)).toEqual({ savingCents: 0, oneTimeCents: 0, marketsCents: 0, transitCents: 0 });
+  });
+});
+
 describe("netWorthChangesOf", () => {
   it("adds the steps up to the change, with timing for what cash flow counts in another month", () => {
     // Rent of $2,100.00 paid on Jan 30 for February: net worth counts it in January, cash flow in February.
@@ -81,6 +88,8 @@ describe("netWorthChangesOf", () => {
       expect(p.steps.at(-1)!.toCents).toBe(p.changeCents);
       expect(p.changeCents).toBe(p.closingCents - p.openingCents);
       expect(p.savedCents + p.marketsCents).toBe(p.changeCents);
+      const s = p.split;
+      expect(s.savingCents + s.oneTimeCents + s.marketsCents + s.transitCents).toBe(p.changeCents);
     }
     expect(jan!.spendingCents).toBe(310_000);
     expect(jan!.steps.find((s) => s.key === "timing")!.cents).toBe(-210_000);

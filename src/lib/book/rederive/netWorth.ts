@@ -145,10 +145,15 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
 
   // What changed: each period's steps, and its balances summed here.
   const steps = new Map<string, { cents: number; all: number; start: string; end: string }>();
+  const split = new Map<string, { cents: number; all: number; start: string; end: string }>();
   for (const r of changes)
     for (const p of r.periods) {
       const all = p.steps.reduce((s, x) => s + x.cents, 0);
       for (const s of p.steps) steps.set(`${r.granularity}|${p.start}|${s.key}`, { cents: s.cents, all, start: p.start, end: p.end });
+      const sp = p.split;
+      const parts = { saving: sp.savingCents, "one-time": sp.oneTimeCents, transit: sp.transitCents };
+      const allSplit = sp.savingCents + sp.oneTimeCents + sp.marketsCents + sp.transitCents;
+      for (const [k, cents] of Object.entries(parts)) split.set(`${r.granularity}|${p.start}|${k}`, { cents, all: allSplit, start: p.start, end: p.end });
     }
   // Every account on file by `iso`; one that first appears later has no balance yet (its opening is "other money").
   const balance = (iso: string) => ledger.accounts.reduce((s, a) => (a.timeline.firstDay && a.timeline.firstDay <= iso ? s + valueAt(a.timeline, iso).cents : s), 0);
@@ -202,6 +207,16 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
         const now = Math.round(balance(through));
         const step = markStep(now);
         return [centsRoute("the next multiple of the step above net worth, summed account by account", v, Math.floor(now / step) * step + step - now, "the mark less net worth", 1)];
+      }
+      case "change-split": {
+        // The parts close on balances summed account by account: the change less every other part.
+        const s = split.get(f.key ?? "");
+        if (!s) return null;
+        const g = (f.key ?? "").split("|")[0] as Granularity;
+        const end = minIso(endOfPeriod(s.start, g), through);
+        const change = balance(end) - balance(addDays(s.start, -1));
+        const out: RederivedRoute[] = [centsRoute("the split closed on balances summed account by account", v, change - (s.all - s.cents), "closing less opening, less every other part", 2)];
+        return out;
       }
       case "change-step": {
         const k = f.key ?? "";

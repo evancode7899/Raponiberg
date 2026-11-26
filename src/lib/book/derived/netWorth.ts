@@ -128,6 +128,44 @@ export function changeStepsDerived(rep: Pick<NetWorthChangesReport, "granularity
   );
 }
 
+/** A split part's key (derived/netWorth.ts changeSplitDerived): the granularity, the period's first day, and the part. */
+export const splitKey = (granularity: string, start: string, part: string) => `${granularity}|${start}|${part}`;
+
+const SPLIT_LABEL = { saving: "Saving from income", "one-time": "One-time: balances first on file", transit: "In transit at the edges" } as const;
+
+/**
+ * Net worth › What changed › Where the change came from: each period's saving from income,
+ * one-time money and in-transit parts (markets is the Dashboard's own figure). Each is the
+ * period's change less the others, so they add up to the change to the cent.
+ */
+export function changeSplitDerived(rep: Pick<NetWorthChangesReport, "granularity" | "periods">): DerivedFigure[] {
+  return rep.periods.flatMap((p) => {
+    const s = p.split;
+    const value = { saving: s.savingCents, "one-time": s.oneTimeCents, transit: s.transitCents } as const;
+    const change = { label: `The change in net worth, ${p.label}`, descriptor: p.proofs.change };
+    return (["saving", "one-time", "transit"] as const).map((part): DerivedFigure => ({
+      figure: "change-split",
+      key: splitKey(rep.granularity, p.start, part),
+      describes: `${SPLIT_LABEL[part]}, ${p.label}`,
+      value: c(value[part]),
+      lines:
+        part === "saving"
+          ? [
+              ln("Saved and contributed", c(p.savedCents), undefined, { source: "proven", link: { label: `From saving, ${p.label}`, descriptor: p.proofs.saved } }),
+              ln("Less balances already in accounts when they first appear", c(s.oneTimeCents), "−"),
+              ln(SPLIT_LABEL.saving, c(s.savingCents), "="),
+            ]
+          : part === "one-time"
+            ? [ln("What accounts first on file in the period held when their first statement begins", c(s.oneTimeCents), undefined, { note: "Each account's is on How it was built (first on file)." })]
+            : [
+                ln("Change in net worth", c(p.changeCents), undefined, { source: "proven", link: change }),
+                ln("Less saving, one-time money and markets", c(s.savingCents + s.oneTimeCents + s.marketsCents), "−"),
+                ln(SPLIT_LABEL.transit, c(s.transitCents), "=", { note: "Money mid-move between your own accounts at the period's edges, or a confirmed transfer cost." }),
+              ],
+    }));
+  });
+}
+
 /** An average's key (derived/netWorth.ts changeTypicalDerived): the granularity, the period's first day, and what (a total, step:<key>, or spending:/income:<category>). */
 export const typicalKey = (granularity: string, start: string, what: string) => `${granularity}|${start}|${what}`;
 
