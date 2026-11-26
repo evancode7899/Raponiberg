@@ -37,6 +37,7 @@ export async function seedDemo(db: PrismaClient, opts: DemoOptions = {}): Promis
   writeFileSync(hsaFilePath(), JSON.stringify(data.hsa, null, 2) + "\n");
   writeFileSync(medicalDocsFile(), JSON.stringify(data.medical.docs, null, 1) + "\n");
   writeFileSync(healthPlansFile(), JSON.stringify(data.medical.plans, null, 2) + "\n");
+  writeScenarios(demoScenarios());
   for (const doc of data.documents) {
     const text = JSON.stringify(doc);
     const r = await commitDocument(db, {
