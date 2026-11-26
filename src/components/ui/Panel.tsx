@@ -1,6 +1,7 @@
 "use client";
 
 import { suggest } from "@/components/shell/commandSearch";
+import { PANEL_ABOUT } from "@/components/ui/panelAbout";
 import { linkOf, rowsMatching, rowsShown, sameLink, type DeskLink } from "@/lib/deskLinks";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -75,6 +76,9 @@ export function Desk({ children, onKey }: { children: ReactNode; onKey?: (key: s
     } else if (key === "Escape" && pick) {
       e.preventDefault();
       setPick(null);
+    } else if (key === "i" && at >= 0) {
+      e.preventDefault();
+      panels[at]!.querySelector<HTMLButtonElement>("[data-panel-about-open]")?.click();
     } else if (key === ":" && at >= 0) {
       e.preventDefault();
       panels[at]!.querySelector<HTMLButtonElement>("[data-panel-line-open]")?.click();
@@ -133,7 +137,7 @@ export function Panel({
       data-panel=""
       tabIndex={0}
       aria-label={typeof title === "string" ? title : code}
-      className={`group/panel flex min-h-[13rem] min-w-0 flex-col bg-surface outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus xl:min-h-0 ${className}`}
+      className={`group/panel relative flex min-h-[13rem] min-w-0 flex-col bg-surface outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus xl:min-h-0 ${className}`}
     >
       <header className="flex min-h-[1.45rem] shrink-0 items-center gap-2 border-b border-line bg-surface-2 px-2 text-[11.5px] leading-none group-focus-within/panel:bg-accent-soft">
         {href ? (
@@ -146,11 +150,72 @@ export function Panel({
         {controls}
         <PanelLine panel={self} code={code} />
         {note && <span className="ml-auto truncate whitespace-nowrap text-[11px] text-faint">{note}</span>}
+        <PanelAboutButton panel={self} code={code} title={typeof title === "string" ? title : code} />
       </header>
       <div className={`app-scroll relative min-h-0 flex-1 overflow-auto ${bodyClassName}`}>{children}</div>
     </section>
   );
 }
+
+/**
+ * What the panel is (panelAbout.ts): its "i" button, or I on the panel, lays a short note over
+ * the panel's body. Nothing on the page moves; Esc, I again or a click elsewhere closes it.
+ */
+function PanelAboutButton({ panel, code, title }: { panel: React.RefObject<HTMLElement | null>; code: string; title: string }) {
+  const about = PANEL_ABOUT[code];
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    box.current?.focus();
+    const away = (e: MouseEvent) => !panel.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open, panel]);
+  if (!about) return null;
+  const close = () => {
+    setOpen(false);
+    panel.current?.focus();
+  };
+  return (
+    <>
+      <button
+        type="button"
+        data-panel-about-open=""
+        tabIndex={-1}
+        aria-expanded={open}
+        onClick={() => (open ? close() : setOpen(true))}
+        title={`What is this? (I)`}
+        aria-label={`What is ${title}?`}
+        className={`shrink-0 font-mono text-[11px] hover:text-accent ${note(open)}`}
+      >
+        i
+      </button>
+      {open && (
+        <div
+          ref={box}
+          role="dialog"
+          aria-label={`About ${title}`}
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" || e.key.toLowerCase() === "i") {
+              e.preventDefault();
+              e.stopPropagation();
+              close();
+            }
+          }}
+          className="absolute inset-x-1 top-[1.6rem] z-30 border border-accent bg-surface-2 p-2 text-[12px] leading-snug text-fg-2 shadow-lg outline-none"
+        >
+          <p className="text-fg">{about.what}</p>
+          <p className="mt-1"><span className="text-muted">From </span>{about.from}</p>
+          {about.use && <p className="mt-1">{about.use}</p>}
+        </div>
+      )}
+    </>
+  );
+}
+
+const note = (open: boolean) => (open ? "text-accent opacity-100" : "text-faint opacity-0 group-hover/panel:opacity-100 group-focus-within/panel:opacity-100");
 
 /**
  * A panel's own command line (":" on the panel, or its > button): words narrow the panel to
