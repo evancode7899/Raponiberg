@@ -72,3 +72,11 @@ describe("the key map", () => {
     expect(csvOfCells(["Date", "Amount"], [["Jun 30, 2031", "$12.30"], ["Jul 1, 2031", "n.a."]])).toBe("Date,Amount\r\nJun 30, 2031,$12.30\r\nJul 1, 2031,n.a.\r\n".replace("Jun 30, 2031", '"Jun 30, 2031"').replace("Jul 1, 2031", '"Jul 1, 2031"'));
   });
 });
+
+describe("the sidebar's groups", () => {
+  it("Protection holds Insurance, Medical and HSA, and every page is still listed", () => {
+    const protection = TERMINAL_COMMANDS.filter((c) => c.group === "Protection").map((c) => c.mnemonic);
+    expect(protection).toEqual(["INS", "MED", "HSA"]);
+    for (const href of ["/insurance", "/medical", "/hsa"]) expect(Object.values(JUMPS)).toContain(href);
+  });
+});

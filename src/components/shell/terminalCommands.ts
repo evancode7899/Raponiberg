@@ -3,7 +3,7 @@
  * and how it's grouped in the sidebar. The page header and browser tab title come from
  * here too, so names stay consistent everywhere.
  */
-export type NavGroup = "Overview" | "Net worth & planning" | "Income & expenses" | "Data" | "Settings";
+export type NavGroup = "Overview" | "Net worth & planning" | "Income & expenses" | "Protection" | "Data" | "Settings";
 
 export type TerminalCommand = {
   /** Uppercase code, typed in the command bar */
@@ -22,7 +22,8 @@ export type TerminalCommand = {
   action?: "shutdown";
 };
 
-export const NAV_GROUPS: NavGroup[] = ["Overview", "Net worth & planning", "Income & expenses", "Data", "Settings"];
+/** Protection holds what covers the household: insurance, medical care and the HSA that pays for it. */
+export const NAV_GROUPS: NavGroup[] = ["Overview", "Net worth & planning", "Income & expenses", "Protection", "Data", "Settings"];
 
 export const TERMINAL_COMMANDS: TerminalCommand[] = [
   {
@@ -159,7 +160,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/insurance",
     label: "Insurance",
     description: "Every life, home and auto policy, read from its documents: coverage and limits, premiums, key dates, terms and beneficiaries, with the premiums paid from the statements.",
-    group: "Income & expenses",
+    group: "Protection",
     keywords: ["insurance", "life insurance", "term life", "policy", "premium", "death benefit", "face amount", "beneficiary", "conversion", "rider", "coverage"],
   },
   {
@@ -167,7 +168,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/medical",
     label: "Medical",
     description: "Medical, dental and vision care from the insurers' explanations of benefits: every claim, what you owe and what the plan paid, deductibles, out-of-pocket limits and annual maximums, how often each service is covered, and what each plan covers.",
-    group: "Income & expenses",
+    group: "Protection",
     keywords: ["medical", "health", "health insurance", "eob", "explanation of benefits", "claims", "deductible", "out of pocket", "coinsurance", "copay", "aetna", "doctor", "provider", "dental", "vision", "coverage", "plan", "hdhp"],
   },
   {
@@ -175,7 +176,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/hsa",
     label: "HSA receipts",
     description: "Medical bills paid out of pocket that the HSA can pay back tax-free whenever you choose, which have been reimbursed, and what leaving the money invested has earned. Estimates, not tax advice.",
-    group: "Income & expenses",
+    group: "Protection",
     keywords: ["hsa", "health savings", "receipts", "shoebox", "reimburse", "reimbursement", "medical", "qualified expenses", "out of pocket", "8889", "1099-sa"],
   },
   {
