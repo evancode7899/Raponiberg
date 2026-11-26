@@ -1,7 +1,9 @@
 "use client";
 
 import { lastDataStamp } from "@/components/ledger/useApi";
-import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
+import { notify } from "@/components/ui/Feedback";
+import { proofText } from "@/lib/book/proof/proofText";
+import { Badge, btn, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
 import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
 import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue, Rederivation } from "@/lib/book/proof/types";
@@ -24,8 +26,25 @@ const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd
  * chains), the statements, every check over it, and what's estimated. Links open the
  * linked proof on top; Back (or Escape) returns. Read only: findings are fixed on
  * Statements → Issues.
+ *
+ * Copy puts the proof on the clipboard as plain text (proofText.ts). Pin keeps it: the next
+ * figure opened shows beside it, so two proofs can be read side by side.
  */
-export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofEntry[]; onFollow: (d: ProofDescriptor) => void; onBack: () => void; onClose: () => void }) {
+export function ProofPanel({
+  stack,
+  pinned,
+  onPin,
+  onFollow,
+  onBack,
+  onClose,
+}: {
+  stack: ProofEntry[];
+  pinned: ProofEntry | null;
+  onPin: (e: ProofEntry | null) => void;
+  onFollow: (d: ProofDescriptor) => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
   const top = stack.at(-1);
   const prev = stack.at(-2);
   const p = top?.proof;
@@ -44,24 +63,76 @@ export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofE
     return () => window.removeEventListener("keydown", onKey, true);
   }, [depth, onBack, onClose]);
 
+  const isPinned = !!top && !!pinned && pinned.id === top.id;
+  const beside = pinned && top && !isPinned ? pinned : null;
+  const copy = () => {
+    if (!p) return;
+    navigator.clipboard
+      .writeText(proofText(p, top?.clearance))
+      .then(() => notify("Copied the proof as text."))
+      .catch(() => notify("The browser didn't allow copying.", { tone: "bad" }));
+  };
+  const current = (
+    <>
+      {prev && (
+        <button type="button" onClick={onBack} className="mb-3 text-xs font-medium text-accent hover:underline">
+          ← Back{prev.proof ? ` to ${prev.proof.describes}` : ""}
+        </button>
+      )}
+      {top && <EntryView entry={top} bodyKey={stack.length} onFollow={onFollow} />}
+    </>
+  );
   return (
     <Drawer
       open={!!top}
       onClose={onClose}
       title={p ? p.describes : "How this figure adds up"}
       subtitle={p ? `From statements on file · data runs through ${date(p.through)}` : undefined}
-      width="46rem"
+      width={beside ? "96rem" : "46rem"}
     >
-      {prev && (
-        <button type="button" onClick={onBack} className="mb-3 text-xs font-medium text-accent hover:underline">
-          ← Back{prev.proof ? ` to ${prev.proof.describes}` : ""}
-        </button>
+      {p && (
+        <div className="mb-3 flex items-center gap-2" data-proof-actions="">
+          <button type="button" className={btn.secondary} onClick={copy} title="Copy this proof as plain text: the figure, how it adds up, its statements and checks">
+            Copy as text
+          </button>
+          <button type="button" className={btn.secondary} aria-pressed={isPinned} onClick={() => onPin(isPinned ? null : top)} title={isPinned ? "Stop keeping this proof" : "Keep this proof: the next figure you open shows beside it"}>
+            {isPinned ? "Unpin" : "Pin"}
+          </button>
+        </div>
       )}
-      {top?.clearance && <ClearanceNote c={top.clearance} quality={top.quality} />}
-      {top?.error && <ErrorNote>{top.error}</ErrorNote>}
-      {top?.target && !p && !top.error && <Loading label="Adding up the parts…" />}
-      {top?.target && p && <ProofBody key={stack.length} p={p} shownCents={top.target.shownCents} perMonths={top.target.perMonths} onFollow={onFollow} />}
+      {beside ? (
+        <div className="grid grid-cols-2 gap-6">
+          <section aria-label={`Pinned: ${beside.proof?.describes ?? "proof"}`} className="min-w-0 border-r border-line pr-6">
+            <div className="mb-3 flex items-baseline gap-2 text-xs">
+              <span className="font-mono font-bold text-accent">PINNED</span>
+              <span className="min-w-0 flex-1 truncate font-medium text-fg">{beside.proof?.describes}</span>
+              <button type="button" className="font-medium text-accent hover:underline" onClick={() => onPin(null)}>
+                Unpin
+              </button>
+            </div>
+            <EntryView entry={beside} bodyKey={-1} onFollow={onFollow} />
+          </section>
+          <section aria-label={`Open: ${p?.describes ?? "proof"}`} className="min-w-0">
+            {current}
+          </section>
+        </div>
+      ) : (
+        current
+      )}
     </Drawer>
+  );
+}
+
+/** One proof: whether the page may show it, then the proof itself once it arrives. */
+function EntryView({ entry, bodyKey, onFollow }: { entry: ProofEntry; bodyKey: number; onFollow: (d: ProofDescriptor) => void }) {
+  const p = entry.proof;
+  return (
+    <>
+      {entry.clearance && <ClearanceNote c={entry.clearance} quality={entry.quality} />}
+      {entry.error && <ErrorNote>{entry.error}</ErrorNote>}
+      {entry.target && !p && !entry.error && <Loading label="Adding up the parts…" />}
+      {entry.target && p && <ProofBody key={bodyKey} p={p} shownCents={entry.target.shownCents} perMonths={entry.target.perMonths} onFollow={onFollow} />}
+    </>
   );
 }
 

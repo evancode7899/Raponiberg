@@ -10,7 +10,7 @@ import { ProofPanel } from "./ProofPanel";
 import { SweepNotice } from "./SweepNotice";
 
 /** One proof in the drawer: what was asked for (none for a figure with no proof), why the page shows or withholds it, and the answer once it arrives. */
-export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string }) | null; error: string | null };
+export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string }) | null; error: string | null; id?: number };
 
 /** Opens a figure's proof from anywhere in the app: dispatch it on window with { descriptor, shownCents } (openProof below). */
 export const OPEN_PROOF_EVENT = "pf:open-proof";
@@ -55,6 +55,8 @@ export function ProofProvider({ children }: { children: ReactNode }) {
   const open = useCallback((t: ProofTarget | null, clearance?: Clearance, quality?: Quality) => load(t, clearance ?? null, "open", quality), [load]);
   const follow = useCallback((descriptor: ProofDescriptor) => load({ descriptor, shownCents: null }, null, "push"), [load]);
   const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
+  // A proof kept beside whichever one is open next, to compare two figures side by side.
+  const [pinned, setPinned] = useState<ProofEntry | null>(null);
   const close = useCallback(() => setStack([]), []);
 
   // The data the page's figures were built from: the stamp of the latest answer useApi got.
@@ -126,7 +128,7 @@ export function ProofProvider({ children }: { children: ReactNode }) {
         <DataStampContext.Provider value={pageStamp}>
           <SweepNotice />
           {children}
-          <ProofPanel stack={stack} onFollow={follow} onBack={back} onClose={close} />
+          <ProofPanel stack={stack} pinned={pinned} onPin={setPinned} onFollow={follow} onBack={back} onClose={close} />
         </DataStampContext.Provider>
       </SweepContext.Provider>
     </ProofContext.Provider>
