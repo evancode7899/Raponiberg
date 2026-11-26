@@ -7,7 +7,7 @@ import { axisUsd, NA } from "@/lib/formatMoney";
 import { flowOf, goalShift, type Flow, type Metrics } from "@/lib/scenarios/compare";
 import type { ScenarioRun } from "@/lib/scenarios/engine";
 import type { GoalReach } from "@/lib/scenarios/goals";
-import { useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { delta, money, monthLabel, monthsShift, pct, pctDelta } from "./ui";
 
@@ -30,7 +30,7 @@ function Cell({ v, d, goodUp = true, raw }: { v: string; d?: { text: string; n: 
   );
 }
 
-export function DifferenceTable({ cols, goals, startKey, selected, onSelect }: { cols: Col[]; goals: GoalReach[]; startKey: string; selected: string; onSelect: (id: string) => void }) {
+export const DifferenceTable = memo(function DifferenceTable({ cols, goals, startKey, selected, onSelect }: { cols: Col[]; goals: GoalReach[]; startKey: string; selected: string; onSelect: (id: string) => void }) {
   const p = useChartPalette();
   const today = cols[0]!;
   // Each scenario's first year of change, against today's plan over the same months.
@@ -163,11 +163,11 @@ export function DifferenceTable({ cols, goals, startKey, selected, onSelect }: {
       </table>
     </div>
   );
-}
+});
 
 type ChartKey = "netWorth" | "portfolio" | "liquid";
 
-export function PathChart({ cols, horizonYear }: { cols: Col[]; horizonYear: number }) {
+export const PathChart = memo(function PathChart({ cols, horizonYear }: { cols: Col[]; horizonYear: number }) {
   const p = useChartPalette();
   const chrome = chartChrome(p);
   const [key, setKey] = useState<ChartKey>("netWorth");
@@ -216,10 +216,10 @@ export function PathChart({ cols, horizonYear }: { cols: Col[]; horizonYear: num
       </div>
     </div>
   );
-}
+});
 
 /** Month by month for a year of one scenario, against today's plan. */
-export function MonthTable({ col, today }: { col: Col; today: Col }) {
+export const MonthTable = memo(function MonthTable({ col, today }: { col: Col; today: Col }) {
   const [y, setY] = useState<"0" | "1" | "2">("0");
   const from = col.run.months.findIndex((m) => m.key >= (col.today ? col.run.months[0]!.key : col.m.window.from));
   const ms = col.run.months.slice(Math.max(0, from) + Number(y) * 12, Math.max(0, from) + Number(y) * 12 + 12);
@@ -291,4 +291,4 @@ export function MonthTable({ col, today }: { col: Col; today: Col }) {
       </div>
     </div>
   );
-}
+});

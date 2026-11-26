@@ -91,7 +91,9 @@ function Body({ fc, book, initial, buy, save }: { fc: ForecastData; book: Scenar
   }, [file, save]);
 
   const forecast = useMemo(() => buildForecast({ seeds, bonusFacts: fc.bonusFacts }, fc.profile.settings.outlook), [seeds, fc]);
-  const ctx = useMemo<ScenarioContext>(() => ({ forecast, seeds, facts: book.facts, model: file.model, params: taxYearParams(seeds.taxYear) }), [forecast, seeds, book.facts, file.model]);
+  // The engine and the tables follow a deferred copy of the file: typing stays on the urgent path, the reruns are interruptible.
+  const shown = useDeferredValue(file);
+  const ctx = useMemo<ScenarioContext>(() => ({ forecast, seeds, facts: book.facts, model: shown.model, params: taxYearParams(seeds.taxYear) }), [forecast, seeds, book.facts, shown.model]);
   // One run per scenario object: an edit reruns only the scenario it changed.
   const runs = useMemo(() => ({ ctx, map: new WeakMap<Scenario, ScenarioRun>() }), [ctx]);
   const runOf = useCallback(
@@ -103,7 +105,6 @@ function Body({ fc, book, initial, buy, save }: { fc: ForecastData; book: Scenar
     [runs],
   );
 
-  const shown = useDeferredValue(file);
   const startKey = forecast.startKey;
   const firstKey = addMonths(startKey, 1);
   const horizonYear = forecast.plan.horizonYear;
@@ -118,8 +119,15 @@ function Body({ fc, book, initial, buy, save }: { fc: ForecastData; book: Scenar
   }, [shown, runOf, startKey, firstKey, horizonYear, book.goals]);
 
   const current = file.scenarios.find((s) => s.id === selected) ?? null;
-  const currentRun = current ? runOf(current) : runOf(TODAY_PLAN);
-  const selectedCol = cols.find((c) => c.id === selected) ?? cols[0]!;
+  const shownCurrent = shown.scenarios.find((s) => s.id === selected) ?? null;
+  const currentRun = runOf(shownCurrent ?? TODAY_PLAN);
+  // The month table shows the scenario being edited, compared side by side or not.
+  const selectedCol = useMemo<Col>(() => {
+    const hit = cols.find((c) => c.id === selected);
+    if (hit || !shownCurrent) return hit ?? cols[0]!;
+    const run = runOf(shownCurrent);
+    return { id: shownCurrent.id, name: shownCurrent.name, run, today: false, m: metricsOf(run, { startKey, window: run.firstChange ?? firstKey, horizonYear, goals: book.goals }) };
+  }, [cols, selected, shownCurrent, runOf, startKey, firstKey, horizonYear, book.goals]);
 
   const update = (s: Scenario) => setFile((f) => ({ ...f, scenarios: f.scenarios.map((x) => (x.id === s.id ? s : x)) }));
   const add = (s: Scenario) => {
