@@ -86,6 +86,8 @@ export type RecurringCharge = {
   lastRowId: string;
   /** Bills for a set amount (a subscription, rent, a premium): half the charges within 1% of the usual one. A metered bill (power, water) isn't. */
   fixed: boolean;
+  /** Bills: each charge, oldest first (the last 36), each its own row: a merchant's price history. */
+  history?: { rowId: string; date: string; cents: number }[];
   /** Bills: the same bill's charge a year before the latest (the one nearest, within six weeks of it), for a like-for-like price change. */
   yearAgo: { rowId: string; date: string; cents: number } | null;
 };
@@ -226,6 +228,7 @@ export function detectRecurring(rows: BookRow[], windowEnd: string, last12From: 
       lastRowId: last.id,
       fixed: isBill && median(amounts.map((a) => Math.abs(a - typical))) <= Math.max(100, typical * 0.01),
       yearAgo: isBill ? yearAgoCharge(list, last.date) : null,
+      ...(isBill ? { history: list.slice(-36).map((r) => ({ rowId: r.id, date: r.date, cents: -r.amountCents })) } : {}),
     });
   }
   return out.sort((a, b) => b.annualCents - a.annualCents);

@@ -1,11 +1,13 @@
 "use client";
 
 import { Badge, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { compositeOf } from "@/components/ui/proof/context";
+import { compositeOf, sumOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { RecurringCharge } from "@/lib/book/reports/spending";
 import { NA, usd0, usdDelta } from "@/lib/formatMoney";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { notify } from "@/components/ui/Feedback";
+import type { Mark } from "@/lib/marks";
 import { personalInflation } from "@/lib/book/reports/personalInflation";
 import { formatPercentRatio } from "@/lib/formatMoney";
 import type { Ctx } from "./CashFlowClient";
@@ -52,6 +54,8 @@ export function RecurringTab({ ctx }: { ctx: Ctx }) {
       >
         <BillTable ctx={ctx} list={show === "active" ? active : stopped} />
       </Card>
+
+      <CancelList ctx={ctx} />
 
       <Prices ctx={ctx} />
 
@@ -212,6 +216,62 @@ function Prices({ ctx }: { ctx: Ctx }) {
           ))}
         </table>
       </div>
+    </Card>
+  );
+}
+
+const CANCEL = "/api/cash-flow/cancel-list";
+
+/**
+ * The cancel list: active bills the owner means to cancel, and what that saves a year (each
+ * bill's year of charges, Recurring's own figure). A bill leaves the list on its own once it
+ * stops charging. Kept in data/cancel-list.json, never part of a figure.
+ */
+function CancelList({ ctx }: { ctx: Ctx }) {
+  const [marks, setMarks] = useState<Mark[] | null>(null);
+  useEffect(() => {
+    if (!ctx.api.ready) return;
+    ctx.api.call<{ marks: Mark[] }>(CANCEL).then((r) => setMarks(r.marks)).catch(() => setMarks(null));
+  }, [ctx.api]);
+  const bills = ctx.report.recurring.filter((c) => c.kind === "bill" && c.active).sort((a, b) => b.annualCents - a.annualCents);
+  if (marks == null || !bills.length) return null;
+  const on = new Set(marks.map((m) => m.id));
+  const listed = bills.filter((b) => on.has(b.key));
+  const total = sum(listed, (b) => b.annualCents);
+  const toggle = (key: string, name: string, add: boolean) =>
+    ctx.api
+      .call<{ marks: Mark[] }>(CANCEL, { method: "POST", json: add ? { op: "add", key, says: name } : { op: "remove", key } })
+      .then((r) => {
+        setMarks(r.marks);
+        notify(add ? `${name} is on the cancel list` : `${name} is off the cancel list`, { tone: "info", undo: () => void toggle(key, name, !add) });
+      })
+      .catch((e: Error) => notify(e.message, { tone: "bad" }));
+  return (
+    <Card
+      title={
+        <>
+          Cancel list
+          {listed.length > 0 && (
+            <span className="font-normal text-muted">
+              {" "}
+              · {listed.length} to cancel, <ProofValue proof={sumOf(listed.map((b) => ctx.dp("recurring-annual", b.key)), total)}>{usd0(total)}</ProofValue> a year
+            </span>
+          )}
+        </>
+      }
+      subtitle="Tick the bills you mean to cancel: what it saves a year adds up here, and each leaves the list on its own once it stops charging."
+    >
+      <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3">
+        {bills.map((b) => (
+          <li key={b.key} className="flex items-center gap-2 px-1 py-1 text-[13px]">
+            <input type="checkbox" checked={on.has(b.key)} onChange={(e) => void toggle(b.key, b.name, e.target.checked)} aria-label={`Cancel ${b.name}`} className="accent-[var(--accent)]" />
+            <span className="min-w-0 flex-1 truncate">{b.name}</span>
+            <span className="num text-muted">
+              <ProofValue proof={ctx.dp("recurring-annual", b.key)}>{usd0(b.annualCents)}</ProofValue>/yr
+            </span>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

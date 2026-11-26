@@ -11,7 +11,7 @@ import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
 import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
-import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx, Drill } from "./CashFlowClient";
 import { categoryMerchants } from "@/lib/book/reports/cashFlowWindows";
 import { categoryCents, KINDS, median, monthDrillMerchants, sum } from "./model";
@@ -154,6 +154,43 @@ function RentTiming({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/** A bill's price history: each charge as its statement prints it, a step when the price moved; the steps are listed with their rows. */
+function PriceHistory({ ctx, history, color }: { ctx: Ctx; history: { rowId: string; date: string; cents: number }[]; color: string }) {
+  const ui = chartChrome(ctx.chart);
+  const data = history.map((h) => ({ date: h.date, v: h.cents / 100 }));
+  // The charges where the price moved, against the one before.
+  const steps = history.flatMap((h, i) => (i > 0 && h.cents !== history[i - 1]!.cents ? [{ before: history[i - 1]!, after: h }] : []));
+  const row = (h: { rowId: string; cents: number }): ProofRef => ({ descriptor: { report: "row", rowId: h.rowId }, shownCents: -h.cents });
+  return (
+    <div>
+      <Eyebrow>Price history</Eyebrow>
+      <div className="h-[140px] w-full min-w-0">
+        <RechartsResponsive>
+          <LineChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid {...ui.grid} />
+            <XAxis dataKey="date" {...ui.xAxis} minTickGap={40} />
+            <YAxis {...ui.yAxis} tickFormatter={axisUsd} width={48} domain={["auto", "auto"]} />
+            <Tooltip {...ui.tooltip} formatter={(v) => [formatUsd(Number(v)), "Charge"]} />
+            <Line type="stepAfter" dataKey="v" stroke={color} strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
+          </LineChart>
+        </RechartsResponsive>
+      </div>
+      {steps.length > 0 && (
+        <ul className="mt-1 flex flex-col text-[12.5px]">
+          {steps.slice(-6).map((s) => (
+            <li key={s.after.rowId} className="flex justify-between gap-2 px-1 py-0.5">
+              <span className="text-muted">{s.after.date}</span>
+              <span className="num">
+                <ProofValue proof={row(s.before)}>{usd0(s.before.cents)}</ProofValue> → <ProofValue proof={row(s.after)}>{usd0(s.after.cents)}</ProofValue>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function MerchantDrill({ ctx, drill }: { ctx: Ctx; drill: Extract<Drill, { kind: "merchant" }> }) {
   const { slice, chart } = ctx;
   const pick = drill.lane === "EXPENSE" ? (m: (typeof slice.months)[number]) => m.merchants : (m: (typeof slice.months)[number]) => m.payers;
@@ -199,6 +236,7 @@ export function MerchantDrill({ ctx, drill }: { ctx: Ctx; drill: Extract<Drill, 
         name={drill.name}
         proofAt={(m, cents) => ctx.proof(drill.lane === "EXPENSE" ? "spending" : "income", [m], { merchantKey: drill.key, shownCents: cents })}
       />
+      {recurring?.history && recurring.history.length >= 3 && <PriceHistory ctx={ctx} history={recurring.history} color={color} />}
       <div>
         <Eyebrow>Transactions</Eyebrow>
         <TxnList api={ctx.api} query={{ q: drill.key, lane: drill.lane, from: slice.months[0]!.start, to: slice.months.at(-1)!.end }} onChanged={ctx.reload} />
