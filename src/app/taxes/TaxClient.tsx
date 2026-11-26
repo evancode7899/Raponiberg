@@ -8,14 +8,9 @@ import { BlockedNote } from "@/components/ledger/Blocked";
 import type { TaxReport, TaxReportBlocked } from "@/lib/tax/buildTaxReport";
 import type { TaxProfile } from "@/lib/tax/profile";
 import { useCallback, useEffect, useState } from "react";
-import { TaxComparison } from "./TaxComparison";
-import { TaxFiled } from "./TaxFiled";
-import { TaxIncome } from "./TaxIncome";
 import { TaxInputs } from "./TaxInputs";
 import { TaxOverview } from "./TaxOverview";
-import { TaxPayments } from "./TaxPayments";
-import { TaxW4 } from "./TaxW4";
-import { TaxWorksheet } from "./TaxWorksheet";
+import { TaxComparison, TaxFiled, TaxIncome, TaxPayments, TaxW4, TaxWorksheet } from "./lazyTabs";
 
 export type TaxResponse = (TaxReport | TaxReportBlocked) & { supportedYears: number[] };
 export type ProvenTaxResponse = TaxReport & { supportedYears: number[] };
