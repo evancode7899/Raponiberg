@@ -10,7 +10,8 @@ import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { BalanceBadge, Callout, EstimateValue, formatDate, NumberTable, usd } from "./taxUi";
 import { NotFigure } from "@/components/ui/kit";
 import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
-import { taxesDerived } from "@/lib/book/derived/taxes";
+import { bonusGapsOf, taxesDerived } from "@/lib/book/derived/taxes";
+import { table } from "@/components/ui/kit";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { unswept } from "@/lib/book/proof/clearance";
 import { W4_WALK, walkShown } from "@/lib/tax/w4Extras";
@@ -77,6 +78,7 @@ export function TaxW4({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile) =
 
   return (
     <div className="flex flex-col gap-4">
+      <BonusWithholding r={r} />
       <Card
         tone="overview"
         title={<NotFigure why="the plan's goal">{`W-4s for $0.00 in April ${r.year + 1}`}</NotFigure>}
@@ -367,5 +369,68 @@ function Reconcile({ federal, ct, people, fig }: { federal: W4Balance; ct: W4Bal
         { label: "Owed (refund) with the new W-4s", values: [fig("walk:balanceAfter", "federal", exact(federal.balanceAfter), { zeroWithin: 0.01 }), fig("walk:balanceAfter", "ct", exact(ct.balanceAfter), { zeroWithin: 0.01 })], strong: true },
       ]}
     />
+  );
+}
+
+/**
+ * Bonus withholding, check by check (tax/bonusGap.ts): each bonus paid this year and each
+ * one the forecast still expects, what federal tax it withholds (the stub's on an all-bonus
+ * check, else the 22% supplemental rate) against the year's rate on the next dollar.
+ */
+function BonusWithholding({ r }: { r: TaxResponse }) {
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const people = useMemo(() => bonusGapsOf(r).filter((p) => p.rows.length), [r]);
+  if (!people.length) return null;
+  const cell = (row: string, col: string, cents: number, signed = false) =>
+    cents ? <ProofValue proof={derivedTarget("taxes", derived, "bonus-gap", cellKey(r.year, row, col))}>{signed && cents > 0 ? `+${usd(cents)}` : usd(cents)}</ProofValue> : "—";
+  return (
+    <Card
+      title="Bonus withholding, check by check"
+      subtitle={
+        <NotFigure why="the law's supplemental rate and the year's bracket, words not figures">
+          {`Payroll withholds a flat 22% federal on a bonus (IRS Publication 15, supplemental wages); the year's top dollar is taxed at ${Math.round(r.marginal.federal * 100)}%. The gap is what each check leaves to pay at filing, or over-withholds when negative.`}
+        </NotFigure>
+      }
+    >
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[40rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Check</th>
+              <th className={table.thR}>Bonus</th>
+              <th className={table.thR}>Federal withheld</th>
+              <th className={table.thR}>At the year&apos;s rate</th>
+              <th className={table.thR}>Gap</th>
+            </tr>
+          </thead>
+          {people.map((p) => (
+            <tbody key={p.id}>
+              {people.length > 1 && (
+                <tr>
+                  <th colSpan={5} className={`${table.td} text-left text-xs font-semibold uppercase tracking-wide text-muted`}>
+                    {p.name}
+                  </th>
+                </tr>
+              )}
+              {p.rows.map((x, i) => {
+                const row = `${p.id}:${i}`;
+                return (
+                  <tr key={row} className={`${table.tr} ${x.source === "FORECAST" ? "text-muted" : ""}`}>
+                    <td className={table.td}>
+                      {x.payDate ? formatDate(x.payDate) : x.label}
+                      <span className="ml-2 text-xs text-faint">{x.source === "FORECAST" ? "expected" : x.withheldFrom === "STUB" ? "all-bonus check" : "with regular pay"}</span>
+                    </td>
+                    <td className={table.tdR}>{cell(row, "gross", x.grossCents)}</td>
+                    <td className={table.tdR}>{cell(row, "withheld", x.withheldCents)}</td>
+                    <td className={table.tdR}>{cell(row, "at-rate", x.atRateCents)}</td>
+                    <td className={`${table.tdR} ${x.gapCents > 0 ? "text-neg" : ""}`}>{cell(row, "gap", x.gapCents, true)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          ))}
+        </table>
+      </div>
+    </Card>
   );
 }

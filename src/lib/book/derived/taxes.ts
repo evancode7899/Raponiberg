@@ -7,6 +7,7 @@ import { W4_REACHES, w4Cells } from "../../tax/w4Extras.ts";
 import { c, ln, r, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 import { bracketFill } from "../../tax/bracketFill.ts";
 import { harborQuarters } from "../../tax/harborQuarters.ts";
+import { bonusGaps } from "../../tax/bonusGap.ts";
 import { estimateColumns, type EstimateKey } from "../../tax/estimateLines.ts";
 import { taxYearParams } from "../../tax/params.ts";
 
@@ -32,6 +33,7 @@ export function taxesDerived(report: TaxReport): DerivedFigure[] {
     ...W4_REACHES.flatMap((reach) => tableFigures("w4", `${y}:${reach}`, w4Cells(report, reach).map((x) => ({ ...x, describes: `${y} ${x.describes}, the new W-4 reaching paycheck ${Number(reach) + 1} from now` })))),
     ...bracketDerived(report),
     ...tableFigures("harbor", y, harborCells(report)),
+    ...tableFigures("bonus-gap", y, bonusGapCells(report)),
     ...tableFigures("income", y, incomeCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...(["projected", "ytd"] as const).flatMap((basis) => tableFigures("worksheet", `${y}:${basis}`, worksheetCells(report, basis).map((x) => ({ ...x, describes: `${y} ${basis === "ytd" ? "to date" : "projected"}: ${x.describes}` })))),
   ];
@@ -60,6 +62,24 @@ function harborCells(report: TaxReport): TableCell[] {
         { row, col: "short", describes: `${at}: short of the required amount`, value: c(q.shortCents) },
         // A zero draws a dash, not a figure.
       ].filter((x) => !("cents" in x.value) || x.value.cents !== 0);
+    }),
+  );
+}
+
+/** W-4 › bonus withholding (tax/bonusGap.ts), per person: rows `<person>:<check>`, columns gross, withheld, at-rate, gap. */
+export const bonusGapsOf = (report: TaxReport) => report.people.map((p) => ({ id: p.id, name: p.name, rows: bonusGaps(p.bonusChecks ?? [], report.marginal.federal) }));
+
+function bonusGapCells(report: TaxReport): TableCell[] {
+  return bonusGapsOf(report).flatMap((p) =>
+    p.rows.flatMap((x, i) => {
+      const row = `${p.id}:${i}`;
+      const at = `${p.name}'s bonus ${x.payDate ?? x.label}`;
+      return [
+        { row, col: "gross", describes: `${at}: bonus pay`, value: c(x.grossCents) },
+        { row, col: "withheld", describes: `${at}: federal tax withheld${x.withheldFrom === "STUB" ? ", as the stub prints it" : " at the 22% supplemental rate"}`, value: c(x.withheldCents) },
+        { row, col: "at-rate", describes: `${at}: at the year's federal rate on the next dollar`, value: c(x.atRateCents) },
+        { row, col: "gap", describes: `${at}: at that rate less withheld`, value: c(x.gapCents) },
+      ].filter((cell) => !("cents" in cell.value) || cell.value.cents !== 0);
     }),
   );
 }
