@@ -1,6 +1,7 @@
 import type { AnnualProfileReport, YearProfile } from "../profile/buildAnnualProfile.ts";
 import type { OutlookMonth } from "../profile/outlook.ts";
 import type { Forecast } from "./forecast.ts";
+import { sumOrNull } from "../num.ts";
 
 /**
  * The forecast as columns of one ledger: proven years, the year in progress split into
@@ -64,7 +65,7 @@ export type Period = {
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const mon = (m: number) => MONTHS[m - 1]!;
 const span = (from: number, to: number) => (from === to ? mon(from) : `${mon(from)}–${mon(to)}`);
-const sum = (xs: (number | null)[]) => (xs.some((x) => x == null) ? null : xs.reduce<number>((t, x) => t + x!, 0));
+const sum = sumOrNull;
 
 /** An actual year (or the year to date) from the annual profile; `open` is the net worth it starts from. */
 export function actualFlows(y: YearProfile, open: number | null): Flows {

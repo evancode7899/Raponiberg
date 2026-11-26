@@ -121,3 +121,19 @@ export function formatPercentRatio(ratio: number, maxFractionDigits = 2): string
   }).format(abs);
   return neg ? `(${formatted})` : formatted;
 }
+
+/** A ratio as a percent (0.065 → 6.5%), n.a. when there is none: the one `pct` pages draw with. */
+export function pct(ratio: number | null | undefined, digits = 1): string {
+  return ratio == null || !Number.isFinite(ratio) ? NA : formatPercentRatio(ratio, digits);
+}
+
+/**
+ * Money in a sentence rather than a column: $1,234.56 (or $1,235 with `whole`), with a minus
+ * sign rather than parentheses (−$12.30), since words read "a refund of −$12" more plainly
+ * than "($12)". Zero is $0.00, not a dash: a sentence says the amount.
+ */
+export function usdText(cents: number, { whole = false }: { whole?: boolean } = {}): string {
+  const abs = Math.abs(whole ? Math.round(cents / 100) : cents / 100);
+  const body = abs.toLocaleString("en-US", whole ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${cents < 0 && abs !== 0 ? "−" : ""}$${body}`;
+}

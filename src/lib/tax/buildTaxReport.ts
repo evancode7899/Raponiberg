@@ -29,6 +29,7 @@ import { estimateInstallments, filingDate } from "../dates/taxDates.ts";
 import { NY_SAFE_HARBOR, TAX_YEARS, taxYearParams, type TaxYearParams } from "./params.ts";
 import { bestSeparate, type MfsResult } from "./scenarios.ts";
 import { ageAtYearEnd, EXTRA_FIELDS, yearInputs, type NyResidency, type PayForecast, type Residency, type TaxPerson, type TaxProfile, type YearInputs } from "./profile.ts";
+import { usdText } from "../formatMoney.ts";
 
 /** A brokerage statement's tax figures for one account, as stored in the Book. */
 export type FidelitySnapshot = BookBrokerage;
@@ -310,7 +311,7 @@ export type TaxReportBlocked = { blocked: true; year: number; today: string; pro
 
 const pos = (n: number) => Math.max(0, n);
 const minIso = (a: string, b: string) => (a < b ? a : b);
-const usd = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-US")}`;
+const usd = (cents: number) => usdText(cents, { whole: true });
 
 /**
  * Income tax on one more dollar of the top earner's wages: federal (which already holds the

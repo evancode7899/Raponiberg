@@ -1,5 +1,6 @@
 import type { K1Coded, K1Form } from "../taxdocs/types.ts";
 import type { K1Detail, K1DetailLine, K1Expected, K1Treatment } from "./k1DetailStore.ts";
+import { usdText } from "../formatMoney.ts";
 
 /**
  * A K-1 as the return uses it: the face's boxes and the details file's statement lines,
@@ -178,7 +179,7 @@ export function k1Adds(
 
 export type K1Gap = { box: string; code: string; why: string };
 
-const usd = (cents: number) => `${cents < 0 ? "−" : ""}$${Math.abs(Math.round(cents / 100)).toLocaleString("en-US")}`;
+const usd = (cents: number) => usdText(cents, { whole: true });
 
 /** The details lines for one lettered entry of the face (a bare "see statement" takes any line of its box). */
 export function k1LinesFor(detail: K1Detail | null, e: Pick<K1Coded, "box" | "code">): K1DetailLine[] {

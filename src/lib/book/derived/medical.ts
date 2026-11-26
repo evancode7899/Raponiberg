@@ -2,6 +2,7 @@ import type { HealthPlan, NetworkAmounts } from "../../medical/plans.ts";
 import type { ClaimView, MedicalReport, Slice, YearView } from "../../medical/report.ts";
 import type { EobBalance } from "../../medical/types.ts";
 import { c, ln, t, type DerivedFigure } from "./types.ts";
+import { usdText } from "../../formatMoney.ts";
 
 /**
  * Medical: what the EOBs say each claim, person, provider, kind of care and year cost, who
@@ -16,7 +17,7 @@ export const sliceKey = (y: Pick<YearView, "coverage" | "year">, name: string) =
 export const balanceKey = (y: Pick<YearView, "coverage" | "year">, b: Pick<EobBalance, "person" | "kind" | "inNetwork">) => `${yearKey(y)}|${b.person ?? "Family"}|${b.kind}|${b.inNetwork ? "in" : "out"}`;
 export const planLimitKey = (p: Pick<HealthPlan, "id">, network: "in" | "out", who: "individual" | "family") => `${p.id}|${network}|${who}`;
 
-const usd = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const usd = (cents: number) => usdText(cents);
 const PRINTED = { source: "proven" as const };
 const claimLabel = (x: ClaimView) => `${x.firstDate} ${x.patient}, ${x.provider || "provider not printed"} (claim ${x.id})`;
 

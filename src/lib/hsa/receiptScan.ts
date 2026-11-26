@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir, isDemo } from "../dataDir.ts";
 import { extractPdfText } from "../statements/extractPdfText.ts";
 import { RECEIPT_READER_VERSION, receiptFacts, type ReceiptFileFacts } from "./receipts.ts";
+import { writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * Reads the HSA receipts folder (HSA_RECEIPTS_DIR) into data/hsa-receipts.json: each
@@ -72,9 +73,7 @@ async function scan(dir: string, out: string): Promise<ReceiptFileFacts[]> {
   }
   if (Object.keys(prev).some((rel) => !(rel in files))) changed = true;
   if (changed) {
-    const tmp = `${out}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ version: 1, dir, files } satisfies ScanFile, null, 1));
-    renameSync(tmp, out);
+    writeJsonAtomic(out, { version: 1, dir, files } satisfies ScanFile, { indent: 1, newline: false });
   }
   return Object.values(files).map(({ stamp: _s, version: _v, ...facts }) => facts);
 }

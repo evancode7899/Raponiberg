@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { appendJournal, writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * Bonus warnings the owner reviewed and accepted: a letter that doesn't quite add up, or a
@@ -53,11 +54,8 @@ export function readReviews(file = reviewsFilePath()): ReviewsFile {
 }
 
 function write(file: string, data: ReviewsFile, journal: Record<string, unknown>) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), ...journal }) + "\n");
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
-  renameSync(tmp, file);
+  appendJournal(journalPath(file), journal);
+  writeJsonAtomic(file, data);
 }
 
 /** Adds a review. A warning already reviewed is refused (reopen it first to replace its note). */

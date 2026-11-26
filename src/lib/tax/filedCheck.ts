@@ -4,6 +4,7 @@ import { additionalIncome, computeReturn, type FederalResult, type CtResult, typ
 import { ownerOf, type DocRef, type YearDocs } from "./documents.ts";
 import type { K1AddField } from "./k1.ts";
 import { taxYearParams } from "./params.ts";
+import { usdText } from "../formatMoney.ts";
 
 /**
  * This model against the return that was actually filed, line by line, plus the
@@ -56,7 +57,7 @@ export type FiledCheck = {
 };
 
 const dollars = (cents: number | null) => (cents == null ? null : Math.round(cents / 100));
-const usd = (cents: number) => `${cents < 0 ? "−" : ""}$${Math.abs(Math.round(cents / 100)).toLocaleString("en-US")}`;
+const usd = (cents: number) => usdText(cents, { whole: true });
 
 const usdCents = (cents: number) => `${cents < 0 ? "−" : ""}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

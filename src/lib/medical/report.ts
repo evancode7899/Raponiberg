@@ -3,6 +3,7 @@ import { careKind, codeCounts, type CareKind } from "./codes.ts";
 import { medicalPlansOn, providerAccounts, type ClaimPayment, type PremiumLine, type ProviderAccount } from "./links.ts";
 import { planOn, ROLLING_MONTHS, type HealthPlan, type PlanAmounts, type ServiceLimit } from "./plans.ts";
 import type { BalanceKind, Coverage, EobBalance, EobClaim, EobLine, EobStatement, PendingEob, PlanDocument } from "./types.ts";
+import { sumBy } from "../num.ts";
 
 /**
  * The Medical page's report, pure: every EOB's claims joined into one list (an adjusted
@@ -121,7 +122,7 @@ export type MedicalReport = {
   accounts: ProviderAccount[];
 };
 
-const sum = <T>(xs: readonly T[], f: (x: T) => number) => xs.reduce((s, x) => s + f(x), 0);
+const sum = sumBy;
 const COLUMNS = ["billedCents", "pendingCents", "deductibleCents", "copayCents", "remainingCents", "planCents", "coinsuranceCents", "yourShareCents"] as const;
 
 const totalsOf = (cs: readonly ClaimView[]): Totals => ({

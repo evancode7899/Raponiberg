@@ -1,7 +1,8 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import type { RetiredException, StandingException } from "./types.ts";
+import { appendJournal, writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * The permanent exceptions list: findings the owner explained by hand. It lives in a file
@@ -44,11 +45,8 @@ export function readExceptions(file = exceptionsFilePath()): ExceptionsFile {
 }
 
 function write(file: string, data: ExceptionsFile, journal: Record<string, unknown>) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), ...journal }) + "\n");
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
-  renameSync(tmp, file);
+  appendJournal(journalPath(file), journal);
+  writeJsonAtomic(file, data);
 }
 
 /** Adds an exception. An id already on the list is refused (retire it first to replace its note). */

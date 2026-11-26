@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import { extractPdfText } from "../statements/extractPdfText.ts";
 import { readRewards, REWARDS_READER_VERSION, type RewardsSnapshot } from "./rewardsText.ts";
+import { writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * data/card-rewards.json: the rewards summary each imported credit card statement prints
@@ -33,9 +34,7 @@ export function readCardRewards(file = cardRewardsFile()): CardRewardsFile {
 }
 
 function write(f: CardRewardsFile, file = cardRewardsFile()) {
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(f, null, 1));
-  renameSync(tmp, file);
+  writeJsonAtomic(file, f, { indent: 1, newline: false });
 }
 
 /** A stored statement file: relative to the app folder, or to the data folder's parent. */
