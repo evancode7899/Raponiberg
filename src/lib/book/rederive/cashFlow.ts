@@ -1,4 +1,6 @@
 import { addDays, endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
+import { readPriceIndex } from "../../priceIndex.ts";
+import { addMonths, CPI, indexChange } from "../../priceIndexMath.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { bookedCents } from "../booking.ts";
 import { savingsRate } from "../definitions.ts";
@@ -33,6 +35,8 @@ type Month = {
   /** Null where a summary statement fills part of the month (its flows are on no row). */
   retirement: number | null;
   daily: { all: number[]; everyday: number[] };
+  /** Each category's spending per day. */
+  byCategory: Map<string, number[]>;
 };
 
 const LANE_OF: Record<string, string> = { INCOME: "INCOME", EXPENSE: "EXPENSE", EXTERNAL_TRANSFER: "EXTERNAL" };
@@ -44,7 +48,7 @@ function monthStarts(start: string, end: string): string[] {
   return out;
 }
 
-export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, rep: Pick<SpendingReport, "months" | "current">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, rep: Pick<SpendingReport, "months" | "current" | "recurring">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
   const first = rep.months[0];
   const lastEnd = (rep.current ?? rep.months.at(-1))?.end;
   if (!first || !lastEnd) return {};
@@ -85,6 +89,7 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
     const merchants = { EXPENSE: new Map<string, Agg>(), INCOME: new Map<string, Agg>() };
     const days = Number(endOfMonth(start).slice(8, 10));
     const daily = { all: Array.from({ length: days }, () => 0), everyday: Array.from({ length: days }, () => 0) };
+    const byCategory = new Map<string, number[]>();
     for (const r of inScope) {
       const d = dayOf(r);
       if (d < start || d > end || (r.lane !== "EXPENSE" && r.lane !== "INCOME")) continue;
@@ -96,11 +101,13 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       if (r.lane === "EXPENSE") {
         daily.all[Number(d.slice(8, 10)) - 1]! += cents;
         if (kindOf(r) === "everyday") daily.everyday[Number(d.slice(8, 10)) - 1]! += cents;
+        if (!byCategory.has(r.category)) byCategory.set(r.category, Array.from({ length: days }, () => 0));
+        byCategory.get(r.category)![Number(d.slice(8, 10)) - 1]! += cents;
       }
     }
     for (const m of Object.values(merchants)) for (const [k, v] of m) if (v.cents === 0) m.delete(k);
     const retirement = contributionRows(book, start, end, true);
-    m = { start, end, income: Math.round(income), spending: Math.round(spending), lanes, merchants, retirement, daily };
+    m = { start, end, income: Math.round(income), spending: Math.round(spending), lanes, merchants, retirement, daily, byCategory };
     memo.set(start, m);
     return m;
   };
@@ -220,6 +227,19 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       }
       case "merchant-pattern":
         return { none: "A classification by the recurring-charge detector (cadence and steadiness of the charges), not a sum: nothing to re-add." };
+      case "budget-pace": {
+        const [start, day] = k.split("|");
+        const m = month(start!);
+        const cats = f.lines.filter((l) => l.op !== "=").map((l) => l.label);
+        return [centsRoute(ROWS, v, cats.reduce((s, c) => s + cum(m.byCategory.get(c) ?? [], Number(day)), 0), `expense rows in the budgeted categories counted on days 1–${day}`)];
+      }
+      case "budget-pace-plan": {
+        const [start, day] = k.split("|");
+        const budget = f.lines[0]?.value;
+        if (!budget || !("cents" in budget)) return null;
+        const days = Number(endOfMonth(start!).slice(8, 10));
+        return [centsRoute("the saved budget × days so far ÷ days in the month", v, Math.round((budget.cents * Number(day)) / days), `${day} of ${days} days`)];
+      }
       case "pace-spent": {
         const [start, basis, day] = k.split("|");
         const m = month(start!);
@@ -254,6 +274,55 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       case "recurring-annual":
       case "recurring-change":
         return { none: "The recurring-charge detector's reading of one merchant's charges (its usual charge, its latest, its cadence): the merchant's spending figure re-adds the same rows." };
+      case "cpi-year": {
+        const s = readPriceIndex().series[CPI];
+        const to = k;
+        return [ratioRoute("the price-index file, read again", v, indexChange(s, addMonths(to, -12), to)?.change ?? null, `CPI ${to} over CPI a year before, less one`, 1e-12)];
+      }
+      case "real-spending": {
+        const s = readPriceIndex().series[CPI];
+        const [win, to] = [k.split("|")[0]!, k.split("|").at(-1)!];
+        const level = s?.months[to];
+        if (!s || !level) return null;
+        let cents = 0;
+        for (const m of windowOf(win)) {
+          const at = s.months[m.start.slice(0, 7)];
+          if (!at) return null;
+          cents += Math.round(m.spending * (level / at));
+        }
+        return [centsRoute(ROWS, v, Math.round(cents), `each month's rows re-added, × CPI ${to} ÷ CPI that month`, windowOf(win).length)];
+      }
+      case "price-bill":
+      case "price-category":
+      case "price-all": {
+        // The charges themselves, read off the Book's rows: each bill's a year apart, added up.
+        const rowsOf = f.figure === "price-bill" ? [f] : figures.filter((x) => x.figure === "price-bill" && (f.figure === "price-all" || rep.recurring.find((b) => b.key === x.key)?.category === f.key));
+        let now = 0;
+        let then = 0;
+        for (const x of rowsOf) {
+          const ids = x.lines.flatMap((l) => (l.link?.descriptor.report === "row" ? [l.link.descriptor.rowId] : []));
+          const [a, b] = ids.map((id) => book.rowById.get(id));
+          if (!a || !b) return null;
+          now -= a.amountCents;
+          then -= b.amountCents;
+        }
+        return [ratioRoute("the charges' rows, re-read", v, then > 0 ? now / then - 1 : null, "latest charges over the same bills' a year before, less one", 1e-12)];
+      }
+      case "year-end": {
+        // Spending re-added from the rows: the year so far, and each month left at the middle of the same month before.
+        const [year, metric] = k.split("|");
+        if (metric !== "spending") return { none: "Everyday spending is a band of spending the recurring-charge detector draws: the months it adds are each proven as everyday spending." };
+        const y = Number(year);
+        const starts = rep.months.map((m) => m.start);
+        const soFar = starts.filter((s) => s.startsWith(`${y}-`)).reduce((s, start) => s + month(start).spending, 0);
+        const through = Math.max(...starts.filter((s) => s.startsWith(`${y}-`)).map((s) => Number(s.slice(5, 7))));
+        let rest = 0;
+        for (let mo = through + 1; mo <= 12; mo++) {
+          const same = starts.filter((s) => Number(s.slice(0, 4)) < y && Number(s.slice(5, 7)) === mo).map((s) => month(s).spending);
+          rest += median(same);
+        }
+        return [centsRoute(ROWS, v, soFar + rest, "the year so far re-added, plus each month left at the middle of the same month in earlier years")];
+      }
       case "budget-monthly":
         return { none: "The saved budget targets, as typed: an input, nothing to re-derive." };
       default:

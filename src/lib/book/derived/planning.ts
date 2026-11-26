@@ -4,7 +4,7 @@ import type { HsaReport } from "../../hsa/report.ts";
 import { c, ln, r, r as r_, t, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 
 /** Account limits for one year (key: the year): how many yearly limits are still open, and MAGI when it's read off pay stubs alone. */
-export function accountLimitsDerived(r: Pick<TaxAccountsReport, "year" | "steps" | "magi"> & Partial<Pick<TaxAccountsReport, "marginalRate">>): DerivedFigure[] {
+export function accountLimitsDerived(r: Pick<TaxAccountsReport, "year" | "steps" | "magi"> & Partial<Pick<TaxAccountsReport, "marginalRate" | "people">>): DerivedFigure[] {
   const key = String(r.year);
   const open = r.steps.filter((s) => !s.done);
   const out: DerivedFigure[] = [
@@ -20,6 +20,10 @@ export function accountLimitsDerived(r: Pick<TaxAccountsReport, "year" | "steps"
   const m = r.marginalRate;
   if (m?.rate != null)
     out.push({ figure: "marginal-rate", key, describes: `The income-tax rate on the next dollar, ${r.year} (federal + state + city)`, value: r_(m.rate), lines: [ln(m.source === "SETTING" ? "Your setting (Inputs)" : m.source === "PRIOR_YEAR" ? `The tax estimate's, ${r.year - 1}` : "The tax estimate's", r_(m.rate), undefined, { source: m.source === "SETTING" ? "assumption" : "proven" })] });
+  // 401(k) › the even pace: the limit spread over the year, through each person's latest stub.
+  for (const p of r.people ?? [])
+    if (p.k401.pace)
+      out.push({ figure: "k401-pace", key: `${key}|${p.id}`, describes: `${p.name}: the 401(k) limit spread evenly over ${r.year}, through ${p.k401.pace.through}`, value: c(p.k401.pace.evenCents), lines: [ln("The year's limit", c(p.k401.limit), undefined, { source: "law" }), ln(`× the share of the year through ${p.k401.pace.through}`, t("by day"), "×"), ln("An even pace by then", c(p.k401.pace.evenCents), "=")] });
   if (r.magi.source !== "TAX_REPORT")
     out.push({ figure: "magi-stubs", key, describes: `Household MAGI from pay stub wages only, ${r.year}`, value: c(r.magi.cents), lines: [ln("Wages on the year's pay stubs", c(r.magi.cents), undefined, { source: "proven", note: "The tax estimate isn't provable yet, so MAGI is wages alone." })] });
   return out;

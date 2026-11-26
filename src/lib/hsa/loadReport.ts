@@ -14,7 +14,7 @@ import { readHsaFile } from "./store.ts";
  * folder (read fresh, neither is in the Book) joined to the cached Book-derived ledger. The proof drawer reads the same
  * thing, so what it proves is exactly what the page shows.
  */
-export async function loadHsaReport(db: PrismaClient | Prisma.TransactionClient): Promise<HsaReport> {
+export async function loadHsaReport(db: PrismaClient | Prisma.TransactionClient, opts: { /** False: no receipts-folder scan (the Dashboard only reads; receipts on file change no total). */ scan?: boolean } = {}): Promise<HsaReport> {
   const file = readHsaFile();
   const [ledger, retirement, receipts] = await Promise.all([
     cachedReport(db, "hsa-ledger", async (book) => {
@@ -23,7 +23,7 @@ export async function loadHsaReport(db: PrismaClient | Prisma.TransactionClient)
       return { ...hsaLedger(book), today: book.today, linked: hsaLinkedRates(book, forecast, data.profile.seeds), taxMarginal: hsaTaxMarginal(book, Number(book.today.slice(0, 4)), forecast ? taxLink(forecast) : null) };
     }).then((t) => JSON.parse(t) as HsaLedger & { today: string; linked: ReturnType<typeof hsaLinkedRates>; taxMarginal: TaxMarginalIn | null }),
     loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings),
-    scanHsaReceipts(),
+    opts.scan === false ? Promise.resolve(null) : scanHsaReceipts(),
   ]);
   return buildHsaReport({ file, ...ledger, marginalRate: retirement.marginalRate, receipts });
 }

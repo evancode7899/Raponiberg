@@ -18,6 +18,7 @@ import { analyzeFire, fiLevers, firePlans, type FiLever } from "../fire/fire.ts"
 import type { Forecast } from "../forecast/forecast.ts";
 import { buildFeed, highlightSegs, type FeedItem, type FeedSeg } from "../insights/feed.ts";
 import { classLabel } from "../investments/securities.ts";
+import type { AnomaliesReport } from "../book/reports/anomalies.ts";
 import type { AnnualProfileReport } from "../profile/buildAnnualProfile.ts";
 
 /**
@@ -38,6 +39,7 @@ export type BriefingInputs = {
   returnRate: number;
   forecast: Forecast | null;
   profile: AnnualProfileReport;
+  anomalies?: AnomaliesReport;
 };
 
 export type BriefingStep = { key: string; label: string; cents: number; fromCents: number; toCents: number; typicalCents: number | null; note: string; proof: ProofRef; typicalProof: ProofRef };
@@ -73,6 +75,8 @@ export type Briefing = {
 };
 
 const HOLDINGS = 8;
+/** Feed items the briefing lists: more than the panel shows, so ones the owner dismissed leave room for the next. */
+const FEED_LISTED = 40;
 
 export function buildBriefing(x: BriefingInputs): Briefing {
   const derivedChange = [...changeStepsDerived(x.changes), ...changeTypicalDerived(x.changes)];
@@ -191,7 +195,7 @@ export function buildBriefing(x: BriefingInputs): Briefing {
     },
     events: eventsOf(x.netWorth, x.changes),
     trends,
-    feed: buildFeed({ today: x.book.today, spending: x.spending, netWorth: x.netWorth, change: last, calendar: x.calendar.items, goals: x.goals.goals }),
+    feed: buildFeed({ today: x.book.today, spending: x.spending, netWorth: x.netWorth, changes: x.changes.periods, anomalies: x.anomalies?.items, change: last, calendar: x.calendar.items, goals: x.goals.goals }, FEED_LISTED),
   };
 }
 

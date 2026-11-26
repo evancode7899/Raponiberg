@@ -11,8 +11,9 @@ import type { PaymentKind } from "@/lib/bonuses/awardStore";
 import type { AwardMeasure, BonusesDescriptor } from "@/lib/book/proof/bonusesProof";
 import type { PayLine } from "@/lib/book/proof/payProof";
 import type { AwardRow, BonusesReport, BonusPayment, BonusWarning, Tranche, VestWindow, WindowStatus } from "@/lib/book/reports/bonuses";
-import { estimateDescriptor, expectedBonuses, figureReads, paidYearDescriptor, stubPayFigure, yearPayDescriptor } from "@/lib/book/reports/bonusFigures";
+import { deferredAwarded, estimateDescriptor, expectedBonuses, figureReads, paidYearDescriptor, stubPayFigure, yearPayDescriptor, walkAwayCost, walkAwayDates } from "@/lib/book/reports/bonusFigures";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
+import { annualPayDescriptor } from "@/lib/profile/annualPay";
 import { buildForecast } from "@/lib/forecast/forecast";
 import type { ForecastData } from "@/lib/forecast/load";
 import { formatPercentRatio, formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
@@ -194,6 +195,66 @@ function WarningCallout({ w, onReview }: { w: BonusWarning; onReview: OnReview }
   );
 }
 
+/**
+ * Each person's pay, year by year: what the stubs paid (base, bonus, employer 401(k) and HSA
+ * money) and its total, and beside it what the letters awarded that year but deferred, at the
+ * value the letter states, never added in (a deferred tranche is in the bonus of the year it pays).
+ */
+function PayHistory({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }) {
+  const years = fdata?.profile.years ?? [];
+  const rows = years.flatMap((y) => (y.people ?? []).filter((p) => p.member && p.hasPay).map((p) => ({ y, p })));
+  if (!rows.length) return null;
+  return (
+    <Card title="Total pay by year" subtitle="Paid on the stubs each year, and what the letters awarded that year but deferred (at the value each letter states). The deferred part isn't added in: it's in the bonus of the year it pays out.">
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[44rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Year</th>
+              <th className={table.th}>Who</th>
+              <th className={table.thR}>Base</th>
+              <th className={table.thR}>Bonus paid</th>
+              <th className={table.thR}>Employer 401(k) & HSA</th>
+              <th className={table.thR}>Paid in all</th>
+              <th className={table.thR}>Awarded, deferred</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...rows].reverse().map(({ y, p }) => {
+              const pay = (line: PayLine | PayLine[], cents: number): ProofTarget => ({ descriptor: annualPayDescriptor(y, p, line), shownCents: cents });
+              const parts = [pay("base", p.salary), pay("bonus", p.bonus), pay(["employer-k401", "employer-hsa"], p.employer)];
+              const total = p.salary + p.bonus + p.employer;
+              const { cents: dCents, awards: deferred } = deferredAwarded(r.awards, p.personId, y.year);
+              return (
+                <tr key={`${y.year}|${p.personId}`} className={table.trHover}>
+                  <td className={`${table.td} num font-medium`}>
+                    {y.year}
+                    {y.asOf.slice(5) !== "12-31" && <span className="ml-1 text-[11px] font-normal text-faint">to {y.asOf.slice(5)}</span>}
+                  </td>
+                  <td className={table.td}>{p.name}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={parts[0]!}>{usd0(p.salary)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={parts[1]!}>{usd0(p.bonus)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={parts[2]!}>{usd0(p.employer)}</ProofValue>
+                  </td>
+                  <td className={`${table.tdR} font-semibold`}>
+                    <ProofValue proof={compositeOf("sum", parts, { cents: total })}>{usd0(total)}</ProofValue>
+                  </td>
+                  <td className={`${table.tdR} text-info`}>{deferred.length ? <BonusValue proof={sumOf(deferred.map((a) => awardProof(a, "deferred", a.deferredCents + a.planDeferredCents)), dCents) as ProofTarget}>{usd0(dCents)}</BonusValue> : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }) {
   const t = r.totals;
   if (!r.awards.length) return <NoLetters r={r} fdata={fdata} />;
@@ -262,6 +323,7 @@ function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }
       <Unlettered r={r} />
       <StubOnly r={r} />
       <Expected fdata={fdata} />
+      <PayHistory r={r} fdata={fdata} />
     </>
   );
 }
@@ -425,6 +487,7 @@ function NoLetters({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null 
       <Unlettered r={r} />
       <StubOnly r={r} />
       <Expected fdata={fdata} />
+      <PayHistory r={r} fdata={fdata} />
     </>
   );
 }
@@ -486,6 +549,7 @@ function Schedule({ r }: { r: BonusesReport }) {
   if (!r.letters.length) return <NoLetters r={r} fdata={null} />;
   return (
     <>
+      <WalkAwayCost r={r} />
       {r.letters.map((l) => {
         const windows = r.windows.filter((w) => w.letterId === l.id);
         const awards = r.awards.filter((a) => a.letterId === l.id).sort((a, b) => a.year - b.year);
@@ -771,4 +835,42 @@ function PaysCell({ p, r }: { p: BonusPayment; r: BonusesReport }) {
   const w = r.windows.find((x) => x.payments.some((q) => q.stubId === p.stubId && q.line === p.line));
   const text = <span className="text-fg-2">{p.explains!.window} payment</span>;
   return w ? <BonusValue proof={windowProof(w, "paid")} drawn="words">{text}</BonusValue> : text;
+}
+
+/**
+ * Walk-away cost by date (reports/bonusFigures.ts walkAwayCost): leaving on each day the
+ * schedule changes, the deferred pay still to vest that stays behind. Each amount adds up the
+ * tranches it leaves, each its own figure on the schedule below.
+ */
+function WalkAwayCost({ r }: { r: BonusesReport }) {
+  const today = r.today;
+  const dates = walkAwayDates(r.awards, today);
+  if (dates.length < 2) return null;
+  return (
+    <Card title="What leaving would cost" subtitle="Leaving on each date, the deferred pay still to vest that stays behind, as the letters schedule it. It falls as each payment window ends; a termination without cause may pay some of it, by the letter's terms.">
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[28rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Leave on</th>
+              <th className={table.thR}>Left behind</th>
+              <th className={table.th}>Still to vest then</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dates.map((d) => {
+              const c = walkAwayCost(r.awards, d);
+              return (
+                <tr key={d} className={table.tr}>
+                  <td className={`${table.td} num`}>{d === today ? `Today (${formatDisplayDateFromYmd(d)})` : `After ${formatDisplayDateFromYmd(d)}`}</td>
+                  <td className={`${table.tdR} ${c.cents ? "text-neg" : ""}`}>{c.cents ? <BonusValue proof={sumOf(c.tranches.map((x) => trancheProof(x.award, x.tranche)), c.cents) as ProofTarget}>{usd0(c.cents)}</BonusValue> : "—"}</td>
+                  <td className={`${table.td} text-xs text-muted`}>{c.tranches.map((x) => `${x.award.year} ${x.tranche.label}`).join(" · ") || "nothing"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 }

@@ -23,9 +23,10 @@ import { WithheldStrip } from "./parts";
 import { RecurringTab } from "./RecurringTab";
 import { SpendingTab } from "./SpendingTab";
 import { TrendsTab } from "./TrendsTab";
+import { UnusualTab } from "./UnusualTab";
 import { YoyTab } from "./YoyTab";
 
-const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", "recurring", "budget", "income"] as const;
+const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", "recurring", "unusual", "budget", "income"] as const;
 export type CashTab = (typeof TABS)[number];
 
 export type Drill =
@@ -118,6 +119,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
           { id: "yoy", label: "Year over year" },
           { id: "merchants", label: "Merchants" },
           { id: "recurring", label: "Recurring", count: data?.recurring.filter((c) => c.kind === "bill" && c.active && c.changeCents && c.changeCents > 0).length || null },
+          { id: "unusual", label: "Unusual" },
           { id: "budget", label: "Budget" },
           { id: "income", label: "Income & savings" },
         ]}
@@ -211,6 +213,8 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
           <MerchantsTab ctx={ctx} />
         ) : tab === "recurring" ? (
           <RecurringTab ctx={ctx} />
+        ) : tab === "unusual" ? (
+          <UnusualTab ctx={ctx} />
         ) : tab === "budget" ? (
           <BudgetTab ctx={ctx} />
         ) : (

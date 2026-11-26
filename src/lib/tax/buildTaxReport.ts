@@ -4,6 +4,7 @@ import { personPayYear } from "../book/pay.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import { chetYear, excessDeferral, excessDeferralMessage, iraYear, k401Limit, statementContributionsYtd, taxableConversion, type ChetYear, type ExcessDeferral } from "../book/taxAdvantaged.ts";
 import { taxRows } from "../book/taxPayments.ts";
+import { bonusChecksOf, type BonusCheck } from "./bonusGap.ts";
 import type { TaxForecastLink } from "../forecast/forecast.ts";
 import type { FiledReturn, K1Form, TaxDoc } from "../taxdocs/types.ts";
 import { additionalIncome, computeReturn, installmentsDue, safeHarbor, type NyFiling, type PersonIncome, type QbiBusiness, type ReturnResult, type SafeHarbor, type W2 } from "./computeReturn.ts";
@@ -189,11 +190,14 @@ export type PersonReport = {
   incomeYtd: PersonIncome;
   /** Pay-stub totals across employers, year to date and projected. */
   payrollTotals: { ytd: PayrollAmounts; projected: PayrollAmounts };
+  /** The year's bonus paychecks (bonusChecksOf): stubs paid so far, then the forecast's bonuses still to come. */
+  bonusChecks: BonusCheck[];
   /** Taxes actually paid so far this year (withholding to date + estimates paid). */
   paidToDate: { federal: number; socialSecurity: number; medicare: number; ct: number; ctPfml: number; otherState: number; estimatesFederal: number; estimatesCt: number };
 };
 
 export type { MfsResult };
+export type { BonusCheck };
 
 export type TaxReport = {
   blocked: false;
@@ -755,6 +759,7 @@ export function buildTaxReport(
       id: person.id,
       name: person.name,
       fromForecast,
+      bonusChecks: bonusChecksOf(stubs, fromForecast?.items ?? []),
       payrollSource,
       partial: partialByPerson.get(person.id) ?? [],
       payroll,

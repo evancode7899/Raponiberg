@@ -292,7 +292,11 @@ export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardRe
     }
     // Each member's salary and bonus (a partner before the merge shows nothing).
     for (const q of y.people ?? [])
-      if (q.member) for (const [line, v] of [["base", q.salary], ["bonus", q.bonus]] as const) out.push({ page: "Annual", descriptor: annualPayDescriptor(y, q, line), shown: cents(v) });
+      if (q.member) {
+        for (const [line, v] of [["base", q.salary], ["bonus", q.bonus]] as const) out.push({ page: "Annual", descriptor: annualPayDescriptor(y, q, line), shown: cents(v) });
+        // Employer 401(k) and HSA money, on Bonuses › Total pay by year.
+        if (q.hasPay) out.push({ page: "Annual", descriptor: annualPayDescriptor(y, q, ["employer-k401", "employer-hsa"]), shown: cents(q.employer) });
+      }
     const n = y.netWorth;
     if (n) {
       for (const b of BUCKETS) if (n.buckets[b.id] !== 0) add("Annual", { report: "annual", figure: "bucket", year, bucket: b.id }, b.debt ? -n.buckets[b.id] : n.buckets[b.id]);

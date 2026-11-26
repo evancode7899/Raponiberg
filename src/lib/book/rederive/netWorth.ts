@@ -4,8 +4,12 @@ import { bookedCents } from "../booking.ts";
 import type { DerivedFigure } from "../derived/types.ts";
 import { household } from "../householdView.ts";
 import type { Book, BookRow } from "../load.ts";
-import { centsRoute, invariant, ratioRoute, rederiveList } from "../proof/independence.ts";
+import { centsRoute, invariant, ratioRoute, rederiveList, textRoute } from "../proof/independence.ts";
 import type { Rederivation, RederivedRoute } from "../proof/types.ts";
+import { markStep } from "../reports/records.ts";
+import { drawdown } from "../reports/drawdown.ts";
+import { readPriceIndex } from "../../priceIndex.ts";
+import { addMonths, BENCHMARK, indexChange } from "../../priceIndexMath.ts";
 import { cashFlowRows, dayOfFor } from "../reports/cashFlow.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 
@@ -144,10 +148,15 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
 
   // What changed: each period's steps, and its balances summed here.
   const steps = new Map<string, { cents: number; all: number; start: string; end: string }>();
+  const split = new Map<string, { cents: number; all: number; start: string; end: string }>();
   for (const r of changes)
     for (const p of r.periods) {
       const all = p.steps.reduce((s, x) => s + x.cents, 0);
       for (const s of p.steps) steps.set(`${r.granularity}|${p.start}|${s.key}`, { cents: s.cents, all, start: p.start, end: p.end });
+      const sp = p.split;
+      const parts = { saving: sp.savingCents, "one-time": sp.oneTimeCents, transit: sp.transitCents };
+      const allSplit = sp.savingCents + sp.oneTimeCents + sp.marketsCents + sp.transitCents;
+      for (const [k, cents] of Object.entries(parts)) split.set(`${r.granularity}|${p.start}|${k}`, { cents, all: allSplit, start: p.start, end: p.end });
     }
   // Every account on file by `iso`; one that first appears later has no balance yet (its opening is "other money").
   const balance = (iso: string) => ledger.accounts.reduce((s, a) => (a.timeline.firstDay && a.timeline.firstDay <= iso ? s + valueAt(a.timeline, iso).cents : s), 0);
@@ -183,10 +192,64 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
         const of = col === "household" ? "every investment account's timeline" : "the account's timeline";
         return [ratioRoute(`each month re-worked from ${of} (Modified Dietz), chained`, v, c.total, `${c.months} of ${periodsBetween(start, end, "month").length} months measured, chained`, 1e-9)];
       }
+      case "benchmark-return": {
+        const s = readPriceIndex().series[BENCHMARK];
+        const from = portfolioFrom;
+        if (!from || !f.key) return null;
+        return [ratioRoute("the price-index file, read again", v, indexChange(s, addMonths(from.slice(0, 7), -1), f.key)?.change ?? null, "the level that month over the level before the stretch, less one", 1e-12)];
+      }
+      case "benchmark-portfolio": {
+        const from = portfolioFrom;
+        if (!from || !f.key) return null;
+        const c = chained(from, minIso(endOfPeriod(`${f.key}-01`, "month"), through));
+        return [ratioRoute(ROUTE, v, c.total, `${c.months} months from ${from} through ${f.key}`, 1e-9)];
+      }
+      case "drawdown-max":
+      case "drawdown-now": {
+        // Each month of the stretch re-worked from the timelines and chained here.
+        const from = portfolioFrom;
+        if (!from) return null;
+        const d = drawdown(periodsBetween(from, through, "month").map((m) => ({ label: m.start, r: monthRatio(m.start) })));
+        const want = f.figure === "drawdown-max" ? (d?.max?.ratio ?? null) : (d?.now.ratio ?? null);
+        return [ratioRoute(ROUTE, v, want, "the chained index against its running high", 1e-9)];
+      }
+      case "growth-since": {
+        const from = portfolioFrom;
+        if (!from || !f.key) return null;
+        const cents = periodsBetween(from, through, "month").reduce((s, m) => s + (partsIn(m.start).get(f.key!)?.gainCents ?? 0), 0);
+        return [centsRoute("each month's Modified Dietz gain re-worked from the account's timeline, added", v, cents, `months from ${from}`, 2 * periodsBetween(from, through, "month").length)];
+      }
+      case "fees-since":
+        return { none: "Each month's fees as the accounts' statements print them: the statements are the source, and How it was built states each account's month." };
       case "change-typical":
         return { none: "The mean of the same figure over the whole proven periods before it: each of those is a figure of its own on this tab (its change, saving, markets, income, spending or category), re-derived by its own proof." };
       case "accounts-measured":
         return { none: "A count of the accounts whose statements give an unbroken stretch to measure: which stretch is unbroken is the integrity checks' call, not a sum." };
+      case "record-rise":
+      case "record-rise-now": {
+        // Every month-end from the run's first to its last, summed account by account, must rise.
+        const ends = f.lines.flatMap((l) => (l.link?.descriptor.report === "net-worth" && l.link.descriptor.metric === "balance" ? [l.link.descriptor.date] : []));
+        if (ends.length !== 2) return null;
+        const months = periodsBetween(addDays(ends[0]!, 1), ends[1]!, "month");
+        const values = [balance(ends[0]!), ...months.map((m) => balance(minIso(m.end, through)))];
+        const rising = values.slice(1).filter((x, i) => Math.round(x) > Math.round(values[i]!)).length;
+        return [textRoute("month-ends summed account by account", v, rising === months.length ? String(rising) : "not every month rose", "each month-end above the one before")];
+      }
+      case "record-next": {
+        const now = Math.round(balance(through));
+        const step = markStep(now);
+        return [centsRoute("the next multiple of the step above net worth, summed account by account", v, Math.floor(now / step) * step + step - now, "the mark less net worth", 1)];
+      }
+      case "change-split": {
+        // The parts close on balances summed account by account: the change less every other part.
+        const s = split.get(f.key ?? "");
+        if (!s) return null;
+        const g = (f.key ?? "").split("|")[0] as Granularity;
+        const end = minIso(endOfPeriod(s.start, g), through);
+        const change = balance(end) - balance(addDays(s.start, -1));
+        const out: RederivedRoute[] = [centsRoute("the split closed on balances summed account by account", v, change - (s.all - s.cents), "closing less opening, less every other part", 2)];
+        return out;
+      }
       case "change-step": {
         const k = f.key ?? "";
         const s = steps.get(k);

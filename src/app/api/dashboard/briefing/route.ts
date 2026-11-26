@@ -9,6 +9,8 @@ import { buildNetWorthChanges } from "@/lib/book/reports/netWorthChanges";
 import { buildSpendingReport } from "@/lib/book/reports/spending";
 import { buildTaxAccounts } from "@/lib/book/reports/taxAccounts";
 import { buildBriefing } from "@/lib/dashboard/briefing";
+import { buildAnomalies } from "@/lib/book/reports/anomalies";
+import { readRowDecisions } from "@/lib/review/rowDecisions";
 import { prisma } from "@/lib/db";
 import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
@@ -38,11 +40,13 @@ export async function GET(request: NextRequest) {
       const link = forecast ? taxLink(forecast) : null;
       const settings = data.profile.settings;
       const years = calendarYears(book.today, startedTaxYears(book.today));
+      const spending = buildSpendingReport(book, settings, {});
       return buildBriefing({
         book,
         changes: buildNetWorthChanges(book, { granularity: "month" }),
         netWorth: buildNetWorth(book, { granularity: "month" }),
-        spending: buildSpendingReport(book, settings, {}),
+        spending,
+        anomalies: buildAnomalies(book, spending, reviewedRows()),
         calendar: buildMoneyCalendar(
           book.today,
           years.map((year) => ({ year, tax: buildTaxReport(book, year, { forecast: link }), accounts: buildTaxAccounts(book, year, retirement, link) })),
@@ -56,4 +60,13 @@ export async function GET(request: NextRequest) {
       });
     }),
   );
+}
+
+/** The rows the owner answered one by one: a damaged file (a finding of its own) reads as none here. */
+function reviewedRows() {
+  try {
+    return readRowDecisions().decisions.map((d) => d.row);
+  } catch {
+    return [];
+  }
 }

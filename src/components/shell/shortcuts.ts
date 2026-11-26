@@ -15,6 +15,8 @@ export const DASHBOARD_KEYS: Shortcut[] = [
   ["Enter", "Open the row, or the panel's page"],
   ["1  2  3", "Net worth over 6 months, 12 months, or all proven history"],
   ["M", "3-month average on or off"],
+  ["X", "On a feed row: dismiss it until what it says changes"],
+  ["R", "On a feed row: remind me in a week"],
   ["/", "Command bar"],
 ];
 

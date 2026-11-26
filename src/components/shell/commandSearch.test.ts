@@ -55,6 +55,11 @@ describe("what it suggests", () => {
     expect(suggest("groceries").map((s) => s.id)).toContain("cat:Groceries");
   });
 
+  it("the card for a purchase", () => {
+    expect(suggest("card whole foods")[0]).toMatchObject({ code: "CARD", href: "/card-perks?tab=best-card&q=whole%20foods" });
+    expect(suggest("which card for flights")[0]!.href).toBe("/card-perks?tab=best-card&q=flights");
+  });
+
   it("rows that say the words, when asked or when nothing else answers", () => {
     expect(suggest("find springfield power")).toEqual([expect.objectContaining({ href: "/statements?tab=transactions&q=springfield%20power" })]);
     expect(first("springfield power & light").href).toBe("/statements?tab=transactions&q=springfield%20power%20%26%20light");

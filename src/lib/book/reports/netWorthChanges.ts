@@ -36,6 +36,17 @@ export type ChangeStep = {
   note: string;
 };
 
+/** What a change is made of (NetWorthChange.split): saving, one-time money, markets, and in transit, which closes it to the cent. */
+export type ChangeSplit = { savingCents: number; oneTimeCents: number; marketsCents: number; transitCents: number };
+export const SPLIT_PARTS = ["saving", "one-time", "markets", "transit"] as const;
+export type SplitPart = (typeof SPLIT_PARTS)[number];
+
+/** A change's split, from its saving (balances first on file included), first-on-file and market figures; in transit is what's left. */
+export function splitOf(changeCents: number, savedCents: number, firstOnFileCents: number, marketsCents: number): ChangeSplit {
+  const savingCents = savedCents - firstOnFileCents;
+  return { savingCents, oneTimeCents: firstOnFileCents, marketsCents, transitCents: changeCents - savingCents - firstOnFileCents - marketsCents };
+}
+
 /** One category against its average over the comparison periods. */
 export type ChangeMover = { category: string; cents: number; typicalCents: number; deltaCents: number; proof: ProofDescriptor };
 
@@ -50,12 +61,20 @@ export type NetWorthChange = {
   changeCents: number;
   /** Everything saved or contributed (Home's "from saving"). */
   savedCents: number;
+  /** The part of it that is balances already in accounts first on file in the period (not saved in it). */
+  firstOnFileCents: number;
   /** Market growth net of fees (Home's "from markets"). */
   marketsCents: number;
   incomeCents: number;
   /** Positive: Cash flow's spending. */
   spendingCents: number;
   portfolioReturn: number | null;
+  /**
+   * The change in three plain parts and what's left: saving from income (saved less balances
+   * first on file), one-time money (balances already in accounts when they first appear),
+   * markets, and money in transit at the edges. They add up to the change to the cent.
+   */
+  split: ChangeSplit;
   steps: ChangeStep[];
   /** Averages over the comparison periods: the whole periods just before this one that are proven. Null for a period cut short or with none before it. */
   typical: { periods: number; changeCents: number; savedCents: number; marketsCents: number; incomeCents: number; spendingCents: number; of: string[] } | null;
@@ -224,10 +243,12 @@ function changeOf(j: Joined, before: Joined[], g: Granularity): NetWorthChange {
     closingCents: h.closingCents,
     changeCents: h.closingCents - h.openingCents,
     savedCents: saved,
+    firstOnFileCents: h.newlyTrackedCents,
     marketsCents: h.growthNetOfFeesCents,
     incomeCents: cf.incomeCents,
     spendingCents: cf.spendingCents,
     portfolioReturn: h.portfolioReturn,
+    split: splitOf(h.closingCents - h.openingCents, saved, h.newlyTrackedCents, h.growthNetOfFeesCents),
     steps,
     typical,
     spendingMovers: typical ? movers(cf.spendingByCategory, before.map((b) => b.cf.spendingByCategory), typical.spendingCents, category("spending"), 1) : [],

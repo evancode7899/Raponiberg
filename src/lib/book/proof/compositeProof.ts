@@ -45,7 +45,8 @@ export async function buildCompositeProof(ctx: ProofContext, d: CompositeDescrip
     return [{ ...line, ...(i ? { note: "over its months, next line" } : {}) }, { ...(i ? { op: OPS[d.op] } : {}), label: `${p.describes}, a month (÷ ${n})`, value: { cents: p.figure.cents / n }, source: "derived" }];
   };
   const lines: ChainLine[] = parts.flatMap(each);
-  if (d.op === "times") lines.push({ op: "×", label: "The number you typed", value: { ratio: d.n! }, source: "assumption" });
+  // −1 turns a figure around (what was spent is what it took away); any other number is one you typed.
+  if (d.op === "times") lines.push(d.n === -1 ? { op: "×", label: "Turned around: taken away, not added", value: { ratio: -1 }, source: "derived" } : { op: "×", label: "The number you typed", value: { ratio: d.n! }, source: "assumption" });
   // a × b ÷ c: the third part divides.
   if (d.op === "scale" && lines.length === 3) lines[2] = { ...lines[2]!, op: "÷" };
   if (d.op === "growth" && "ratio" in value) lines.push({ op: "=", label: "Ratio", value: { ratio: value.ratio + 1 }, source: "derived" }, { op: "−", label: "Less one", value: { ratio: 1 }, source: "derived" });

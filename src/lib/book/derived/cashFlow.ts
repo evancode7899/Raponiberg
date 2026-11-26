@@ -1,8 +1,11 @@
 import { savingsRate } from "../definitions.ts";
 import { byYear, cashFlowWindows, last12At, median, mergeCategories, mergeMerchants, PRESET_RANGES, sliceRange, sum } from "../reports/cashFlowWindows.ts";
+import { latestAtOrBefore, yearChange } from "../../priceIndexMath.ts";
 import type { CategoryAmount } from "../reports/cashFlow.ts";
 import { CHARGE_BUCKETS, type MerchantMonth, type SpendingMonth, type SpendingReport } from "../reports/spending.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
+import { personalInflation } from "../reports/personalInflation.ts";
+import { SEASON_METRICS, yearEndEstimate, type SeasonMetric } from "../reports/seasonality.ts";
 
 /** How many merchants Merchants › Where it goes draws as tiles; the rest it sums. */
 export const MAP_TOP = 40;
@@ -29,7 +32,7 @@ const merchantsOf = (lane: "EXPENSE" | "INCOME") => (m: SpendingMonth): Merchant
  * charges, average and pattern; and once, Recurring's bills and habits and the budget's
  * figures on the saved targets.
  */
-export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"> & Partial<Pick<SpendingReport, "current">>, targets: Record<string, number> = {}): DerivedFigure[] {
+export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"> & Partial<Pick<SpendingReport, "current" | "cpi">>, targets: Record<string, number> = {}): DerivedFigure[] {
   const out: DerivedFigure[] = [...paceDerived(rep)];
   // Each figure only over the runs of months a tab can draw it on (the render audit holds the
   // two together): the savings rate over every run (a month, the run before, a year earlier);
@@ -122,6 +125,7 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
         add("merchant-pattern", `${x.name}: pattern`, t(rec ? (rec.kind === "bill" ? "Bill" : "Habit") : "Irregular"), [ln("Recurring detection", t(rec ? `${rec.kind}, ${rec.active ? "active" : "stopped"}` : "not recurring"))], k);
       }
   }
+  out.push(...yearEndDerived(rep.months), ...priceDerived(rep.recurring), ...cpiDerived(rep));
   // Recurring.
   const bills = rep.recurring.filter((x) => x.kind === "bill");
   const active = bills.filter((x) => x.active);
@@ -153,6 +157,7 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
       );
     if (x.changeCents != null) one("recurring-change", "how much the latest charge went up", x.changeCents, [ln("The latest charge", c(x.lastCents)), ln("The one before", c(x.lastCents - x.changeCents), "−"), ln("Change", c(x.changeCents), "=")]);
   }
+  out.push(...budgetPaceDerived(rep, targets));
   const budgeted = sum(Object.values(targets), (v) => v);
   out.push({
     figure: "budget-monthly",
@@ -161,6 +166,177 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
     lines: [...Object.entries(targets).map(([cat, v], i) => ln(cat, c(v), i ? "+" : undefined, { source: "assumption" })), ln("Monthly budget", c(budgeted), "=")],
   });
   return out;
+}
+
+// ------------------------------------------------------------------ Recurring › your prices, a year on
+
+/**
+ * Recurring › your prices, a year on (reports/personalInflation.ts): each bill's latest charge
+ * against its own charge a year before, and by category and in all, weighted by cost.
+ */
+export function priceDerived(recurring: SpendingReport["recurring"]): DerivedFigure[] {
+  const p = personalInflation(recurring);
+  const row = (label: string, x: { rowId: string; date: string; cents: number }, op?: "÷") => ln(`${label}, ${x.date}`, c(x.cents), op, { source: "proven", link: { label: `The charge on ${x.date}`, descriptor: { report: "row", rowId: x.rowId } } });
+  const out: DerivedFigure[] = p.bills.map((b) => ({
+    figure: "price-bill",
+    key: b.key,
+    describes: `${b.name}: its latest charge against its own a year before`,
+    value: r(b.change),
+    lines: [row("Latest charge", b.now), row("The same bill a year before", b.then, "÷"), ln("Change", r(b.change), "=", { note: "Latest ÷ a year before, less one." })],
+  }));
+  const group = (figure: string, key: string | undefined, describes: string, g: { thenCents: number; nowCents: number; change: number }, n: number): DerivedFigure => ({
+    figure,
+    ...(key != null ? { key } : {}),
+    describes,
+    value: r(g.change),
+    lines: [ln(`${n} bill${n === 1 ? "" : "s"}, their latest charges`, c(g.nowCents), undefined, { source: "proven" }), ln("The same bills a year before", c(g.thenCents), "÷", { source: "proven" }), ln("Change", r(g.change), "=")],
+  });
+  for (const g of p.categories) out.push(group("price-category", g.category, `${g.category}: recurring bills' prices against a year before, weighted by cost`, g, g.bills.length));
+  if (p.all) out.push(group("price-all", undefined, "Recurring bills' prices against a year before, weighted by cost", p.all, p.bills.length));
+  return out;
+}
+
+// ------------------------------------------------------------------ CPI: beside your prices, and today's dollars
+
+/** CPI over the twelve months to its latest month on or before the latest proven month (Recurring › your prices). */
+export const cpiYearOf = (rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "cpi">>) => {
+  const last = rep.months.at(-1);
+  return last && rep.cpi ? yearChange(rep.cpi, last.start.slice(0, 7)) : null;
+};
+
+/** Each calendar year's months in the latest CPI month's dollars: each month's spending × CPI then ÷ CPI that month. Null for a year with a month CPI doesn't cover. */
+export function realYears(rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "cpi">>): { year: number; months: SpendingMonth[]; to: string; cents: number; parts: { key: string; cents: number; ratio: number }[] }[] {
+  const s = rep.cpi;
+  const last = rep.months.at(-1);
+  const to = s && last ? latestAtOrBefore(s, last.start.slice(0, 7)) : null;
+  if (!s || !to) return [];
+  const years = new Map<number, SpendingMonth[]>();
+  for (const m of rep.months) years.set(Number(m.start.slice(0, 4)), [...(years.get(Number(m.start.slice(0, 4))) ?? []), m]);
+  return [...years].flatMap(([year, months]) => {
+    const parts = months.map((m) => ({ key: m.start.slice(0, 7), cents: m.spendingCents, level: s.months[m.start.slice(0, 7)] }));
+    if (parts.some((p) => !p.level)) return [];
+    const ps = parts.map((p) => ({ key: p.key, cents: p.cents, ratio: s.months[to]! / p.level! }));
+    // Each month rounded to the cent, the year their sum: the lines add up to the total.
+    return [{ year, months, to, cents: ps.reduce((t, p) => t + Math.round(p.cents * p.ratio), 0), parts: ps }];
+  });
+}
+
+/** A real-dollar year's key: the year's months (windowKey) and the CPI month its dollars are. */
+export const realKey = (months: SpendingMonth[], to: string) => `${windowKey(months)}|${to}`;
+
+function cpiDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "cpi">>): DerivedFigure[] {
+  const s = rep.cpi;
+  if (!s) return [];
+  const src = { source: "proven" as const, note: `${s.name}: ${s.source}, as fetched ${s.fetchedOn}${s.url ? ` (${s.url})` : ""}.` };
+  const out: DerivedFigure[] = [];
+  const y = cpiYearOf(rep);
+  if (y)
+    out.push({
+      figure: "cpi-year",
+      key: y.to,
+      describes: `Consumer prices over the twelve months to ${y.to}`,
+      value: r(y.change),
+      lines: [ln(`CPI, ${y.to}`, t(String(y.toLevel)), undefined, src), ln(`CPI, ${y.from}`, t(String(y.fromLevel)), "÷", src), ln("Change", r(y.change), "=")],
+    });
+  for (const x of realYears(rep))
+    out.push({
+      figure: "real-spending",
+      key: realKey(x.months, x.to),
+      describes: `${x.year}: spending in ${x.to} dollars`,
+      value: c(x.cents),
+      lines: [...x.parts.map((p, i) => ln(`${p.key}: spending × CPI ${x.to} ÷ CPI ${p.key}`, c(Math.round(p.cents * p.ratio)), i ? "+" : undefined, { source: "derived", note: `× ${p.ratio.toFixed(4)}` })), ln(`In ${x.to} dollars`, c(x.cents), "=")],
+    });
+  return out;
+}
+
+// ------------------------------------------------------------------ Year over year › where the year lands
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** A year-end estimate's key: the year and which spending. */
+export const yearEndKey = (year: number, metric: SeasonMetric) => `${year}|${metric}`;
+
+/**
+ * Year over year › where the year lands (reports/seasonality.ts), for spending and everyday
+ * spending: an estimate, named one, never part of a proven total. The year so far is proven;
+ * each month left is the middle of the same month in earlier years, a line marked estimate.
+ */
+export function yearEndDerived(months: SpendingMonth[]): DerivedFigure[] {
+  return (Object.keys(SEASON_METRICS) as SeasonMetric[]).flatMap((metric) => {
+    const e = yearEndEstimate(months, SEASON_METRICS[metric].f);
+    if (!e) return [];
+    const what = SEASON_METRICS[metric].label;
+    return [
+      {
+        figure: "year-end",
+        key: yearEndKey(e.year, metric),
+        describes: `Estimate: ${what.toLowerCase()} for all of ${e.year}, not a proven figure`,
+        value: c(e.estimateCents),
+        lines: [
+          ln(`${what}, January – ${MONTHS[e.through]}`, c(e.soFarCents), undefined, { source: "proven" }),
+          ...e.rest.map((x) => ln(`${MONTHS[x.month]}: the middle of ${x.years} earlier ${MONTHS[x.month]}${x.years === 1 ? "" : "s"}`, c(x.cents), "+", { source: "estimate" })),
+          ln("Where the year lands", c(e.estimateCents), "=", { source: "estimate", note: "An estimate: months not yet on file. Never added into a proven total." }),
+        ],
+        parts: e.alike.map((a) => ({ label: `If the rest went as in ${a.year}`, value: c(a.cents) })),
+      },
+    ];
+  });
+}
+
+// ------------------------------------------------------------------ Budget › pace by day
+
+/** The month Budget's pace reads (the one under way, else the latest), and the day it runs through. */
+export function budgetPaceMonth(rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "current">>): { m: SpendingMonth; day: number; days: number } | null {
+  const m = rep.current ?? rep.months.at(-1);
+  if (!m?.dailyByCategory) return null;
+  const days = m.daily.allCents.length;
+  return { m, day: m.through ? Number(m.through.slice(8, 10)) : days, days };
+}
+
+/** The saved targets added up: the monthly budget (budget-monthly's figure). */
+export const budgetTotal = (targets: Record<string, number>) => Object.values(targets).reduce((s, v) => s + v, 0);
+
+/** A budget pace figure's key: the month and the day. */
+export const budgetPaceKey = (start: string, day: number) => `${start}|${day}`;
+
+/** Spending in the budgeted categories through each day of the month (index 0 = the 1st). */
+export function budgetRunning(m: SpendingMonth, targets: Record<string, number>): number[] {
+  const days = m.daily.allCents.length;
+  let run = 0;
+  return Array.from({ length: days }, (_, d) => (run += Object.keys(targets).reduce((s, cat) => s + (m.dailyByCategory?.[cat]?.[d] ?? 0), 0)));
+}
+
+/**
+ * Budget › pace by day: spending in the budgeted categories through the last day on file
+ * (the month under way, else the latest), and the budget prorated to that day (the saved
+ * targets × days so far ÷ days in the month). Key: budgetPaceKey.
+ */
+function budgetPaceDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "current">>, targets: Record<string, number>): DerivedFigure[] {
+  const at = budgetPaceMonth(rep);
+  const cats = Object.keys(targets);
+  if (!at || !cats.length) return [];
+  const { m, day, days } = at;
+  const key = budgetPaceKey(m.start, day);
+  const through = (cat: string) => (m.dailyByCategory?.[cat] ?? []).slice(0, day).reduce((s, v) => s + v, 0);
+  const spent = budgetRunning(m, targets)[day - 1] ?? 0;
+  const budgeted = sum(Object.values(targets), (v) => v);
+  const plan = Math.round((budgeted * day) / days);
+  return [
+    {
+      figure: "budget-pace",
+      key,
+      describes: `${m.label}: spending in budgeted categories through day ${day}`,
+      value: c(spent),
+      lines: [...cats.map((cat, i) => ln(cat, c(through(cat)), i ? "+" : undefined, { source: "proven" })), ln(`Through day ${day}`, c(spent), "=")],
+    },
+    {
+      figure: "budget-pace-plan",
+      key,
+      describes: `${m.label}: the monthly budget prorated to day ${day} of ${days}`,
+      value: c(plan),
+      lines: [ln("Monthly budget", c(budgeted), undefined, { source: "assumption" }), ln(`× ${day} of ${days} days`, r(day / days), "×"), ln(`Budget through day ${day}`, c(plan), "=")],
+    },
+  ];
 }
 
 // ------------------------------------------------------------------ Patterns › pace

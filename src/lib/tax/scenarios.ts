@@ -66,15 +66,18 @@ export type WhatIf = {
   extraShortTermGain: number;
   extraLongTermGain: number;
   extraCharitable: number;
+  /** A traditional IRA or pre-tax 401(k) amount converted to Roth: taxable as an IRA distribution in the year (no 10% penalty applies to a conversion). */
+  extraRothConversion: number;
 };
 
-export const NO_WHAT_IF: WhatIf = { people: {}, extraShortTermGain: 0, extraLongTermGain: 0, extraCharitable: 0 };
+export const NO_WHAT_IF: WhatIf = { people: {}, extraShortTermGain: 0, extraLongTermGain: 0, extraCharitable: 0, extraRothConversion: 0 };
 
 export function hasWhatIf(w: WhatIf): boolean {
   return (
     w.extraShortTermGain !== 0 ||
     w.extraLongTermGain !== 0 ||
     w.extraCharitable !== 0 ||
+    w.extraRothConversion !== 0 ||
     Object.values(w.people).some((p) => p.extraWages !== 0 || p.extraPretax401k !== 0)
   );
 }
@@ -127,6 +130,7 @@ export function applyWhatIf(incomes: PersonIncome[], w: WhatIf, params: TaxYearP
         shortTermGain: next.shortTermGain + w.extraShortTermGain,
         longTermGain: next.longTermGain + w.extraLongTermGain,
         charitableCash: next.charitableCash + w.extraCharitable,
+        retirementTaxable: next.retirementTaxable + Math.max(0, w.extraRothConversion),
       };
     }
     return next;

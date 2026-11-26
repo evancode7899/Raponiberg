@@ -2,6 +2,8 @@ import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { prisma } from "@/lib/db";
 import { loadProfileSettings, saveProfileSettings } from "@/lib/profile/settings";
+import { loadForecast } from "@/lib/forecast/load";
+import { keepForecast } from "@/lib/forecast/snapshots";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -31,5 +33,15 @@ export async function PUT(request: NextRequest) {
     actor: AUDIT_ACTOR_APP,
     payload: { oneOffs: Object.keys(saved.oneOffs).length, nonRecurringCategories: saved.nonRecurringCategories.length },
   });
+  // Saved drivers: the forecast they make is kept as it stands (forecast/snapshots.ts), when it moved.
+  if ("outlook" in body) {
+    try {
+      const { forecast } = await loadForecast(prisma);
+      const snap = forecast ? keepForecast(forecast, { reason: "drivers saved", now: new Date() }) : null;
+      if (snap) await logAuditEvent({ action: "forecast_kept", actor: AUDIT_ACTOR_APP, payload: { id: snap.id, months: snap.months.length } });
+    } catch (e) {
+      console.error("Keeping the forecast failed:", e instanceof Error ? e.message : e);
+    }
+  }
   return NextResponse.json(saved);
 }

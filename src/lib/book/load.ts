@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Lane } from "../classifier/taxonomy.ts";
+import { readPriceIndex, type PriceIndexFile } from "../priceIndex.ts";
 import { CLASSIFIER_HOUSEHOLD_SETTING, CLASSIFIER_VERSION_SETTING } from "../classifier/version.ts";
 import { householdPatterns } from "../household/householdFile.ts";
 import type { HouseholdPatterns } from "../household/patterns.ts";
@@ -171,6 +172,8 @@ export type BookTransferMatch = {
 
 export type Book = {
   today: string;
+  /** Published price series (data/price-index.json, lib/priceIndex.ts): CPI and the benchmark. Optional so a hand-built Book needs none. */
+  prices?: PriceIndexFile;
   /**
    * The proven-through date (the data edge): the last day every open account has a
    * statement for. Every figure on every page stops there — cash flow, pay, taxes and
@@ -581,6 +584,14 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
         return readK1Details();
       } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
+      }
+    })(),
+    prices: (() => {
+      try {
+        return readPriceIndex();
+      } catch {
+        // A damaged file: no series (the pages say none is on file), never a guess.
+        return { version: 1 as const, series: {} };
       }
     })(),
     medical: (() => {

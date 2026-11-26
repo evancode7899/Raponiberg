@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { builtDerived, netWorthDerived } from "@/lib/book/derived/netWorth";
+import { benchmarkOf, builtDerived, netWorthDerived, recordsDerived, stretchOf } from "@/lib/book/derived/netWorth";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
@@ -10,7 +10,8 @@ import { chartChrome, groupColor, groupRank, useChartPalette } from "@/component
 import { compositeOf, type ProofTarget, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, ErrorNote, Loading, NotFigure, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam } from "@/components/ui/kit";
-import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
+import { netWorthRecords, roundMark } from "@/lib/book/reports/records";
+import { axisUsd, EM_DASH, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import { addDays } from "@/lib/dates/isoDate";
 import type { NetWorthPeriodWithBlockers as NetWorthPeriod, NetWorthReport } from "@/lib/book/reports/netWorth";
@@ -21,7 +22,8 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AccountsTab } from "./AccountsTab";
 import { ChangesTab } from "./ChangesTab";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { sumOf } from "@/lib/book/proof/compose";
 
 const TABS = ["overview", "changes", "built", "returns", "accounts"] as const;
 type Granularity = "month" | "quarter" | "year";
@@ -41,6 +43,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
   const [rolls, setRolls] = useState(() => cachedResponse<RollforwardReport>("/api/dashboard/net-worth/accounts"));
   const [changesGranularity, setChangesGranularity] = useState<Granularity>("month");
   const [changes, setChanges] = useState(() => cachedResponse<NetWorthChangesReport>("/api/dashboard/net-worth/changes?granularity=month"));
+  const [monthChanges, setMonthChanges] = useState(() => cachedResponse<NetWorthChangesReport>("/api/dashboard/net-worth/changes?granularity=month"));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,6 +75,14 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
       .then(setRolls)
       .catch((e: Error) => setError(e.message));
   }, [api, tab, rolls]);
+  // Records reads the months What changed lists, whatever that tab is set to.
+  useEffect(() => {
+    if (!api.ready || tab !== "overview" || monthChanges) return;
+    api
+      .call<NetWorthChangesReport>("/api/dashboard/net-worth/changes?granularity=month")
+      .then(setMonthChanges)
+      .catch((e: Error) => setError(e.message));
+  }, [api, tab, monthChanges]);
   // The monthly view is the report already loaded for the overview; other views are fetched.
   const built = granularity === "month" && monthly ? monthly : report;
 
@@ -103,7 +114,7 @@ export function NetWorthClient({ requiresApiSecret }: { requiresApiSecret: boole
             }
           />
         ) : tab === "overview" ? (
-          <Overview r={monthly} />
+          <Overview r={monthly} changes={monthChanges} />
         ) : tab === "changes" ? (
           <ChangesTab r={changes} granularity={changesGranularity} setGranularity={setChangesGranularity} />
         ) : tab === "built" ? (
@@ -174,7 +185,70 @@ function bandValue(group: string, cents: number): number {
   return (isDebt(group) ? Math.min(0, cents) : Math.max(0, cents)) / 100;
 }
 
-function Overview({ r }: { r: NetWorthReport }) {
+/** The household's records (reports/records.ts): each month in it a figure with its own proof. */
+function RecordsCard({ r, changes }: { r: NetWorthReport; changes: NetWorthChangesReport }) {
+  const x = useMemo(() => netWorthRecords(r, changes.periods), [r, changes]);
+  const derived = useMemo(() => recordsDerived(r, changes.periods), [r, changes]);
+  if (!x) return null;
+  const mark = (cents: number) => <NotFigure why="a round number, not a figure of yours">{roundMark(cents)}</NotFigure>;
+  const at = (p: { end: string; cents: number }) => <ProofValue proof={balanceProof(p.end, p.cents)}>{usd0(p.cents)}</ProofValue>;
+  const count = (figure: string, months: number) => <ProofValue proof={derivedTarget("net-worth", derived, figure)}>{months}</ProofValue>;
+  const rows: { what: string; when: ReactNode; value: ReactNode; title?: string }[] = [
+    { what: "Highest month-end", when: x.high.label, value: at(x.high) },
+    ...(x.longestRise ? [{ what: "Longest run of rising months", when: `${x.longestRise.from.label} to ${x.longestRise.to.label}`, value: count("record-rise", x.longestRise.months), title: "Month-ends in a row above the one before." }] : []),
+    { what: "Rising run under way", when: x.currentRise ? `since ${x.currentRise.from.label}` : "", value: x.currentRise ? count("record-rise-now", x.currentRise.months) : EM_DASH },
+    ...(x.bestSaved ? [{ what: "Most saved in a month", when: x.bestSaved.label, value: <ProofValue proof={{ descriptor: x.bestSaved.proofs.saved, shownCents: x.bestSaved.savedCents }}>{usd0(x.bestSaved.savedCents)}</ProofValue> }] : []),
+    ...(x.bestMarkets ? [{ what: "Best month for markets", when: x.bestMarkets.label, value: <ProofValue proof={{ descriptor: x.bestMarkets.proofs.markets, shownCents: x.bestMarkets.marketsCents }}>{usd0(x.bestMarkets.marketsCents)}</ProofValue> }] : []),
+    ...(x.passed
+      ? [
+          {
+            what: "Last milestone passed",
+            when: (
+              <>
+                {mark(x.passed.markCents)}
+                {x.passed.at ? `, ${x.passed.at.label}` : ", before the first proven month"}
+              </>
+            ),
+            value: x.passed.at ? at(x.passed.at) : NA,
+          },
+        ]
+      : []),
+    ...(x.next
+      ? [
+          {
+            what: "Next milestone",
+            when: mark(x.next.markCents),
+            value: (
+              <>
+                <ProofValue proof={derivedTarget("net-worth", derived, "record-next")}>{usd0(x.next.gapCents)}</ProofValue> to go
+              </>
+            ),
+          },
+        ]
+      : []),
+  ];
+  return (
+    <Card title="Records" subtitle="From the unbroken run of proven months.">
+      <div className={table.wrap}>
+        <table className={table.table}>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.what} className={table.trHover}>
+                <td className={table.td} title={row.title}>
+                  {row.what}
+                </td>
+                <td className={`${table.td} text-muted`}>{row.when}</td>
+                <td className={`${table.tdR} font-medium`}>{row.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function Overview({ r, changes }: { r: NetWorthReport; changes: NetWorthChangesReport | null }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const [span, setSpan] = useState<"24" | "all">("all");
@@ -276,6 +350,8 @@ function Overview({ r }: { r: NetWorthReport }) {
           </RechartsResponsive>
         </div>
       </Card>
+
+      {changes && <RecordsCard r={r} changes={changes} />}
 
       <Card title="Accounts">
         <div className={table.wrap}>
@@ -604,6 +680,8 @@ function Returns({ r }: { r: NetWorthReport }) {
           </RechartsResponsive>
         </div>
       </Card>
+      <BenchmarkCard r={r} derived={derived} />
+      <StretchCard r={r} derived={derived} />
       <Card
         title="By account"
         subtitle={
@@ -650,5 +728,76 @@ function Returns({ r }: { r: NetWorthReport }) {
         </div>
       </Card>
     </>
+  );
+}
+
+/**
+ * Investment returns › falls and where the growth came from (derived/netWorth.ts stretchOf):
+ * over the portfolio's proven stretch, the deepest fall from a high and the distance below
+ * the high now (time-weighted), each account's growth net of fees with its share, and the fees.
+ */
+function StretchCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<typeof netWorthDerived> }) {
+  const s = useMemo(() => stretchOf(r), [r]);
+  if (!s.from || !s.drawdown) return null;
+  const names = new Map(r.accounts.map((a) => [a.id, a.name]));
+  const d = s.drawdown;
+  const total = s.growthCents;
+  const growthRef = (id: string) => derivedTarget("net-worth", derived, "growth-since", id);
+  const totalRef = sumOf(s.growth.map((g) => growthRef(g.accountId)), total);
+  return (
+    <Card title={`Falls and growth since ${s.from}`} subtitle="Over the stretch the portfolio return chains: the deepest fall from a high and how far below its high it is now (time-weighted, so money in and out moves neither), and the growth each account added, net of fees.">
+      <StatGrid cols={4}>
+        <StatCell proof={d.max ? derivedTarget("net-worth", derived, "drawdown-max") : noFigure("no fall from a high yet")} label="Deepest fall" value={d.max ? formatPercentRatio(d.max.ratio, 1) : "—"} sub={d.max ? `${d.max.peak ?? "the start"} → ${d.max.trough}` : "it hasn't fallen from a high"} tone={d.max ? "neg" : "neutral"} />
+        <StatCell proof={derivedTarget("net-worth", derived, "drawdown-now")} label="Below the high now" value={d.now.ratio ? formatPercentRatio(d.now.ratio, 1) : "—"} sub={d.now.ratio ? `high: ${d.now.peak ?? "the start"}` : "at a high"} />
+        <StatCell proof={totalRef} label="Growth, net of fees" value={usd0(total)} sub={`${s.growth.length} accounts`} tone={total < 0 ? "neg" : "neutral"} />
+        <StatCell proof={derivedTarget("net-worth", derived, "fees-since")} label="Fees taken" value={s.feesCents ? usd0(s.feesCents) : "—"} sub="advisory, plan and fund fees on statements" />
+      </StatGrid>
+      {s.growth.length > 1 && (
+        <div className={`${table.wrap} mt-3`}>
+          <table className={`${table.table} min-w-[28rem]`}>
+            <thead className={table.head}>
+              <tr>
+                <th className={table.th}>Account</th>
+                <th className={table.thR}>Growth, net of fees</th>
+                <th className={table.thR}>Of the growth</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.growth.map((g) => (
+                <tr key={g.accountId} className={table.tr}>
+                  <td className={table.td}>{names.get(g.accountId)}</td>
+                  <td className={`${table.tdR} ${g.cents < 0 ? "text-neg" : ""}`}>
+                    <ProofValue proof={growthRef(g.accountId)}>{usd0(g.cents)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>{total ? <ProofValue proof={compositeOf("share", [growthRef(g.accountId), totalRef], { ratio: g.cents / total })}>{formatPercentRatio(g.cents / total, 0)}</ProofValue> : NA}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Investment returns › against the benchmark (derived/netWorth.ts benchmarkOf): the portfolio's
+ * time-weighted return and the benchmark's change over the same months, and the gap. The
+ * benchmark is the series Claude keeps in data/price-index.json; descriptive, not advice.
+ */
+function BenchmarkCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<typeof netWorthDerived> }) {
+  const b = useMemo(() => benchmarkOf(r), [r]);
+  if (!b) return null;
+  const mine = derivedTarget("net-worth", derived, "benchmark-portfolio", b.to);
+  const theirs = derivedTarget("net-worth", derived, "benchmark-return", b.to);
+  const gap = b.portfolio - b.benchmark;
+  return (
+    <Card title={`Against ${b.name}`} subtitle={`From ${b.from} through ${b.to}, the months both cover: your portfolio's time-weighted return against the index's change${b.kind === "price" ? " (a price index: its dividends aren't in it, so it runs a little low)" : ", dividends in"}. Fetched ${b.fetchedOn}.`}>
+      <StatGrid cols={3}>
+        <StatCell proof={mine} label="Your portfolio" value={formatPercentRatio(b.portfolio, 1)} sub={`${b.months} months chained`} tone={b.portfolio < 0 ? "neg" : "neutral"} />
+        <StatCell proof={theirs} label="The benchmark" value={formatPercentRatio(b.benchmark, 1)} sub={b.source} />
+        <StatCell proof={compositeOf("diff", gap >= 0 ? [mine, theirs] : [theirs, mine], { ratio: Math.abs(gap) })} label={gap >= 0 ? "Ahead by" : "Behind by"} value={formatPercentRatio(Math.abs(gap), 1)} sub="percentage points" tone={gap >= 0 ? "pos" : "neg"} />
+      </StatGrid>
+    </Card>
   );
 }

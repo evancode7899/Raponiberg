@@ -6,10 +6,11 @@ import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/Sh
 import type { SafeHarbor } from "@/lib/tax/computeReturn";
 import type { TruePlan } from "@/lib/tax/buildTaxReport";
 import { estimateColumns, lineValue, type EstimateKey } from "@/lib/tax/estimateLines";
-import { NotFigure } from "@/components/ui/kit";
+import { NotFigure, table } from "@/components/ui/kit";
 import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
-import { taxesDerived } from "@/lib/book/derived/taxes";
+import { bracketKey, bracketsOf, movedDerived, taxesDerived } from "@/lib/book/derived/taxes";
+import type { TaxMoved } from "@/lib/tax/whyMoved";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { employerRow, showsNyW2 } from "@/lib/tax/incomeExtras";
 import { atFilingReturns, dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
@@ -92,6 +93,10 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
       <div className="grid gap-4 lg:grid-cols-2">
         <NextThousand r={r} />
         {r.isCurrentYear ? <Calendar r={r} /> : <FiledVerdict r={r} onGo={onGo} />}
+      </div>
+      <div className="grid gap-4">
+        <Brackets r={r} />
+        {r.moved && <WhyMoved r={r} m={r.moved} />}
       </div>
 
       {r.isCurrentYear && <ForecastBasis r={r} onGo={onGo} />}
@@ -796,5 +801,106 @@ function ProjectedW2s({ r }: { r: TaxResponse }) {
           : []),
       ]}
     />
+  );
+}
+
+/**
+ * How the year's ordinary taxable income fills the federal brackets (derived/taxes.ts
+ * bracketDerived): a bar per bracket, filled as far as the income reaches, its income and its
+ * tax beside it. The bracket's rate and bounds are the law's, not figures of yours.
+ */
+function Brackets({ r }: { r: TaxResponse }) {
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const b = useMemo(() => bracketsOf(r), [r]);
+  const used = b.slices.filter((s) => s.incomeCents > 0);
+  if (!used.length) return null;
+  const top = used.length - 1;
+  const dollars = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
+  return (
+    <Card title={`How ${r.year}'s income fills the federal brackets`} subtitle={<NotFigure why="the law's rates for dividends and gains, not figures of yours">{`Ordinary taxable income, projected for the year (${r.filingStatus === "MFJ" ? "married filing jointly" : "single"}); qualified dividends and long-term gains stack on top at 0/15/20%. Each bar is a bracket, filled as far as the income reaches.`}</NotFigure>}>
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[36rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Bracket</th>
+              <th className={table.th}>By law</th>
+              <th className={`${table.th} w-[30%]`} aria-label="How full" />
+              <th className={table.thR}>Income in it</th>
+              <th className={table.thR}>Tax on it</th>
+            </tr>
+          </thead>
+          <tbody>
+            {b.slices.map((s, i) => {
+              const width = s.to == null ? null : s.to - s.from;
+              const full = width ? Math.min(1, s.incomeCents / width) : s.incomeCents > 0 ? 1 : 0;
+              if (i > top + 1) return null;
+              return (
+                <tr key={s.rate} className={`${table.tr} ${s.incomeCents ? "" : "text-faint"}`}>
+                  <td className={`${table.td} num font-medium`}>
+                    <NotFigure why="the bracket's rate, by law">{Math.round(s.rate * 100)}%</NotFigure>
+                  </td>
+                  <td className={`${table.td} num text-xs text-muted`}>
+                    <NotFigure why="the bracket's bounds for the year and filing status, by law">{s.to == null ? `over ${dollars(s.from)}` : `${dollars(s.from)} – ${dollars(s.to)}`}</NotFigure>
+                  </td>
+                  <td className={table.td}>
+                    <span aria-hidden className="relative block h-2.5 bg-surface-3">
+                      <span className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${full * 100}%` }} />
+                    </span>
+                  </td>
+                  <td className={table.tdR}>{s.incomeCents ? <ProofValue proof={derivedTarget("taxes", derived, "bracket-income", bracketKey(r.year, i))}>{usd(s.incomeCents)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{s.incomeCents ? <ProofValue proof={derivedTarget("taxes", derived, "bracket-tax", bracketKey(r.year, i))}>{usd(s.taxCents)}</ProofValue> : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Why tax moved from the year before (tax/whyMoved.ts): the total tax on each year's return
+ * split into the return's parts, each one's change beside it; the changes add up to the
+ * change in the total.
+ */
+function WhyMoved({ r, m }: { r: TaxResponse; m: TaxMoved }) {
+  const derived = useMemo(() => movedDerived(m), [m]);
+  const cell = (row: string, col: string, cents: number, signed = false) =>
+    Math.round(cents / 100) ? <ProofValue proof={derivedTarget("taxes", derived, "moved", `${m.year}|${row}|${col}`)}>{signed && cents > 0 ? `+${usd(cents)}` : usd(cents)}</ProofValue> : "—";
+  const moved = [...m.rows].sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents));
+  return (
+    <Card title={`Why tax moved from ${m.prior}`} subtitle={`The total tax on each year's return in its parts${r.isCurrentYear ? ` (${m.year} projected to December 31)` : ""}, the biggest change first. The changes add up to the change in the total.`}>
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[36rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Part</th>
+              <th className={table.thR}>{m.prior}</th>
+              <th className={table.thR}>{m.year}</th>
+              <th className={table.thR}>Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {moved.map((x) => (
+              <tr key={x.id} className={table.tr}>
+                <td className={table.td}>
+                  <NotFigure why="the line's name, with the law's rate">{x.label}</NotFigure>
+                </td>
+                <td className={table.tdR}>{cell(x.id, "prior", x.priorCents)}</td>
+                <td className={table.tdR}>{cell(x.id, "now", x.cents)}</td>
+                <td className={`${table.tdR} ${x.deltaCents > 0 ? "text-neg" : x.deltaCents < 0 ? "text-pos" : ""}`}>{cell(x.id, "change", x.deltaCents, true)}</td>
+              </tr>
+            ))}
+            <tr className={`${table.tr} font-semibold`}>
+              <td className={table.td}>{m.total.label}</td>
+              <td className={table.tdR}>{cell("total", "prior", m.total.priorCents)}</td>
+              <td className={table.tdR}>{cell("total", "now", m.total.cents)}</td>
+              <td className={table.tdR}>{cell("total", "change", m.total.deltaCents, true)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

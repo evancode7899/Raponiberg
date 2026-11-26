@@ -8,7 +8,8 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, Callout, Card, EmptyState, ErrorNote, Loading, NotFigure, PageBody, Segmented, StatCell, StatGrid, table, Tabs, useTabParam, WordsCell } from "@/components/ui/kit";
 import { BALANCE_LABEL, balanceKey, medicalDerived, planLimitKey, sliceKey, yearKey } from "@/lib/book/derived/medical";
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
-import { axisUsd, formatUsdFromCents, NA } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsdFromCents, NA } from "@/lib/formatMoney";
+import { compositeOf } from "@/components/ui/proof/context";
 import type { MedicalPage } from "@/lib/medical/page";
 import type { HealthPlan } from "@/lib/medical/plans";
 import type { ClaimView, LimitUse, Slice, YearView } from "@/lib/medical/report";
@@ -161,13 +162,22 @@ function ComingSoon({ data, coverage }: { data: MedicalPage; coverage: Coverage 
 
 // ---------------------------------------------------------------------------- overview
 
-function Meter({ used, limit }: { used: number; limit: number }) {
+function Meter({ used, limit, pace }: { used: number; limit: number; pace?: number | null }) {
   const share = limit > 0 ? Math.min(1, used / limit) : 0;
   return (
-    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-3" aria-hidden>
+    <div className="relative mt-2 h-1.5 w-full rounded-full bg-surface-3" aria-hidden>
       <div className={`h-full rounded-full ${share >= 1 ? "bg-pos" : "bg-accent"}`} style={{ width: `${share * 100}%` }} />
+      {/* How much of the plan year had gone by the EOB the balances are from. */}
+      {pace != null && <span className="absolute -top-1 h-3.5 w-px bg-fg" style={{ left: `${pace * 100}%` }} />}
     </div>
   );
+}
+
+/** How much of the balances' plan year had gone by the EOB they're from (0–1), by day. */
+function yearGone(b: NonNullable<YearView["balances"]>): number | null {
+  const day = (iso: string) => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+  const span = day(b.to) - day(b.from);
+  return span > 0 ? Math.min(1, Math.max(0, (day(b.asOf) - day(b.from)) / span)) : null;
 }
 
 function BalanceCell({ y, row, fig, label }: { y: YearView; row: EobBalance; fig: Fig; label: string }) {
@@ -189,7 +199,13 @@ function BalanceCell({ y, row, fig, label }: { y: YearView; row: EobBalance; fig
           </>
         )}
       </div>
-      <Meter used={row.usedCents} limit={row.limitCents} />
+      <Meter used={row.usedCents} limit={row.limitCents} pace={y.balances && row.kind !== "ANNUAL_MAXIMUM" ? yearGone(y.balances) : null} />
+      {y.balances && !met && row.limitCents > 0 && yearGone(y.balances) != null && (
+        <div className="mt-1 text-[11px] text-muted">
+          <ProofValue proof={compositeOf("share", [fig("balance-used", k), fig("balance-limit", k)], { ratio: row.usedCents / row.limitCents })}>{formatPercentRatio(row.usedCents / row.limitCents, 0)}</ProofValue> met,{" "}
+          <NotFigure why="the share of the plan year gone by the EOB's date, a calendar fact">{`${Math.round(yearGone(y.balances)! * 100)}% of the plan year gone`}</NotFigure>
+        </div>
+      )}
     </div>
   );
 }

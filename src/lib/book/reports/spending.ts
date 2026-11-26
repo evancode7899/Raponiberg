@@ -46,6 +46,8 @@ export type SpendingMonth = CashFlowPeriod & {
   kinds: SpendingKinds;
   /** Spending per day of the month (index 0 = the 1st), split the same way. */
   daily: { allCents: number[]; billCents: number[]; everydayCents: number[] };
+  /** The latest month and the one under way only (Budget's pace by day): each category's spending per day of the month. */
+  dailyByCategory?: Record<string, number[]>;
   /** Charges (not refunds) by size, in CHARGE_BUCKETS order. */
   chargeSizes: { count: number; cents: number }[];
 };
@@ -82,6 +84,14 @@ export type RecurringCharge = {
   active: boolean;
   /** Bills that charged a fixed amount: the latest charge versus the ones before (null when unchanged). */
   changeCents: number | null;
+  /** The latest charge's row (its own proof). */
+  lastRowId: string;
+  /** Bills for a set amount (a subscription, rent, a premium): half the charges within 1% of the usual one. A metered bill (power, water) isn't. */
+  fixed: boolean;
+  /** Bills: each charge, oldest first (the last 36), each its own row: a merchant's price history. */
+  history?: { rowId: string; date: string; cents: number }[];
+  /** Bills: the same bill's charge a year before the latest (the one nearest, within six weeks of it), for a like-for-like price change. */
+  yearAgo: { rowId: string; date: string; cents: number } | null;
 };
 
 export type OneOffExpense = {
@@ -119,9 +129,12 @@ export type SpendingReport = {
   /** Rent paid for the window's months (and the current one), each in the month it covers, oldest first. */
   rent: RentPayment[];
   oneOffs: OneOffExpense[];
+  /** The consumer price index as published (data/price-index.json, lib/priceIndex.ts), or null without one on file. */
+  cpi: IndexSeries | null;
 };
 
 import { ONE_OFF_MIN_CENTS } from "../definitions.ts";
+import { CPI, type IndexSeries } from "../../priceIndexMath.ts";
 export { ONE_OFF_MIN_CENTS };
 
 /** "WWW SWEETGREEN COM" → "Sweetgreen". */
@@ -217,9 +230,23 @@ export function detectRecurring(rows: BookRow[], windowEnd: string, last12From: 
       // Habits: seen within the last two months. Bills: within one and a half cycles.
       active: daysBetween(last.date, windowEnd) <= (isBill ? Math.round(gap * 1.5) + 10 : 62),
       changeCents: isBill && fixedBefore && Math.abs(change) >= Math.max(100, prevCents * 0.03) ? change : null,
+      lastRowId: last.id,
+      fixed: isBill && median(amounts.map((a) => Math.abs(a - typical))) <= Math.max(100, typical * 0.01),
+      yearAgo: isBill ? yearAgoCharge(list, last.date) : null,
+      ...(isBill ? { history: list.slice(-36).map((r) => ({ rowId: r.id, date: r.date, cents: -r.amountCents })) } : {}),
     });
   }
   return out.sort((a, b) => b.annualCents - a.annualCents);
+}
+
+/** A year before `date`: the charge nearest to it within six weeks either side, or none. */
+function yearAgoCharge(list: BookRow[], date: string): RecurringCharge["yearAgo"] {
+  let best: BookRow | null = null;
+  for (const r of list) {
+    const off = Math.abs(daysBetween(r.date, date) - 365);
+    if (off <= 42 && (!best || off < Math.abs(daysBetween(best.date, date) - 365))) best = r;
+  }
+  return best ? { rowId: best.id, date: best.date, cents: -best.amountCents } : null;
 }
 
 const monthsBack = (monthStart: string, n: number) => {
@@ -442,6 +469,9 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
   };
 
   const months = window.map(enrich);
+  // Budget › pace by day reads each category's days, on the latest month and the one under way only (it keeps the report small).
+  const withCategoryDays = (m: SpendingMonth): SpendingMonth => ({ ...m, dailyByCategory: dailyByCategory(inScope, m, dayOf) });
+  if (months.length) months[months.length - 1] = withCategoryDays(months.at(-1)!);
   // Candidates (oneOffRules): anything already counted as one-off, and big charges that aren't rent or a bill.
   const oneOffs: OneOffExpense[] = [];
   for (const r of windowRows) {
@@ -470,12 +500,13 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
     mergeDate: report.mergeDate,
     window: window.length ? { from: window[0]!.start, to: window.at(-1)!.end, months: window.length } : null,
     months,
-    current: current ? enrich(current) : null,
+    current: current ? withCategoryDays(enrich(current)) : null,
     withheldAfter,
     withheldBefore,
     recurring,
     rent: from && to ? rentPayments(book.rows, book.accounts, book.household.merchantRules).filter((p) => p.covers >= from && p.covers <= to && (!accountFilter || accountFilter.has(book.rowById.get(p.rowId)!.accountId))) : [],
     oneOffs,
+    cpi: book.prices?.series[CPI] ?? null,
   };
 }
 
@@ -517,6 +548,18 @@ export function spendingShape(
     }
   }
   return { kinds: { billCents, bigCents, everydayCents: p.spendingCents - billCents - bigCents }, daily, chargeSizes };
+}
+
+/** Each category's spending per day of the month (index 0 = the 1st), on the rows and days spendingShape counts. */
+export function dailyByCategory(rows: BookRow[], p: Pick<CashFlowPeriod, "start" | "end">, dayOf: (r: BookRow) => string = (r) => r.bookedOn): Record<string, number[]> {
+  const days = Number(endOfMonth(p.start).slice(8, 10));
+  const out: Record<string, number[]> = {};
+  for (const r of rows) {
+    const day = dayOf(r);
+    if (r.lane !== "EXPENSE" || day < p.start || day > p.end) continue;
+    (out[r.category] ??= Array.from({ length: days }, () => 0))[Number(day.slice(8, 10)) - 1]! -= r.amountCents;
+  }
+  return out;
 }
 
 /** Ids of expense rows that cancel in pairs: a charge and its exact credit on one account within seven days. */

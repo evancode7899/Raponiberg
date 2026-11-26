@@ -4,7 +4,10 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Card } from "@/components/ledger/LedgerBits";
 import type { PaymentAttribution, TaxProfile } from "@/lib/tax/profile";
 import { sortRows, SortTh, useSort } from "@/components/ui/sort";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { cellKey, derivedTarget } from "@/lib/book/derived/types";
+import { harborsOf, taxesDerived } from "@/lib/book/derived/taxes";
+import { table } from "@/components/ui/kit";
 import type { ProvenTaxResponse as TaxResponse } from "./TaxClient";
 import { estimatesFound } from "@/lib/tax/estimateLines";
 import { Callout, EstimateValue, formatDate, NumberTable, usd } from "./taxUi";
@@ -73,6 +76,7 @@ export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProf
           ]}
         />
       </Card>
+      <HarborTracker r={r} />
       <Card
         title="Tax payments and refunds in the bank ledger"
         subtitle="Matched by payee (IRS Direct Pay/EFTPS, CT DRS, state refunds). Change what a row is for if the date-based guess is wrong."
@@ -127,5 +131,59 @@ export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProf
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * The safe harbor quarter by quarter (derived/taxes.ts harborsOf): by each due date, the
+ * quarters of the required annual payment against withholding (a quarter at each date, by
+ * law) and the estimated payments on file by then.
+ */
+function HarborTracker({ r }: { r: TaxResponse }) {
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const harbors = useMemo(() => harborsOf(r), [r]);
+  const cell = (row: string, col: string, cents: number) => (Math.round(cents / 100) ? <ProofValue proof={derivedTarget("taxes", derived, "harbor", cellKey(r.year, row, col))}>{usd(cents)}</ProofValue> : "—");
+  return (
+    <Card
+      title="Safe harbor, quarter by quarter"
+      subtitle="By each due date a quarter more of the year's required payment must be in (the law's regular method). Withholding counts a quarter at each date whenever it was withheld; estimated payments count from the day they were paid."
+    >
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[40rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Due</th>
+              <th className={table.thR}>Required by then</th>
+              <th className={table.thR}>Withholding</th>
+              <th className={table.thR}>Estimates paid</th>
+              <th className={table.thR}>Short</th>
+            </tr>
+          </thead>
+          {harbors.map((a) => (
+            <tbody key={a.id}>
+              <tr>
+                <th colSpan={5} className={`${table.td} text-left text-xs font-semibold uppercase tracking-wide text-muted`}>
+                  {a.name}
+                </th>
+              </tr>
+              {a.quarters.map((q) => {
+                const row = `${a.id}:${q.quarter}`;
+                return (
+                  <tr key={row} className={`${table.tr} ${q.past ? "" : "text-muted"}`}>
+                    <td className={table.td}>
+                      Q{q.quarter} · {formatDate(q.date)}
+                    </td>
+                    <td className={table.tdR}>{cell(row, "required", q.requiredCents)}</td>
+                    <td className={table.tdR}>{cell(row, "withheld", q.withheldCents)}</td>
+                    <td className={table.tdR}>{cell(row, "estimates", q.estimatesCents)}</td>
+                    <td className={`${table.tdR} ${q.shortCents ? "text-neg" : ""}`}>{cell(row, "short", q.shortCents)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          ))}
+        </table>
+      </div>
+    </Card>
   );
 }

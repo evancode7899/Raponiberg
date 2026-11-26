@@ -13,6 +13,9 @@ import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/format
 import type { Goal, GoalSettings } from "@/lib/goals/settings";
 import type { AccountGroup } from "@/lib/ledger/loadLedger";
 import Link from "next/link";
+import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { useChartPalette } from "@/components/shell/chartPalette";
+import { Line, LineChart, ReferenceLine, YAxis } from "recharts";
 import { useCallback, useEffect, useState } from "react";
 
 type Data = { report: GoalsReport; settings: GoalSettings };
@@ -371,6 +374,7 @@ function GoalCard({ g, r, rank, last, onEdit, onMove }: { g: GoalProgress; r: Go
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-3" role="meter" aria-valuenow={g.currentCents} aria-valuemax={g.targetCents ?? undefined} aria-label={`${g.goal.name} progress`}>
         <div className={`h-full rounded-full ${s.bg}`} style={{ width: `${share * 100}%` }} />
       </div>
+      <BurnUp g={g} />
       <p className={`mt-3 text-sm font-medium ${s.ink}`}>
         <ProofValue proof={goalProof(g, "lands", null)}>{verdict(g, r)}</ProofValue>
       </p>
@@ -618,5 +622,26 @@ function Starved({ r, onTrack }: { r: GoalsReport; onTrack: (g: Goal) => void })
     >
       If {culprits.length === 1 ? "it's" : "they're"} really a total to pass rather than money to spend, a milestone counts the same balances without taking them.
     </Callout>
+  );
+}
+
+/**
+ * A goal's burn-up (reports/goals.ts goalHistory): what it counted at each of the last twelve
+ * month-ends, against its target. A shape only: the last point is the goal's figure above.
+ */
+function BurnUp({ g }: { g: GoalProgress }) {
+  const chart = useChartPalette();
+  if (g.history.length < 3 || g.blockers.length) return null;
+  const top = Math.max(g.targetCents ?? 0, ...g.history.map((p) => p.cents));
+  return (
+    <div className="mt-2 h-12 w-full min-w-0" title={`What the goal counted at each month-end since ${g.history[0]!.date}`} aria-hidden>
+      <RechartsResponsive>
+        <LineChart data={g.history} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+          <YAxis hide domain={[0, top || 1]} />
+          {g.targetCents != null && <ReferenceLine y={g.targetCents} stroke={chart.axisLine} strokeDasharray="3 3" />}
+          <Line dataKey="cents" stroke={chart.lineBalance} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+        </LineChart>
+      </RechartsResponsive>
+    </div>
   );
 }
