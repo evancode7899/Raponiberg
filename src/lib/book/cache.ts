@@ -106,7 +106,8 @@ function dataFiles(): string[] {
     // the rewards read from card statements (lib/cardPerks/rewardsScan.ts, same). The EOBs
     // and health plans are the Book's (Book.medical): a scan rewrites their file only when it
     // reads something new.
-    const unread = new Set(["page-inputs.json", "app-password.json", "hsa-expenses.json", "insurance-documents.json", "card-rewards.json"]);
+    // Nor the saved scenarios (lib/scenarios/store.ts: what-if plans, never proven figures).
+    const unread = new Set(["page-inputs.json", "app-password.json", "hsa-expenses.json", "insurance-documents.json", "card-rewards.json", "scenarios.json"]);
     json = readdirSync(dir).filter((f) => f.endsWith(".json") && !unread.has(f)).sort().map((f) => path.join(dir, f));
   } catch (e) {
     // No data folder yet holds no files; any other failure would leave every file out of the stamp.

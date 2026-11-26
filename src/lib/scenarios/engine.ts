@@ -202,6 +202,22 @@ function scenarioBonuses(ctx: ScenarioContext, s: Scenario, base: OutlookPlan): 
   return out.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
+/** Splits a year's whole-cent amount over its twelve months by weight (evenly when no month has any), adding back up exactly. */
+export function spread(total: number, weights: readonly number[]): number[] {
+  if (total === 0) return weights.map(() => 0);
+  const w = weights.some((x) => x > 0) ? weights : weights.map(() => 1);
+  const sum = w.reduce((t, x) => t + x, 0);
+  let given = 0;
+  let acc = 0;
+  return w.map((x) => {
+    acc += x;
+    const upTo = Math.round((total * acc) / sum);
+    const part = upTo - given;
+    given = upTo;
+    return part;
+  });
+}
+
 /** The month the scenario's first dated change takes effect. */
 export function firstChangeOf(s: Scenario, startKey: string): string | null {
   const dates = [
@@ -273,8 +289,7 @@ export function runScenario(ctx: ScenarioContext, s: Scenario): ScenarioRun {
   let owed = 0;
 
   const adjust: Record<string, MonthAdjust> = {};
-  const extra = new Map<string, { childcare: number; housing: number; equity: number }>();
-  const yearTax = new Map<number, { scenario: number; base: number }>();
+  const extra = new Map<string, { childcare: number; housing: number; equity: number; tax: number }>();
   /** Per year: mortgage interest and property tax paid, scenario childcare paid. */
   const home = new Map<number, { interest: number; propertyTax: number; owedAvg: number }>();
 
@@ -344,8 +359,9 @@ export function runScenario(ctx: ScenarioContext, s: Scenario): ScenarioRun {
         .map((b) => ageIn(b, keyOf(year, 12)))
         .filter((a): a is number => a != null && a <= DEPENDENT_THROUGH_AGE)
         .sort((a, b) => a - b);
-    const cfg = (scenario: boolean): TaxConfig => {
-      const pay = scenario ? salY : baseY;
+    /** `scenario`: the scenario's deductions, dependents and childcare; `pay`: its pay (defaults to the same). */
+    const cfg = (scenario: boolean, withPay = scenario): TaxConfig => {
+      const pay = withPay ? salY : baseY;
       const interestCap = home.get(year)!.owedAvg > MORTGAGE_INTEREST_DEBT_CAP ? MORTGAGE_INTEREST_DEBT_CAP / home.get(year)!.owedAvg : 1;
       return {
         people: people.map((p, k) => {
@@ -361,23 +377,34 @@ export function runScenario(ctx: ScenarioContext, s: Scenario): ScenarioRun {
     };
     const tB = Math.round(taxOf(ctx, people, cfg(false)) * idx);
     const tS = Math.round(taxOf(ctx, people, cfg(true)) * idx);
-    yearTax.set(year, { scenario: tS, base: tB });
-    const taxDelta = tS - tB;
+    // The change split in two, each falling in the months it belongs to: the tax on the
+    // changed pay in the months pay changed, the rest (a mortgage, a child, childcare) in the
+    // months those apply. A year's change never lands in months before it happened.
+    const tPay = tS === tB ? tB : Math.round(taxOf(ctx, people, cfg(false, true)) * idx);
+    const payTax = spread(
+      tPay - tB,
+      monthRows.map((r) => Math.abs(r.sal.reduce((t, v, k) => t + v - r.base[k]!, 0))),
+    );
+    const otherTax = spread(
+      tS - tPay,
+      monthRows.map((r) => (r.careS !== r.careB || r.homeCost !== 0 || added.some((b) => b <= r.key) ? 1 : 0)),
+    );
 
-    for (const r of monthRows) {
+    for (const [k, r] of monthRows.entries()) {
+      const taxDelta = payTax[k]! + otherTax[k]!;
       if (r.m < from) continue;
       const dSal = r.sal.map((v, k) => v - r.base[k]!);
       const cut = dSal.map((d) => Math.min(0, d));
       const a: MonthAdjust = {
         salary: dSal.reduce((t, d) => t + d, 0),
-        takeHome: dSal.reduce((t, d) => t + d, 0) - cut.reduce((t, d, k) => t + Math.round(d * rates[k]!.ded), 0) - monthly(taxDelta, r.m),
-        deferrals: cut.reduce((t, d, k) => t + Math.round(d * rates[k]!.def), 0),
-        employerMatch: cut.reduce((t, d, k) => t + Math.round(d * rates[k]!.emp), 0),
+        takeHome: dSal.reduce((t, d) => t + d, 0) - cut.reduce((t, d, p) => t + Math.round(d * rates[p]!.ded), 0) - taxDelta,
+        deferrals: cut.reduce((t, d, p) => t + Math.round(d * rates[p]!.def), 0),
+        employerMatch: cut.reduce((t, d, p) => t + Math.round(d * rates[p]!.emp), 0),
         living: r.careS - r.careB + r.rentS - r.rentB + r.homeCost + r.other,
         planned: r.planned,
       };
       if (Object.values(a).some((v) => v !== 0)) adjust[r.key] = a;
-      extra.set(r.key, { childcare: r.careS, housing: r.rentS + r.homeCost, equity: r.equity });
+      extra.set(r.key, { childcare: r.careS, housing: r.rentS + r.homeCost, equity: r.equity, tax: monthly(tB, r.m) + taxDelta });
     }
   }
 
@@ -400,14 +427,13 @@ export function runScenario(ctx: ScenarioContext, s: Scenario): ScenarioRun {
   const { months: outlook, years: oy } = projectOutlook(plan);
 
   const months: RunMonth[] = outlook.map((o) => {
-    const x = extra.get(o.key) ?? { childcare: 0, housing: 0, equity: 0 };
-    const t = yearTax.get(o.year)!;
+    const x = extra.get(o.key) ?? { childcare: 0, housing: 0, equity: 0, tax: 0 };
     return {
       key: o.key,
       year: o.year,
       month: o.month,
       gross: o.salary + o.bonusGross,
-      tax: (o.working ? monthly(t.scenario, o.month) : 0) + (o.bonusGross - o.bonusKept),
+      tax: (o.working ? x.tax : 0) + (o.bonusGross - o.bonusKept),
       takeHome: o.takeHome + o.bonusKept,
       employerMatch: o.employerMatch,
       spending: o.livingCost + o.planned,

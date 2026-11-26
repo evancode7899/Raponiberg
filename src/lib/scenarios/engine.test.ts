@@ -132,6 +132,18 @@ describe("a partner stops working", () => {
     expect(bonus(stop, 2029)).toBeGreaterThan(0);
   });
 
+  it("a change mid-year leaves the months before it alone, tax included", () => {
+    const july = scen((s) => s.people.push({ ...personChange("sam"), stop: { from: "2027-07", endsCare: true } }));
+    expect(out(july, "2027-03")).toEqual(out(today, "2027-03"));
+    expect(out(july, "2027-08").takeHome).toBeLessThan(out(today, "2027-08").takeHome);
+    const baby = scen((s) => s.children.added.push({ id: "b", label: "B", born: "2027-09" }));
+    expect(out(baby, "2027-03")).toEqual(out(today, "2027-03"));
+    // The year's tax change all lands from the birth on.
+    const tax = (r: typeof today) => r.years.find((y) => y.year === 2027)!.tax;
+    const later = (r: typeof today) => sumYear(r, 2027, (m) => (m.month >= 9 ? m.takeHome : 0));
+    expect(later(baby) - later(today)).toBe(tax(today) - tax(baby));
+  });
+
   it("without the switch, childcare carries on", () => {
     const stop = scen((s) => s.people.push({ ...personChange("sam"), stop: { from: "2027-01", endsCare: false } }));
     expect(at(stop, key).childcare).toBe(at(today, key).childcare);

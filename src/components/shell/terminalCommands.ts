@@ -66,6 +66,14 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     keywords: ["financial independence", "retire early", "fi", "coast", "lean", "fat", "4% rule", "safe withdrawal", "walk away", "savings rate"],
   },
   {
+    mnemonic: "SCN",
+    href: "/scenarios",
+    label: "Scenarios",
+    description: "Today's plan beside what-ifs: a new job, a partner stopping work, another child, buying a home, spending. Cash flow, taxes, net worth, FI date and goals, side by side. Estimates, not financial advice.",
+    group: "Net worth & planning",
+    keywords: ["scenario", "what if", "compare", "side by side", "child", "baby", "buy a house", "rent", "job change", "part-time", "stop working", "partner", "childcare", "daycare"],
+  },
+  {
     mnemonic: "GOAL",
     href: "/goals",
     label: "Goals",
