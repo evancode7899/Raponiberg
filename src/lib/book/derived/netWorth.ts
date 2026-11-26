@@ -169,6 +169,9 @@ export function changeStepsDerived(rep: Pick<NetWorthChangesReport, "granularity
   );
 }
 
+/** The split bar's length: every part's size, whichever way it moved (not a figure: the bar's scale). */
+export const splitScale = (parts: readonly { cents: number }[]) => parts.reduce((t, x) => t + Math.abs(x.cents), 0);
+
 /** A split part's key (derived/netWorth.ts changeSplitDerived): the granularity, the period's first day, and the part. */
 export const splitKey = (granularity: string, start: string, part: string) => `${granularity}|${start}|${part}`;
 

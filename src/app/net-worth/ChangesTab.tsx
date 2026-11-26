@@ -1,14 +1,14 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { changeSplitDerived, changeStepKey, changeStepsDerived, changeTypicalDerived, splitKey, typicalKey } from "@/lib/book/derived/netWorth";
+import { changeSplitDerived, changeStepKey, splitScale, changeStepsDerived, changeTypicalDerived, splitKey, typicalKey } from "@/lib/book/derived/netWorth";
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, Loading, NotFigure, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { ProofDescriptor } from "@/lib/book/proof";
-import { splitScale, type ChangeMover, type HighlightSeg, type NetWorthChange, type NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
+import type { ChangeMover, HighlightSeg, NetWorthChange, NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
 import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
