@@ -29,7 +29,7 @@ describe("price series", () => {
     const rep = { months: [month("2025-01", 1_000_00), month("2025-02", 1_000_00), month("2026-02", 500_00)], cpi: s };
     const r = realYears(rep);
     expect(r.map((x) => [x.year, x.to, x.cents])).toEqual([
-      [2025, "2026-02", Math.round(1_000_00 * (113 / 100) + 1_000_00 * (113 / 101))],
+      [2025, "2026-02", Math.round(1_000_00 * (113 / 100)) + Math.round(1_000_00 * (113 / 101))],
       [2026, "2026-02", 500_00],
     ]);
     expect(cpiYearOf(rep)).toMatchObject({ from: "2025-02", to: "2026-02" });

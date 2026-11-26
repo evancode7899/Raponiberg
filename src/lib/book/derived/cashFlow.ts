@@ -216,7 +216,8 @@ export function realYears(rep: Pick<SpendingReport, "months"> & Partial<Pick<Spe
     const parts = months.map((m) => ({ key: m.start.slice(0, 7), cents: m.spendingCents, level: s.months[m.start.slice(0, 7)] }));
     if (parts.some((p) => !p.level)) return [];
     const ps = parts.map((p) => ({ key: p.key, cents: p.cents, ratio: s.months[to]! / p.level! }));
-    return [{ year, months, to, cents: Math.round(ps.reduce((t, p) => t + p.cents * p.ratio, 0)), parts: ps }];
+    // Each month rounded to the cent, the year their sum: the lines add up to the total.
+    return [{ year, months, to, cents: ps.reduce((t, p) => t + Math.round(p.cents * p.ratio), 0), parts: ps }];
   });
 }
 

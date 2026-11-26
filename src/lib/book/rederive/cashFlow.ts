@@ -288,7 +288,7 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
         for (const m of windowOf(win)) {
           const at = s.months[m.start.slice(0, 7)];
           if (!at) return null;
-          cents += m.spending * (level / at);
+          cents += Math.round(m.spending * (level / at));
         }
         return [centsRoute(ROWS, v, Math.round(cents), `each month's rows re-added, × CPI ${to} ÷ CPI that month`, windowOf(win).length)];
       }
