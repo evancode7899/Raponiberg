@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { dataStamp } from "../cache.ts";
 import { keepSweep, restoreSweep } from "./sweepStore.ts";
+import { recordSweep } from "../../restatements.ts";
 
 /**
  * The proof sweep (sweep.ts) runs in a process of its own (scripts/proof-sweep.ts --child),
@@ -184,4 +185,25 @@ function runChild(): SweepJob {
 const g = globalThis as unknown as { __pfSweep?: SweepRunner };
 
 /** The server's one sweep runner. */
-export const proofSweep = (): SweepRunner => (g.__pfSweep ??= createSweepRunner({ stamp: () => dataStamp(), run: () => runChild(), restore: restoreSweep, keep: keepSweep }));
+export const proofSweep = (): SweepRunner =>
+  (g.__pfSweep ??= createSweepRunner({
+    stamp: () => dataStamp(),
+    run: () => runChild(),
+    restore: (s) => {
+      const kept = restoreSweep(s);
+      if (kept != null) noteMonth(kept);
+      return kept;
+    },
+    keep: (s, body) => {
+      keepSweep(s, body);
+      noteMonth(body);
+    },
+  }));
+
+/**
+ * Each finished sweep goes into the restatement log (lib/restatements.ts), except on a
+ * read-only server (LAUNCH_UPKEEP=0: npm run audit:real), which never writes to the data folder.
+ */
+function noteMonth(body: string) {
+  if (process.env.LAUNCH_UPKEEP !== "0") recordSweep(body);
+}

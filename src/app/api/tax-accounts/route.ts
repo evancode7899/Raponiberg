@@ -41,7 +41,8 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected a settings object" }, { status: 400 });
   }
+  const before = await loadJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);
   const saved = await saveJsonSetting(prisma, RETIREMENT_SETTINGS_KEY, body, normalizeRetirementSettings);
-  await logAuditEvent({ action: "retirement_accounts_updated", actor: AUDIT_ACTOR_APP, payload: { people: Object.keys(saved.people) } });
+  await logAuditEvent({ action: "retirement_accounts_updated", actor: AUDIT_ACTOR_APP, before, after: saved, payload: { people: Object.keys(saved.people) } });
   return NextResponse.json(saved);
 }

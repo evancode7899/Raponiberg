@@ -3,7 +3,7 @@
  * and how it's grouped in the sidebar. The page header and browser tab title come from
  * here too, so names stay consistent everywhere.
  */
-export type NavGroup = "Overview" | "Net worth & planning" | "Income & expenses" | "Data" | "Settings";
+export type NavGroup = "Overview" | "Net worth & planning" | "Income & expenses" | "Protection" | "Data & settings";
 
 export type TerminalCommand = {
   /** Uppercase code, typed in the command bar */
@@ -19,10 +19,11 @@ export type TerminalCommand = {
   /** Extra tokens for autocomplete (lowercase) */
   keywords?: string[];
   /** Action commands don't navigate; the shell runs them instead (see AppShell). */
-  action?: "shutdown";
+  action?: "shutdown" | "tour";
 };
 
-export const NAV_GROUPS: NavGroup[] = ["Overview", "Net worth & planning", "Income & expenses", "Data", "Settings"];
+/** Protection holds what covers the household: insurance, medical care and the HSA that pays for it. */
+export const NAV_GROUPS: NavGroup[] = ["Overview", "Net worth & planning", "Income & expenses", "Protection", "Data & settings"];
 
 export const TERMINAL_COMMANDS: TerminalCommand[] = [
   {
@@ -159,7 +160,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/insurance",
     label: "Insurance",
     description: "Every life, home and auto policy, read from its documents: coverage and limits, premiums, key dates, terms and beneficiaries, with the premiums paid from the statements.",
-    group: "Income & expenses",
+    group: "Protection",
     keywords: ["insurance", "life insurance", "term life", "policy", "premium", "death benefit", "face amount", "beneficiary", "conversion", "rider", "coverage"],
   },
   {
@@ -167,7 +168,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/medical",
     label: "Medical",
     description: "Medical, dental and vision care from the insurers' explanations of benefits: every claim, what you owe and what the plan paid, deductibles, out-of-pocket limits and annual maximums, how often each service is covered, and what each plan covers.",
-    group: "Income & expenses",
+    group: "Protection",
     keywords: ["medical", "health", "health insurance", "eob", "explanation of benefits", "claims", "deductible", "out of pocket", "coinsurance", "copay", "aetna", "doctor", "provider", "dental", "vision", "coverage", "plan", "hdhp"],
   },
   {
@@ -175,7 +176,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/hsa",
     label: "HSA receipts",
     description: "Medical bills paid out of pocket that the HSA can pay back tax-free whenever you choose, which have been reimbursed, and what leaving the money invested has earned. Estimates, not tax advice.",
-    group: "Income & expenses",
+    group: "Protection",
     keywords: ["hsa", "health savings", "receipts", "shoebox", "reimburse", "reimbursement", "medical", "qualified expenses", "out of pocket", "8889", "1099-sa"],
   },
   {
@@ -183,7 +184,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/statements",
     label: "Statements",
     description: "Import statements and see what to download, search and categorize every row, settle transfers, fix what's missing or failing, and check what stands behind every figure.",
-    group: "Data",
+    group: "Data & settings",
     keywords: ["upload", "pdf", "import", "bank", "credit card", "coverage", "documents", "accounts", "download", "plan", "transactions", "review"],
   },
   {
@@ -191,7 +192,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/statements?tab=transactions",
     label: "Transactions",
     description: "Search every statement row and fix how it's categorized.",
-    group: "Data",
+    group: "Data & settings",
     hidden: true,
     keywords: ["ledger", "search", "payee", "merchant", "rows", "categorize"],
   },
@@ -200,7 +201,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/statements?tab=categorize",
     label: "Review",
     description: "Answer the classifier's open questions and settle transfers between your accounts.",
-    group: "Data",
+    group: "Data & settings",
     hidden: true,
     keywords: ["review", "categorize", "classify", "transfers", "match", "inbox", "todo"],
   },
@@ -209,7 +210,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/statements?tab=transfers",
     label: "Transfers",
     description: "Settle transfers between your accounts.",
-    group: "Data",
+    group: "Data & settings",
     hidden: true,
     keywords: ["transfers", "match", "pair", "between accounts"],
   },
@@ -218,7 +219,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/statements?tab=issues",
     label: "Issues",
     description: "What's proven, what's missing, and what to fetch or fix.",
-    group: "Data",
+    group: "Data & settings",
     hidden: true,
     keywords: ["integrity", "issues", "proof", "checks", "reconcile", "missing", "failing", "validation", "exceptions", "source of truth"],
   },
@@ -227,14 +228,14 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/settings",
     label: "Settings",
     description: "Appearance, app password, household, exports, backups and the audit log.",
-    group: "Settings",
+    group: "Data & settings",
     keywords: ["prefs", "appearance", "font", "theme", "preferences", "household", "backup"],
   },
   {
     mnemonic: "EXP",
     href: "/settings?tab=data",
     label: "Export CSV",
-    group: "Settings",
+    group: "Data & settings",
     hidden: true,
     keywords: ["csv", "download", "export"],
   },
@@ -242,7 +243,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     mnemonic: "AUD",
     href: "/settings?tab=audit",
     label: "Audit log",
-    group: "Settings",
+    group: "Data & settings",
     hidden: true,
     keywords: ["audit", "events", "history"],
   },
@@ -251,7 +252,7 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/database",
     label: "Database browser",
     description: "Read-only view of the raw SQLite tables.",
-    group: "Settings",
+    group: "Data & settings",
     hidden: true,
     keywords: ["sqlite", "tables", "rows", "browse", "raw"],
   },
@@ -260,18 +261,37 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     href: "/help",
     label: "Help",
     description: "Every function and its mnemonic, plus keyboard shortcuts.",
-    group: "Settings",
+    group: "Data & settings",
     hidden: true,
     keywords: ["?", "commands", "functions", "list", "shortcuts", "keyboard"],
+  },
+  {
+    mnemonic: "TRUST",
+    href: "/statements?tab=checks",
+    label: "How far to trust the figures",
+    description: "What the proof sweep cleared, re-derived and flagged, and the oldest source.",
+    group: "Data & settings",
+    hidden: true,
+    keywords: ["trust", "confidence", "proof", "sweep", "cleared", "re-derived", "estimates", "oldest"],
   },
   {
     mnemonic: "OFF",
     href: "#off",
     label: "Shut down server",
-    group: "Settings",
+    group: "Data & settings",
     hidden: true,
     keywords: ["shutdown", "stop", "quit", "exit", "close"],
     action: "shutdown",
+  },
+  {
+    mnemonic: "TOUR",
+    href: "#tour",
+    label: "Guided tour",
+    description: "A short walk past the command line, the sidebar, proofs and panels.",
+    group: "Data & settings",
+    hidden: true,
+    keywords: ["tour", "walkthrough", "guide", "intro", "start", "new"],
+    action: "tour",
   },
 ];
 

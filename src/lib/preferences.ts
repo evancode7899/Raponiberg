@@ -2,6 +2,8 @@ export const STORAGE_THEME = "pf-theme";
 export const STORAGE_FONT_SCALE = "pf-font-scale";
 const STORAGE_IDLE_LOCK = "pf-idle-lock";
 const STORAGE_HIDE_AMOUNTS = "pf-hide-amounts";
+export const STORAGE_UP_DOWN = "pf-updown";
+export const STORAGE_MOTION = "pf-motion";
 
 /** Minutes without a key, click or scroll before the app locks itself; 0 is never. */
 export const IDLE_LOCK_CHOICES = [0, 5, 15, 30, 60] as const;
@@ -83,4 +85,20 @@ export function applyFontScale(scale: FontScale): void {
   } catch {
     /* ignore */
   }
+}
+
+/** How up and down are colored: the usual green and red, or blue and red, which color-blind eyes tell apart (deuteranopia, protanopia). */
+export type UpDown = "standard" | "blue";
+export const upDown = (): UpDown => (stored(STORAGE_UP_DOWN) === "blue" ? "blue" : "standard");
+export function setUpDown(v: UpDown) {
+  document.documentElement.setAttribute("data-updown", v);
+  store(STORAGE_UP_DOWN, v);
+}
+
+/** Motion: as the computer's setting says, or none at all whatever it says (a drawer appears without sliding). */
+export type Motion = "system" | "reduce";
+export const motion = (): Motion => (stored(STORAGE_MOTION) === "reduce" ? "reduce" : "system");
+export function setMotion(v: Motion) {
+  document.documentElement.setAttribute("data-motion", v);
+  store(STORAGE_MOTION, v);
 }

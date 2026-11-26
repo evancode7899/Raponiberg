@@ -1,7 +1,8 @@
 import type { Lane } from "./taxonomy.ts";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { appendJournal, writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * Merchant rules — the owner's (taught by recategorizing a merchant) and the AI's (see
@@ -87,9 +88,6 @@ export function restoreRule(merchantKey: string, previous: SavedRule | null, fil
 
 function writeRules(file: string, data: RulesFile, journal: Record<string, unknown>) {
   data.rules.sort((a, b) => a.merchantKey.localeCompare(b.merchantKey));
-  mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), ...journal }) + "\n");
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
-  renameSync(tmp, file);
+  appendJournal(journalPath(file), journal);
+  writeJsonAtomic(file, data);
 }

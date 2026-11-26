@@ -1,6 +1,6 @@
 "use client";
 
-import { askDanger } from "@/components/ui/Feedback";
+import { askDanger, notify } from "@/components/ui/Feedback";
 import { NA } from "@/lib/formatMoney";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, ErrorNote, inputCls, Loading, selectCls } from "@/components/ui/kit";
@@ -31,6 +31,14 @@ export function AccountsPanel({ api, version, onChanged }: { api: Api; version: 
       .catch((e: Error) => setError(e.message));
   }, [api, version]);
 
+  /** Says what changed, with Undo putting it back the same way it was changed. */
+  const undoable = (said: string, back: () => Promise<unknown>) =>
+    notify(said, {
+      undo: async () => {
+        await back();
+        onChanged();
+      },
+    });
   const run = useCallback(
     async (fn: () => Promise<string | void>) => {
       setBusy(true);
@@ -75,7 +83,7 @@ export function AccountsPanel({ api, version, onChanged }: { api: Api; version: 
       ) : (
         <ul className="flex flex-col divide-y divide-line">
           {accounts.map((a) => (
-            <AccountRow key={a.id} a={a} all={accounts} busy={busy} run={run} api={api} />
+            <AccountRow key={a.id} a={a} all={accounts} busy={busy} run={run} undoable={undoable} api={api} />
           ))}
         </ul>
       )}
@@ -88,12 +96,14 @@ function AccountRow({
   all,
   busy,
   run,
+  undoable,
   api,
 }: {
   a: Account;
   all: Account[];
   busy: boolean;
   run: (fn: () => Promise<string | void>) => Promise<void>;
+  undoable: (said: string, back: () => Promise<unknown>) => void;
   api: Api;
 }) {
   const [name, setName] = useState(a.name);
@@ -109,7 +119,7 @@ function AccountRow({
               type="button"
               className={btn.primary}
               disabled={busy || !name.trim()}
-              onClick={() => void run(() => api.call(`/api/accounts/${a.id}`, { method: "PATCH", json: { name } }).then(() => "Renamed."))}
+              onClick={() => void run(() => api.call(`/api/accounts/${a.id}`, { method: "PATCH", json: { name } }).then(() => undoable(`Renamed to “${name}”.`, () => api.call(`/api/accounts/${a.id}`, { method: "PATCH", json: { name: a.name } }))))}
             >
               Rename
             </button>
@@ -159,7 +169,11 @@ function AccountRow({
           className={btn.secondary}
           disabled={busy}
           onClick={() =>
-            void run(() => api.call(`/api/accounts/${a.id}`, { method: "PATCH", json: { archived: !a.archivedAt } }).then(() => (a.archivedAt ? "Restored." : "Archived.")))
+            void run(() =>
+              api
+                .call(`/api/accounts/${a.id}`, { method: "PATCH", json: { archived: !a.archivedAt } })
+                .then(() => undoable(a.archivedAt ? `Restored ${a.name}.` : `Archived ${a.name}.`, () => api.call(`/api/accounts/${a.id}`, { method: "PATCH", json: { archived: !!a.archivedAt } }))),
+            )
           }
         >
           {a.archivedAt ? "Restore" : "Archive"}

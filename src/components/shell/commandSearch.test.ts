@@ -77,3 +77,73 @@ describe("what it suggests", () => {
     expect(first("off")).toMatchObject({ code: "OFF", action: "shutdown" });
   });
 });
+
+const ctx = {
+  today: "2031-06-15",
+  accounts: [
+    { id: "acc1", name: "Example Checking ••1234", institution: "Springfield Bank", archived: false },
+    { id: "acc2", name: "Old Savings", institution: null, archived: true },
+  ],
+  merchants: [
+    { key: "SPRINGFIELD GROCER", name: "Springfield Grocer #12", rows: 40 },
+    { key: "EXAMPLE PHARMACY", name: "Example Pharmacy", rows: 3 },
+  ],
+  views: [{ name: "Big dining months", href: "/cash-flow?tab=trends" }],
+  pinned: [{ name: "Pat's brokerage", descriptor: { report: "net-worth", metric: "balance" } }],
+  figures: [{ name: "Net worth", descriptor: { report: "net-worth", metric: "total" }, shownCents: 123_400 }],
+};
+
+describe("what it finds by name", () => {
+  it("accounts, merchants and figures; a figure opens its proof, not a page", () => {
+    expect(suggest("checking", 14, ctx).map((s) => s.id)).toContain("acct:acc1");
+    expect(suggest("acct", 14, ctx).map((s) => s.code)).toEqual(["ACCT", "ACCT"]);
+    expect(suggest("merch grocer", 14, ctx)[0]).toMatchObject({ code: "MERCH", href: "/statements?tab=transactions&q=SPRINGFIELD%20GROCER" });
+    const nw = suggest("fig net worth", 14, ctx)[0]!;
+    expect(nw).toMatchObject({ code: "FIG", href: "", proof: { descriptor: { report: "net-worth", metric: "total" }, shownCents: 123_400 } });
+  });
+
+  it("the owner's saved views and pins come first", () => {
+    expect(suggest("dining", 14, ctx)[0]).toMatchObject({ code: "VIEW", href: "/cash-flow?tab=trends" });
+    expect(suggest("brokerage", 14, ctx)[0]).toMatchObject({ code: "PIN", proof: { descriptor: { report: "net-worth", metric: "balance" } } });
+    expect(suggest("", 14, ctx)[0]).toMatchObject({ code: "VIEW" });
+  });
+
+  it("SAVE name keeps the view as it is", () => {
+    expect(suggest("save Big dining months")).toEqual([expect.objectContaining({ action: "save-view", arg: "Big dining months" })]);
+    expect(suggest("save")).toEqual([]);
+  });
+});
+
+describe("periods", () => {
+  it("CF 24M DINING: a category's rows over the last 24 months", () => {
+    expect(suggest("cf 24m dining", 14, ctx)[0]!.href).toBe("/statements?tab=transactions&category=Dining&lane=EXPENSE&from=2029-06-15");
+  });
+
+  it("a year, YTD and days narrow a search or an account", () => {
+    expect(suggest("find 2030 pharmacy", 14, ctx)).toEqual([expect.objectContaining({ href: "/statements?tab=transactions&q=pharmacy&from=2030-01-01&to=2030-12-31" })]);
+    expect(suggest("acct ytd checking", 14, ctx)[0]!.href).toBe("/statements?tab=transactions&accountId=acc1&from=2031-01-01");
+    expect(suggest("acct 90d checking", 14, ctx)[0]!.href).toBe("/statements?tab=transactions&accountId=acc1&from=2031-03-17");
+  });
+
+  it("reads month-ends safely and leaves other words alone", async () => {
+    const { periodOf } = await import("./commandSearch");
+    expect(periodOf("1m", "2031-03-31")?.from).toBe("2031-02-28");
+    expect(periodOf("2y", "2031-02-28")?.from).toBe("2029-02-28");
+    expect(periodOf("0m", "2031-03-31")).toBeNull();
+    expect(periodOf("dining", "2031-03-31")).toBeNull();
+  });
+});
+
+describe("split view", () => {
+  it("SPLIT code puts that page beside this one, SPLIT alone closes it", () => {
+    expect(suggest("split tax")[0]).toMatchObject({ code: "SPLIT", action: "split", href: "/taxes" });
+    expect(suggest("split cf trends")[0]).toMatchObject({ action: "split", href: "/cash-flow?tab=trends" });
+    expect(suggest("split")[0]).toMatchObject({ action: "split", href: "" });
+  });
+});
+
+describe("tour", () => {
+  it("TOUR starts the guided tour rather than opening a page", () => {
+    expect(suggest("tour")[0]).toMatchObject({ code: "TOUR", action: "tour" });
+  });
+});

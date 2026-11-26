@@ -1,6 +1,9 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { dataStamp, getBook, stampTag } from "@/lib/book/cache";
 import { buildProof, parseDescriptor } from "@/lib/book/proof";
+import { descriptorKey } from "@/lib/book/proof/key";
+import { atMonthEnd } from "@/lib/restatements";
+import { periodOf, whySince } from "@/lib/restatementWhy";
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -22,7 +25,10 @@ export async function POST(request: NextRequest) {
   const book = await getBook(prisma, stamp);
   try {
     const proof = await buildProof({ book, db: prisma }, descriptor);
-    return NextResponse.json({ ...proof, stamp: stampTag(stamp) });
+    // What it was at the last month-end, and what changed since if it moved (lib/restatements.ts).
+    const end = atMonthEnd(descriptorKey(descriptor), proof.figure);
+    const monthEnd = end ? { ...end, why: end.moved ? await whySince(prisma, end.takenAt, periodOf(descriptor)) : [] } : null;
+    return NextResponse.json({ ...proof, monthEnd, stamp: stampTag(stamp) });
   } catch (e) {
     // A kind that can't find what it was asked for (a row or statement re-imported since the page loaded) says so in words.
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 422 });

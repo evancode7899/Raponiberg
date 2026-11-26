@@ -1,7 +1,8 @@
 "use client";
 
 import { Card } from "@/components/ui/kit";
-import { applyFontScale, applyTheme, isAppTheme, isFontScale, THEME_CHANGED_EVENT, type AppTheme, type FontScale } from "@/lib/preferences";
+import { applyFontScale, applyTheme, isAppTheme, isFontScale, motion, setMotion, setUpDown, THEME_CHANGED_EVENT, upDown, type AppTheme, type FontScale, type Motion, type UpDown } from "@/lib/preferences";
+import { Segmented } from "@/components/ui/kit";
 import { useEffect, useState } from "react";
 
 const THEMES: { id: AppTheme; label: string; note: string; swatch: [string, string, string] }[] = [
@@ -19,9 +20,13 @@ const SIZES: { id: FontScale; label: string; sample: string }[] = [
 export function AppearancePanel() {
   const [theme, setTheme] = useState<AppTheme>("terminal");
   const [size, setSize] = useState<FontScale>("md");
+  const [updown, setUpDownState] = useState<UpDown>("standard");
+  const [move, setMoveState] = useState<Motion>("system");
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the preferences live in this browser and on <html>, set by a script before hydration
+    setUpDownState(upDown());
+    setMoveState(motion());
     const t = document.documentElement.getAttribute("data-theme");
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the theme attributes are set on <html> by a script before hydration
     if (isAppTheme(t)) setTheme(t);
     const f = document.documentElement.getAttribute("data-font-scale");
     if (isFontScale(f)) setSize(f);
@@ -87,6 +92,39 @@ export function AppearancePanel() {
             );
           })}
         </div>
+      </Card>
+      <Card title="Up and down" subtitle="How rises and falls are colored everywhere. Blue and red can be told apart by eyes that confuse green with red.">
+        <div className="flex flex-wrap items-center gap-4">
+          <Segmented
+            ariaLabel="Up and down colors"
+            options={[
+              { value: "standard", label: "Green and red" },
+              { value: "blue", label: "Blue and red" },
+            ]}
+            value={updown}
+            onChange={(v) => {
+              setUpDownState(v);
+              setUpDown(v);
+            }}
+          />
+          <span className="num text-[13px]" data-not-figure="a sample of how rises and falls are colored">
+            <span className="text-pos">+$1,234</span> · <span className="text-neg">($567)</span>
+          </span>
+        </div>
+      </Card>
+      <Card title="Motion" subtitle="Nothing in the app moves by itself; drawers slide in. Reduce stops even that, whatever the computer's setting is.">
+        <Segmented
+          ariaLabel="Motion"
+          options={[
+            { value: "system", label: "As the computer says" },
+            { value: "reduce", label: "Reduce" },
+          ]}
+          value={move}
+          onChange={(v) => {
+            setMoveState(v);
+            setMotion(v);
+          }}
+        />
       </Card>
       <Card title="Keyboard">
         <ul className="grid gap-2 text-[13px] text-fg-2 sm:grid-cols-2">

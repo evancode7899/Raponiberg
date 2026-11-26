@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { APP_FILES } from "../appFiles.ts";
 import { ENV_FILES, UNSTAMPED_ENV_FILES } from "../dataEnv.ts";
 import { resolveSqliteDatabaseFilePath } from "../sqliteDbPath.ts";
 import { localToday } from "../dates/isoDate.ts";
@@ -114,6 +115,8 @@ function dataFiles(): string[] {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
   for (const k of ENV_FILES) if (process.env[k]) json.push(process.env[k]!);
+  // The app's own files (saved views, pins): no figure reads them (lib/appFiles.ts).
+  json = json.filter((f) => !APP_FILES.has(path.basename(f)));
   return json;
 }
 

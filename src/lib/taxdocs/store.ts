@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir, isDemo } from "../dataDir.ts";
 import type { TaxDocsFile } from "./types.ts";
+import { writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * The tax documents reader's version: bump when a parser changes what it reads, and every
@@ -51,7 +52,5 @@ export function readTaxDocsChecked(file = taxDocsFile()): { docs: TaxDocsFile | 
 
 /** Writes the scan atomically (a reader never sees half a file). */
 export function writeTaxDocs(f: TaxDocsFile, file = taxDocsFile()): void {
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(f, null, 1));
-  renameSync(tmp, file);
+  writeJsonAtomic(file, f, { indent: 1, newline: false });
 }

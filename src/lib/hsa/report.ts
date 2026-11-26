@@ -6,6 +6,7 @@ import { ownerFiled, providerKey, qualifyPayee, type ExpenseKind, type Qualifica
 import { matchReceipts, onFile, type ReceiptFileFacts, type ReceiptMatch } from "./receipts.ts";
 import { sameFp, type HsaExpense, type HsaFile, type HsaSettings } from "./store.ts";
 import { hsaAfterTax, strategyRows, taxableAfterTax, type StrategyAssumptions, type StrategyRow } from "./strategy.ts";
+import { usdText } from "../formatMoney.ts";
 
 /**
  * The HSA page: the receipts log joined to the ledger. Pure (no I/O), so it's tested on
@@ -342,7 +343,7 @@ const EOB_KIND: Record<ClaimLite["coverage"], ExpenseKind> = { MEDICAL: "MEDICAL
 
 /** A charge that paid what EOBs say you owed: qualified care, said in the EOB's words. */
 function eobQualification(cs: readonly ClaimLite[]): Qualification {
-  const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const usd = (c: number) => usdText(c);
   const c = cs[0]!;
   const reason =
     cs.length === 1
@@ -477,7 +478,7 @@ export function buildHsaReport(input: ReportInput): HsaReport {
     }
     if (eob?.over && !e.kept) {
       flags.push("OVER_EOB");
-      const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const usd = (c: number) => usdText(c);
       const what = eob.claims.map((c) => `${c.patient} at ${c.provider || "the provider"} on ${c.firstDate} (claim ${c.id})`).join("; ");
       const says = `The EOB${eob.claims.length === 1 ? "" : "s"} for ${what} say${eob.claims.length === 1 ? "s" : ""} you owed ${usd(eob.owedCents)}${eob.planCents ? ` (the plan paid ${usd(eob.planCents)})` : ""}, not ${usd(e.amountCents)}.`;
       doubt =

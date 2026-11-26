@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import type { FundDocsFile } from "./types.ts";
+import { writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * data/fund-documents.json: what each imported private-fund document says (capital call
@@ -27,7 +28,5 @@ export function readFundDocs(file = fundDocsFile()): FundDocsFile | null {
 
 /** Writes atomically (a reader never sees half a file). */
 export function writeFundDocs(f: FundDocsFile, file = fundDocsFile()): void {
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(f, null, 1));
-  renameSync(tmp, file);
+  writeJsonAtomic(file, f, { indent: 1, newline: false });
 }

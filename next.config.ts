@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
-import { contentSecurityPolicy } from "./src/lib/auth/csp";
+import { securityHeaders } from "./src/lib/auth/csp";
+import { MAX_REQUEST_BYTES } from "./src/lib/uploadLimits";
 
 const nextConfig: NextConfig = {
   // The desktop launcher builds into a staging folder (NEXT_BUILD_DIR) and only swaps it
@@ -18,21 +19,15 @@ const nextConfig: NextConfig = {
   // may show the app inside a frame (clickjacking: tricking a click on a
   // hidden Raponiberg button), browsers don't guess file types, and links out of the app
   // don't tell the next site which page they came from.
+  // The one exception is the app framing its own page for the split view (securityHeaders).
   async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: [
-          { key: "Content-Security-Policy", value: contentSecurityPolicy(process.env.NODE_ENV === "development") },
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "no-referrer" },
-        ],
-      },
-    ];
+    return securityHeaders(process.env.NODE_ENV === "development");
   },
   experimental: {
     optimizePackageImports: ["recharts"],
+    // The proxy reads only headers, but Next.js hands it the body too, cut at 10 MB by default:
+    // an upload under the app's own caps (lib/uploadLimits.ts) must arrive whole.
+    proxyClientMaxBodySize: MAX_REQUEST_BYTES,
   },
   turbopack: {
     // The data stores read files under data/ (DATA_DIR) at run time, a path the build can't

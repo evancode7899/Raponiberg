@@ -20,6 +20,8 @@
  *                                  build first (into .next, never the launcher's .next-app).
  *   npm run demo -- --render-audit --reuse-data   on the data/demo already there (CI's shards share
  *                                  one: each seed mints its own record ids, which proof keys carry)
+ *   npm run demo -- --render-audit --timings   times every warmed report first (scripts/endpoint-timings.ts)
+ *   npm run demo -- --render-audit --ui-checks keyboard, component and visual checks after the audit (scripts/ui-checks.ts)
  * DEMO_PORT changes the port (default 3001).
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -124,7 +126,9 @@ async function renderAudit(dir: string) {
       if (Date.now() > until) throw new Error(`The demo server didn't answer on ${base} within a minute.`);
       await new Promise((r) => setTimeout(r, 500));
     }
+    if (process.argv.includes("--timings")) node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "endpoint-timings.ts"), base], "The demo's endpoint timings");
     node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "render-audit.ts"), base], "The demo's render audit");
+    if (process.argv.includes("--ui-checks")) node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "ui-checks.ts"), base], "The demo's UI checks");
   } finally {
     server.kill();
   }

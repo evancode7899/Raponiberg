@@ -6,6 +6,7 @@ import type { CarFigureDescriptor } from "@/lib/book/proof/carProof";
 import { EM_DASH, NA } from "@/lib/formatMoney";
 import type { CarReport, CostLine } from "@/lib/car/report";
 import { useState } from "react";
+import { dateLabel, monthLabel } from "@/lib/dates/display";
 
 /**
  * Chart buckets: the cost lines folded into seven, each with a fixed palette slot, so a
@@ -71,7 +72,7 @@ export function usd2(cents: number | null | undefined): string {
 
 export function fmtDate(iso: string | null | undefined, style: "short" | "long" = "long"): string {
   if (!iso) return EM_DASH;
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", style === "long" ? { month: "short", day: "numeric", year: "numeric" } : { month: "short", year: "numeric" });
+  return style === "long" ? dateLabel(iso) : monthLabel(iso);
 }
 
 export const miles = (n: number | null | undefined, digits = 0) => (n == null || !Number.isFinite(n) ? NA : n.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits }));

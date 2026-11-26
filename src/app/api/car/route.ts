@@ -32,7 +32,8 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected the car log" }, { status: 400 });
   }
+  const before = await loadJsonSetting(prisma, CAR_KEY, normalizeGarage);
   const saved = await saveJsonSetting(prisma, CAR_KEY, body, normalizeGarage);
-  await logAuditEvent({ action: "car_updated", actor: AUDIT_ACTOR_APP, payload: { cars: saved.cars.length, entries: saved.entries.length } });
+  await logAuditEvent({ action: "car_updated", actor: AUDIT_ACTOR_APP, before, after: saved, payload: { cars: saved.cars.length, entries: saved.entries.length } });
   return NextResponse.json(saved);
 }

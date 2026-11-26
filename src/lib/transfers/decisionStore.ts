@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { appendJournal, writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * The owner's transfer decisions: pairings they confirmed by hand (e.g. a rollover that
@@ -50,11 +51,8 @@ export function readDecisions(file = decisionsFilePath()): DecisionsFile {
 }
 
 function write(file: string, data: DecisionsFile, journal: Record<string, unknown>) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), ...journal }) + "\n");
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
-  renameSync(tmp, file);
+  appendJournal(journalPath(file), journal);
+  writeJsonAtomic(file, data);
 }
 
 /** The same leg: same institution, a shared account identifier, same date and amount. */

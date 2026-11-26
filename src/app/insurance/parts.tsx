@@ -8,11 +8,12 @@ import { compositeOf } from "@/components/ui/proof/context";
 import type { CoverPayment, CoverStatus, CoverTerm } from "@/lib/insurance/cover";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { dateLabel } from "@/lib/dates/display";
 
 /** Shared pieces of the Insurance page's tabs. */
 
-export const longDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-export const shortDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+export const longDate = (d: string) => dateLabel(d);
+export const shortDate = (d: string) => dateLabel(d);
 const yearsUntil = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / (365.25 * 86_400_000);
 export const until = (from: string, to: string) => {
   const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);

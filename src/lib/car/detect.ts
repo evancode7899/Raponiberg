@@ -1,5 +1,6 @@
 import type { BookRow } from "../book/load.ts";
 import { ownedOn, SHARED, type Car, type CarEntry, type CarKind, type GarageSettings, type RowDecision, type RowLink } from "./settings.ts";
+import { usdText } from "../formatMoney.ts";
 
 /**
  * Which ledger rows are the cars' money, and which statement charge each log entry is.
@@ -690,5 +691,5 @@ export function linksFor(rows: Pick<RowRef, "rowId" | "key">[]): RowLink[] {
 }
 
 function usd(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return usdText(cents);
 }

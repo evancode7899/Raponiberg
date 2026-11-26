@@ -17,6 +17,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { Line, LineChart, ReferenceLine, YAxis } from "recharts";
 import { useCallback, useEffect, useState } from "react";
+import { monthLabel } from "@/lib/dates/display";
 
 type Data = { report: GoalsReport; settings: GoalSettings };
 
@@ -63,7 +64,7 @@ const TYPES: { type: GoalType; label: string; blurb: string; preset: Omit<Goal, 
 ];
 const typeOf = (g: Goal): GoalType => (g.funding === "TRACK" ? "MILESTONE" : g.kind === "EMERGENCY_FUND" ? "EMERGENCY" : "SAVE");
 
-const fmtMonth = (iso: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : NA);
+const fmtMonth = (iso: string | null) => (iso ? monthLabel(iso) : NA);
 const monthIndex = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 

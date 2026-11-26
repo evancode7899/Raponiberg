@@ -31,11 +31,63 @@
   --color-focus: var(--focus);
   --font-ui: var(--ui-font);
   --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+
+  /*
+   * The type scale: five steps, every size on screen is one of them (typeScale.test.ts holds
+   * pages to it). Tailwind's own names land on a step: base is body, xl is a title, and
+   * 2xl–5xl are the one display size of headline figures.
+   */
+  --text-2xs: var(--step-meta);
+  --text-2xs--line-height: 1.35;
+  --text-xs: var(--step-small);
+  --text-xs--line-height: 1.45;
+  --text-sm: var(--step-body);
+  --text-sm--line-height: 1.5;
+  --text-base: var(--step-body);
+  --text-base--line-height: 1.5;
+  --text-lg: var(--step-title);
+  --text-lg--line-height: 1.35;
+  --text-xl: var(--step-title);
+  --text-xl--line-height: 1.35;
+  --text-2xl: var(--step-display);
+  --text-2xl--line-height: 1.15;
+  --text-3xl: var(--step-display);
+  --text-3xl--line-height: 1.15;
+  --text-4xl: var(--step-display);
+  --text-4xl--line-height: 1.15;
+  --text-5xl: var(--step-display);
+  --text-5xl--line-height: 1.15;
 }
 
 html {
   --app-font-scale: 1.0625;
   font-size: calc(16px * var(--app-font-scale));
+  /* The five steps, in pixels at the default font size; Settings › Appearance scales them all. */
+  --type-scale: calc(var(--app-font-scale) / 1.0625);
+  --step-meta: calc(11px * var(--type-scale));
+  --step-small: calc(12px * var(--type-scale));
+  --step-body: calc(13px * var(--type-scale));
+  --step-title: calc(17px * var(--type-scale));
+  --step-display: calc(26px * var(--type-scale));
+}
+
+/*
+ * Sizes pages wrote in pixels before the scale: each is drawn at its step (unlayered, so it
+ * wins over the utility). New code uses text-2xs / text-xs / text-sm / text-lg / text-3xl.
+ */
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\],
+.text-\[11\.5px\] {
+  font-size: var(--step-meta);
+}
+.text-\[12px\],
+.text-\[12\.5px\] {
+  font-size: var(--step-small);
+}
+.text-\[13px\],
+.text-\[15px\] {
+  font-size: var(--step-body);
 }
 html[data-font-scale="sm"] {
   --app-font-scale: 0.9296875;
@@ -86,7 +138,7 @@ html[data-theme="light"] {
   --chart-legend: #3a3a37;
   --chart-series-0: #2a78d6;
   --chart-series-1: #eb6834;
-  --chart-series-2: #1baf7a;
+  --chart-series-2: #0f6e4a;
   --chart-series-3: #eda100;
   --chart-series-4: #e87ba4;
   --chart-series-5: #008300;
@@ -136,7 +188,7 @@ html[data-theme="dark"] {
   --chart-legend: #d6d5ce;
   --chart-series-0: #3987e5;
   --chart-series-1: #d95926;
-  --chart-series-2: #199e70;
+  --chart-series-2: #4fd6a0;
   --chart-series-3: #c98500;
   --chart-series-4: #d55181;
   --chart-series-5: #008300;
@@ -196,7 +248,7 @@ html[data-theme="terminal"] {
   --chart-legend: #ddd5c4;
   --chart-series-0: #5fb0f5;
   --chart-series-1: #ffa53c;
-  --chart-series-2: #3fc48b;
+  --chart-series-2: #249a68;
   --chart-series-3: #f0d060;
   --chart-series-4: #e58bb8;
   --chart-series-5: #8fd14f;
@@ -207,6 +259,43 @@ html[data-theme="terminal"] {
   --slider-track: #514630;
   --slider-thumb: #ffb545;
   --slider-thumb-border: #140d00;
+}
+
+/*
+ * Up and down that color-blind eyes tell apart (Settings › Appearance): up is blue rather than
+ * green, so it never rests on red against green. Down keeps its red.
+ */
+html[data-updown="blue"] {
+  --pos: #1d5fb8;
+  --pos-soft: #e7f0fc;
+}
+html[data-updown="blue"][data-theme="dark"] {
+  --pos: #6aa8f0;
+  --pos-soft: #16263b;
+}
+html[data-updown="blue"][data-theme="terminal"] {
+  --pos: #5fb0f5;
+  --pos-soft: #0b1a28;
+}
+
+/* No motion: when the computer asks for less, or the app is told to (Settings › Appearance). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }
 
 html[data-theme="terminal"] body {
@@ -256,6 +345,46 @@ html[data-theme="terminal"] [data-panel-head]:focus-within [data-panel-words] {
 }
 html[data-theme="terminal"] [data-panel-body] {
   padding: 7px 8px 8px;
+}
+/* In light and dark a long explanation is two lines; the head's hover or focus lays the rest over what's below, the same way. */
+html:not([data-theme="terminal"]) [data-panel-sub] {
+  position: relative;
+}
+html:not([data-theme="terminal"]) [data-panel-words] {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+html:not([data-theme="terminal"]) [data-panel-head]:hover [data-panel-words][data-clamped],
+html:not([data-theme="terminal"]) [data-panel-head]:focus-within [data-panel-words][data-clamped] {
+  position: absolute;
+  inset: -3px auto auto -6px;
+  z-index: 30;
+  width: max-content;
+  max-width: min(100% + 12px, 48rem);
+  padding: 2px 6px 4px;
+  -webkit-line-clamp: unset;
+  background: var(--surface-2);
+  border-radius: 4px;
+  outline: 1px solid var(--line-strong);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
+}
+/* The Dashboard narrowed by a linked category or month, or by a panel's own command line (components/ui/Panel.tsx). */
+[data-desk-row][data-link-hidden],
+[data-desk-row][data-line-hidden] {
+  display: none;
+}
+
+/* A card with nothing in it is its title alone: no empty box below. */
+[data-panel-body]:empty {
+  display: none;
+}
+section:has(> [data-panel-body]:empty) > [data-panel-head] {
+  padding-bottom: 0.75rem;
+}
+html[data-theme="terminal"] section:has(> [data-panel-body]:empty) > [data-panel-head] {
+  padding-bottom: 2px;
 }
 /* Labels are amber: table heads, small capitals, chart axes and legends. Sentences aren't. */
 html[data-theme="terminal"] :is(th, dt, .uppercase.text-muted, thead) {

@@ -114,6 +114,12 @@ export type SweepReport = {
   listing: SweepProblem[];
   /** What wasn't swept, and why. */
   skipped: SweepProblem[];
+  /**
+   * The statements cleared figures rest on: how many, and the account whose latest one is
+   * the oldest (what the trust panel calls the oldest source). Absent in a sweep kept from
+   * before it was counted.
+   */
+  sources?: { statements: number; accounts: number; oldest: { account: string; through: string } | null };
   ms: number;
 };
 
@@ -255,6 +261,20 @@ export async function judgeFigures(
   const basis: Record<string, ClearedBasis> = {};
   const links = new Map<string, { from: string; page: string; link: ProofLink }>();
   let linkMs = 0;
+  // The statements under each cleared figure's rows, and each account's latest one.
+  const statementIds = new Set<string>();
+  const latestByAccount = new Map<string, string>();
+  const sourcesOf = (p: Proof) => {
+    for (const b of p.blocks) {
+      if (b.kind !== "rows") continue;
+      for (const g of b.groups) {
+        if (statementIds.has(g.statement.id)) continue;
+        statementIds.add(g.statement.id);
+        const was = latestByAccount.get(g.statement.account);
+        if (!was || g.statement.periodEnd > was) latestByAccount.set(g.statement.account, g.statement.periodEnd);
+      }
+    }
+  };
   for (const f of figures) {
     const row = rowOf(f.page);
     row.figures++;
@@ -280,6 +300,7 @@ export async function judgeFigures(
       // Anything after the last proven day is an estimate by its nature: only a figure resting on an estimate about the past is marked.
       const how: ClearedBasis | null = p.estimates.some((e) => !isProjection(e)) ? "estimate" : p.checks.some((c) => c.state === "accepted") ? "accepted" : null;
       if (how) basis[descriptorKey(f.descriptor)] = how;
+      sourcesOf(p);
     }
     if (opts.followLinks !== false) for (const l of linksOf(p)) links.set(descriptorKey(l.descriptor), { from: p.describes, page: f.page, link: l });
   }
@@ -324,6 +345,11 @@ export async function judgeFigures(
     problemCount: all.length,
     listing: all.slice(0, LISTED),
     skipped: opts.skipped ?? [],
+    sources: {
+      statements: statementIds.size,
+      accounts: latestByAccount.size,
+      oldest: [...latestByAccount].reduce<{ account: string; through: string } | null>((o, [account, through]) => (!o || through < o.through ? { account, through } : o), null),
+    },
   };
 }
 

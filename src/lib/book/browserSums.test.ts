@@ -35,6 +35,7 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
   "src/app/investments/InvestmentsClient.tsx": { count: 4, why: "the target allocation the owner is typing, the stock share (a ratio) of the report's classes, and the classes added up as the whole a class's share is drawn over (a composite sum of each class's figure, F6)" },
   "src/app/net-worth/AccountsTab.tsx": { count: 1, why: "roll-forward totals over accounts, each opening the annual rollforward-total proof (which re-derives it)" },
   "src/app/net-worth/NetWorthClient.tsx": { count: 1, why: "chart floor for debts" },
+  "src/components/ui/DataTable.tsx": { count: 1, why: "the average height of the rows drawn, to size a long list drawn by the rows in view (pixels, not money)" },
   "src/app/statements/CategorizeQueue.tsx": { count: 2, why: "row counts and the latest date in the review queue" },
   "src/app/settings/DataPanel.tsx": { count: 1, why: "row count" },
   "src/app/statements/Timeline.tsx": { count: 1, why: "month count" },

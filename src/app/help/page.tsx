@@ -1,4 +1,5 @@
-import { APP_KEYS, CATEGORIZE_KEYS, DASHBOARD_KEYS } from "@/components/shell/shortcuts";
+import { JUMPS } from "@/components/shell/keyBindings";
+import { APP_KEYS, CATEGORIZE_KEYS, DASHBOARD_KEYS, TABLE_KEYS, type Shortcut } from "@/components/shell/shortcuts";
 import { NAV_GROUPS, TERMINAL_COMMANDS } from "@/components/shell/terminalCommands";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -8,8 +9,13 @@ export const metadata: Metadata = {
   description: "Every function, its mnemonic, and keyboard shortcuts",
 };
 
+/** G then a letter, each page by name (components/shell/keyBindings.ts). */
+const JUMP_KEYS: Shortcut[] = Object.entries(JUMPS).map(([k, href]) => [`G  ${k.toUpperCase()}`, TERMINAL_COMMANDS.find((c) => c.href === href)?.label ?? href]);
+
 const SHORTCUTS = [
   { where: "Keyboard", keys: APP_KEYS },
+  { where: "Keyboard: any table", keys: TABLE_KEYS },
+  { where: "Keyboard: go to a page", keys: JUMP_KEYS },
   { where: "Keyboard: Dashboard", keys: DASHBOARD_KEYS },
   { where: "Keyboard: Statements › Categorize, with a merchant focused", keys: CATEGORIZE_KEYS },
 ];

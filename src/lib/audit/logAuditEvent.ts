@@ -1,17 +1,22 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
+import { chainedAuditRow, withAuditChain, writeAuditHead, type AuditInput } from "./chainStore.ts";
+
+export { auditHeadPath, readAuditHead, withAuditChain } from "./chainStore.ts";
 
 export type AuditAction =
   | "export_transactions_csv"
   | "export_audit_csv"
   | "export_database_sqlite"
   | "backup_created"
+  | "restore_drill_run"
   | "import_database_sqlite"
   | "wipe_database_sqlite"
   | "statement_imported"
   | "statement_import_rejected"
   | "statement_committed"
   | "statement_deleted"
+  | "statement_restored"
   | "account_created"
   | "account_updated"
   | "accounts_merged"
@@ -63,18 +68,12 @@ export const AUDIT_ACTOR_OWNER = "owner";
 /** In-app flows from the browser. */
 export const AUDIT_ACTOR_APP = "app";
 
-export async function logAuditEvent(input: {
-  action: AuditAction;
-  actor?: string;
-  payload?: Prisma.InputJsonValue;
-  correlationId?: string;
-}): Promise<void> {
-  await prisma.auditEvent.create({
-    data: {
-      action: input.action,
-      actor: input.actor ?? "system",
-      payloadJson: input.payload ?? undefined,
-      correlationId: input.correlationId,
-    },
+/** Records one change on the audit chain; `before` and `after` add what it changed (changes.ts). */
+export async function logAuditEvent(input: AuditInput & { action: AuditAction; payload?: Prisma.InputJsonValue }): Promise<void> {
+  await withAuditChain(async () => {
+    const { data, link } = await chainedAuditRow(prisma, input);
+    await prisma.auditEvent.create({ data });
+    writeAuditHead(link);
   });
 }
+

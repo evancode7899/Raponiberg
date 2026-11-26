@@ -136,7 +136,9 @@ jobs:
           name: demo-data
           path: data/demo
       - name: Render shard ${{ matrix.shard }} of 3 and hold what it draws to the proof sweep
-        run: npm run demo -- --render-audit --reuse-data
+        # Shard 1 also times every warmed report first (scripts/endpoint-timings.ts): a few seconds, reported, never failing on speed.
+        # Shard 2 also runs the keyboard, component and visual checks after its audit (scripts/ui-checks.ts): under a minute.
+        run: npm run demo -- --render-audit --reuse-data ${{ matrix.shard == 1 && '--timings' || '' }} ${{ matrix.shard == 2 && '--ui-checks' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

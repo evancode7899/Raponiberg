@@ -1,6 +1,8 @@
 "use client";
 
 import { askDanger } from "@/components/ui/Feedback";
+import { holdBack } from "@/components/ui/holdBack";
+import { DeletedDocuments } from "./DeletedDocuments";
 import { LaneBadge } from "@/components/ledger/TransactionTable";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table, type Tone } from "@/components/ui/kit";
@@ -95,17 +97,20 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
     [onChanged],
   );
 
+  // Documents deleted a moment ago, gone from the list while Undo is open (holdBack).
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const shown = useMemo(() => {
     const n = q.trim().toLowerCase();
-    if (!docs || !n) return docs;
-    return docs.filter(
+    const left = docs?.filter((d) => !gone.has(d.id)) ?? null;
+    if (!left || !n) return left;
+    return left.filter(
       (d) =>
         d.title.toLowerCase().includes(n) ||
         (d.originalFileName ?? "").toLowerCase().includes(n) ||
         d.institution.toLowerCase().includes(n) ||
         d.statementImports.some((s) => s.account.name.toLowerCase().includes(n)),
     );
-  }, [docs, q]);
+  }, [docs, q, gone]);
 
   return (
     <Card
@@ -160,7 +165,14 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
                   className={btn.danger}
                   disabled={busy === d.id}
                   onClick={async () => {
-                    if (await askDanger(`Delete "${d.title}" and everything it added to the ledger?`)) void run(d.id, () => api.call(`/api/documents/${d.id}`, { method: "DELETE" }));
+                    if (!(await askDanger(`Delete "${d.title}" and everything it added to the ledger?`, "Delete", "You can undo it for a few seconds after."))) return;
+                    holdBack({
+                      say: `Deleted "${d.title}"`,
+                      hide: () => setGone((g) => new Set(g).add(d.id)),
+                      show: () => setGone((g) => new Set([...g].filter((x) => x !== d.id))),
+                      commit: ({ keepalive }) => api.call(`/api/documents/${d.id}`, { method: "DELETE", keepalive }),
+                      done: onChanged,
+                    });
                   }}
                 >
                   Delete
@@ -183,6 +195,7 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
           ))}
         </ul>
       )}
+      <DeletedDocuments api={api} onChanged={onChanged} version={docs?.length ?? 0} />
     </Card>
   );
 }

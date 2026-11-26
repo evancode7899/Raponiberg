@@ -11,11 +11,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+/** The most rows one answer lists: the whole ledger of a household, years of it. */
+const MAX_ROWS = 20_000;
+
 /**
  * Ledger rows for the Transactions page and drill-downs. Query: from, to (YYYY-MM-DD),
  * category, lane (comma list), accountId, q (payee, detail or merchant contains),
  * needsReview=1, flow (in | out), min / max (size in dollars, either sign),
- * sort (date | amount | name; amount by size), dir (asc | desc), limit (≤ 2000). Only
+ * sort (date | amount | name; amount by size), dir (asc | desc), limit (≤ 20,000: the table
+ * draws only the rows in view). Only
  * committed, non-summary statement rows. Also returns how many rows match and their
  * money in / out, beyond the page returned: the Book's amounts for exactly those rows
  * (book/rowTotals.ts), so they are the same dollars every figure counts.
@@ -83,7 +87,7 @@ export async function GET(request: NextRequest) {
   if (!(sort === "date" || sort === "amount" || sort === "name") || !(dir === "asc" || dir === "desc")) {
     return NextResponse.json({ error: "sort must be date, amount or name; dir asc or desc" }, { status: 400 });
   }
-  const limit = Math.max(1, Math.min(2000, Math.floor(Number(sp.get("limit") ?? 500)) || 500));
+  const limit = Math.max(1, Math.min(MAX_ROWS, Math.floor(Number(sp.get("limit") ?? 500)) || 500));
 
   const select = {
     id: true,

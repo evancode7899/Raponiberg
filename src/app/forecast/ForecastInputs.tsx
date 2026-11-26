@@ -12,6 +12,7 @@ import { DEFAULT_PERSON_OUTLOOK, type BonusEstimates, type LivingBasis, type Out
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { monthName, pct, usd, YearInput } from "./forecastUi";
+import { dateLabel } from "@/lib/dates/display";
 
 export type SetAssumption = <K extends keyof OutlookAssumptions>(k: K, v: OutlookAssumptions[K]) => void;
 
@@ -357,4 +358,4 @@ function ProofLabel({ help, proof, children }: { help?: string; proof: ProofTarg
   );
 }
 
-const shortDate =(iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+const shortDate = (iso: string) => dateLabel(iso);

@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
+import { writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * Accounts the owner says are closed although their last statement didn't end at $0 (a
@@ -58,9 +59,7 @@ export function saveClosedAccount(entry: Omit<ClosedAccount, "savedAt">, file = 
   data.accounts = [...data.accounts.filter((a) => !sameAccount(a, entry.institution, [entry.identifier])), saved];
   mkdirSync(path.dirname(file), { recursive: true });
   appendFileSync(journalPath(file), JSON.stringify({ at: saved.savedAt, op: "close", account: saved }) + "\n");
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n");
-  renameSync(tmp, file);
+  writeJsonAtomic(file, data);
   return saved;
 }
 
