@@ -6,7 +6,9 @@ import { Callout, Card, ErrorNote, NotFigure, PageBody, StatCell, StatGrid, tabl
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatPercentRatio, formatUsd, NA } from "@/lib/formatMoney";
 import { comparePrepayVsInvest, loanMonthToCalendar, type PathSeries } from "@/lib/mortgage/prepayVsInvest";
-import { mortgageFigures, type MortgageFigure } from "@/lib/mortgage/figures";
+import { MORTGAGE_FIGURES, type MortgageFigure } from "@/lib/mortgage/figures";
+import { useMortgageFigures, type WorkerFigures } from "./useMortgageFigures";
+import { Loading } from "@/components/ui/kit";
 import { normalizeMortgageInputs } from "@/lib/mortgage/inputs";
 import type { ProofRef } from "@/components/ui/proof/context";
 import { useApi } from "@/components/ledger/useApi";
@@ -19,6 +21,9 @@ import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 /** The linked figures (api/mortgage/links): each with where it comes from. */
 export type MortgageLinks = Partial<Record<LinkedKey, { value: number; from: string } | null>>;
+
+/** Before the worker's first answer: no simulation, every headline a dash. */
+const NO_FIGURES: WorkerFigures = { mc: { paths: 0, chanceInvestWins: 0, bands: [] }, values: Object.fromEntries(MORTGAGE_FIGURES.map((k) => [k, { cents: null }])) as WorkerFigures["values"] };
 
 /** A chance of investing winning inside this range is a coin flip, not a verdict. */
 const TOSS_UP = [0.45, 0.55] as const;
@@ -75,11 +80,15 @@ export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean 
   // shared model (lib/mortgage/figures.ts) the proof sweep re-runs on the saved inputs.
   const figIns = useDeferredValue(saved);
   const figLinks = useDeferredValue(links);
-  const fig = useMemo(() => mortgageFigures(withLinks(figIns, figLinks), labels), [figIns, figLinks, labels]);
+  // Worked out off the page's thread (useMortgageFigures): until the first answer, nothing to show.
+  const figEff = useMemo(() => withLinks(figIns, figLinks), [figIns, figLinks]);
+  const { fig: answered, pending } = useMortgageFigures(figEff, labels);
+  const fig = answered ?? NO_FIGURES;
   const mc = fig.mc;
   const figInputs = useMemo(() => normalizeMortgageInputs(figIns), [figIns]);
   const tile = (figure: MortgageFigure): ProofRef => {
     if (!linksIn || figLinks !== links) return unswept("waiting for the linked figures (Forecast, Taxes)");
+    if (pending) return unswept("simulating markets");
     const v = fig.values[figure];
     const value = "cents" in v ? v.cents : v.ratio;
     if (value == null) return noFigure("nothing to compare yet");
@@ -156,6 +165,7 @@ export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean 
         />
 
         <div className="flex min-w-0 flex-col gap-4">
+          {pending && hasChoice && <Loading label="Simulating markets…" />}
           {!hasChoice ? (
             <Callout tone="info" title="Nothing to compare yet">
               Add an extra monthly amount or a lump sum: the page compares sending that money to the loan against investing it.
