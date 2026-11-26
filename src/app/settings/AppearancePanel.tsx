@@ -107,7 +107,7 @@ export function AppearancePanel() {
               setUpDown(v);
             }}
           />
-          <span className="num text-[13px]">
+          <span className="num text-[13px]" data-not-figure="a sample of how rises and falls are colored">
             <span className="text-pos">+$1,234</span> · <span className="text-neg">($567)</span>
           </span>
         </div>
