@@ -815,7 +815,7 @@ function Brackets({ r }: { r: TaxResponse }) {
   const top = used.length - 1;
   const dollars = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
   return (
-    <Card title={`How ${r.year}'s income fills the federal brackets`} subtitle={`Ordinary taxable income, projected for the year (${r.filingStatus === "MFJ" ? "married filing jointly" : "single"}); qualified dividends and long-term gains stack on top at 0/15/20%. Each bar is a bracket, filled as far as the income reaches.`}>
+    <Card title={`How ${r.year}'s income fills the federal brackets`} subtitle={<NotFigure why="the law's rates for dividends and gains, not figures of yours">{`Ordinary taxable income, projected for the year (${r.filingStatus === "MFJ" ? "married filing jointly" : "single"}); qualified dividends and long-term gains stack on top at 0/15/20%. Each bar is a bracket, filled as far as the income reaches.`}</NotFigure>}>
       <div className={table.wrap}>
         <table className={`${table.table} min-w-[36rem]`}>
           <thead className={table.head}>

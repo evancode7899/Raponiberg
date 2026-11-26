@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { Card, selectCls, table } from "@/components/ui/kit";
+import { Card, NotFigure, selectCls, table } from "@/components/ui/kit";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { payFlow, per100, type FlowBand, type PayFlow } from "@/lib/book/reports/payFlow";
@@ -97,7 +97,9 @@ export function PayFlowCard({ ctx }: { ctx: Ctx }) {
               <tr>
                 <th className={table.th}>Band</th>
                 <th className={table.thR}>{f.year}</th>
-                <th className={table.thR} title="Each band per $100 of gross pay and other income">Per $100 of gross</th>
+                <th className={table.thR} title="Each band per $100 of gross pay and other income">
+                  <NotFigure why="a round amount the column is a share of, not a figure of yours">Per $100 of gross</NotFigure>
+                </th>
               </tr>
             </thead>
             {[
