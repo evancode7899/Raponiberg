@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { builtDerived, netWorthDerived, recordsDerived, stretchOf } from "@/lib/book/derived/netWorth";
+import { benchmarkOf, builtDerived, netWorthDerived, recordsDerived, stretchOf } from "@/lib/book/derived/netWorth";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
@@ -680,6 +680,7 @@ function Returns({ r }: { r: NetWorthReport }) {
           </RechartsResponsive>
         </div>
       </Card>
+      <BenchmarkCard r={r} derived={derived} />
       <StretchCard r={r} derived={derived} />
       <Card
         title="By account"
@@ -775,6 +776,28 @@ function StretchCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<ty
           </table>
         </div>
       )}
+    </Card>
+  );
+}
+
+/**
+ * Investment returns › against the benchmark (derived/netWorth.ts benchmarkOf): the portfolio's
+ * time-weighted return and the benchmark's change over the same months, and the gap. The
+ * benchmark is the series Claude keeps in data/price-index.json; descriptive, not advice.
+ */
+function BenchmarkCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<typeof netWorthDerived> }) {
+  const b = useMemo(() => benchmarkOf(r), [r]);
+  if (!b) return null;
+  const mine = derivedTarget("net-worth", derived, "benchmark-portfolio", b.to);
+  const theirs = derivedTarget("net-worth", derived, "benchmark-return", b.to);
+  const gap = b.portfolio - b.benchmark;
+  return (
+    <Card title={`Against ${b.name}`} subtitle={`From ${b.from} through ${b.to}, the months both cover: your portfolio's time-weighted return against the index's change${b.kind === "price" ? " (a price index: its dividends aren't in it, so it runs a little low)" : ", dividends in"}. Fetched ${b.fetchedOn}.`}>
+      <StatGrid cols={3}>
+        <StatCell proof={mine} label="Your portfolio" value={formatPercentRatio(b.portfolio, 1)} sub={`${b.months} months chained`} tone={b.portfolio < 0 ? "neg" : "neutral"} />
+        <StatCell proof={theirs} label="The benchmark" value={formatPercentRatio(b.benchmark, 1)} sub={b.source} />
+        <StatCell proof={compositeOf("diff", gap >= 0 ? [mine, theirs] : [theirs, mine], { ratio: Math.abs(gap) })} label={gap >= 0 ? "Ahead by" : "Behind by"} value={formatPercentRatio(Math.abs(gap), 1)} sub="percentage points" tone={gap >= 0 ? "pos" : "neg"} />
+      </StatGrid>
     </Card>
   );
 }

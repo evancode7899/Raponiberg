@@ -8,6 +8,8 @@ import { centsRoute, invariant, ratioRoute, rederiveList, textRoute } from "../p
 import type { Rederivation, RederivedRoute } from "../proof/types.ts";
 import { markStep } from "../reports/records.ts";
 import { drawdown } from "../reports/drawdown.ts";
+import { readPriceIndex } from "../../priceIndex.ts";
+import { addMonths, BENCHMARK, indexChange } from "../../priceIndexMath.ts";
 import { cashFlowRows, dayOfFor } from "../reports/cashFlow.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 
@@ -189,6 +191,18 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
         const c = chained(start, end, col === "household" ? undefined : col);
         const of = col === "household" ? "every investment account's timeline" : "the account's timeline";
         return [ratioRoute(`each month re-worked from ${of} (Modified Dietz), chained`, v, c.total, `${c.months} of ${periodsBetween(start, end, "month").length} months measured, chained`, 1e-9)];
+      }
+      case "benchmark-return": {
+        const s = readPriceIndex().series[BENCHMARK];
+        const from = portfolioFrom;
+        if (!from || !f.key) return null;
+        return [ratioRoute("the price-index file, read again", v, indexChange(s, addMonths(from.slice(0, 7), -1), f.key)?.change ?? null, "the level that month over the level before the stretch, less one", 1e-12)];
+      }
+      case "benchmark-portfolio": {
+        const from = portfolioFrom;
+        if (!from || !f.key) return null;
+        const c = chained(from, minIso(endOfPeriod(`${f.key}-01`, "month"), through));
+        return [ratioRoute(ROUTE, v, c.total, `${c.months} months from ${from} through ${f.key}`, 1e-9)];
       }
       case "drawdown-max":
       case "drawdown-now": {

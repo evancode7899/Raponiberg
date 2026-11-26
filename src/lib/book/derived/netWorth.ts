@@ -1,5 +1,6 @@
 import type { NetWorthReport } from "../reports/netWorth.ts";
 import type { NetWorthChange, NetWorthChangesReport } from "../reports/netWorthChanges.ts";
+import { addMonths, indexChange, latestAtOrBefore } from "../../priceIndexMath.ts";
 import { drawdown } from "../reports/drawdown.ts";
 import { netWorthRecords, roundMark } from "../reports/records.ts";
 import type { ProofValue } from "../proof/types.ts";
@@ -7,7 +8,7 @@ import type { RollforwardReport } from "../../profile/rollforwards.ts";
 import { c, ln, r, t, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 
 /** Net worth › Investment returns (monthly periods): the portfolio's chained return since its latest unbroken proven stretch began, annualized, and how many accounts are measured. */
-export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts">): DerivedFigure[] {
+export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts"> & Partial<Pick<NetWorthReport, "benchmark">>): DerivedFigure[] {
   const p = rep.proven.returns.portfolio;
   const run = p ? rep.periods.filter((x) => x.start >= p.from && x.household.portfolioReturn != null) : [];
   const parts = run.map((x) => ({ label: x.label, value: r(x.household.portfolioReturn!) }));
@@ -34,11 +35,55 @@ export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" |
       parts: rep.proven.returns.byAccount.map((a) => ({ label: names.get(a.accountId) ?? a.accountId, value: r(a.total), sub: `since ${a.from}` })),
     },
     ...stretchDerived(rep),
+    ...benchmarkDerived(rep),
     // Each account's own, over its unbroken proven stretch.
     ...rep.proven.returns.byAccount.flatMap((a): DerivedFigure[] => [
       { figure: "account-return", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, cumulative and time-weighted`, value: r(a.total), lines: [ln(`Each month's return, chained from ${a.from}`, r(a.total), undefined, { note: "(1 + r₁) × (1 + r₂) × … − 1" })] },
       ...(a.annualized == null ? [] : [{ figure: "account-return-annualized", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, a year`, value: r(a.annualized), lines: [ln("Cumulative", r(a.total)), ln("Over its days, a year", r(a.annualized))] }]),
     ]),
+  ];
+}
+
+/**
+ * Investment returns › against the benchmark: from the start of the portfolio's proven
+ * stretch to the benchmark's latest month on file (the same months both ways), the portfolio's
+ * monthly returns chained and the benchmark's change. Null without a benchmark, or when it
+ * doesn't reach back to the stretch's start.
+ */
+export function benchmarkOf(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark">>) {
+  const p = rep.proven.returns.portfolio;
+  const s = rep.benchmark;
+  if (!p || !s) return null;
+  const run = rep.periods.filter((x) => x.start >= p.from && x.household.portfolioReturn != null);
+  const lastMonth = run.at(-1)?.start.slice(0, 7);
+  const to = lastMonth ? latestAtOrBefore(s, lastMonth) : null;
+  // The level at the end of the month before the stretch starts, to the latest month both cover.
+  const b = to ? indexChange(s, addMonths(p.from.slice(0, 7), -1), to) : null;
+  if (!b) return null;
+  const months = run.filter((x) => x.start.slice(0, 7) <= to!);
+  const portfolio = months.reduce((g, x) => g * (1 + x.household.portfolioReturn!), 1) - 1;
+  return { from: p.from, to: b.to, name: s.name, kind: s.kind, source: s.source, fetchedOn: s.fetchedOn, months: months.length, portfolio, benchmark: b.change, levels: { from: b.fromLevel, to: b.toLevel, fromMonth: b.from } };
+}
+
+function benchmarkDerived(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark">>): DerivedFigure[] {
+  const x = benchmarkOf(rep);
+  if (!x) return [];
+  const src = { source: "proven" as const, note: `${x.name}: ${x.source}, as fetched ${x.fetchedOn}.` };
+  return [
+    {
+      figure: "benchmark-return",
+      key: x.to,
+      describes: `${x.name}: change from the end of ${x.levels.fromMonth} to ${x.to}${x.kind === "price" ? " (price only, dividends not in it)" : ""}`,
+      value: r(x.benchmark),
+      lines: [ln(`Level, ${x.to}`, t(String(x.levels.to)), undefined, src), ln(`Level, ${x.levels.fromMonth}`, t(String(x.levels.from)), "÷", src), ln("Change", r(x.benchmark), "=")],
+    },
+    {
+      figure: "benchmark-portfolio",
+      key: x.to,
+      describes: `Portfolio return from ${x.from} through ${x.to}, time-weighted (the benchmark's months)`,
+      value: r(x.portfolio),
+      lines: [ln(`Each month's return, chained from ${x.from}`, t(`${x.months} months`)), ln("Cumulative", r(x.portfolio), undefined, { note: "(1 + r₁) × (1 + r₂) × … − 1" })],
+    },
   ];
 }
 
