@@ -18,7 +18,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { id } = await params;
   const doc = await prisma.sourceDocument.findUnique({
     where: { id },
-    select: { id: true, title: true, originalFileName: true, statementImports: { select: { id: true } } },
+    select: { id: true, title: true, originalFileName: true, filePath: true, statementImports: { select: { id: true } } },
   });
   if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
 
@@ -34,7 +34,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   await logAuditEvent({
     action: "statement_deleted",
     actor: AUDIT_ACTOR_APP,
-    payload: { documentId: id, title: doc.title, fileName: doc.originalFileName, sections: doc.statementImports.length },
+    // The stored file stays: Documents can put it back from there (lib/ingest/deletedDocuments.ts).
+    payload: { documentId: id, title: doc.title, fileName: doc.originalFileName, filePath: doc.filePath, sections: doc.statementImports.length },
   });
   const maintenance = await refreshDerived(prisma);
   return NextResponse.json({ ok: true, maintenance });

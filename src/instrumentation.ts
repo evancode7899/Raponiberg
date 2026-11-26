@@ -13,7 +13,11 @@ export async function register() {
     const [{ prisma }, { keepBookWarm }, { startAutoBackup }] = await Promise.all([import("@/lib/db"), import("@/lib/book/cache"), import("@/lib/backup/auto")]);
     // The desktop app (next start) backs up to OneDrive; dev servers only when asked; the demo never.
     const backs = process.env.NODE_ENV === "production" || process.env.BACKUP_AUTO === "1";
-    if (process.env.BACKUP_AUTO !== "0" && process.env.LAUNCH_UPKEEP !== "0" && process.env.APP_PROFILE !== "demo" && backs) startAutoBackup(prisma);
+    if (process.env.BACKUP_AUTO !== "0" && process.env.LAUNCH_UPKEEP !== "0" && process.env.APP_PROFILE !== "demo" && backs) {
+      startAutoBackup(prisma);
+      // Once a month the newest backup is restored into a scratch copy and checked (lib/backup/drill.ts).
+      void Promise.all([import("@/lib/backup/drillAuto"), import("@/lib/backup/drillLog")]).then(([{ startMonthlyDrill }, { logDrill }]) => startMonthlyDrill(prisma, logDrill));
+    }
     // LAUNCH_UPKEEP=0 (a read-only second server: npm run audit:real) leaves the data files and the ledger as they are.
     const upkeep = process.env.LAUNCH_UPKEEP !== "0";
     // Bonus letter reviews move into the permanent exceptions list (once; the old file is kept, renamed).

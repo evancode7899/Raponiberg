@@ -2,6 +2,7 @@
 
 import { askDanger } from "@/components/ui/Feedback";
 import { holdBack } from "@/components/ui/holdBack";
+import { DeletedDocuments } from "./DeletedDocuments";
 import { LaneBadge } from "@/components/ledger/TransactionTable";
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, EmptyState, ErrorNote, inputCls, Loading, Segmented, table, type Tone } from "@/components/ui/kit";
@@ -194,6 +195,7 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
           ))}
         </ul>
       )}
+      <DeletedDocuments api={api} onChanged={onChanged} version={docs?.length ?? 0} />
     </Card>
   );
 }
