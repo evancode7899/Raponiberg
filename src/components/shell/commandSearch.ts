@@ -40,7 +40,7 @@ export const PAGE_TABS: Record<string, [id: string, label: string][]> = {
   "/fire": [["plan", "Plan"], ["walk-away", "Walk-away income"], ["levers", "Levers"], ["stress", "Stress test"], ["playbook", "Playbook"]],
   "/home-budget": [["price", "Test a price"], ["rent", "Rent vs buy"], ["sensitivity", "Sensitivity"], ["mortgage", "Prepay vs invest"]],
   "/tax-accounts": [["inputs", "Inputs"]],
-  "/cash-flow": [["spending", "Spending"], ["trends", "Trends"], ["patterns", "Patterns"], ["yoy", "Year over year"], ["merchants", "Merchants"], ["recurring", "Recurring bills"], ["budget", "Budget"], ["income", "Income & savings"]],
+  "/cash-flow": [["spending", "Spending"], ["trends", "Trends"], ["patterns", "Patterns"], ["yoy", "Year over year"], ["merchants", "Merchants"], ["recurring", "Recurring bills"], ["unusual", "Unusual: duplicates, missing bills"], ["budget", "Budget"], ["income", "Income & savings"]],
   "/annual": [["one-offs", "One-off expenses"]],
   "/bonuses": [["schedule", "Vesting schedule"], ["payouts", "Bonus paychecks"]],
   "/taxes": [["worksheet", "Worksheet"], ["compare", "Joint vs separate"], ["income", "Income & W-2"], ["payments", "Payments"], ["w4", "W-4"], ["filed", "Filed return"], ["inputs", "Inputs"]],
@@ -64,6 +64,8 @@ const SPENDING = CATEGORIES.filter((c) => c.kind === "EXPENSE").map((c) => c.nam
 
 /** A span of days the rows are narrowed to, and how it reads. */
 export type Period = { from: string; to: string; says: string };
+/** "CARD whole foods": the card to reach for (Card perks › Best card's next purchase). */
+const nextCard = (words: string): Suggestion => ({ id: `card:${words}`, code: "CARD", label: `Which card for “${words}”`, hint: "Card perks › Best card", href: `/card-perks?tab=best-card&q=${encodeURIComponent(words)}` });
 
 /**
  * A period typed among the words: 30D, 24M, 2Y (the days, months or years to today), YTD,
@@ -141,6 +143,8 @@ export function suggest(raw: string, limit = 14, ctx: CommandContext = {}): Sugg
   const restTyped = typed.split(/\s+/).slice(1).filter((_, i) => i !== at).join(" ");
   const find = /^(find|search|f)$/.test(first!) && rest ? rest : null;
   if (find) return [search(restTyped || find, period)];
+  if (find) return [search(find)];
+  if (/^(card|which)$/.test(first!) && rest) return [nextCard(rest.replace(/^card\s+(for\s+)?/, ""))];
 
   const out: Suggestion[] = [];
   const add = (s: Suggestion) => {

@@ -12,6 +12,7 @@ import dynamic from "next/dynamic";
 export const SpendingTab = dynamic(() => import("./SpendingTab").then((m) => m.SpendingTab), { loading: () => <Loading /> });
 export const TrendsTab = dynamic(() => import("./TrendsTab").then((m) => m.TrendsTab), { loading: () => <Loading /> });
 export const PatternsTab = dynamic(() => import("./PatternsTab").then((m) => m.PatternsTab), { loading: () => <Loading /> });
+export const UnusualTab = dynamic(() => import("./UnusualTab").then((m) => m.UnusualTab), { loading: () => <Loading /> });
 export const YoyTab = dynamic(() => import("./YoyTab").then((m) => m.YoyTab), { loading: () => <Loading /> });
 export const MerchantsTab = dynamic(() => import("./MerchantsTab").then((m) => m.MerchantsTab), { loading: () => <Loading /> });
 export const RecurringTab = dynamic(() => import("./RecurringTab").then((m) => m.RecurringTab), { loading: () => <Loading /> });

@@ -18,7 +18,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LpPanel, PrivateFunds } from "./LpView";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
-import { costOver, FEE_YEARS, growthKey, investmentsDerived, positionKey } from "@/lib/book/derived/investments";
+import { costOver, FEE_YEARS, growthKey, idleCash, investmentsDerived, positionKey } from "@/lib/book/derived/investments";
 import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 
 /** Your target allocation, as you typed it on the Overview: an input, not a figure. */
@@ -186,6 +186,7 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
           ))}
         </div>
       </Card>
+      <IdleCash r={r} d={d} />
       <TargetCard data={data} save={save} saving={saving} cls={cls} />
       <Card
         title="Largest positions"
@@ -755,5 +756,40 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
         .
       </p>
     </>
+  );
+}
+
+/** Cash sitting in investment accounts (derived/investments.ts idleCash): money-market funds and sweeps, account by account, with its share of the account. Descriptive, not advice. */
+function IdleCash({ r, d }: { r: InvestmentsReport; d: DerivedFigure[] }) {
+  const rows = idleCash(r);
+  if (!rows.length) return null;
+  return (
+    <Card title="Cash in investment accounts" subtitle="Money-market funds and cash sweeps held inside each account: it counts toward the allocation's cash, and earns what the fund pays.">
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[28rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Account</th>
+              <th className={table.thR}>Cash</th>
+              <th className={table.thR}>Of the account</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((x) => {
+              const cash = derivedTarget("investments", d, "idle-cash", x.accountId);
+              return (
+                <tr key={x.accountId} className={table.tr}>
+                  <td className={table.td}>{x.account}</td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={cash}>{usd0(x.cashCents)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>{x.valueCents > 0 ? <ProofValue proof={compositeOf("share", [cash, accountTarget(x.accountId, x.valueCents)], { ratio: x.cashCents / x.valueCents })}>{pct(x.cashCents / x.valueCents)}</ProofValue> : NA}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

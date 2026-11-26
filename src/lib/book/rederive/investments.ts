@@ -91,6 +91,8 @@ export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "as
         const cents = cls === "UNCLASSIFIED" ? sum(P.filter((p) => !p.weights), (p) => p.valueCents) : sum(P, (p) => Math.round(p.valueCents * (p.weights?.[cls] ?? 0)));
         return [centsRoute(POS, v, cents, "each position's value × its weight in the class", P.length)];
       }
+      case "idle-cash":
+        return [centsRoute(POS, v, sum(P.filter((p) => p.accountId === f.key), (p) => Math.round(p.valueCents * (p.weights?.CASH ?? 0))), "the account's positions × their cash part")];
       case "concentration":
         return [centsRoute(POS, v, sum(P.filter((p) => p.key === f.key), (p) => p.valueCents), "the security's positions in every account")];
       case "unclassified":

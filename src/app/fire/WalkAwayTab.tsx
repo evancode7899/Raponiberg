@@ -5,7 +5,10 @@ import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Callout, Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { axisUsd } from "@/lib/formatMoney";
 import type { WalkAwayRow } from "@/lib/profile/outlook";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useApi } from "@/components/ledger/useApi";
+import { walkAwayCost } from "@/lib/book/reports/bonusFigures";
+import type { BonusesReport } from "@/lib/book/reports/bonuses";
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { deflator, DollarsToggle, pct, tipUsd, usd, type FireProps } from "./ui";
 
@@ -19,6 +22,18 @@ export function WalkAwayTab({ f, dollars, setDollars, walkBase }: FireProps & { 
   const through = Math.max(plan.horizonYear, (f.fi?.year ?? 0) + 2);
   const rows = f.rows.filter((r) => r.year <= through);
   const base = new Map((walkBase ?? []).map((w) => [w.year, w]));
+  // Deferred pay left behind by walking away on each Jan 1: the Bonuses page's own definition (reports/bonusFigures.ts walkAwayCost).
+  const api = useApi(false);
+  const [awards, setAwards] = useState<BonusesReport["awards"]>([]);
+  useEffect(() => {
+    if (!api.ready) return;
+    api
+      .call<{ report: BonusesReport }>("/api/bonuses")
+      .then((x) => setAwards(x.report.awards))
+      .catch(() => {});
+  }, [api]);
+  const leftBehind = (year: number) => walkAwayCost(awards, `${year}-01-01`).cents;
+  const showLeft = rows.some((w) => leftBehind(w.year) > 0);
   return (
     <>
       <Crossover f={f} rows={rows} dollars={dollars} setDollars={setDollars} />
@@ -32,7 +47,7 @@ export function WalkAwayTab({ f, dollars, setDollars, walkBase }: FireProps & { 
           <table className={`${table.table} min-w-[52rem]`}>
             <thead className={table.head}>
               <tr>
-                {["Stop on Jan 1", "Age", "Net worth", "FIRE number", "Progress", "After tax / yr", "Per month", "Today's $ / mo", "Living cost", "Covers", "Short / mo", ...(walkBase ? ["Base pay only"] : [])].map((h, i) => (
+                {["Stop on Jan 1", "Age", "Net worth", "FIRE number", "Progress", "After tax / yr", "Per month", "Today's $ / mo", "Living cost", "Covers", "Short / mo", ...(walkBase ? ["Base pay only"] : []), ...(showLeft ? ["Deferred pay left"] : [])].map((h, i) => (
                   <th key={h} className={i === 0 ? table.th : table.thR}>
                     {h}
                   </th>
@@ -67,6 +82,7 @@ export function WalkAwayTab({ f, dollars, setDollars, walkBase }: FireProps & { 
                         {pct(base.get(w.year)?.coverage, 0)}
                       </td>
                     )}
+                    {showLeft && <td className={`${table.tdR} ${leftBehind(w.year) ? "text-warn" : "text-muted"}`}>{leftBehind(w.year) ? usd(leftBehind(w.year)) : "—"}</td>}
                   </tr>
                 );
               })}

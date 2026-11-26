@@ -13,7 +13,11 @@ import type { Briefing, BriefingDue } from "@/lib/dashboard/briefing";
 import type { HomeSummary } from "@/lib/dashboard/homeSummary";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
+import { addDays, endOfMonth, startOfMonth } from "@/lib/dates/isoDate";
+import { visibleFeed } from "@/lib/insights/feedVisible";
+import type { Mark } from "@/lib/marks";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { CashBars, cashCap, NetWorthLine, pastScale, type Range } from "./charts";
 
 export type Summary = HomeSummary;
@@ -174,7 +178,7 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
 
 // ------------------------------------------------------------------ what's due
 
-export function DuePanel({ due, today }: { due: BriefingDue[]; today: string }) {
+export function DuePanel({ due, today, hsa = null }: { due: BriefingDue[]; today: string; hsa?: number | null }) {
   const open = due.filter((d) => !d.done);
   return (
     <Panel code="DUE" title="Next up" href="/calendar" note={`${open.length} open`} className="xl:col-span-3">
@@ -215,6 +219,12 @@ export function DuePanel({ due, today }: { due: BriefingDue[]; today: string }) 
           })}
         </tbody>
       </table>
+      {hsa ? (
+        <p className="border-t border-line px-2 py-1 text-xs text-muted">
+          <Open href="/hsa?tab=reimburse">HSA receipts to reimburse</Open>:{" "}
+          <ProofValue proof={{ descriptor: { report: "hsa", metric: "reimbursable" }, shownCents: hsa }}>{usd0(hsa)}</ProofValue>
+        </p>
+      ) : null}
     </Panel>
   );
 }
@@ -540,15 +550,59 @@ export function PlanPanel({ goals, fire }: { goals: Briefing["goals"]; fire: Bri
 
 const FEED_TONE: Record<Briefing["feed"][number]["tone"], string> = { good: "text-pos", bad: "text-neg", warn: "text-warn", info: "text-info" };
 
-export function FeedPanel({ feed }: { feed: Briefing["feed"] }) {
+/** What the owner can do with a feed item: hide it until it changes, or until a day. */
+export type FeedDecide = (item: Briefing["feed"][number], how: { op: "dismiss" } | { op: "remind"; until: string; words: string } | { op: "undo" }) => void;
+
+/** The days "remind me" offers, from today. */
+export const remindDays = (today: string) => [
+  { until: addDays(today, 7), words: "in a week" },
+  { until: addDays(startOfMonth(addDays(endOfMonth(today), 1)), 0), words: "next month" },
+];
+
+export function FeedPanel({ feed, marks, today, decide }: { feed: Briefing["feed"]; marks: readonly Mark[] | null; today: string; decide: FeedDecide | null }) {
+  const [showHidden, setShowHidden] = useState(false);
+  const { shown, hidden } = useMemo(() => visibleFeed(feed, marks ?? [], today), [feed, marks, today]);
+  const [soon, later] = remindDays(today);
+  const act = (f: Briefing["feed"][number], key: string) => {
+    if (!decide) return false;
+    if (key === "x" || key === "Delete") decide(f, { op: "dismiss" });
+    else if (key === "r") decide(f, { op: "remind", ...soon! });
+    else return false;
+    return true;
+  };
+  const tools = "pointer-events-none absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 rounded-sm border border-line-strong bg-surface-2 px-0.5 opacity-0 shadow group-hover/item:pointer-events-auto group-hover/item:opacity-100 group-focus-within/item:pointer-events-auto group-focus-within/item:opacity-100";
+  const tool = "px-1 text-[11px] leading-[1.35] text-muted outline-none hover:text-fg focus-visible:text-fg focus-visible:ring-1 focus-visible:ring-focus";
   return (
-    <Panel code="NEWS" title="What stands out" note="ranked by what's at stake" className="md:col-span-2 xl:col-span-6">
-      {feed.length === 0 ? (
-        <p className="p-2 text-xs text-muted">Nothing stands out right now.</p>
+    <Panel
+      code="NEWS"
+      title="What stands out"
+      note="ranked by what's at stake"
+      className="md:col-span-2 xl:col-span-6"
+      controls={
+        hidden.length > 0 && (
+          <button type="button" aria-pressed={showHidden} onClick={() => setShowHidden(!showHidden)} title="Items you dismissed or put off: each comes back on its own once what it says changes." className={`px-1.5 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-focus ${showHidden ? "bg-accent text-accent-fg" : "text-muted hover:text-fg"}`}>
+            {hidden.length} hidden
+          </button>
+        )
+      }
+    >
+      {shown.length === 0 && !showHidden ? (
+        <p className="p-2 text-xs text-muted">{hidden.length ? "Nothing else stands out right now." : "Nothing stands out right now."}</p>
       ) : (
         <ol className="py-0.5 text-[12px] leading-snug">
-          {feed.map((f, i) => (
-            <li key={f.id} data-desk-row="" tabIndex={-1} className={`flex gap-2 px-2 py-[3px] ${grid.row}`}>
+          {shown.map((f, i) => (
+            <li
+              key={f.id}
+              data-desk-row=""
+              tabIndex={-1}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && !e.ctrlKey && !e.metaKey && !e.altKey && act(f, e.key)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              className={`group/item relative flex gap-2 px-2 py-[3px] ${grid.row}`}
+            >
               <span className="num w-4 shrink-0 text-right text-faint">{i + 1}</span>
               <Link data-desk-open="" tabIndex={-1} href={f.href} className={`w-9 shrink-0 text-[11px] font-bold leading-[1.45] hover:underline ${FEED_TONE[f.tone]}`}>
                 {f.area}
@@ -556,8 +610,40 @@ export function FeedPanel({ feed }: { feed: Briefing["feed"] }) {
               <span className="min-w-0 text-fg-2">
                 <Segs segs={f.segs} />
               </span>
+              {decide && (
+                // An overlay on the row's right, never a change to the row's own size.
+                <span className={tools}>
+                  <button type="button" className={tool} title={`Remind me ${soon!.words} (key R)`} onClick={() => decide(f, { op: "remind", ...soon! })}>
+                    1w
+                  </button>
+                  <button type="button" className={tool} title={`Remind me ${later!.words}`} onClick={() => decide(f, { op: "remind", ...later! })}>
+                    1m
+                  </button>
+                  <button type="button" className={tool} title="Dismiss until what it says changes (key X)" aria-label="Dismiss" onClick={() => decide(f, { op: "dismiss" })}>
+                    ✕
+                  </button>
+                </span>
+              )}
             </li>
           ))}
+          {showHidden &&
+            hidden.map((f) => (
+              <li key={f.id} data-desk-row="" tabIndex={-1} className={`group/item relative flex gap-2 px-2 py-[3px] text-faint ${grid.row}`}>
+                <span className="w-4 shrink-0" />
+                <span className="w-9 shrink-0 text-[11px] font-bold leading-[1.45]">{f.area}</span>
+                <span className="min-w-0">
+                  <Segs segs={f.segs} />
+                  <span className="ml-1.5 text-[11px]">{f.mark.until ? `· back ${day(f.mark.until)}` : "· dismissed"}</span>
+                </span>
+                {decide && (
+                  <span className={tools}>
+                    <button type="button" className={tool} onClick={() => decide(f, { op: "undo" })}>
+                      Restore
+                    </button>
+                  </span>
+                )}
+              </li>
+            ))}
         </ol>
       )}
     </Panel>

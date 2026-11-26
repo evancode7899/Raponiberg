@@ -1,10 +1,14 @@
 import { cashFlowDerived } from "../book/derived/cashFlow.ts";
+import { recordsDerived } from "../book/derived/netWorth.ts";
 import { derivedTarget } from "../book/derived/types.ts";
 import type { ProofRef } from "../book/proof/compose.ts";
 import type { CalendarItem } from "../book/reports/moneyCalendar.ts";
 import type { GoalProgress } from "../book/reports/goals.ts";
 import type { NetWorthReport } from "../book/reports/netWorth.ts";
 import type { HighlightSeg, NetWorthChange } from "../book/reports/netWorthChanges.ts";
+import { anomalyProof, type Anomaly } from "../book/reports/anomalies.ts";
+import { latestClosed, monthStory } from "../book/reports/monthStory.ts";
+import { netWorthRecords, provenRun, roundMark } from "../book/reports/records.ts";
 import { sliceRange } from "../book/reports/cashFlowWindows.ts";
 import type { SpendingReport } from "../book/reports/spending.ts";
 import { formatDisplayDateFromYmd } from "../displayTime.ts";
@@ -24,6 +28,8 @@ export type FeedItem = {
   tone: "good" | "bad" | "warn" | "info";
   area: "NW" | "CF" | "CAL" | "GOAL";
   segs: FeedSeg[];
+  /** What it says, as words: a dismissed item returns once this changes (a countdown to a date is left out, so a date drawing nearer is still the same item). */
+  says: string;
   href: string;
   /** What orders the list: dollars at stake, times how soon or how unusual. */
   score: number;
@@ -33,7 +39,11 @@ export type FeedInputs = {
   today: string;
   spending: SpendingReport;
   netWorth: NetWorthReport;
+  /** What changed, month by month, oldest first. */
+  changes?: readonly NetWorthChange[];
   change: NetWorthChange | null;
+  /** What looks unusual in the proven months (reports/anomalies.ts). */
+  anomalies?: readonly Anomaly[];
   calendar: CalendarItem[];
   goals: GoalProgress[];
 };
@@ -45,60 +55,63 @@ const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.p
 /** A sweep-proven month-end net worth. */
 const balanceAt = (date: string, cents: number): ProofRef => ({ descriptor: { report: "net-worth", metric: "balance", date }, shownCents: cents });
 
-/** Month-ends that can be proven, oldest first, up to the first gap from the latest back. */
-function provenRun(nw: NetWorthReport) {
-  const out: { end: string; label: string; cents: number }[] = [];
-  for (const p of [...nw.periods].reverse()) {
-    if (p.blockers.length) break;
-    out.unshift({ end: p.end, label: p.label, cents: p.household.closingCents });
-  }
-  return out;
-}
+/** The months a record counts as news: it was set in one of the latest this many. */
+const FRESH = 3;
 
-/** A round mark in words: "$1.5 million", "$900,000". */
-const roundMark = (cents: number) => (cents >= 1_000_000_00 ? `$${(cents / 1_000_000_00).toLocaleString("en-US", { maximumFractionDigits: 1 })} million` : usd0(cents));
-
-/** High-water marks and round numbers passed, from proven month-ends alone. */
-export function records(nw: NetWorthReport): FeedItem[] {
+/** Records from proven months alone (reports/records.ts): highs, runs, best months, and the round marks either side. */
+export function records(nw: NetWorthReport, changes: readonly NetWorthChange[] = []): FeedItem[] {
+  const x = netWorthRecords(nw, changes);
+  if (!x) return [];
   const run = provenRun(nw);
-  const last = run.at(-1);
-  if (!last || run.length < 3) return [];
+  const { last } = x;
+  const derived = recordsDerived(nw, changes);
   const out: FeedItem[] = [];
+  const push = (i: Omit<FeedItem, "area" | "href" | "says"> & { href?: string }) => out.push({ area: "NW", href: "/net-worth", says: segsText(i.segs), ...i });
   const before = run.slice(0, -1);
   const peak = before.reduce((m, p) => (p.cents > m.cents ? p : m), before[0]!);
+  const streak = x.currentRise?.months ?? 0;
   if (last.cents > peak.cents) {
-    let streak = 0;
-    for (let i = run.length - 1; i > 0 && run[i]!.cents > run[i - 1]!.cents; i--) streak++;
-    out.push({
+    push({
       id: `record-high:${last.end}`,
       tone: "good",
-      area: "NW",
       segs: ["New high: net worth closed ", last.label, " at ", fig(usd0(last.cents), balanceAt(last.end, last.cents)), streak >= 3 ? `, up ${streak} months running.` : "."],
-      href: "/net-worth",
       score: 6_000_00 + streak * 1_000_00,
     });
   } else if (peak.cents > 0 && last.cents < peak.cents * 0.97) {
-    out.push({
+    push({
       id: `below-high:${last.end}`,
       tone: "info",
-      area: "NW",
       segs: ["Net worth is below its high of ", fig(usd0(peak.cents), balanceAt(peak.end, peak.cents)), ` (${peak.label}).`],
-      href: "/net-worth",
       score: 4_000_00,
     });
   }
-  // The largest round mark crossed in the last three month-ends.
-  const step = last.cents >= 5_000_000_00 ? 1_000_000_00 : last.cents >= 1_000_000_00 ? 500_000_00 : 100_000_00;
-  const mark = Math.floor(last.cents / step) * step;
-  const crossed = mark > 0 ? run.findIndex((p) => p.cents >= mark) : -1;
-  if (crossed > 0 && crossed >= run.length - 3)
-    out.push({
-      id: `mark:${mark}`,
+  // The longest rise there has been, while it's still going and there was an earlier one to beat.
+  if (x.currentRise && x.longestRise === x.currentRise && streak >= 4 && x.currentRise.from !== run[0])
+    push({
+      id: `record-rise:${x.currentRise.from.end}`,
       tone: "good",
-      area: "NW",
-      segs: ["Passed ", { text: roundMark(mark), notFigure: "a round number, not a figure of yours" }, ` in ${run[crossed]!.label}, closing at `, fig(usd0(run[crossed]!.cents), balanceAt(run[crossed]!.end, run[crossed]!.cents)), "."],
-      href: "/net-worth",
-      score: 5_000_00,
+      segs: ["The longest run of rising months on file: ", fig(String(streak), derivedTarget("net-worth", derived, "record-rise")), ` in a row, since ${x.currentRise.from.label}.`],
+      score: 4_500_00 + streak * 500_00,
+    });
+  const fresh = (end: string) => run.findIndex((p) => p.end === end) >= run.length - FRESH;
+  // A best month is news among a year of them, and only while it's recent.
+  const best = (id: string, words: string, c: NetWorthChange | null, cents: number, proof: ProofRef | null) => {
+    if (!c || !proof || run.length < 12 || !fresh(c.end)) return;
+    push({ id: `${id}:${c.start}`, tone: "good", segs: [`${words}: ${c.label}, `, fig(usd0(cents), proof), "."], href: "/net-worth?tab=changes", score: 5_500_00 });
+  };
+  best("record-saved", "The most saved in a month", x.bestSaved, x.bestSaved?.savedCents ?? 0, x.bestSaved && { descriptor: x.bestSaved.proofs.saved, shownCents: x.bestSaved.savedCents });
+  best("record-markets", "The best month for markets", x.bestMarkets, x.bestMarkets?.marketsCents ?? 0, x.bestMarkets && { descriptor: x.bestMarkets.proofs.markets, shownCents: x.bestMarkets.marketsCents });
+  const round = (cents: number): FeedSeg => ({ text: roundMark(cents), notFigure: "a round number, not a figure of yours" });
+  // The largest round mark crossed in the latest month-ends.
+  const at = x.passed?.at;
+  if (x.passed && at && fresh(at.end))
+    push({ id: `mark:${x.passed.markCents}`, tone: "good", segs: ["Passed ", round(x.passed.markCents), ` in ${at.label}, closing at `, fig(usd0(at.cents), balanceAt(at.end, at.cents)), "."], score: 5_000_00 });
+  if (x.next)
+    push({
+      id: `next-mark:${x.next.markCents}`,
+      tone: "info",
+      segs: ["Next milestone: ", round(x.next.markCents), ", ", fig(usd0(x.next.gapCents), derivedTarget("net-worth", derived, "record-next")), " to go."],
+      score: 1_500_00,
     });
   return out;
 }
@@ -107,8 +120,11 @@ export function records(nw: NetWorthReport): FeedItem[] {
 export const highlightSegs = (h: HighlightSeg[]): FeedSeg[] =>
   h.map((s): FeedSeg => (typeof s === "string" ? s : { text: s.text, proof: { descriptor: s.descriptor, shownCents: s.cents ?? null, ...(s.ratio != null ? { shown: { ratio: s.ratio } } : {}) } }));
 
+/** A sentence as plain words. */
+export const segsText = (segs: readonly FeedSeg[]) => segs.map((s) => (typeof s === "string" ? s : s.text)).join("");
+
 export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
-  const items: FeedItem[] = [...records(x.netWorth)];
+  const items: FeedItem[] = [...records(x.netWorth, x.changes)];
   if (x.change)
     x.change.highlights.slice(0, 1).forEach((h, i) =>
       items.push({
@@ -116,10 +132,18 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         tone: x.change!.changeCents >= 0 ? "good" : "warn",
         area: "NW",
         segs: highlightSegs(h),
+        says: segsText(highlightSegs(h)),
         href: "/net-worth?tab=changes",
         score: 8_000_00 + Math.min(4_000_00, Math.abs(x.change!.changeCents) / 100),
       }),
     );
+  // A month just proven: what stood out in it (its story's last line), while it's news.
+  const closed = x.changes ? latestClosed(x.changes) : null;
+  if (closed && daysBetween(closed.end, x.today) <= 45) {
+    const story = monthStory(closed);
+    const segs = [`${closed.label} is proven. `, ...highlightSegs(story.sentences.at(-1)!)];
+    items.push({ id: `month-closed:${closed.start}`, tone: "info", area: "NW", segs, says: segsText(segs), href: "/net-worth?tab=changes", score: 7_000_00 });
+  }
   const slice = sliceRange(x.spending, "12m", { from: "", to: "" });
   if (slice.months.length) {
     const derived = cashFlowDerived(x.spending);
@@ -135,10 +159,25 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         tone: i.tone,
         area: "CF",
         segs: [...i.title, ". ", ...i.body],
+        says: segsText([...i.title, ". ", ...i.body]),
         href: `/cash-flow${i.action?.tab ? `?tab=${i.action.tab}` : ""}`,
         score: (i.rank === 0 ? 5_000_00 : 2_000_00) + Math.min(4_000_00, i.weight / 10),
       });
     }
+  }
+  // What looks unusual: a possible duplicate, a bill or credit that hasn't come, a price that crept up.
+  const cfDerived = x.spending.months.length ? cashFlowDerived(x.spending) : [];
+  for (const a of (x.anomalies ?? []).filter((y) => y.kind !== "new-merchant").slice(0, 4)) {
+    const amount = fig(usd0(a.cents), anomalyProof(a, (figure, key) => derivedTarget("cash-flow", cfDerived, figure, key)));
+    const segs: FeedSeg[] =
+      a.kind === "duplicate"
+        ? [`Possible duplicate: ${a.merchant}, `, amount, ` twice, ${formatDisplayDateFromYmd(a.rows[0]!.date)} and ${formatDisplayDateFromYmd(a.rows[1]!.date)}.`]
+        : a.kind === "missing-bill"
+          ? [`${a.merchant} usually charges `, amount, `; the one due ${formatDisplayDateFromYmd(a.dueOn!)} hasn't come.`]
+          : a.kind === "missing-credit"
+            ? [`The ${a.merchant} credit (last `, amount, `) didn't come in ${a.date.slice(0, 7)}.`]
+            : [`${a.merchant} crept up `, amount, ` a charge, ${a.detail}.`];
+    items.push({ id: `cf-unusual:${a.id}`, tone: a.kind === "price-creep" ? "info" : "warn", area: "CF", segs, says: segsText(segs), href: "/cash-flow?tab=unusual", score: (a.kind === "duplicate" ? 6_500_00 : 4_000_00) + Math.min(2_000_00, a.cents) });
   }
   for (const c of x.calendar) {
     const left = daysBetween(x.today, c.date);
@@ -149,6 +188,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
       tone: left <= 14 ? "warn" : "info",
       area: "CAL",
       segs: [`${c.title}: `, fig(usd0(Math.abs(c.cents)), proof), c.perPaycheck ? " a paycheck" : "", left === 0 ? ", now." : `, due ${formatDisplayDateFromYmd(c.date)} (${left} day${left === 1 ? "" : "s"}).`],
+      says: `${c.title}: ${usd0(Math.abs(c.cents))}${c.perPaycheck ? " a paycheck" : ""}, due ${c.date}`,
       href: "/calendar",
       score: 3_000_00 + Math.min(4_000_00, Math.abs(c.cents) / 20) + (60 - left) * 50_00,
     });
@@ -166,6 +206,7 @@ export function buildFeed(x: FeedInputs, limit = 12): FeedItem[] {
         fig(usd0(g.currentCents), cur),
         ".",
       ],
+      says: `${g.goal.name}: ${g.status}, ${usd0(g.currentCents)}`,
       href: "/goals",
       score: g.status === "REACHED" ? 1_000_00 : 4_500_00,
     });

@@ -6,6 +6,12 @@ import type { PayDescriptor, PayLine } from "../proof/payProof.ts";
 import type { BonusesReport, BonusPayment, BonusYear, Tranche, VestWindow, WindowStatus } from "./bonuses.ts";
 
 /** One of the Bonuses page's figures, as its proof names it (bonusesProof.ts BonusesDescriptor). */
+/** What the letters awarded one person in one year but deferred (including to a deferral plan), as each letter states it, and the awards it adds. */
+export function deferredAwarded<A extends { personId: string; year: number; deferredCents: number; planDeferredCents: number }>(awards: readonly A[], personId: string, year: number): { cents: number; awards: A[] } {
+  const of = awards.filter((a) => a.personId === personId && a.year === year && a.deferredCents + a.planDeferredCents > 0);
+  return { cents: of.reduce((s, a) => s + a.deferredCents + a.planDeferredCents, 0), awards: of };
+}
+
 export type BonusFigureRef =
   | { figure: "window"; window: string; measure: "scheduled" | "paid" }
   | { figure: "tranche"; letterId: string; year: number; window: string; kind: string }
@@ -118,4 +124,21 @@ export function bonusPayFigures(r: BonusesReport): { descriptor: PayDescriptor; 
   for (const y of r.byYear) if (!y.blockers.length) out.push({ descriptor: paidYearDescriptor(y, r.today), cents: y.cents });
   for (const p of r.payments) out.push(stubPayFigure(p, r.payments));
   return out;
+}
+
+/**
+ * Walking away on a day: the deferred pay still to vest that leaving then leaves behind, as the
+ * letters schedule it (every tranche still upcoming or due whose payment window ends after the
+ * day). One definition for Bonuses' walk-away cost and FIRE's walk-away years. A letter's own
+ * terms may pay some of it on a termination without cause; the letters on file say when.
+ */
+export function walkAwayCost<A extends { tranches: readonly { status: string; to: string; amountCents: number }[] }>(awards: readonly A[], leave: string): { cents: number; tranches: { award: A; tranche: A["tranches"][number] }[] } {
+  const left = awards.flatMap((award) => award.tranches.filter((t) => (t.status === "UPCOMING" || t.status === "DUE") && t.to > leave).map((tranche) => ({ award, tranche })));
+  return { cents: left.reduce((s, x) => s + x.tranche.amountCents, 0), tranches: left };
+}
+
+/** The days the walk-away cost changes: today, then the day each upcoming window ends (once it has paid). */
+export function walkAwayDates(awards: readonly { tranches: readonly { status: string; to: string }[] }[], today: string): string[] {
+  const ends = awards.flatMap((a) => a.tranches.filter((t) => (t.status === "UPCOMING" || t.status === "DUE") && t.to > today).map((t) => t.to));
+  return [today, ...[...new Set(ends)].sort()];
 }

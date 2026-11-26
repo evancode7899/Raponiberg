@@ -17,6 +17,7 @@ import { CATEGORIES } from "@/lib/classifier/taxonomy";
 const INCOME_CATEGORIES = CATEGORIES.filter((c) => c.group === "Income").map((c) => c.name);
 const incomeSlot = (c: string) => Math.max(0, INCOME_CATEGORIES.indexOf(c));
 import { Sparkline } from "./parts";
+import { PayFlowCard } from "./PayFlow";
 
 export function IncomeTab({ ctx }: { ctx: Ctx }) {
   const { slice, chart } = ctx;
@@ -44,6 +45,8 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
         <StatCell label="Saved from take-home" value={usd0(t.net)} proof={ctx.proof("net", slice.months, { shownCents: t.net })} tone={t.net >= 0 ? "pos" : "neg"} sub={t.savingsRate == null ? undefined : <><ProofValue proof={ctx.dp("savings-rate", windowKey(slice.months))}>{formatPercentRatio(t.savingsRate, 1)}</ProofValue> of income</>} />
         <StatCell proof={ctx.dp("retirement", windowKey(slice.months))} label="Retirement via payroll" value={usd0(t.employee + t.employer)} sub={<>you <ProofValue proof={ctx.dp("retirement-employee", windowKey(slice.months))}>{usd0(t.employee)}</ProofValue> · employers <ProofValue proof={ctx.dp("retirement-employer", windowKey(slice.months))}>{usd0(t.employer)}</ProofValue></>} />
       </StatGrid>
+
+      <PayFlowCard ctx={ctx} />
 
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Income by type" subtitle="What reached your bank accounts each month. Payroll 401(k) deferrals never touch checking, so they aren't here.">

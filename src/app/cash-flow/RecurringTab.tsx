@@ -1,11 +1,16 @@
 "use client";
 
 import { Badge, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { compositeOf } from "@/components/ui/proof/context";
+import { compositeOf, sumOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { RecurringCharge } from "@/lib/book/reports/spending";
 import { NA, usd0, usdDelta } from "@/lib/formatMoney";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { notify } from "@/components/ui/Feedback";
+import type { Mark } from "@/lib/marks";
+import { personalInflation } from "@/lib/book/reports/personalInflation";
+import { cpiYearOf } from "@/lib/book/derived/cashFlow";
+import { formatPercentRatio } from "@/lib/formatMoney";
 import type { Ctx } from "./CashFlowClient";
 import { sum } from "./model";
 import { categoryColor, Dot } from "./parts";
@@ -50,6 +55,10 @@ export function RecurringTab({ ctx }: { ctx: Ctx }) {
       >
         <BillTable ctx={ctx} list={show === "active" ? active : stopped} />
       </Card>
+
+      <CancelList ctx={ctx} />
+
+      <Prices ctx={ctx} />
 
       <Card title="Habits" subtitle="Merchants you return to often for varying amounts — coffee, lunch, rides, groceries. Small charges that add up; the yearly figure is the last 12 months.">
         <div className={table.wrap}>
@@ -147,5 +156,134 @@ function BillTable({ ctx, list }: { ctx: Ctx; list: RecurringCharge[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Your prices, a year on (reports/personalInflation.ts): each bill's latest charge against the
+ * same bill's a year before, by category and in all, weighted by cost. Like for like: the same
+ * bill twice, so buying more or less never reads as a price change.
+ */
+function Prices({ ctx }: { ctx: Ctx }) {
+  const p = useMemo(() => personalInflation(ctx.report.recurring), [ctx.report.recurring]);
+  // CPI as published (data/price-index.json), for the same twelve months as far as it reaches.
+  const cpi = cpiYearOf(ctx.report);
+  if (!p.all) return null;
+  const pct = (x: number) => `${x > 0 ? "+" : ""}${formatPercentRatio(x, 1)}`;
+  const row = (x: { rowId: string; cents: number }) => ({ descriptor: { report: "row" as const, rowId: x.rowId }, shownCents: -x.cents });
+  return (
+    <Card
+      title={
+        <>
+          Your prices, a year on: <ProofValue proof={ctx.dp("price-all")}>{pct(p.all.change)}</ProofValue>
+          {cpi && (
+            <span className="ml-2 text-sm font-normal text-muted">
+              · consumer prices <ProofValue proof={ctx.dp("cpi-year", cpi.to)}>{pct(cpi.change)}</ProofValue> over the twelve months to {cpi.to}
+            </span>
+          )}
+        </>
+      }
+      subtitle="Each bill for a set amount (subscriptions, rent, premiums, tuition) against the same bill a year before, weighted by what the bills cost: a price change, never a change in how much you used or bought. Metered bills and tax payments aren't prices. Spending that varies (groceries, dining) has no like-for-like price; Year over year shows how its dollars moved."
+    >
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[40rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Bill</th>
+              <th className={table.thR}>A year before</th>
+              <th className={table.thR}>Latest</th>
+              <th className={table.thR}>Change</th>
+            </tr>
+          </thead>
+          {p.categories.map((g) => (
+            <tbody key={g.category}>
+              <tr className="border-t border-line-strong bg-surface-2 font-semibold">
+                <td className={table.td}>
+                  <span className="flex items-center gap-2">
+                    <Dot color={categoryColor(ctx.chart, g.category)} />
+                    {g.category}
+                  </span>
+                </td>
+                <td className={table.tdR} />
+                <td className={table.tdR} />
+                <td className={`${table.tdR} ${g.change > 0.0005 ? "text-neg" : g.change < -0.0005 ? "text-pos" : "text-muted"}`}>
+                  <ProofValue proof={ctx.dp("price-category", g.category)}>{pct(g.change)}</ProofValue>
+                </td>
+              </tr>
+              {g.bills.map((b) => (
+                <tr key={b.key} className={table.trHover}>
+                  <td className={`${table.td} pl-6`}>{b.name}</td>
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={row(b.then)}>{usd0(b.then.cents)}</ProofValue> <span className="text-[11px] text-faint">{b.then.date}</span>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={row(b.now)}>{usd0(b.now.cents)}</ProofValue> <span className="text-[11px] text-faint">{b.now.date}</span>
+                  </td>
+                  <td className={`${table.tdR} ${b.change > 0.0005 ? "text-neg" : b.change < -0.0005 ? "text-pos" : "text-muted"}`}>
+                    <ProofValue proof={ctx.dp("price-bill", b.key)}>{pct(b.change)}</ProofValue>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          ))}
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+const CANCEL = "/api/cash-flow/cancel-list";
+
+/**
+ * The cancel list: active bills the owner means to cancel, and what that saves a year (each
+ * bill's year of charges, Recurring's own figure). A bill leaves the list on its own once it
+ * stops charging. Kept in data/cancel-list.json, never part of a figure.
+ */
+function CancelList({ ctx }: { ctx: Ctx }) {
+  const [marks, setMarks] = useState<Mark[] | null>(null);
+  useEffect(() => {
+    if (!ctx.api.ready) return;
+    ctx.api.call<{ marks: Mark[] }>(CANCEL).then((r) => setMarks(r.marks)).catch(() => setMarks(null));
+  }, [ctx.api]);
+  const bills = ctx.report.recurring.filter((c) => c.kind === "bill" && c.active).sort((a, b) => b.annualCents - a.annualCents);
+  if (marks == null || !bills.length) return null;
+  const on = new Set(marks.map((m) => m.id));
+  const listed = bills.filter((b) => on.has(b.key));
+  const total = sum(listed, (b) => b.annualCents);
+  const toggle = (key: string, name: string, add: boolean) =>
+    ctx.api
+      .call<{ marks: Mark[] }>(CANCEL, { method: "POST", json: add ? { op: "add", key, says: name } : { op: "remove", key } })
+      .then((r) => {
+        setMarks(r.marks);
+        notify(add ? `${name} is on the cancel list` : `${name} is off the cancel list`, { tone: "info", undo: () => void toggle(key, name, !add) });
+      })
+      .catch((e: Error) => notify(e.message, { tone: "bad" }));
+  return (
+    <Card
+      title={
+        <>
+          Cancel list
+          {listed.length > 0 && (
+            <span className="font-normal text-muted">
+              {" "}
+              · {listed.length} to cancel, <ProofValue proof={sumOf(listed.map((b) => ctx.dp("recurring-annual", b.key)), total)}>{usd0(total)}</ProofValue> a year
+            </span>
+          )}
+        </>
+      }
+      subtitle="Tick the bills you mean to cancel: what it saves a year adds up here, and each leaves the list on its own once it stops charging."
+    >
+      <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3">
+        {bills.map((b) => (
+          <li key={b.key} className="flex items-center gap-2 px-1 py-1 text-[13px]">
+            <input type="checkbox" checked={on.has(b.key)} onChange={(e) => void toggle(b.key, b.name, e.target.checked)} aria-label={`Cancel ${b.name}`} className="accent-[var(--accent)]" />
+            <span className="min-w-0 flex-1 truncate">{b.name}</span>
+            <span className="num text-muted">
+              <ProofValue proof={ctx.dp("recurring-annual", b.key)}>{usd0(b.annualCents)}</ProofValue>/yr
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

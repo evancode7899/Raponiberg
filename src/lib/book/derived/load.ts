@@ -19,10 +19,13 @@ import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxA
 import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { integrityDerived } from "./integrity.ts";
-import { marginalDerived, taxesDerived } from "./taxes.ts";
-import { forecastDerived } from "./forecast.ts";
+import { marginalDerived, movedDerived, taxesDerived } from "./taxes.ts";
+import { taxMoved } from "../../tax/whyMoved.ts";
+import { forecastDerived, vsActualDerived } from "./forecast.ts";
+import { forecastVsActual } from "../../forecast/vsActual.ts";
+import { readForecastSnapshots } from "../../forecast/snapshots.ts";
 import type { TaxReport } from "../../tax/buildTaxReport.ts";
-import { builtDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived, rollforwardsDerived } from "./netWorth.ts";
+import { builtDerived, changeSplitDerived, changeStepsDerived, changeTypicalDerived, netWorthDerived, recordsDerived, rollforwardsDerived } from "./netWorth.ts";
 import { buildAccountRollforwards } from "../../profile/rollforwards.ts";
 import { buildNetWorthChanges } from "../reports/netWorthChanges.ts";
 import { buildNetWorth } from "../reports/netWorth.ts";
@@ -45,7 +48,7 @@ import { rederiveCashFlow } from "../rederive/cashFlow.ts";
 import { rederiveNetWorth, rederiveRollforwards } from "../rederive/netWorth.ts";
 import { rederiveInvestments } from "../rederive/investments.ts";
 import { rederiveCar } from "../rederive/car.ts";
-import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical } from "../rederive/pages.ts";
+import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical, rederiveVsActual } from "../rederive/pages.ts";
 
 /**
  * Each page's derived figures, from its report built as the page's route builds it, once
@@ -99,7 +102,7 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     const built = [r, ...(["quarter", "year"] as const).map((granularity) => buildNetWorth(book, { granularity }))].flatMap(builtDerived);
     // Account roll-forwards: each account since its first statement on file, held to its own statements.
     const rolls = rollforwardsDerived(buildAccountRollforwards(book)).map((f) => ({ ...f, scope: { query: { affects: "NET_WORTH" as const, from: book.ledger.firstDay ?? from, to: r.current.asOf, accountIds: [f.key!] }, checks: NET_WORTH_CHECKS } }));
-    const figures = [...netWorthDerived(r), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeTypicalDerived), ...built, ...rolls];
+    const figures = [...netWorthDerived(r), ...recordsDerived(r, changes[0]!.periods), ...changes.flatMap(changeStepsDerived), ...changes.flatMap(changeSplitDerived), ...changes.flatMap(changeTypicalDerived), ...built, ...rolls];
     // Built's returns are re-derived (rederiveNetWorth); its other cells are declared.
     return { figures, rederived: { ...declared(BUILT_WHY)(built), ...rederiveNetWorth(book, figures, r.proven.returns.portfolio?.from ?? null, changes), ...rederiveRollforwards(book, rolls) }, scope: { query: { affects: "NET_WORTH", from, to: r.current.asOf }, checks: NET_WORTH_CHECKS }, through: r.current.asOf };
   },
@@ -119,13 +122,22 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
   },
   taxes: async (ctx) => {
     const year = Number(ctx.book.today.slice(0, 4));
-    const figures = (await taxYears(ctx)).flatMap((y) => (y.tax.blocked ? [] : [...taxesDerived(y.tax as TaxReport), ...(y.year === year ? marginalDerived(y.tax as TaxReport) : [])]));
+    const ys = await taxYears(ctx);
+    const figures = ys.flatMap((y) => {
+      if (y.tax.blocked) return [];
+      // Overview › why tax moved: against the year before, where it is proven too (the route builds it the same way).
+      const prior = ys.find((p) => p.year === y.year - 1)?.tax;
+      const moved = prior && !prior.blocked ? movedDerived(taxMoved(y.tax as TaxReport, prior as TaxReport)) : [];
+      return [...taxesDerived(y.tax as TaxReport), ...(y.year === year ? marginalDerived(y.tax as TaxReport) : []), ...moved];
+    });
     return { figures, rederived: declared(TAXES_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
   forecast: async ({ book, db }) => {
     const { forecast, data } = await loadForecast(db, book);
-    const figures = forecast && data.profile.seeds ? forecastDerived(forecast, data.profile.seeds) : [];
-    return { figures, rederived: declared(FORECAST_WHY)(figures), scope: null, through: book.horizon.netWorth };
+    // Forecast › vs actual: every kept forecast against the months proven since (it needs no forecast of today's).
+    const vs = vsActualDerived(forecastVsActual(readForecastSnapshots(), buildNetWorthChanges(book, { granularity: "month" }).periods));
+    const figures = [...(forecast && data.profile.seeds ? forecastDerived(forecast, data.profile.seeds) : []), ...vs];
+    return { figures, rederived: { ...declared(FORECAST_WHY)(figures), ...rederiveVsActual(figures) }, scope: null, through: book.horizon.netWorth };
   },
   calendar: async (ctx) => {
     const ys = await taxYears(ctx);

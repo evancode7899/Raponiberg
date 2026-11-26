@@ -2,6 +2,48 @@ import type { ScheduledBonus } from "../../forecast/bonusSchedule.ts";
 import { balancesAt, forecastFeeds, type Forecast } from "../../forecast/forecast.ts";
 import type { OutlookSeeds } from "../../profile/basePay.ts";
 import { c, ln, r, type DerivedFigure } from "./types.ts";
+import { VS_LABEL, type VsSnapshot } from "../../forecast/vsActual.ts";
+
+/** A forecast-vs-actual figure's key: the snapshot and the line. */
+export const vsKey = (snapshot: string, line: string) => `${snapshot}|${line}`;
+
+/**
+ * Forecast › vs actual (forecast/vsActual.ts): each kept forecast's months against the same
+ * months proven since, line by line. The forecast side is the snapshot as it was kept; the
+ * actual side adds What changed's months, each line linking that month's own proof; the miss
+ * is one less the other.
+ */
+export function vsActualDerived(vs: readonly VsSnapshot[]): DerivedFigure[] {
+  return vs.flatMap((s) =>
+    s.rows.flatMap((row): DerivedFigure[] => {
+      const k = vsKey(s.id, row.line);
+      const what = `${VS_LABEL[row.line]}, ${s.from} to ${s.through}`;
+      return [
+        {
+          figure: "vs-forecast",
+          key: k,
+          describes: `${what}: as the forecast kept ${s.savedAt.slice(0, 10)} projected it`,
+          value: c(row.forecastCents),
+          lines: [...row.months.map((m, i) => ln(m.key, c(m.forecast), i ? "+" : undefined, { source: "estimate", note: i ? undefined : `As kept: ${s.forecastWords[row.line]}.` })), ln("Projected", c(row.forecastCents), "=", { source: "estimate" })],
+        },
+        {
+          figure: "vs-actual",
+          key: k,
+          describes: `${what}: what the proven months came to`,
+          value: c(row.actualCents),
+          lines: [...row.months.map((m, i) => ln(m.key, c(m.actual), i ? "+" : undefined, { source: "proven", link: { label: `${VS_LABEL[row.line]}, ${m.key}`, descriptor: m.proof } })), ln("Actual", c(row.actualCents), "=")],
+        },
+        {
+          figure: "vs-miss",
+          key: k,
+          describes: `${what}: the forecast less what happened (above zero, it ran high)`,
+          value: c(row.missCents),
+          lines: [ln("Projected", c(row.forecastCents), undefined, { source: "estimate" }), ln("Actual", c(row.actualCents), "−", { source: "proven" }), ln("Miss", c(row.missCents), "=")],
+        },
+      ];
+    }),
+  );
+}
 
 /** A bonus payment's key in the forecast's schedule: its month, whose, and which of that person's that month. */
 export function scheduleKeys(schedule: readonly Pick<ScheduledBonus, "key" | "personId">[]): string[] {

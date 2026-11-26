@@ -15,10 +15,10 @@ import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { OverviewTab } from "./OverviewTab";
-import { BudgetTab, IncomeTab, MerchantsTab, PatternsTab, RecurringTab, SpendingTab, TrendsTab, YoyTab } from "./lazyTabs";
+import { BudgetTab, IncomeTab, MerchantsTab, PatternsTab, RecurringTab, SpendingTab, TrendsTab, UnusualTab, YoyTab } from "./lazyTabs";
 import { WithheldStrip } from "./parts";
 
-const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", "recurring", "budget", "income"] as const;
+const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", "recurring", "unusual", "budget", "income"] as const;
 export type CashTab = (typeof TABS)[number];
 
 export type Drill =
@@ -111,6 +111,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
           { id: "yoy", label: "Year over year" },
           { id: "merchants", label: "Merchants" },
           { id: "recurring", label: "Recurring", count: data?.recurring.filter((c) => c.kind === "bill" && c.active && c.changeCents && c.changeCents > 0).length || null },
+          { id: "unusual", label: "Unusual" },
           { id: "budget", label: "Budget" },
           { id: "income", label: "Income & savings" },
         ]}
@@ -204,6 +205,8 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
           <MerchantsTab ctx={ctx} />
         ) : tab === "recurring" ? (
           <RecurringTab ctx={ctx} />
+        ) : tab === "unusual" ? (
+          <UnusualTab ctx={ctx} />
         ) : tab === "budget" ? (
           <BudgetTab ctx={ctx} />
         ) : (

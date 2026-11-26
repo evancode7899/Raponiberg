@@ -279,6 +279,78 @@ export function fiLevers(plan: OutlookPlan): FiLever[] {
   ];
 }
 
+/** One driver of the FI date, nudged down and up: the FI year each way (null: not within the plan's horizon). */
+export type TornadoBar = { key: string; label: string; low: { label: string; fiYear: number | null }; high: { label: string; fiYear: number | null } };
+
+/** How far one bar moves the date, in years either side of the plan's (a year out of reach counts as the horizon). */
+export const tornadoSpan = (b: TornadoBar, base: number, horizon: number) => Math.abs((b.low.fiYear ?? horizon) - base) + Math.abs((b.high.fiYear ?? horizon) - base);
+
+const pt = (x: number) => `${+(x * 100).toFixed(1)}%`;
+
+/**
+ * What moves the FI date most (Levers' tornado): each assumption nudged by a round step
+ * either way, the rest of the plan as it is, biggest swing first. A calculator: the same
+ * engine as every other lever, nothing saved.
+ */
+export function fiTornado(plan: OutlookPlan): TornadoBar[] {
+  const bar = (key: string, label: string, lowLabel: string, lo: Partial<OutlookPlan>, highLabel: string, hi: Partial<OutlookPlan>): TornadoBar => ({
+    key,
+    label,
+    low: { label: lowLabel, fiYear: fiYear({ ...plan, ...lo }) },
+    high: { label: highLabel, fiYear: fiYear({ ...plan, ...hi }) },
+  });
+  const bars = [
+    bar("return", "Market return", pt(plan.returnRate - 0.01), { returnRate: plan.returnRate - 0.01 }, pt(plan.returnRate + 0.01), { returnRate: plan.returnRate + 0.01 }),
+    bar("living", "Living cost", "10% less", { livingCost: Math.round(plan.livingCost * 0.9) }, "10% more", { livingCost: Math.round(plan.livingCost * 1.1) }),
+    bar("salary", "Base salary", "10% less", { salary: Math.round(plan.salary * 0.9) }, "10% more", { salary: Math.round(plan.salary * 1.1) }),
+    bar("withdrawal", "Withdrawal rate", pt(plan.withdrawalRate - 0.005), { withdrawalRate: plan.withdrawalRate - 0.005 }, pt(plan.withdrawalRate + 0.005), { withdrawalRate: plan.withdrawalRate + 0.005 }),
+    bar("creep", "Living cost growth", pt(plan.livingGrowth - 0.01), { livingGrowth: plan.livingGrowth - 0.01 }, pt(plan.livingGrowth + 0.01), { livingGrowth: plan.livingGrowth + 0.01 }),
+    bar("raises", "Salary growth", pt(plan.salaryGrowth - 0.01), { salaryGrowth: plan.salaryGrowth - 0.01 }, pt(plan.salaryGrowth + 0.01), { salaryGrowth: plan.salaryGrowth + 0.01 }),
+  ];
+  const base = fiYear(plan);
+  if (base == null) return bars;
+  const horizon = base + 60;
+  return bars.sort((a, b) => tornadoSpan(b, base, horizon) - tornadoSpan(a, base, horizon));
+}
+
+/** The order of returns, held to the same average (sequenceRisk): one way through retirement. */
+export type SequencePath = { label: string; years: { year: number; netWorth: number }[]; /** After-tax income over the ten years, and the years it fell short of living cost. */ income: number; shortYears: number; end: number };
+
+/** The two crash years the sequence view puts first or last: a 20% fall, then a 10% one. */
+export const SEQUENCE_CRASH = [-0.2, -0.1] as const;
+
+/**
+ * Sequence risk, by example: the plan's first ten retired years earn the same average return
+ * either way, but with the two bad years first or last (the other eight make up the average).
+ * Draws are a set share of the balance, so the order leaves the end balance as it is and moves
+ * the income: what the ten years paid after tax, and the years it fell short of living cost. Null without a walk-away year inside the plan.
+ */
+export function sequenceRisk(plan: OutlookPlan): { first: SequencePath; last: SequencePath; spanYears: number } | null {
+  const w = plan.walkAwayYear;
+  if (w == null || w > plan.horizonYear) return null;
+  const n = Math.min(10, plan.horizonYear - w + 1);
+  if (n < SEQUENCE_CRASH.length + 1) return null;
+  const crash = SEQUENCE_CRASH.reduce((g, x) => g * (1 + x), 1);
+  const rest = ((1 + plan.returnRate) ** n / crash) ** (1 / (n - SEQUENCE_CRASH.length)) - 1;
+  const seq = [...SEQUENCE_CRASH, ...Array.from({ length: n - SEQUENCE_CRASH.length }, () => rest)];
+  const run = (label: string, order: number[]): SequencePath => {
+    const returns = Array.from({ length: plan.horizonYear - plan.start.year + 1 }, (_, i) => {
+      const k = plan.start.year + i - w;
+      return k >= 0 && k < n ? order[k]! : plan.returnRate;
+    });
+    const ys = projectOutlook({ ...plan, returns }).years;
+    const ten = ys.filter((y) => y.year >= w && y.year < w + n);
+    return {
+      label,
+      years: ys.map((y) => ({ year: y.year, netWorth: y.netWorth })),
+      income: ten.reduce((t, y) => t + Math.round((y.coverage ?? 0) * y.livingAnnual), 0),
+      shortYears: ten.filter((y) => (y.coverage ?? 0) < 1).length,
+      end: ys.at(-1)!.netWorth,
+    };
+  };
+  return { first: run("Bad years first", seq), last: run("Bad years last", [...seq].reverse()), spanYears: n };
+}
+
 /** FI year for each return × withdrawal rate. */
 export function sensitivityGrid(plan: OutlookPlan, returns: number[], withdrawalRates: number[]): (number | null)[][] {
   return returns.map((returnRate) => withdrawalRates.map((withdrawalRate) => fiYear({ ...plan, returnRate, withdrawalRate })));

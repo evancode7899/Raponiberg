@@ -1,21 +1,24 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { windowKey } from "@/lib/book/derived/cashFlow";
+import { realKey, realYears, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
-import { Callout, Card, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { Callout, Card, NotFigure, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
-import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
+import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState } from "react";
-import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Legend, Line, Tooltip, XAxis, YAxis } from "recharts";
+import { seasonBands, yearEndEstimate, type SeasonMetric } from "@/lib/book/reports/seasonality";
+import { yearEndKey } from "@/lib/book/derived/cashFlow";
 import type { Ctx } from "./CashFlowClient";
 import { compareCategories, yearCategories, yoyWindows } from "@/lib/book/reports/cashFlowWindows";
 import { KINDS, merchantMovers, MONTH_NAMES, monthKey, sum, totals } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot } from "./parts";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { contributions } from "@/lib/book/reports/contributions";
 
 type Mode = "month" | "ytd" | "12m";
 
@@ -74,6 +77,20 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
   // The ten that rose and fell most (merchantMovers: the lists the proof sweep enumerates too).
   const { up, down } = useMemo(() => merchantMovers(now, then), [now, then]);
   const maxChange = Math.max(1, ...categories.map((c) => Math.abs(c.now - c.then)));
+  // Each category's part of the change in spending, adding up to it to the cent (reports/contributions.ts).
+  const contrib = useMemo(() => contributions(categories.map((c) => ({ key: c.category, now: c.now, then: c.then })), { now: a.spending, then: b.spending }), [categories, a.spending, b.spending]);
+  const catProof = (c: { category: string; now: number; then: number }) => {
+    const n = ctx.proof("spending", now, { category: c.category, shownCents: c.now });
+    const t = ctx.proof("spending", then, { category: c.category, shownCents: c.then });
+    return { n, t, change: !c.then ? n : !c.now ? t : compositeOf("diff", [n, t], { cents: c.now - c.then }) };
+  };
+  const totalNow = ctx.proof("spending", now, { shownCents: a.spending });
+  const totalThen = ctx.proof("spending", then, { shownCents: b.spending });
+  const totalChange = compositeOf("diff", [totalNow, totalThen], { cents: a.spending - b.spending });
+  const shareOf = (change: ProofRef, cents: number) => {
+    const s = contrib.total.change ? cents / contrib.total.change : null;
+    return s == null || Math.abs(contrib.total.change) < 100 ? <span className="text-faint">{NA}</span> : <ProofValue proof={compositeOf("share", [change, totalChange], { ratio: s })}>{formatPercentRatio(s, 0)}</ProofValue>;
+  };
 
   return (
     <>
@@ -106,7 +123,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
           }
         />
       </StatGrid>
-      <Card title="By category" subtitle="Largest changes first. Click a category for its rows.">
+      <Card title="By category" subtitle="Largest changes first; each category's part of the change in spending adds up to it. Click a category for its rows.">
         <div className={table.wrap}>
           <table className={table.table}>
             <thead className={table.head}>
@@ -117,6 +134,7 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
                 <th className={`${table.th} w-[24%]`} />
                 <th className={table.thR}>Change</th>
                 <th className={table.thR}>%</th>
+                <th className={table.thR} title="Each category's part of the change in total spending: the column adds up to 100%.">Of the change</th>
               </tr>
             </thead>
             <tbody>
@@ -151,8 +169,39 @@ function Comparison({ ctx, now, then }: { ctx: Ctx; now: SpendingMonth[]; then: 
                     </ProofValue>
                   </td>
                   <td className={table.tdR}>{c.then ? <Delta now={c.now} before={c.then} goodWhenDown of={[ctx.proof("spending", now, { category: c.category, shownCents: c.now }), ctx.proof("spending", then, { category: c.category, shownCents: c.then })]} /> : <span className="text-xs text-muted">new</span>}</td>
+                  <td className={`${table.tdR} text-muted`}>{c.now === c.then ? "—" : shareOf(catProof(c).change, c.now - c.then)}</td>
                 </tr>
               ))}
+              {contrib.rest !== 0 && (
+                <tr className={table.tr} title="Each category's months are rounded to the cent on their own; the total is rounded once.">
+                  <td className={`${table.td} text-muted`}>Rounding</td>
+                  <td className={table.tdR} />
+                  <td className={table.tdR} />
+                  <td className={table.td} />
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={compositeOf("diff", [totalChange, compositeOf("sum", categories.filter((c) => c.now !== c.then).map((c) => catProof(c).change), { cents: contrib.total.change - contrib.rest })], { cents: contrib.rest })}>{formatUsdCents(contrib.rest)}</ProofValue>
+                  </td>
+                  <td className={table.tdR} />
+                  <td className={table.tdR} />
+                </tr>
+              )}
+              <tr className="border-t border-line-strong font-semibold">
+                <td className={table.td}>Spending</td>
+                <td className={`${table.tdR} text-muted`}>
+                  <ProofValue proof={totalThen}>{usd0(b.spending)}</ProofValue>
+                </td>
+                <td className={table.tdR}>
+                  <ProofValue proof={totalNow}>{usd0(a.spending)}</ProofValue>
+                </td>
+                <td className={table.td} />
+                <td className={`${table.tdR} ${a.spending > b.spending ? "text-neg" : a.spending < b.spending ? "text-pos" : ""}`}>
+                  <ProofValue proof={totalChange}>{usdDelta(a.spending - b.spending)}</ProofValue>
+                </td>
+                <td className={table.tdR}>
+                  <Delta now={a.spending} before={b.spending} goodWhenDown of={[totalNow, totalThen]} />
+                </td>
+                <td className={`${table.tdR} text-muted`}>{Math.abs(contrib.total.change) < 100 ? NA : <NotFigure why="the whole change: the column above adds up to it">100%</NotFigure>}</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -251,8 +300,21 @@ function AllYears({ ctx }: { ctx: Ctx }) {
     };
   });
   const shown = series.filter((s) => s.values.some((v) => v != null));
-  const rows = MONTH_NAMES.map((name, i) => Object.fromEntries([["name", name], ...shown.map((s) => [String(s.y), s.values[i] == null ? null : s.values[i]! / 100])]));
   const latest = shown.at(-1);
+  // Seasonality: the same month in earlier years, as a band (low to high) and its middle, behind this year's months.
+  const seasonal = (metric === "spending" || metric === "everyday") && view === "monthly" && latest ? seasonBands(report.months, latest.y, f) : null;
+  // With one earlier year its own line is the band: drawn once two or more give it a spread.
+  const banded = seasonal?.some((b) => b && b.n >= 2) ?? false;
+  const rows = MONTH_NAMES.map((name, i) => {
+    const b = seasonal?.[i];
+    return Object.fromEntries([
+      ["name", name],
+      ...shown.map((s) => [String(s.y), s.values[i] == null ? null : s.values[i]! / 100]),
+      ...(banded ? [["band", b && b.n >= 2 ? [b.low / 100, b.high / 100] : null], ["middle", b ? b.mid / 100 : null]] : []),
+    ]);
+  });
+  // Where the year lands, for spending: an estimate (named one), never part of a proven total.
+  const yearEnd = (metric === "spending" || metric === "everyday") && view === "cumulative" ? yearEndEstimate(report.months, f) : null;
   const age = (y: number) => (latest ? latest.y - y : 0);
   const color = (y: number) => (age(y) === 0 ? chart.series[0]! : age(y) === 1 ? chart.series[6]! : chart.neutral);
 
@@ -281,7 +343,9 @@ function AllYears({ ctx }: { ctx: Ctx }) {
       subtitle={
         view === "cumulative"
           ? "Running total from January: a line above last year's means more so far. A year without a proven January has no running total."
-          : "Each month on its own. A gap is a month that isn't proven."
+          : metric === "spending" || metric === "everyday"
+            ? "Each month on its own, over the band the same month spanned in earlier years (low to high) and its middle. A gap is a month that isn't proven."
+            : "Each month on its own. A gap is a month that isn't proven."
       }
       actions={
         <>
@@ -332,10 +396,18 @@ function AllYears({ ctx }: { ctx: Ctx }) {
               </span>
             )}
           </span>
+          {yearEnd && (
+            <span title="The year so far, plus each month left at the middle of the same month in earlier years. Months not yet on file: an estimate, never added into a proven total." className="cursor-help">
+              <span className="text-muted">Estimate for all of {yearEnd.year}:</span>{" "}
+              <span className="num font-medium">
+                <ProofValue proof={ctx.dp("year-end", yearEndKey(yearEnd.year, metric as SeasonMetric))}>{usdCompact(yearEnd.estimateCents)}</ProofValue>
+              </span>
+            </span>
+          )}
           {pace.projected != null && (
-            <span title={`This year's total so far, scaled by how ${pace.prevYear}'s grew from ${MONTH_NAMES[pace.m]} to December.`} className="cursor-help">
+            <span title={`An estimate: this year's total so far, scaled by how ${pace.prevYear}'s grew from ${MONTH_NAMES[pace.m]} to December.`} className="cursor-help">
               <span className="text-muted">
-                On {pace.prevYear}&apos;s curve, {latest.y} lands near
+                Estimate on {pace.prevYear}&apos;s curve:
               </span>{" "}
               <span className="num font-medium">
                 <ProofValue proof={compositeOf("scale", [paceProof(latest.y, pace.m, pace.now), paceProof(pace.prevYear, 11, pace.full!), paceProof(pace.prevYear, pace.m, pace.then)], { cents: pace.projected })}>{usdCompact(pace.projected)}</ProofValue>
@@ -346,12 +418,18 @@ function AllYears({ ctx }: { ctx: Ctx }) {
       )}
       <div className="h-[300px] w-full min-w-0">
         <RechartsResponsive>
-          <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          <ComposedChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} />
             <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
-            <Tooltip {...ui.tooltip} itemSorter={(it) => -Number(it.dataKey)} formatter={(v, n) => [v == null ? NA : formatUsd(Math.round(Number(v))), String(n)]} />
-            <Legend {...ui.legend} />
+            <Tooltip
+              {...ui.tooltip}
+              itemSorter={(it) => (it.dataKey === "band" || it.dataKey === "middle" ? 1 : -Number(it.dataKey))}
+              formatter={(v, n) => (n === "band" ? [Array.isArray(v) ? v.map((x) => formatUsd(Math.round(Number(x)))).join(" – ") : NA, "Earlier years, low – high"] : [v == null ? NA : formatUsd(Math.round(Number(v))), n === "middle" ? "Earlier years, middle" : String(n)])}
+            />
+            <Legend {...ui.legend} formatter={(n) => (n === "band" ? "earlier years, low – high" : n === "middle" ? "earlier years, middle" : n)} />
+            {banded && <Area dataKey="band" stroke="none" fill={chart.neutral} fillOpacity={0.22} isAnimationActive={false} connectNulls={false} />}
+            {banded && <Line dataKey="middle" stroke={chart.neutral} strokeDasharray="4 3" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />}
             {shown.map((s) => (
               <Line
                 key={s.y}
@@ -364,7 +442,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
                 isAnimationActive={false}
               />
             ))}
-          </LineChart>
+          </ComposedChart>
         </RechartsResponsive>
       </div>
     </Card>
@@ -382,6 +460,8 @@ function YearTable({ ctx }: { ctx: Ctx }) {
   const { report, chart } = ctx;
   const [as, setAs] = useState<"avg" | "total">("avg");
   const years = byYear(report.months).map(([y, ms]) => ({ y, months: ms.filter((m): m is SpendingMonth => m != null) }));
+  // Spending in the latest CPI month's dollars (derived/cashFlow.ts realYears), where CPI covers every month of the year.
+  const real = useMemo(() => realYears(report), [report]);
   const val = (ms: SpendingMonth[], f: (m: SpendingMonth) => number) => (as === "avg" ? sum(ms, f) / Math.max(1, ms.length) : sum(ms, f));
   const comparable = (i: number) => i > 0 && (as === "avg" || (years[i]!.months.length === 12 && years[i - 1]!.months.length === 12));
   const cashRows: YearRow[] = [
@@ -475,7 +555,32 @@ function YearTable({ ctx }: { ctx: Ctx }) {
           </thead>
           <tbody>
             {heading("Cash flow")}
-            {cashRows.map(line)}
+            {cashRows.slice(0, 2).map(line)}
+            {real.length > 0 && (
+              <tr className={table.trHover}>
+                <td className={`${table.td} whitespace-nowrap !pl-6 text-fg-2`} title={`Each month's spending × CPI ${real[0]!.to} ÷ CPI that month: what the year's spending comes to at today's prices (${ctx.report.cpi?.name ?? "CPI"}).`}>
+                  <span className="cursor-help">In {real[0]!.to} dollars</span>
+                </td>
+                {years.map((y) => {
+                  const x = real.find((r) => r.year === y.y);
+                  return (
+                    <td key={y.y} className={table.tdR}>
+                      {x ? (
+                        <ProofValue proof={ctx.dp("real-spending", realKey(x.months, x.to))} drawn={as === "avg" ? { per: x.months.length } : undefined}>
+                          {usd0(as === "avg" ? x.cents / Math.max(1, x.months.length) : x.cents)}
+                        </ProofValue>
+                      ) : (
+                        NA
+                      )}
+                      <div className="leading-none">
+                        <span className="text-xs">&nbsp;</span>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
+            {cashRows.slice(2).map(line)}
             <tr className={table.trHover}>
               <td className={`${table.td} font-semibold`}>Savings rate</td>
               {years.map((y, i) => {

@@ -564,3 +564,16 @@ describe("a goal funded from bank cash (SSOT F · J)", () => {
     expect(ef.blockers.map((b) => b.id)).toEqual(["statement.gap:card"]);
   });
 });
+
+describe("a goal's burn-up", () => {
+  it("runs twelve month-ends to the edge and ends at what the goal counts now", () => {
+    const book = makeBook();
+    const goals = buildGoals(book, { version: 1, goals: GOALS }, null, settings()).goals;
+    for (const g of goals) {
+      expect(g.history.length).toBeGreaterThan(0);
+      expect(g.history.length).toBeLessThanOrEqual(13);
+      expect(g.history.at(-1)).toEqual({ date: book.horizon.netWorth, cents: g.currentCents });
+      g.history.forEach((p, i) => i && expect(p.date > g.history[i - 1]!.date).toBe(true));
+    }
+  });
+});

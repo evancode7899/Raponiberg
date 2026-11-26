@@ -3,7 +3,8 @@
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { Badge, Segmented, table } from "@/components/ui/kit";
-import { formatUsdFromCents, NA } from "@/lib/formatMoney";
+import { formatPercentRatio, formatUsdFromCents, NA } from "@/lib/formatMoney";
+import { compositeOf } from "@/components/ui/proof/context";
 import type { CoverPayment, CoverStatus, CoverTerm } from "@/lib/insurance/cover";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -167,10 +168,17 @@ export function TermsOnFile({ line, policyNumber, terms, figs }: { line: "HOME" 
             <th className={table.th}>From</th>
             <th className={table.th}>File</th>
             <th className={table.thR}>Premium</th>
+            <th className={table.thR} title="Against the term before it, when both run the same months">Change</th>
           </tr>
         </thead>
         <tbody>
-          {terms.map((x) => (
+          {terms.map((x) => {
+            // The term before it of the same length: a renewal's price change (a six-month term against a year isn't like for like).
+            const prev = [...terms].filter((t) => t.start < x.start).sort((a, b) => b.start.localeCompare(a.start))[0];
+            const like = prev && prev.months != null && prev.months === x.months;
+            const target = (t: CoverTerm) => derivedTarget("insurance", figs, "term-premium", `${line}|${policyNumber}|${t.start}`);
+            const d = like ? x.premiumCents - prev.premiumCents : 0;
+            return (
             <tr key={x.start} className={table.tr}>
               <td className={table.td}>{termText(x.start, x.end)}</td>
               <td className={`${table.td} text-fg-2`}>{x.from === "DECLARATIONS" ? "Declarations" : "Renewal letter (prior premium)"}</td>
@@ -180,8 +188,25 @@ export function TermsOnFile({ line, policyNumber, terms, figs }: { line: "HOME" 
               <td className={table.tdR}>
                 <Fig figs={figs} figure="term-premium" k={`${line}|${policyNumber}|${x.start}`} />
               </td>
+              <td className={`${table.tdR} ${d > 0 ? "text-neg" : d < 0 ? "text-pos" : "text-muted"}`}>
+                {!like ? (
+                  "—"
+                ) : d ? (
+                  <>
+                    <ProofValue proof={compositeOf("diff", [target(x), target(prev)], { cents: d })}>{`${d > 0 ? "+" : "−"}${formatUsdFromCents(Math.abs(d))}`}</ProofValue>
+                    {prev.premiumCents > 0 && (
+                      <span className="ml-1 text-xs">
+                        (<ProofValue proof={compositeOf("growth", [target(x), target(prev)], { ratio: d / prev.premiumCents })}>{formatPercentRatio(d / prev.premiumCents, 0)}</ProofValue>)
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  "—"
+                )}
+              </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

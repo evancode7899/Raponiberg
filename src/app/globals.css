@@ -573,3 +573,40 @@ input[type="range"].range-over::-moz-range-track {
     animation: none;
   }
 }
+
+/*
+ * Printing (Annual report › Print year book, or the browser's own print): the page alone, on
+ * paper. The app's chrome (header, sidebar, tabs, controls) stays off the page, the shell
+ * lets the content run its full length, and cards don't split across pages.
+ */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  header,
+  aside,
+  [role="tablist"],
+  [data-no-print],
+  .pf-drawer {
+    display: none !important;
+  }
+  .h-dvh,
+  .max-h-dvh,
+  .overflow-hidden,
+  .app-scroll,
+  main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  section {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+  a {
+    text-decoration: none !important;
+  }
+}

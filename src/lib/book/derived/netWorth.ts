@@ -1,11 +1,14 @@
 import type { NetWorthReport } from "../reports/netWorth.ts";
-import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
+import type { NetWorthChange, NetWorthChangesReport } from "../reports/netWorthChanges.ts";
+import { addMonths, indexChange, latestAtOrBefore } from "../../priceIndexMath.ts";
+import { drawdown } from "../reports/drawdown.ts";
+import { netWorthRecords, roundMark } from "../reports/records.ts";
 import type { ProofValue } from "../proof/types.ts";
 import type { RollforwardReport } from "../../profile/rollforwards.ts";
 import { c, ln, r, t, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
 
 /** Net worth › Investment returns (monthly periods): the portfolio's chained return since its latest unbroken proven stretch began, annualized, and how many accounts are measured. */
-export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts">): DerivedFigure[] {
+export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts"> & Partial<Pick<NetWorthReport, "benchmark">>): DerivedFigure[] {
   const p = rep.proven.returns.portfolio;
   const run = p ? rep.periods.filter((x) => x.start >= p.from && x.household.portfolioReturn != null) : [];
   const parts = run.map((x) => ({ label: x.label, value: r(x.household.portfolioReturn!) }));
@@ -31,11 +34,139 @@ export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" |
       lines: [ln("Accounts with an unbroken proven stretch", t(String(rep.proven.returns.byAccount.length)))],
       parts: rep.proven.returns.byAccount.map((a) => ({ label: names.get(a.accountId) ?? a.accountId, value: r(a.total), sub: `since ${a.from}` })),
     },
+    ...stretchDerived(rep),
+    ...benchmarkDerived(rep),
     // Each account's own, over its unbroken proven stretch.
     ...rep.proven.returns.byAccount.flatMap((a): DerivedFigure[] => [
       { figure: "account-return", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, cumulative and time-weighted`, value: r(a.total), lines: [ln(`Each month's return, chained from ${a.from}`, r(a.total), undefined, { note: "(1 + r₁) × (1 + r₂) × … − 1" })] },
       ...(a.annualized == null ? [] : [{ figure: "account-return-annualized", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, a year`, value: r(a.annualized), lines: [ln("Cumulative", r(a.total)), ln("Over its days, a year", r(a.annualized))] }]),
     ]),
+  ];
+}
+
+/**
+ * Investment returns › against the benchmark: from the start of the portfolio's proven
+ * stretch to the benchmark's latest month on file (the same months both ways), the portfolio's
+ * monthly returns chained and the benchmark's change. Null without a benchmark, or when it
+ * doesn't reach back to the stretch's start.
+ */
+export function benchmarkOf(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark">>) {
+  const p = rep.proven.returns.portfolio;
+  const s = rep.benchmark;
+  if (!p || !s) return null;
+  const run = rep.periods.filter((x) => x.start >= p.from && x.household.portfolioReturn != null);
+  const lastMonth = run.at(-1)?.start.slice(0, 7);
+  const to = lastMonth ? latestAtOrBefore(s, lastMonth) : null;
+  // The level at the end of the month before the stretch starts, to the latest month both cover.
+  const b = to ? indexChange(s, addMonths(p.from.slice(0, 7), -1), to) : null;
+  if (!b) return null;
+  const months = run.filter((x) => x.start.slice(0, 7) <= to!);
+  const portfolio = months.reduce((g, x) => g * (1 + x.household.portfolioReturn!), 1) - 1;
+  return { from: p.from, to: b.to, name: s.name, kind: s.kind, source: s.source, fetchedOn: s.fetchedOn, months: months.length, portfolio, benchmark: b.change, levels: { from: b.fromLevel, to: b.toLevel, fromMonth: b.from } };
+}
+
+function benchmarkDerived(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark">>): DerivedFigure[] {
+  const x = benchmarkOf(rep);
+  if (!x) return [];
+  const src = { source: "proven" as const, note: `${x.name}: ${x.source}, as fetched ${x.fetchedOn}.` };
+  return [
+    {
+      figure: "benchmark-return",
+      key: x.to,
+      describes: `${x.name}: change from the end of ${x.levels.fromMonth} to ${x.to}${x.kind === "price" ? " (price only, dividends not in it)" : ""}`,
+      value: r(x.benchmark),
+      lines: [ln(`Level, ${x.to}`, t(String(x.levels.to)), undefined, src), ln(`Level, ${x.levels.fromMonth}`, t(String(x.levels.from)), "÷", src), ln("Change", r(x.benchmark), "=")],
+    },
+    {
+      figure: "benchmark-portfolio",
+      key: x.to,
+      describes: `Portfolio return from ${x.from} through ${x.to}, time-weighted (the benchmark's months)`,
+      value: r(x.portfolio),
+      lines: [ln(`Each month's return, chained from ${x.from}`, t(`${x.months} months`)), ln("Cumulative", r(x.portfolio), undefined, { note: "(1 + r₁) × (1 + r₂) × … − 1" })],
+    },
+  ];
+}
+
+/** The portfolio's proven stretch, month by month (Investment returns): the months its return chains, for drawdowns and the growth by account. */
+export function stretchOf(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts">) {
+  const p = rep.proven.returns.portfolio;
+  // As the portfolio return chains them: only blockers on investment accounts (or the whole household) break the stretch.
+  const investment = new Set(rep.accounts.filter((a) => a.isInvestment).map((a) => a.id));
+  const run = p ? rep.periods.filter((x) => x.start >= p.from && !x.blockers.some((b) => !b.accountId || investment.has(b.accountId))) : [];
+  const growth = new Map<string, number>();
+  for (const x of run) for (const a of x.byAccount) if (investment.has(a.accountId) && a.growthNetOfFeesCents) growth.set(a.accountId, (growth.get(a.accountId) ?? 0) + a.growthNetOfFeesCents);
+  return {
+    from: p?.from ?? null,
+    run,
+    drawdown: drawdown(run.map((x) => ({ label: x.label, r: x.household.portfolioReturn }))),
+    /** Growth net of fees by account over the stretch, largest first (the household's is their sum). */
+    growth: [...growth].map(([accountId, cents]) => ({ accountId, cents })).sort((a, b) => b.cents - a.cents),
+    /** The accounts' growth added up (the household's over the stretch). */
+    growthCents: [...growth.values()].reduce((s, x) => s + x, 0),
+    feesCents: run.reduce((s, x) => s + x.household.feesCents, 0),
+  };
+}
+
+/**
+ * Investment returns › drawdowns and where the growth came from: over the portfolio's proven
+ * stretch, the deepest fall from a high and where it stands against its high now (each month's
+ * return chained), each account's growth net of fees, and the fees taken.
+ */
+function stretchDerived(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts">): DerivedFigure[] {
+  const s = stretchOf(rep);
+  if (!s.from || !s.drawdown) return [];
+  const names = new Map(rep.accounts.map((a) => [a.id, a.name]));
+  const months = ln(`Each month's return, chained from ${s.from}`, t(`${s.run.length} months`));
+  const d = s.drawdown;
+  return [
+    ...(d.max ? [{ figure: "drawdown-max", describes: `The deepest fall from a high since ${s.from}, time-weighted`, value: r(d.max.ratio), lines: [months, ln(`High: ${d.max.peak ?? "the start"}`, t("—")), ln(`Low after it: ${d.max.trough}`, t("—")), ln("Low ÷ high − 1", r(d.max.ratio), "=")] }] : []),
+    { figure: "drawdown-now", describes: `Below the latest high (${d.now.peak ?? "the start"}) now, time-weighted`, value: r(d.now.ratio), lines: [months, ln("Now ÷ the highest month-end − 1", r(d.now.ratio), "=")] },
+    ...s.growth.map((g): DerivedFigure => ({ figure: "growth-since", key: g.accountId, describes: `${names.get(g.accountId) ?? "An account"}: growth net of fees since ${s.from}`, value: c(g.cents), lines: [ln(`Each month's growth net of fees, added from ${s.from}`, c(g.cents), undefined, { note: "Each month's is its cell on How it was built (month)." })] })),
+    { figure: "fees-since", describes: `Fees the accounts took since ${s.from}`, value: c(s.feesCents), lines: [ln(`Each month's fees, added from ${s.from}`, c(s.feesCents))] },
+  ];
+}
+
+/**
+ * Net worth › Records: what no other figure states. The months themselves (a high, a best
+ * month) are balances and What changed's own figures; the length of a rising run and the
+ * way to the next round mark are worked out here (reports/records.ts).
+ */
+export function recordsDerived(rep: Pick<NetWorthReport, "periods">, changes: readonly NetWorthChange[]): DerivedFigure[] {
+  const x = netWorthRecords(rep, changes);
+  if (!x) return [];
+  const balance = (p: { end: string; label: string }) => ({ label: `Net worth, ${p.label}`, descriptor: { report: "net-worth" as const, metric: "balance" as const, date: p.end } });
+  const rise = (figure: string, what: string, v: typeof x.longestRise): DerivedFigure[] =>
+    v
+      ? [
+          {
+            figure,
+            describes: `${what}: month-ends in a row above the one before`,
+            value: t(String(v.months)),
+            lines: [
+              ln(`Rose from ${v.from.label}`, c(v.from.cents), undefined, { source: "proven", link: balance(v.from) }),
+              ln(`to ${v.to.label}`, c(v.to.cents), undefined, { source: "proven", link: balance(v.to) }),
+              ln("Months that rose, each above the one before", t(String(v.months))),
+            ],
+          },
+        ]
+      : [];
+  return [
+    ...rise("record-rise", "The longest run of rising months", x.longestRise),
+    ...rise("record-rise-now", "The run of rising months under way", x.currentRise),
+    ...(x.next
+      ? [
+          {
+            figure: "record-next",
+            describes: `From net worth at the end of ${x.last.label} to the next round mark, ${roundMark(x.next.markCents)}`,
+            value: c(x.next.gapCents),
+            lines: [
+              ln("The next round mark", c(x.next.markCents), undefined, { note: "A round number, not a figure of yours." }),
+              ln(`Net worth, ${x.last.label}`, c(x.last.cents), "−", { source: "proven", link: balance(x.last) }),
+              ln("To go", c(x.next.gapCents), "="),
+            ],
+          },
+        ]
+      : []),
   ];
 }
 
@@ -81,6 +212,48 @@ export function changeStepsDerived(rep: Pick<NetWorthChangesReport, "granularity
         lines: [ln(s.label, c(s.cents), undefined, { note: s.note, link: { label: `The change in net worth, ${p.label}`, descriptor: p.proofs.change } })],
       })),
   );
+}
+
+/** The split bar's length: every part's size, whichever way it moved (not a figure: the bar's scale). */
+export const splitScale = (parts: readonly { cents: number }[]) => parts.reduce((t, x) => t + Math.abs(x.cents), 0);
+
+/** A split part's key (derived/netWorth.ts changeSplitDerived): the granularity, the period's first day, and the part. */
+export const splitKey = (granularity: string, start: string, part: string) => `${granularity}|${start}|${part}`;
+
+const SPLIT_LABEL = { saving: "Saving from income", "one-time": "One-time: balances first on file", transit: "In transit at the edges" } as const;
+
+/**
+ * Net worth › What changed › Where the change came from: each period's saving from income,
+ * one-time money and in-transit parts (markets is the Dashboard's own figure). Each is the
+ * period's change less the others, so they add up to the change to the cent.
+ */
+export function changeSplitDerived(rep: Pick<NetWorthChangesReport, "granularity" | "periods">): DerivedFigure[] {
+  return rep.periods.flatMap((p) => {
+    const s = p.split;
+    const value = { saving: s.savingCents, "one-time": s.oneTimeCents, transit: s.transitCents } as const;
+    const change = { label: `The change in net worth, ${p.label}`, descriptor: p.proofs.change };
+    // A zero part draws a dash, not a figure.
+    return (["saving", "one-time", "transit"] as const).filter((part) => value[part] !== 0).map((part): DerivedFigure => ({
+      figure: "change-split",
+      key: splitKey(rep.granularity, p.start, part),
+      describes: `${SPLIT_LABEL[part]}, ${p.label}`,
+      value: c(value[part]),
+      lines:
+        part === "saving"
+          ? [
+              ln("Saved and contributed", c(p.savedCents), undefined, { source: "proven", link: { label: `From saving, ${p.label}`, descriptor: p.proofs.saved } }),
+              ln("Less balances already in accounts when they first appear", c(s.oneTimeCents), "−"),
+              ln(SPLIT_LABEL.saving, c(s.savingCents), "="),
+            ]
+          : part === "one-time"
+            ? [ln("What accounts first on file in the period held when their first statement begins", c(s.oneTimeCents), undefined, { note: "Each account's is on How it was built (first on file)." })]
+            : [
+                ln("Change in net worth", c(p.changeCents), undefined, { source: "proven", link: change }),
+                ln("Less saving, one-time money and markets", c(s.savingCents + s.oneTimeCents + s.marketsCents), "−"),
+                ln(SPLIT_LABEL.transit, c(s.transitCents), "=", { note: "Money mid-move between your own accounts at the period's edges, or a confirmed transfer cost." }),
+              ],
+    }));
+  });
 }
 
 /** An average's key (derived/netWorth.ts changeTypicalDerived): the granularity, the period's first day, and what (a total, step:<key>, or spending:/income:<category>). */
