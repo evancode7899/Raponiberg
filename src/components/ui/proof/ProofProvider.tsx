@@ -2,7 +2,7 @@
 
 import { apiSecretHeaders, lastDataStamp, onDataStamp } from "@/components/ledger/useApi";
 import type { Proof, ProofDescriptor } from "@/lib/book/proof";
-import { sweepAnswer, type Clearance, type SweepState } from "@/lib/book/proof/clearance";
+import { clearanceOf, sweepAnswer, type Clearance, type SweepState } from "@/lib/book/proof/clearance";
 import type { Quality } from "@/lib/ledger/timeline";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { DataStampContext, ProofContext, SweepContext, type ProofTarget } from "./context";
@@ -11,6 +11,12 @@ import { SweepNotice } from "./SweepNotice";
 
 /** One proof in the drawer: what was asked for (none for a figure with no proof), why the page shows or withholds it, and the answer once it arrives. */
 export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string }) | null; error: string | null };
+
+/** Opens a figure's proof from anywhere in the app: dispatch it on window with { descriptor, shownCents } (openProof below). */
+export const OPEN_PROOF_EVENT = "pf:open-proof";
+export function openProof(t: ProofTarget): void {
+  window.dispatchEvent(new CustomEvent<ProofTarget>(OPEN_PROOF_EVENT, { detail: t }));
+}
 
 /** How long to wait before asking again while the sweep runs, and after it failed. */
 const PENDING_POLL_MS = 2000;
@@ -99,6 +105,20 @@ export function ProofProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (pageStamp && pageStamp !== sweep.stamp) readRef.current();
   }, [pageStamp, sweep.stamp]);
+
+  // A figure opened from outside a page (the command line, a pin): its proof, cleared as any figure is.
+  const sweepRef = useRef(sweep);
+  useEffect(() => {
+    sweepRef.current = sweep;
+  }, [sweep]);
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const t = (e as CustomEvent<ProofTarget>).detail;
+      if (t?.descriptor) open(t, t.shownCents == null ? undefined : clearanceOf(t, sweepRef.current, stampRef.current));
+    };
+    window.addEventListener(OPEN_PROOF_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_PROOF_EVENT, onOpen);
+  }, [open]);
 
   return (
     <ProofContext.Provider value={open}>

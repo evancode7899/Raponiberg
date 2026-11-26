@@ -41,6 +41,7 @@ export async function register() {
     keepBookWarm(prisma, {
       reports: [
         "/api/ledger/attention",
+        "/api/command/index",
         "/api/dashboard/home-summary",
         "/api/dashboard/briefing",
         "/api/dashboard/upcoming",
