@@ -73,9 +73,10 @@ function readUrl(): Filters {
   };
 }
 
-/** Statements › Transactions (was its own page, /transactions): every row, searchable, with its filters in the URL. */
 /** How far the render audit pages through (data-audit-more): every row to here is drawn and held, as before Show all could reach 20,000. */
 const AUDIT_ROWS = 2000;
+
+/** Statements › Transactions (was its own page, /transactions): every row, searchable, with its filters in the URL. */
 
 export function TransactionsPanel({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
