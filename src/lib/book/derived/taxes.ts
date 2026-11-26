@@ -62,7 +62,7 @@ function harborCells(report: TaxReport): TableCell[] {
         { row, col: "estimates", describes: `${at}: estimated payments on file by then`, value: c(q.estimatesCents) },
         { row, col: "short", describes: `${at}: short of the required amount`, value: c(q.shortCents) },
         // A zero draws a dash, not a figure.
-      ].filter((x) => !("cents" in x.value) || x.value.cents !== 0);
+      ].filter((x) => !("cents" in x.value) || Math.round(x.value.cents / 100) !== 0);
     }),
   );
 }
@@ -80,7 +80,7 @@ function bonusGapCells(report: TaxReport): TableCell[] {
         { row, col: "withheld", describes: `${at}: federal tax withheld${x.withheldFrom === "STUB" ? ", as the stub prints it" : " at the 22% supplemental rate"}`, value: c(x.withheldCents) },
         { row, col: "at-rate", describes: `${at}: at the year's federal rate on the next dollar`, value: c(x.atRateCents) },
         { row, col: "gap", describes: `${at}: at that rate less withheld`, value: c(x.gapCents) },
-      ].filter((cell) => !("cents" in cell.value) || cell.value.cents !== 0);
+      ].filter((cell) => !("cents" in cell.value) || Math.round(cell.value.cents / 100) !== 0);
     }),
   );
 }
@@ -92,7 +92,7 @@ export function movedDerived(m: TaxMoved): DerivedFigure[] {
       { row: x.id, col: "prior", describes: `${x.label}, ${m.prior}`, value: c(x.priorCents) },
       { row: x.id, col: "now", describes: `${x.label}, ${m.year}`, value: c(x.cents) },
       { row: x.id, col: "change", describes: `${x.label}: ${m.year} less ${m.prior}`, value: c(x.deltaCents) },
-    ].filter((cell) => "cents" in cell.value! && Math.round(cell.value!.cents) !== 0),
+    ].filter((cell) => "cents" in cell.value! && Math.round(cell.value!.cents / 100) !== 0),
   );
   return tableFigures("moved", m.year, cells);
 }

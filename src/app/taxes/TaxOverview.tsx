@@ -867,7 +867,7 @@ function Brackets({ r }: { r: TaxResponse }) {
 function WhyMoved({ r, m }: { r: TaxResponse; m: TaxMoved }) {
   const derived = useMemo(() => movedDerived(m), [m]);
   const cell = (row: string, col: string, cents: number, signed = false) =>
-    Math.round(cents) ? <ProofValue proof={derivedTarget("taxes", derived, "moved", `${m.year}|${row}|${col}`)}>{signed && cents > 0 ? `+${usd(cents)}` : usd(cents)}</ProofValue> : "—";
+    Math.round(cents / 100) ? <ProofValue proof={derivedTarget("taxes", derived, "moved", `${m.year}|${row}|${col}`)}>{signed && cents > 0 ? `+${usd(cents)}` : usd(cents)}</ProofValue> : "—";
   const moved = [...m.rows].sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents));
   return (
     <Card title={`Why tax moved from ${m.prior}`} subtitle={`The total tax on each year's return in its parts${r.isCurrentYear ? ` (${m.year} projected to December 31)` : ""}, the biggest change first. The changes add up to the change in the total.`}>

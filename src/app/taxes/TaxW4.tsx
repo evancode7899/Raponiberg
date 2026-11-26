@@ -382,7 +382,7 @@ function BonusWithholding({ r }: { r: TaxResponse }) {
   const people = useMemo(() => bonusGapsOf(r).filter((p) => p.rows.length), [r]);
   if (!people.length) return null;
   const cell = (row: string, col: string, cents: number, signed = false) =>
-    cents ? <ProofValue proof={derivedTarget("taxes", derived, "bonus-gap", cellKey(r.year, row, col))}>{signed && cents > 0 ? `+${usd(cents)}` : usd(cents)}</ProofValue> : "—";
+    Math.round(cents / 100) ? <ProofValue proof={derivedTarget("taxes", derived, "bonus-gap", cellKey(r.year, row, col))}>{signed && cents > 0 ? `+${usd(cents)}` : usd(cents)}</ProofValue> : "—";
   return (
     <Card
       title="Bonus withholding, check by check"

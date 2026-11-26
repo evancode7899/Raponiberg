@@ -142,7 +142,7 @@ export function TaxPayments({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProf
 function HarborTracker({ r }: { r: TaxResponse }) {
   const derived = useMemo(() => taxesDerived(r), [r]);
   const harbors = useMemo(() => harborsOf(r), [r]);
-  const cell = (row: string, col: string, cents: number) => (cents ? <ProofValue proof={derivedTarget("taxes", derived, "harbor", cellKey(r.year, row, col))}>{usd(cents)}</ProofValue> : "—");
+  const cell = (row: string, col: string, cents: number) => (Math.round(cents / 100) ? <ProofValue proof={derivedTarget("taxes", derived, "harbor", cellKey(r.year, row, col))}>{usd(cents)}</ProofValue> : "—");
   return (
     <Card
       title="Safe harbor, quarter by quarter"
