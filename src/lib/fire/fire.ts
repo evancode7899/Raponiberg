@@ -279,6 +279,40 @@ export function fiLevers(plan: OutlookPlan): FiLever[] {
   ];
 }
 
+/** One driver of the FI date, nudged down and up: the FI year each way (null: not within the plan's horizon). */
+export type TornadoBar = { key: string; label: string; low: { label: string; fiYear: number | null }; high: { label: string; fiYear: number | null } };
+
+/** How far one bar moves the date, in years either side of the plan's (a year out of reach counts as the horizon). */
+export const tornadoSpan = (b: TornadoBar, base: number, horizon: number) => Math.abs((b.low.fiYear ?? horizon) - base) + Math.abs((b.high.fiYear ?? horizon) - base);
+
+const pt = (x: number) => `${+(x * 100).toFixed(1)}%`;
+
+/**
+ * What moves the FI date most (Levers' tornado): each assumption nudged by a round step
+ * either way, the rest of the plan as it is, biggest swing first. A calculator: the same
+ * engine as every other lever, nothing saved.
+ */
+export function fiTornado(plan: OutlookPlan): TornadoBar[] {
+  const bar = (key: string, label: string, lowLabel: string, lo: Partial<OutlookPlan>, highLabel: string, hi: Partial<OutlookPlan>): TornadoBar => ({
+    key,
+    label,
+    low: { label: lowLabel, fiYear: fiYear({ ...plan, ...lo }) },
+    high: { label: highLabel, fiYear: fiYear({ ...plan, ...hi }) },
+  });
+  const bars = [
+    bar("return", "Market return", pt(plan.returnRate - 0.01), { returnRate: plan.returnRate - 0.01 }, pt(plan.returnRate + 0.01), { returnRate: plan.returnRate + 0.01 }),
+    bar("living", "Living cost", "10% less", { livingCost: Math.round(plan.livingCost * 0.9) }, "10% more", { livingCost: Math.round(plan.livingCost * 1.1) }),
+    bar("salary", "Base salary", "10% less", { salary: Math.round(plan.salary * 0.9) }, "10% more", { salary: Math.round(plan.salary * 1.1) }),
+    bar("withdrawal", "Withdrawal rate", pt(plan.withdrawalRate - 0.005), { withdrawalRate: plan.withdrawalRate - 0.005 }, pt(plan.withdrawalRate + 0.005), { withdrawalRate: plan.withdrawalRate + 0.005 }),
+    bar("creep", "Living cost growth", pt(plan.livingGrowth - 0.01), { livingGrowth: plan.livingGrowth - 0.01 }, pt(plan.livingGrowth + 0.01), { livingGrowth: plan.livingGrowth + 0.01 }),
+    bar("raises", "Salary growth", pt(plan.salaryGrowth - 0.01), { salaryGrowth: plan.salaryGrowth - 0.01 }, pt(plan.salaryGrowth + 0.01), { salaryGrowth: plan.salaryGrowth + 0.01 }),
+  ];
+  const base = fiYear(plan);
+  if (base == null) return bars;
+  const horizon = base + 60;
+  return bars.sort((a, b) => tornadoSpan(b, base, horizon) - tornadoSpan(a, base, horizon));
+}
+
 /** FI year for each return × withdrawal rate. */
 export function sensitivityGrid(plan: OutlookPlan, returns: number[], withdrawalRates: number[]): (number | null)[][] {
   return returns.map((returnRate) => withdrawalRates.map((withdrawalRate) => fiYear({ ...plan, returnRate, withdrawalRate })));

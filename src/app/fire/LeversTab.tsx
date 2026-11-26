@@ -5,7 +5,7 @@ import { NA } from "@/lib/formatMoney";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { fiLevers, firstYearIncome, fiYear, LEVER_YEARLY, savingsRateCurve, sensitivityGrid, spendingCuts } from "@/lib/fire/fire";
+import { fiLevers, firstYearIncome, fiTornado, fiYear, LEVER_YEARLY, savingsRateCurve, sensitivityGrid, spendingCuts, type TornadoBar } from "@/lib/fire/fire";
 import { useMemo } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceDot, Tooltip, XAxis, YAxis } from "recharts";
 import { Living } from "./OverviewTab";
@@ -44,6 +44,7 @@ export function LeversTab({ f, d, pf }: FireProps & { pf: FireProof }) {
 
   return (
     <>
+      <Tornado plan={plan} base={base} />
       <SavingsRateChart f={f} curve={curve} d={d} pf={pf} />
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <Card
@@ -204,6 +205,48 @@ function SavingsRateChart({ f, curve, d, pf }: { f: FireProps["f"]; curve: Retur
           {f.fi ? `FI in ${f.fi.year - plan.start.year} years` : "not financially independent within 60 years at that rate"}. Missing points: rates that don&apos;t reach FI within 60 years.
         </p>
       )}
+    </Card>
+  );
+}
+
+/**
+ * What moves the date most (lib/fire/fire.ts fiTornado): each assumption a round step lower
+ * and higher, the bar running from the year one way to the year the other, the plan's year the
+ * line down the middle. Biggest swing at the top.
+ */
+function Tornado({ plan, base }: { plan: FireProps["f"]["plan"]; base: number | null }) {
+  const bars = useMemo(() => fiTornado(plan), [plan]);
+  if (base == null) return null;
+  const years = bars.flatMap((b) => [b.low.fiYear, b.high.fiYear]).filter((y): y is number => y != null);
+  const lo = Math.min(base, ...years) - 1;
+  const hi = Math.max(base, ...years) + 1;
+  const at = (y: number | null) => `${(((y ?? hi) - lo) / (hi - lo)) * 100}%`;
+  const words = (y: number | null) => (y == null ? "not reached" : y === base ? "no change" : `${y} (${y < base ? "−" : "+"}${Math.abs(y - base)})`);
+  const side = (s: TornadoBar["low"]) => (
+    <span className={s.fiYear == null || s.fiYear > base ? "text-warn" : s.fiYear < base ? "text-pos" : "text-muted"}>
+      {s.label}: {words(s.fiYear)}
+    </span>
+  );
+  return (
+    <Card title="What moves the date most" subtitle={`Each assumption a step lower and higher, the rest of the plan as it is; the line is the plan's FI year, ${base}. Biggest swing first.`}>
+      <WhatIf why="the plan rerun with one assumption nudged" className="flex flex-col gap-1.5">
+        {bars.map((b) => {
+          const ys = [b.low.fiYear ?? hi, b.high.fiYear ?? hi];
+          return (
+            <div key={b.key} className="grid grid-cols-[9rem_1fr] items-center gap-2 text-xs sm:grid-cols-[9rem_1fr_16rem]">
+              <span className="font-medium text-fg">{b.label}</span>
+              <span aria-hidden className="relative block h-3 bg-surface-3">
+                <span className="absolute inset-y-0 bg-accent/70" style={{ left: at(Math.min(...ys)), width: `calc(${at(Math.max(...ys))} - ${at(Math.min(...ys))})` }} />
+                <span className="absolute inset-y-[-2px] w-px bg-fg" style={{ left: at(base) }} />
+              </span>
+              <span className="num hidden gap-2 sm:flex sm:justify-between">
+                {side(b.low)}
+                {side(b.high)}
+              </span>
+            </div>
+          );
+        })}
+      </WhatIf>
     </Card>
   );
 }
