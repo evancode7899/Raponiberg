@@ -14,7 +14,8 @@
  *   - data/bonus-awards.json: employers, and every salary, bonus and comp figure;
  *   - data/page-inputs.json: the dollar figures typed into the calculators ($10,000 and up,
  *     except round multiples of $2,500, which examples and tax tables use, and the
- *     calculators' defaults);
+ *     calculators' defaults), and the same in data/scenarios.json (salaries, prices, costs typed
+ *     into the Scenarios page);
  *   - data/tax-documents.json (the tax documents folder as read): employers, partnerships,
  *     the names on the forms, EINs, and each W-2's wages and each filed return's AGI and
  *     total tax;
@@ -47,6 +48,8 @@ import { readHealthPlans } from "../src/lib/medical/plans.ts";
 import { readMedicalDocs } from "../src/lib/medical/store.ts";
 import { defaultInputs as defaultMortgageInputs } from "../src/lib/mortgage/inputs.ts";
 import { pageInputsFilePath } from "../src/lib/pageInputs.ts";
+import { readScenarios } from "../src/lib/scenarios/store.ts";
+import { DEFAULT_BUY, DEFAULT_MODEL } from "../src/lib/scenarios/types.ts";
 import { normalizeProfile, TAX_PROFILE_KEY } from "../src/lib/tax/profile.ts";
 import { readTaxDocs } from "../src/lib/taxdocs/store.ts";
 import { readK1Details } from "../src/lib/tax/k1DetailStore.ts";
@@ -198,6 +201,17 @@ if (existsSync(pageInputsFilePath())) {
   } catch {
     /* unreadable calculator inputs: nothing to add */
   }
+}
+
+// ---- scenario figures (data/scenarios.json: salaries, home prices, living cost typed in, in cents)
+{
+  const money = new Set(["salary", "price", "insurance", "hoa", "utilities", "living", "amount", "carePerChild", "carePerChildDefault", "otherPerChild", "rent"]);
+  const defaults = new Set<number>([...Object.values(DEFAULT_BUY), ...Object.values(DEFAULT_MODEL)].filter((v): v is number => typeof v === "number"));
+  walk(readScenarios(), (key, v) => {
+    if (typeof v !== "number" || !money.has(key) || defaults.has(v)) return;
+    const d = Math.round(v / 100);
+    if (d >= 10_000 && d % 2_500 !== 0) figure(d);
+  });
 }
 
 // ---- the tax documents (filed returns, W-2s, 1099s, K-1s) as read
