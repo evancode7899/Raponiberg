@@ -266,6 +266,15 @@ export const TERMINAL_COMMANDS: TerminalCommand[] = [
     keywords: ["?", "commands", "functions", "list", "shortcuts", "keyboard"],
   },
   {
+    mnemonic: "TRUST",
+    href: "/statements?tab=checks",
+    label: "How far to trust the figures",
+    description: "What the proof sweep cleared, re-derived and flagged, and the oldest source.",
+    group: "Data & settings",
+    hidden: true,
+    keywords: ["trust", "confidence", "proof", "sweep", "cleared", "re-derived", "estimates", "oldest"],
+  },
+  {
     mnemonic: "OFF",
     href: "#off",
     label: "Shut down server",

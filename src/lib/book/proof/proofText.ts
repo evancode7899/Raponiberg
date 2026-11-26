@@ -2,6 +2,19 @@ import { dateLabel } from "../../dates/display.ts";
 import { EM_DASH, formatPercentRatio, formatUsdFromCents, NA } from "../../formatMoney.ts";
 import type { Clearance } from "./clearance.ts";
 import type { Proof, ProofBlock, ProofValue } from "./types.ts";
+import { monthLabel } from "../../dates/display.ts";
+
+/** What the proof answer adds about the last month-end (lib/restatements.ts, /api/proof). */
+export type MonthEndNote = { month: string; takenAt: string; was: ProofValue | null; moved: boolean; why: { words: string; count: number }[] };
+
+/** The month-end line, in words: unchanged, new since, or what it was and what changed. */
+export function monthEndLine(m: MonthEndNote): string {
+  const month = monthLabel(m.month);
+  if (!m.moved) return `Unchanged since the ${month} month-end.`;
+  if (!m.was) return `Not a cleared figure at the ${month} month-end.`;
+  const why = m.why.map((w) => `${w.count.toLocaleString("en-US")} ${w.words}`).join(", ");
+  return `At the ${month} month-end it was ${value(m.was)}${why ? `; since then: ${why}` : "; nothing in the audit log changed since, so a newer version of the app works it out differently"}.`;
+}
 
 const value = (v: ProofValue) => ("cents" in v ? formatUsdFromCents(Math.round(v.cents)) : "ratio" in v ? formatPercentRatio(v.ratio, 2) : v.text === EM_DASH ? NA : v.text);
 const day = (iso: string) => dateLabel(iso);
@@ -37,7 +50,7 @@ function blockLines(b: ProofBlock): string[] {
  * what the drawer shows (the same proof, the same formatting), so a pasted copy can be
  * checked against the app.
  */
-export function proofText(p: Proof, clearance?: Clearance | null): string {
+export function proofText(p: Proof & { monthEnd?: MonthEndNote | null }, clearance?: Clearance | null): string {
   const lines: string[] = [p.describes, `${value(p.figure)}  (data through ${day(p.through)})`];
   if (clearance) lines.push(clearanceLine(clearance));
   if (p.selfCheck) lines.push(p.selfCheck.ok ? `${p.selfCheck.explain}: exactly the figure shown.` : `${p.selfCheck.explain}, ${formatUsdFromCents(p.selfCheck.deltaCents)} off the figure.`);
@@ -46,6 +59,7 @@ export function proofText(p: Proof, clearance?: Clearance | null): string {
     else for (const r of p.rederived.routes) lines.push(`Re-derived by ${r.route}: ${value(r.value)}${r.ok ? "" : ` (DISAGREES with ${value(p.figure)})`}`);
   }
   if (p.withheld) lines.push("Part of this is withheld: an open finding covers it.");
+  if (p.monthEnd) lines.push(monthEndLine(p.monthEnd));
   for (const b of p.blocks) lines.push("", ...blockLines(b));
   if (p.checks.length) {
     lines.push("", "CHECKS");

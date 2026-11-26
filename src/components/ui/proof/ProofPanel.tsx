@@ -3,7 +3,7 @@
 import { apiSecretHeaders, lastDataStamp } from "@/components/ledger/useApi";
 import { PINS_CHANGED_EVENT } from "./context";
 import { notify } from "@/components/ui/Feedback";
-import { proofText } from "@/lib/book/proof/proofText";
+import { monthEndLine, proofText, type MonthEndNote } from "@/lib/book/proof/proofText";
 import { Badge, btn, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
 import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
@@ -215,7 +215,7 @@ function ClearanceNote({ c, quality }: { c: Clearance; quality?: Quality }) {
   );
 }
 
-function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?: string }; shownCents: number | null; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
+function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?: string; monthEnd?: MonthEndNote | null }; shownCents: number | null; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
   const stamp = p.stamp;
   const self = selfOf(p);
   // A statement proof is its own statement: nothing else to list.
@@ -256,6 +256,11 @@ function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?
           </div>
         )}
         {p.rederived && <Rederived r={p.rederived} figure={p.figure} onFollow={onFollow} />}
+        {p.monthEnd && (
+          <p data-proof-month-end={p.monthEnd.moved ? "moved" : "same"} className={`mt-2 text-xs ${p.monthEnd.moved && p.monthEnd.was ? "text-fg-2" : "text-muted"}`}>
+            {monthEndLine(p.monthEnd)}
+          </p>
+        )}
         {p.withheld && (
           <div className="mt-2">
             <Callout tone="warn" title="Part of this is withheld">

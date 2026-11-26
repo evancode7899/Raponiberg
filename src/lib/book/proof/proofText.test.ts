@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { proofText } from "./proofText.ts";
+import { monthEndLine, proofText } from "./proofText.ts";
 import type { Proof } from "./types.ts";
 
 /** An invented proof: Pat Example's dining in one made-up month. */
@@ -61,5 +61,16 @@ describe("a proof as text", () => {
     const bad = proofText({ ...proof, rederived: { routes: [{ route: "balances", value: { cents: 100 }, ok: false, explain: "" }] } }, { state: "withheld", key: null, shown: null, reason: "mismatch", detail: "the page differs" });
     expect(bad).toContain("Re-derived by balances: $1.00 (DISAGREES with $123.45)");
     expect(bad).toContain("Withheld (mismatch): the page differs");
+  });
+});
+
+describe("the month-end line", () => {
+  it("says unchanged, new since, or what it was and what changed", () => {
+    expect(monthEndLine({ month: "2031-02", takenAt: "", was: { cents: 100 }, moved: false, why: [] })).toBe("Unchanged since the Feb 2031 month-end.");
+    expect(monthEndLine({ month: "2031-02", takenAt: "", was: null, moved: true, why: [] })).toBe("Not a cleared figure at the Feb 2031 month-end.");
+    expect(monthEndLine({ month: "2031-02", takenAt: "", was: { cents: 10_000 }, moved: true, why: [{ words: "statements imported for these dates", count: 2 }] })).toBe(
+      "At the Feb 2031 month-end it was $100.00; since then: 2 statements imported for these dates.",
+    );
+    expect(proofText({ ...proof, monthEnd: { month: "2031-02", takenAt: "", was: { cents: 1 }, moved: false, why: [] } })).toContain("Unchanged since the Feb 2031 month-end.");
   });
 });

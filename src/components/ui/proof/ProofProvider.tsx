@@ -2,6 +2,7 @@
 
 import { apiSecretHeaders, lastDataStamp, onDataStamp } from "@/components/ledger/useApi";
 import type { Proof, ProofDescriptor } from "@/lib/book/proof";
+import type { MonthEndNote } from "@/lib/book/proof/proofText";
 import { clearanceOf, sweepAnswer, type Clearance, type SweepState } from "@/lib/book/proof/clearance";
 import type { Quality } from "@/lib/ledger/timeline";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -10,7 +11,7 @@ import { ProofPanel } from "./ProofPanel";
 import { SweepNotice } from "./SweepNotice";
 
 /** One proof in the drawer: what was asked for (none for a figure with no proof), why the page shows or withholds it, and the answer once it arrives. */
-export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string }) | null; error: string | null; id?: number };
+export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string; monthEnd?: MonthEndNote | null }) | null; error: string | null; id?: number };
 
 /** Opens a figure's proof from anywhere in the app: dispatch it on window with { descriptor, shownCents } (openProof below). */
 export const OPEN_PROOF_EVENT = "pf:open-proof";
