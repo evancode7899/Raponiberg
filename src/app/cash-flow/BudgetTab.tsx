@@ -1,7 +1,12 @@
 "use client";
 
 import { Badge, btn, Callout, Card, ErrorNote, Loading, MoneyInput, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { cashFlowDerived, categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
+import { budgetPaceKey, budgetPaceMonth, budgetRunning, cashFlowDerived, categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
+import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { chartChrome } from "@/components/shell/chartPalette";
+import { axisUsd, formatUsd } from "@/lib/formatMoney";
+import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
+import type { ProofRef } from "@/components/ui/proof/context";
 import { derivedTarget } from "@/lib/book/derived/types";
 import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -122,6 +127,8 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
       )}
       {error && <ErrorNote>{error}</ErrorNote>}
 
+      {hasTargets && !dirty && <PaceCard ctx={ctx} targets={saved.targets} dp={dp} />}
+
       <Card
         title="Targets by category"
         subtitle={`Bars show ${last.label}'s spending against the target (the black tick). "Months over" counts months in ${slice.label} above the target.`}
@@ -223,5 +230,49 @@ export function BudgetTab({ ctx }: { ctx: Ctx }) {
         <p className="mt-3 text-xs text-muted">Targets are a plan, saved in the app (not in the browser). They never change any figure — spending always comes from your statements.</p>
       </Card>
     </>
+  );
+}
+
+/**
+ * Budget › pace by day: spending in the budgeted categories, day by day through the last day
+ * on file (the month under way, else the latest), against the budget spread evenly over the
+ * month. Both end figures are derived/cashFlow.ts budgetPaceDerived's.
+ */
+function PaceCard({ ctx, targets, dp }: { ctx: Ctx; targets: Record<string, number>; dp: (figure: string, key?: string) => ProofRef }) {
+  const at = budgetPaceMonth(ctx.report);
+  if (!at) return null;
+  const { m, day, days } = at;
+  const ui = chartChrome(ctx.chart);
+  const running = budgetRunning(m, targets);
+  const budgeted = Object.values(targets).reduce((s, v) => s + v, 0);
+  const data = running.map((cents, d) => ({ day: d + 1, spent: d < day ? cents / 100 : null, budget: Math.round((budgeted * (d + 1)) / days) / 100 }));
+  const spent = running[day - 1] ?? 0;
+  const plan = Math.round((budgeted * day) / days);
+  const key = budgetPaceKey(m.start, day);
+  return (
+    <Card
+      title={`Pace, ${m.label}`}
+      subtitle={`Spending in the budgeted categories day by day${m.through ? `, through day ${day}` : ""}, against the budget spread evenly over the month's ${days} days.`}
+    >
+      <p className="mb-2 text-sm text-fg-2">
+        Through day {day}: <ProofValue proof={dp("budget-pace", key)}>{usd0(spent)}</ProofValue> spent, against <ProofValue proof={dp("budget-pace-plan", key)}>{usd0(plan)}</ProofValue> of budget by then{" "}
+        <span className={spent > plan ? "text-neg" : "text-pos"}>
+          ({spent > plan ? "ahead of" : "behind"} the even pace by <ProofValue proof={compositeOf("diff", [dp("budget-pace", key), dp("budget-pace-plan", key)], { cents: spent - plan })}>{usd0(Math.abs(spent - plan))}</ProofValue>)
+        </span>
+        .
+      </p>
+      <div className="h-[200px] w-full min-w-0">
+        <RechartsResponsive>
+          <LineChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid {...ui.grid} />
+            <XAxis dataKey="day" {...ui.xAxis} />
+            <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
+            <Tooltip {...ui.tooltip} labelFormatter={(d) => `Day ${d}`} formatter={(v, name) => [formatUsd(Math.round(Number(v))), name === "spent" ? "Spent" : "Even pace"]} />
+            <Line dataKey="budget" stroke={ctx.chart.axisLine} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+            <Line dataKey="spent" stroke={ctx.chart.lineBalance} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
+          </LineChart>
+        </RechartsResponsive>
+      </div>
+    </Card>
   );
 }

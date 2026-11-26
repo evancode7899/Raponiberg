@@ -156,6 +156,7 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
       );
     if (x.changeCents != null) one("recurring-change", "how much the latest charge went up", x.changeCents, [ln("The latest charge", c(x.lastCents)), ln("The one before", c(x.lastCents - x.changeCents), "−"), ln("Change", c(x.changeCents), "=")]);
   }
+  out.push(...budgetPaceDerived(rep, targets));
   const budgeted = sum(Object.values(targets), (v) => v);
   out.push({
     figure: "budget-monthly",
@@ -226,6 +227,59 @@ export function yearEndDerived(months: SpendingMonth[]): DerivedFigure[] {
       },
     ];
   });
+}
+
+// ------------------------------------------------------------------ Budget › pace by day
+
+/** The month Budget's pace reads (the one under way, else the latest), and the day it runs through. */
+export function budgetPaceMonth(rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "current">>): { m: SpendingMonth; day: number; days: number } | null {
+  const m = rep.current ?? rep.months.at(-1);
+  if (!m?.dailyByCategory) return null;
+  const days = m.daily.allCents.length;
+  return { m, day: m.through ? Number(m.through.slice(8, 10)) : days, days };
+}
+
+/** A budget pace figure's key: the month and the day. */
+export const budgetPaceKey = (start: string, day: number) => `${start}|${day}`;
+
+/** Spending in the budgeted categories through each day of the month (index 0 = the 1st). */
+export function budgetRunning(m: SpendingMonth, targets: Record<string, number>): number[] {
+  const days = m.daily.allCents.length;
+  let run = 0;
+  return Array.from({ length: days }, (_, d) => (run += Object.keys(targets).reduce((s, cat) => s + (m.dailyByCategory?.[cat]?.[d] ?? 0), 0)));
+}
+
+/**
+ * Budget › pace by day: spending in the budgeted categories through the last day on file
+ * (the month under way, else the latest), and the budget prorated to that day (the saved
+ * targets × days so far ÷ days in the month). Key: budgetPaceKey.
+ */
+function budgetPaceDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<SpendingReport, "current">>, targets: Record<string, number>): DerivedFigure[] {
+  const at = budgetPaceMonth(rep);
+  const cats = Object.keys(targets);
+  if (!at || !cats.length) return [];
+  const { m, day, days } = at;
+  const key = budgetPaceKey(m.start, day);
+  const through = (cat: string) => (m.dailyByCategory?.[cat] ?? []).slice(0, day).reduce((s, v) => s + v, 0);
+  const spent = budgetRunning(m, targets)[day - 1] ?? 0;
+  const budgeted = sum(Object.values(targets), (v) => v);
+  const plan = Math.round((budgeted * day) / days);
+  return [
+    {
+      figure: "budget-pace",
+      key,
+      describes: `${m.label}: spending in budgeted categories through day ${day}`,
+      value: c(spent),
+      lines: [...cats.map((cat, i) => ln(cat, c(through(cat)), i ? "+" : undefined, { source: "proven" })), ln(`Through day ${day}`, c(spent), "=")],
+    },
+    {
+      figure: "budget-pace-plan",
+      key,
+      describes: `${m.label}: the monthly budget prorated to day ${day} of ${days}`,
+      value: c(plan),
+      lines: [ln("Monthly budget", c(budgeted), undefined, { source: "assumption" }), ln(`× ${day} of ${days} days`, r(day / days), "×"), ln(`Budget through day ${day}`, c(plan), "=")],
+    },
+  ];
 }
 
 // ------------------------------------------------------------------ Patterns › pace

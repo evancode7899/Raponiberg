@@ -46,6 +46,8 @@ export type SpendingMonth = CashFlowPeriod & {
   kinds: SpendingKinds;
   /** Spending per day of the month (index 0 = the 1st), split the same way. */
   daily: { allCents: number[]; billCents: number[]; everydayCents: number[] };
+  /** The latest month and the one under way only (Budget's pace by day): each category's spending per day of the month. */
+  dailyByCategory?: Record<string, number[]>;
   /** Charges (not refunds) by size, in CHARGE_BUCKETS order. */
   chargeSizes: { count: number; cents: number }[];
 };
@@ -464,6 +466,9 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
   };
 
   const months = window.map(enrich);
+  // Budget › pace by day reads each category's days, on the latest month and the one under way only (it keeps the report small).
+  const withCategoryDays = (m: SpendingMonth): SpendingMonth => ({ ...m, dailyByCategory: dailyByCategory(inScope, m, dayOf) });
+  if (months.length) months[months.length - 1] = withCategoryDays(months.at(-1)!);
   // Candidates (oneOffRules): anything already counted as one-off, and big charges that aren't rent or a bill.
   const oneOffs: OneOffExpense[] = [];
   for (const r of windowRows) {
@@ -492,7 +497,7 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
     mergeDate: report.mergeDate,
     window: window.length ? { from: window[0]!.start, to: window.at(-1)!.end, months: window.length } : null,
     months,
-    current: current ? enrich(current) : null,
+    current: current ? withCategoryDays(enrich(current)) : null,
     withheldAfter,
     withheldBefore,
     recurring,
@@ -539,6 +544,18 @@ export function spendingShape(
     }
   }
   return { kinds: { billCents, bigCents, everydayCents: p.spendingCents - billCents - bigCents }, daily, chargeSizes };
+}
+
+/** Each category's spending per day of the month (index 0 = the 1st), on the rows and days spendingShape counts. */
+export function dailyByCategory(rows: BookRow[], p: Pick<CashFlowPeriod, "start" | "end">, dayOf: (r: BookRow) => string = (r) => r.bookedOn): Record<string, number[]> {
+  const days = Number(endOfMonth(p.start).slice(8, 10));
+  const out: Record<string, number[]> = {};
+  for (const r of rows) {
+    const day = dayOf(r);
+    if (r.lane !== "EXPENSE" || day < p.start || day > p.end) continue;
+    (out[r.category] ??= Array.from({ length: days }, () => 0))[Number(day.slice(8, 10)) - 1]! -= r.amountCents;
+  }
+  return out;
 }
 
 /** Ids of expense rows that cancel in pairs: a charge and its exact credit on one account within seven days. */

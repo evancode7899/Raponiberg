@@ -33,6 +33,8 @@ type Month = {
   /** Null where a summary statement fills part of the month (its flows are on no row). */
   retirement: number | null;
   daily: { all: number[]; everyday: number[] };
+  /** Each category's spending per day. */
+  byCategory: Map<string, number[]>;
 };
 
 const LANE_OF: Record<string, string> = { INCOME: "INCOME", EXPENSE: "EXPENSE", EXTERNAL_TRANSFER: "EXTERNAL" };
@@ -85,6 +87,7 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
     const merchants = { EXPENSE: new Map<string, Agg>(), INCOME: new Map<string, Agg>() };
     const days = Number(endOfMonth(start).slice(8, 10));
     const daily = { all: Array.from({ length: days }, () => 0), everyday: Array.from({ length: days }, () => 0) };
+    const byCategory = new Map<string, number[]>();
     for (const r of inScope) {
       const d = dayOf(r);
       if (d < start || d > end || (r.lane !== "EXPENSE" && r.lane !== "INCOME")) continue;
@@ -96,11 +99,13 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       if (r.lane === "EXPENSE") {
         daily.all[Number(d.slice(8, 10)) - 1]! += cents;
         if (kindOf(r) === "everyday") daily.everyday[Number(d.slice(8, 10)) - 1]! += cents;
+        if (!byCategory.has(r.category)) byCategory.set(r.category, Array.from({ length: days }, () => 0));
+        byCategory.get(r.category)![Number(d.slice(8, 10)) - 1]! += cents;
       }
     }
     for (const m of Object.values(merchants)) for (const [k, v] of m) if (v.cents === 0) m.delete(k);
     const retirement = contributionRows(book, start, end, true);
-    m = { start, end, income: Math.round(income), spending: Math.round(spending), lanes, merchants, retirement, daily };
+    m = { start, end, income: Math.round(income), spending: Math.round(spending), lanes, merchants, retirement, daily, byCategory };
     memo.set(start, m);
     return m;
   };
@@ -220,6 +225,19 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       }
       case "merchant-pattern":
         return { none: "A classification by the recurring-charge detector (cadence and steadiness of the charges), not a sum: nothing to re-add." };
+      case "budget-pace": {
+        const [start, day] = k.split("|");
+        const m = month(start!);
+        const cats = f.lines.filter((l) => l.op !== "=").map((l) => l.label);
+        return [centsRoute(ROWS, v, cats.reduce((s, c) => s + cum(m.byCategory.get(c) ?? [], Number(day)), 0), `expense rows in the budgeted categories counted on days 1–${day}`)];
+      }
+      case "budget-pace-plan": {
+        const [start, day] = k.split("|");
+        const budget = f.lines[0]?.value;
+        if (!budget || !("cents" in budget)) return null;
+        const days = Number(endOfMonth(start!).slice(8, 10));
+        return [centsRoute("the saved budget × days so far ÷ days in the month", v, Math.round((budget.cents * Number(day)) / days), `${day} of ${days} days`)];
+      }
       case "pace-spent": {
         const [start, basis, day] = k.split("|");
         const m = month(start!);
