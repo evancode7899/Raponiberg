@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { notify } from "@/components/ui/Feedback";
 import type { Mark } from "@/lib/marks";
 import type { BriefingDue } from "@/lib/dashboard/briefing";
+import type { GarageReport } from "@/lib/car/report";
 
 const CALENDAR_URL = "/api/calendar";
 const DONE_URL = "/api/calendar/done";
@@ -31,6 +32,7 @@ export function CalendarClient({ requiresApiSecret }: { requiresApiSecret: boole
   const [show, setShow] = useState<"open" | "all">("open");
   const [marks, setMarks] = useState<Mark[]>([]);
   const [upcoming, setUpcoming] = useState<BriefingDue[]>([]);
+  const [services, setServices] = useState<GridItem[]>([]);
   useEffect(() => {
     if (!api.ready) return;
     api
@@ -40,6 +42,11 @@ export function CalendarClient({ requiresApiSecret }: { requiresApiSecret: boole
     api.call<{ marks: Mark[] }>(DONE_URL).then((x) => setMarks(x.marks)).catch(() => {});
     // Card credits closing and policy dates: the Dashboard's Next up, on the month grid.
     api.call<{ due: BriefingDue[] }>("/api/dashboard/upcoming").then((x) => setUpcoming(x.due)).catch(() => {});
+    // Each car's next service, as the Car page works it out (its time limit, or the odometer at the current pace).
+    api
+      .call<{ report: GarageReport }>("/api/car")
+      .then((x) => setServices(x.report.cars.flatMap((c) => (c.sold || !c.service.nextDueDate ? [] : [{ id: `car-service:${c.carId}`, date: c.service.nextDueDate, title: `Car service${c.service.next ? ` (${c.service.next.miles.toLocaleString("en-US")} mi)` : ""}`, done: false, href: "/car?tab=service" }]))))
+      .catch(() => {});
   }, [api]);
   // Done stays done: a date marked done is done whatever the engines say later.
   const doneIds = useMemo(() => new Set(marks.map((m) => m.id)), [marks]);
@@ -57,14 +64,14 @@ export function CalendarClient({ requiresApiSecret }: { requiresApiSecret: boole
     <PageBody width="medium">
       <ApiSecretField api={api} />
       {error && <ErrorNote>{error}</ErrorNote>}
-      {!shownR ? api.ready && !error && <Loading label="Lining up every deadline with its amount…" /> : <Calendar r={shownR} show={show} setShow={setShow} toggle={toggle} upcoming={upcoming} />}
+      {!shownR ? api.ready && !error && <Loading label="Lining up every deadline with its amount…" /> : <Calendar r={shownR} show={show} setShow={setShow} toggle={toggle} upcoming={upcoming} services={services} />}
     </PageBody>
   );
 }
 
 type Shown = CalendarItem & { marked: boolean };
 
-function Calendar({ r, show, setShow, toggle, upcoming }: { r: Omit<MoneyCalendarReport, "items"> & { items: Shown[] }; show: "open" | "all"; setShow: (s: "open" | "all") => void; toggle: (i: CalendarItem, done: boolean) => void; upcoming: BriefingDue[] }) {
+function Calendar({ r, show, setShow, toggle, upcoming, services }: { r: Omit<MoneyCalendarReport, "items"> & { items: Shown[] }; show: "open" | "all"; setShow: (s: "open" | "all") => void; toggle: (i: CalendarItem, done: boolean) => void; upcoming: BriefingDue[]; services: GridItem[] }) {
   const [layout, setLayout] = useState<"list" | "month">("list");
   const shown = useMemo(() => (show === "open" ? r.items.filter((i) => !i.done) : r.items), [r, show]);
   const groups = useMemo(() => {
@@ -111,7 +118,7 @@ function Calendar({ r, show, setShow, toggle, upcoming }: { r: Omit<MoneyCalenda
         <Segmented size="xs" ariaLabel="Layout" options={[{ value: "list", label: "List" }, { value: "month", label: "Month grid" }]} value={layout} onChange={setLayout} />
       </div>
       {layout === "month" ? (
-        <MonthGrid today={r.today} items={r.items} upcoming={upcoming} />
+        <MonthGrid today={r.today} items={r.items} upcoming={upcoming} extra={services} />
       ) : groups.length === 0 ? (
         <EmptyState title="Nothing left to do before the next deadline" />
       ) : (
@@ -207,9 +214,11 @@ function Item({ i, showYear, toggle }: { i: Shown; showYear: boolean; toggle: (i
  * deadlines, card credits closing, policy dates), what's done struck through. Titles only:
  * the amounts are on the list, each with its proof.
  */
-function MonthGrid({ today, items, upcoming }: { today: string; items: Shown[]; upcoming: BriefingDue[] }) {
+type GridItem = { id: string; date: string; title: string; done: boolean; href: string };
+
+function MonthGrid({ today, items, upcoming, extra }: { today: string; items: Shown[]; upcoming: BriefingDue[]; extra: GridItem[] }) {
   const byDay = new Map<string, { id: string; title: string; done: boolean; href: string }[]>();
-  for (const x of [...items.map((i) => ({ id: i.id, date: i.date, title: i.title, done: i.done, href: i.href })), ...upcoming.map((u) => ({ id: u.id, date: u.date, title: u.title, done: u.done, href: u.href }))])
+  for (const x of [...items.map((i) => ({ id: i.id, date: i.date, title: i.title, done: i.done, href: i.href })), ...upcoming.map((u) => ({ id: u.id, date: u.date, title: u.title, done: u.done, href: u.href })), ...extra])
     byDay.set(x.date, [...(byDay.get(x.date) ?? []), x]);
   const months = [0, 1, 2].map((k) => {
     const d = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 + k, 1));
