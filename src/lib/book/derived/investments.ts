@@ -9,6 +9,18 @@ export const growthKey = (accountId: string | null) => accountId ?? "all";
  * gains, each growth series' latest point, and every figure beside a position (detailFigures).
  * returnRate: the forecast's, as the page's route serves it (prices a fee over 20 years).
  */
+/** Cash held in each investment account (positions' cash part: money-market funds, sweeps), with the account's value; accounts holding none left out, most first. */
+export function idleCash(rep: Pick<InvestmentsReport, "positions">): { accountId: string; account: string; cashCents: number; valueCents: number }[] {
+  const by = new Map<string, { accountId: string; account: string; cashCents: number; valueCents: number }>();
+  for (const p of rep.positions) {
+    const x = by.get(p.accountId) ?? { accountId: p.accountId, account: p.account, cashCents: 0, valueCents: 0 };
+    x.cashCents += Math.round(p.valueCents * (p.weights?.CASH ?? 0));
+    x.valueCents += p.valueCents;
+    by.set(p.accountId, x);
+  }
+  return [...by.values()].filter((x) => x.cashCents > 0).sort((a, b) => b.cashCents - a.cashCents);
+}
+
 export function investmentsDerived(rep: InvestmentsReport, returnRate: number | null = null): DerivedFigure[] {
   const out: DerivedFigure[] = [...detailFigures(rep, returnRate)];
   const share = (cls: string) => rep.allocation.find((x) => x.cls === cls)?.share ?? 0;
@@ -133,6 +145,9 @@ export const costOver = (cents: number, er: number, years: number, rate: number)
  */
 function detailFigures(rep: InvestmentsReport, returnRate: number | null): DerivedFigure[] {
   const out: DerivedFigure[] = [];
+  // Allocation › cash in investment accounts: each account's positions' cash part (a money-market fund, a sweep), added.
+  for (const x of idleCash(rep))
+    out.push({ figure: "idle-cash", key: x.accountId, describes: `${x.account}: cash and money-market funds, as of ${rep.asOf}`, value: c(x.cashCents), lines: rep.positions.filter((p) => p.accountId === x.accountId && (p.weights?.CASH ?? 0) > 0).map((p, i) => ln(`${p.symbol ?? p.name}${(p.weights?.CASH ?? 0) < 1 ? ` × its cash part` : ""}`, c(Math.round(p.valueCents * (p.weights?.CASH ?? 0))), i ? "+" : undefined, { source: "proven" })) });
   for (const a of rep.allocation) out.push({ figure: "class", key: a.cls, describes: `Held in ${a.cls}, as of ${rep.asOf}`, value: c(a.cents), lines: [ln("Each position's value × its weight in the class, added up", c(a.cents), undefined, { source: "proven" })] });
   for (const u of rep.unclassified) out.push({ figure: "unclassified", key: u.key, describes: `${u.symbol ?? u.name}: held without a classification, as of ${rep.asOf}`, value: c(u.cents), lines: [ln("Its positions without a classification, added up", c(u.cents), undefined, { source: "proven" })] });
   for (const k of rep.concentration)
