@@ -21,7 +21,7 @@ const SUMMARY = "/api/dashboard/home-summary";
 const BRIEFING = "/api/dashboard/briefing";
 const UPCOMING = "/api/dashboard/upcoming";
 const FEED = "/api/dashboard/feed";
-type Upcoming = { due: BriefingDue[] };
+type Upcoming = { due: BriefingDue[]; hsaReimbursableCents?: number | null };
 const RANGE_KEYS: Record<string, Range> = { "1": "6m", "2": "12m", "3": "all" };
 
 /**
@@ -38,6 +38,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
   // The owner's decisions on the feed: read beside the briefing, never part of it (saving one rebuilds nothing).
   const [marks, setMarks] = useState<Mark[] | null>(() => cachedResponse<{ marks: Mark[] }>(FEED)?.marks ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<Mark[]>([]);
 
   useEffect(() => {
     if (!api.ready) return;
@@ -46,6 +47,8 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
     api.call<Briefing>(BRIEFING).then(setBrief).catch(failed);
     api.call<Upcoming>(UPCOMING).then(setUpcoming).catch(failed);
     api.call<{ marks: Mark[] }>(FEED).then((r) => setMarks(r.marks)).catch(failed);
+    // Dates marked done on the Calendar stay done here too.
+    api.call<{ marks: Mark[] }>("/api/calendar/done").then((r) => setDone(r.marks)).catch(() => {});
   }, [api]);
 
   const decide = useMemo<FeedDecide | null>(() => {
@@ -69,7 +72,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
             <ErrorNote>{error}</ErrorNote>
           </div>
         )}
-        <Terminal d={data} b={brief} upcoming={upcoming?.due ?? NONE} marks={marks} decide={decide} />
+        <Terminal d={data} b={brief} upcoming={upcoming?.due ?? NONE} marks={marks} decide={decide} done={done} hsa={upcoming?.hsaReimbursableCents ?? null} />
       </>
     );
   return (
@@ -96,10 +99,13 @@ const NONE: BriefingDue[] = [];
 /** The calendar's dates and the rest, by date: what's done last. */
 const byDate = (a: BriefingDue, b: BriefingDue) => Number(a.done) - Number(b.done) || a.date.localeCompare(b.date);
 
-function Terminal({ d, b, upcoming, marks, decide }: { d: Summary; b: Briefing | null; upcoming: BriefingDue[]; marks: Mark[] | null; decide: FeedDecide | null }) {
+function Terminal({ d, b, upcoming, marks, decide, done, hsa }: { d: Summary; b: Briefing | null; upcoming: BriefingDue[]; marks: Mark[] | null; decide: FeedDecide | null; done: Mark[]; hsa: number | null }) {
   const [view, setView] = usePersistentState<{ range: Range; average: boolean }>("pf-desk-view", () => ({ range: "all", average: false }));
   const [keys, setKeys] = useState(false);
-  const due = useMemo(() => [...(b?.due ?? NONE), ...upcoming].sort(byDate), [b, upcoming]);
+  const due = useMemo(() => {
+    const marked = new Set(done.map((m) => m.id));
+    return [...(b?.due ?? NONE), ...upcoming].map((x) => (marked.has(x.id) && !x.done ? { ...x, done: true } : x)).sort(byDate);
+  }, [b, upcoming, done]);
   // ? lists the keys, from anywhere on the page but a field being typed in.
   useEffect(() => {
     const onHelp = (e: KeyboardEvent) => {
@@ -125,7 +131,7 @@ function Terminal({ d, b, upcoming, marks, decide }: { d: Summary; b: Briefing |
         {b ? (
           <>
             <BridgePanel change={b.change} />
-            <DuePanel due={due} today={b.today} />
+            <DuePanel due={due} today={b.today} hsa={hsa} />
           </>
         ) : (
           <Waiting span="xl:col-span-6" />

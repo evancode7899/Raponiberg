@@ -178,7 +178,7 @@ export function BridgePanel({ change }: { change: Briefing["change"] }) {
 
 // ------------------------------------------------------------------ what's due
 
-export function DuePanel({ due, today }: { due: BriefingDue[]; today: string }) {
+export function DuePanel({ due, today, hsa = null }: { due: BriefingDue[]; today: string; hsa?: number | null }) {
   const open = due.filter((d) => !d.done);
   return (
     <Panel code="DUE" title="Next up" href="/calendar" note={`${open.length} open`} className="xl:col-span-3">
@@ -219,6 +219,12 @@ export function DuePanel({ due, today }: { due: BriefingDue[]; today: string }) 
           })}
         </tbody>
       </table>
+      {hsa ? (
+        <p className="border-t border-line px-2 py-1 text-xs text-muted">
+          <Open href="/hsa?tab=reimburse">HSA receipts to reimburse</Open>:{" "}
+          <ProofValue proof={{ descriptor: { report: "hsa", metric: "reimbursable" }, shownCents: hsa }}>{usd0(hsa)}</ProofValue>
+        </p>
+      ) : null}
     </Panel>
   );
 }
