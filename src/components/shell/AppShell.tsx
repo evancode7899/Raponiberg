@@ -16,6 +16,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 const NAV_COLLAPSED_KEY = "pf-nav-collapsed";
+const DEFAULT_PASSWORD_SAID = "pf-default-password-said";
 const THEME_LABEL: Record<AppTheme, string> = { light: "Light", dark: "Dark", terminal: "Terminal" };
 
 /** Pages call this after changing the ledger so the sidebar badge refreshes (and no page draws from answers given before the change). */
@@ -139,10 +140,22 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (el && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
   }, [pathname, main]);
   const [hidden, setHidden] = useState(false);
+  /** The lock screen still takes the default password: said once a session, after unlocking (never on the lock screen itself). */
+  const [defaultPassword, setDefaultPassword] = useState(false);
   /** This page is the right-hand side of a split (the app framed by itself): drawn without the top bar and sidebar. */
   const [pane, setPane] = useState(false);
   const [split, setSplit] = useSplit();
   const router = useRouter();
+  useEffect(() => {
+    if (locked !== false || !defaultPassword || pane) return;
+    try {
+      if (sessionStorage.getItem(DEFAULT_PASSWORD_SAID)) return;
+      sessionStorage.setItem(DEFAULT_PASSWORD_SAID, "1");
+    } catch {
+      /* storage unavailable: say it anyway */
+    }
+    notify("The app password is still the default one. Anyone at this computer can open Raponiberg with it.", { tone: "info", action: { label: "Set your own", run: () => router.push("/settings?tab=general") } });
+  }, [locked, defaultPassword, pane, router]);
   useEffect(() => {
     const read = () => setHidden(amountsHidden());
     read();
@@ -163,7 +176,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     // The demo instance has no lock screen; the real app shows it unless this tab is unlocked.
     fetch("/api/app-password")
       .then((r) => r.json())
-      .then((j: { demo?: boolean; exitUrl?: string }) => {
+      .then((j: { demo?: boolean; exitUrl?: string; isDefault?: boolean }) => {
+        setDefaultPassword(j.isDefault === true);
         if (j.demo) {
           setDemoExit(j.exitUrl ?? "/");
           setLocked(false);

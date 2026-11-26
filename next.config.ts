@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { securityHeaders } from "./src/lib/auth/csp";
+import { MAX_REQUEST_BYTES } from "./src/lib/uploadLimits";
 
 const nextConfig: NextConfig = {
   // The desktop launcher builds into a staging folder (NEXT_BUILD_DIR) and only swaps it
@@ -24,6 +25,9 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ["recharts"],
+    // The proxy reads only headers, but Next.js hands it the body too, cut at 10 MB by default:
+    // an upload under the app's own caps (lib/uploadLimits.ts) must arrive whole.
+    proxyClientMaxBodySize: MAX_REQUEST_BYTES,
   },
   turbopack: {
     // The data stores read files under data/ (DATA_DIR) at run time, a path the build can't

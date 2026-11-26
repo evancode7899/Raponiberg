@@ -4,6 +4,7 @@ import type { Api } from "@/components/ledger/useApi";
 import { Badge, btn, Card, ErrorNote } from "@/components/ui/kit";
 import { formatUsdFromCents } from "@/lib/formatMoney";
 import type { FileOutcome } from "@/lib/ingest/importFiles";
+import { statementUploadProblem } from "@/lib/uploadLimits";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TaxDocsCard } from "./TaxDocsCard";
 
@@ -50,6 +51,8 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
   };
 
   const upload = useCallback(async () => {
+    const tooBig = statementUploadProblem(files);
+    if (tooBig) return setError(tooBig);
     setBusy("upload");
     setError(null);
     try {

@@ -1,6 +1,7 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
 import { prisma } from "@/lib/db";
 import { importStatementFiles } from "@/lib/ingest/importFiles";
+import { MAX_STATEMENT_UPLOAD_BYTES, bytesLabel, requestTooLarge, statementUploadProblem } from "@/lib/uploadLimits";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,10 @@ export async function POST(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Too big is refused before a byte is read (lib/uploadLimits.ts).
+  if (requestTooLarge(request.headers.get("content-length"), MAX_STATEMENT_UPLOAD_BYTES)) {
+    return NextResponse.json({ error: `An import may be up to ${bytesLabel(MAX_STATEMENT_UPLOAD_BYTES)} at once: import the files in smaller batches.` }, { status: 413 });
+  }
   let form: FormData;
   try {
     form = await request.formData();
@@ -26,6 +31,8 @@ export async function POST(request: NextRequest) {
   if (files.length === 0) {
     return NextResponse.json({ error: 'Missing file field (use name "file")' }, { status: 400 });
   }
+  const tooBig = statementUploadProblem(files);
+  if (tooBig) return NextResponse.json({ error: tooBig }, { status: 413 });
   const review = form.get("review") === "true";
 
   const loaded = await Promise.all(files.map(async (f) => ({ fileName: f.name, bytes: Buffer.from(await f.arrayBuffer()) })));
