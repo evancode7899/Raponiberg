@@ -134,7 +134,6 @@ export type SpendingReport = {
 };
 
 import { ONE_OFF_MIN_CENTS } from "../definitions.ts";
-import { readPriceIndex } from "../../priceIndex.ts";
 import { CPI, type IndexSeries } from "../../priceIndexMath.ts";
 export { ONE_OFF_MIN_CENTS };
 
@@ -507,7 +506,7 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
     recurring,
     rent: from && to ? rentPayments(book.rows, book.accounts, book.household.merchantRules).filter((p) => p.covers >= from && p.covers <= to && (!accountFilter || accountFilter.has(book.rowById.get(p.rowId)!.accountId))) : [],
     oneOffs,
-    cpi: readPriceIndex().series[CPI] ?? null,
+    cpi: book.prices?.series[CPI] ?? null,
   };
 }
 

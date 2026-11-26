@@ -1,6 +1,5 @@
 import { inclusiveDays, maxIso, minIso, type Granularity } from "../../dates/isoDate.ts";
 import { buildNetWorthReport as buildFromLedger, spanQuality, type NetWorthPeriod, type NetWorthReport as LedgerNetWorthReport } from "../../ledger/netWorthReport.ts";
-import { readPriceIndex } from "../../priceIndex.ts";
 import { BENCHMARK, type IndexSeries } from "../../priceIndexMath.ts";
 import { GROUP_ORDER } from "../../ledger/loadLedger.ts";
 import { chainReturns } from "../../ledger/timeline.ts";
@@ -143,7 +142,7 @@ export function buildNetWorth(book: Book, opts: { granularity: Granularity; from
 
   return {
     ...r,
-    benchmark: readPriceIndex().series[BENCHMARK] ?? null,
+    benchmark: book.prices?.series[BENCHMARK] ?? null,
     summary,
     provenThrough: through,
     periods,
