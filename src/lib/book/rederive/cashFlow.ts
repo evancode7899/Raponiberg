@@ -44,7 +44,7 @@ function monthStarts(start: string, end: string): string[] {
   return out;
 }
 
-export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, rep: Pick<SpendingReport, "months" | "current">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSettings, "oneOffs" | "nonRecurringCategories">, rep: Pick<SpendingReport, "months" | "current" | "recurring">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
   const first = rep.months[0];
   const lastEnd = (rep.current ?? rep.months.at(-1))?.end;
   if (!first || !lastEnd) return {};
@@ -254,6 +254,22 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       case "recurring-annual":
       case "recurring-change":
         return { none: "The recurring-charge detector's reading of one merchant's charges (its usual charge, its latest, its cadence): the merchant's spending figure re-adds the same rows." };
+      case "price-bill":
+      case "price-category":
+      case "price-all": {
+        // The charges themselves, read off the Book's rows: each bill's a year apart, added up.
+        const rowsOf = f.figure === "price-bill" ? [f] : figures.filter((x) => x.figure === "price-bill" && (f.figure === "price-all" || rep.recurring.find((b) => b.key === x.key)?.category === f.key));
+        let now = 0;
+        let then = 0;
+        for (const x of rowsOf) {
+          const ids = x.lines.flatMap((l) => (l.link?.descriptor.report === "row" ? [l.link.descriptor.rowId] : []));
+          const [a, b] = ids.map((id) => book.rowById.get(id));
+          if (!a || !b) return null;
+          now -= a.amountCents;
+          then -= b.amountCents;
+        }
+        return [ratioRoute("the charges' rows, re-read", v, then > 0 ? now / then - 1 : null, "latest charges over the same bills' a year before, less one", 1e-12)];
+      }
       case "year-end": {
         // Spending re-added from the rows: the year so far, and each month left at the middle of the same month before.
         const [year, metric] = k.split("|");

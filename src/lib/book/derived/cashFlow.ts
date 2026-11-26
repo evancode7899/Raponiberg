@@ -3,6 +3,7 @@ import { byYear, cashFlowWindows, last12At, median, mergeCategories, mergeMercha
 import type { CategoryAmount } from "../reports/cashFlow.ts";
 import { CHARGE_BUCKETS, type MerchantMonth, type SpendingMonth, type SpendingReport } from "../reports/spending.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
+import { personalInflation } from "../reports/personalInflation.ts";
 import { SEASON_METRICS, yearEndEstimate, type SeasonMetric } from "../reports/seasonality.ts";
 
 /** How many merchants Merchants › Where it goes draws as tiles; the rest it sums. */
@@ -123,7 +124,7 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
         add("merchant-pattern", `${x.name}: pattern`, t(rec ? (rec.kind === "bill" ? "Bill" : "Habit") : "Irregular"), [ln("Recurring detection", t(rec ? `${rec.kind}, ${rec.active ? "active" : "stopped"}` : "not recurring"))], k);
       }
   }
-  out.push(...yearEndDerived(rep.months));
+  out.push(...yearEndDerived(rep.months), ...priceDerived(rep.recurring));
   // Recurring.
   const bills = rep.recurring.filter((x) => x.kind === "bill");
   const active = bills.filter((x) => x.active);
@@ -162,6 +163,34 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
     value: Object.keys(targets).length ? c(budgeted) : null,
     lines: [...Object.entries(targets).map(([cat, v], i) => ln(cat, c(v), i ? "+" : undefined, { source: "assumption" })), ln("Monthly budget", c(budgeted), "=")],
   });
+  return out;
+}
+
+// ------------------------------------------------------------------ Recurring › your prices, a year on
+
+/**
+ * Recurring › your prices, a year on (reports/personalInflation.ts): each bill's latest charge
+ * against its own charge a year before, and by category and in all, weighted by cost.
+ */
+export function priceDerived(recurring: SpendingReport["recurring"]): DerivedFigure[] {
+  const p = personalInflation(recurring);
+  const row = (label: string, x: { rowId: string; date: string; cents: number }, op?: "÷") => ln(`${label}, ${x.date}`, c(x.cents), op, { source: "proven", link: { label: `The charge on ${x.date}`, descriptor: { report: "row", rowId: x.rowId } } });
+  const out: DerivedFigure[] = p.bills.map((b) => ({
+    figure: "price-bill",
+    key: b.key,
+    describes: `${b.name}: its latest charge against its own a year before`,
+    value: r(b.change),
+    lines: [row("Latest charge", b.now), row("The same bill a year before", b.then, "÷"), ln("Change", r(b.change), "=", { note: "Latest ÷ a year before, less one." })],
+  }));
+  const group = (figure: string, key: string | undefined, describes: string, g: { thenCents: number; nowCents: number; change: number }, n: number): DerivedFigure => ({
+    figure,
+    ...(key != null ? { key } : {}),
+    describes,
+    value: r(g.change),
+    lines: [ln(`${n} bill${n === 1 ? "" : "s"}, their latest charges`, c(g.nowCents), undefined, { source: "proven" }), ln("The same bills a year before", c(g.thenCents), "÷", { source: "proven" }), ln("Change", r(g.change), "=")],
+  });
+  for (const g of p.categories) out.push(group("price-category", g.category, `${g.category}: recurring bills' prices against a year before, weighted by cost`, g, g.bills.length));
+  if (p.all) out.push(group("price-all", undefined, "Recurring bills' prices against a year before, weighted by cost", p.all, p.bills.length));
   return out;
 }
 

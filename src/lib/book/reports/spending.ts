@@ -82,6 +82,12 @@ export type RecurringCharge = {
   active: boolean;
   /** Bills that charged a fixed amount: the latest charge versus the ones before (null when unchanged). */
   changeCents: number | null;
+  /** The latest charge's row (its own proof). */
+  lastRowId: string;
+  /** Bills for a set amount (a subscription, rent, a premium): half the charges within 1% of the usual one. A metered bill (power, water) isn't. */
+  fixed: boolean;
+  /** Bills: the same bill's charge a year before the latest (the one nearest, within six weeks of it), for a like-for-like price change. */
+  yearAgo: { rowId: string; date: string; cents: number } | null;
 };
 
 export type OneOffExpense = {
@@ -217,9 +223,22 @@ export function detectRecurring(rows: BookRow[], windowEnd: string, last12From: 
       // Habits: seen within the last two months. Bills: within one and a half cycles.
       active: daysBetween(last.date, windowEnd) <= (isBill ? Math.round(gap * 1.5) + 10 : 62),
       changeCents: isBill && fixedBefore && Math.abs(change) >= Math.max(100, prevCents * 0.03) ? change : null,
+      lastRowId: last.id,
+      fixed: isBill && median(amounts.map((a) => Math.abs(a - typical))) <= Math.max(100, typical * 0.01),
+      yearAgo: isBill ? yearAgoCharge(list, last.date) : null,
     });
   }
   return out.sort((a, b) => b.annualCents - a.annualCents);
+}
+
+/** A year before `date`: the charge nearest to it within six weeks either side, or none. */
+function yearAgoCharge(list: BookRow[], date: string): RecurringCharge["yearAgo"] {
+  let best: BookRow | null = null;
+  for (const r of list) {
+    const off = Math.abs(daysBetween(r.date, date) - 365);
+    if (off <= 42 && (!best || off < Math.abs(daysBetween(best.date, date) - 365))) best = r;
+  }
+  return best ? { rowId: best.id, date: best.date, cents: -best.amountCents } : null;
 }
 
 const monthsBack = (monthStart: string, n: number) => {

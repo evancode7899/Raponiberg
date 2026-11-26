@@ -16,7 +16,7 @@ const months = (from: number, to: number) =>
     const end = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
     return { start, end, label: start.slice(0, 7) };
   });
-const bill = (key: string, over: Partial<RecurringCharge>): RecurringCharge => ({ key, name: key, category: "Bills", kind: "bill", cadence: "monthly", count: 6, monthsSeen: 6, typicalCents: 50_00, last12Cents: 0, annualCents: 0, firstDate: "", lastDate: "", lastCents: 0, active: true, changeCents: null, ...over });
+const bill = (key: string, over: Partial<RecurringCharge>): RecurringCharge => ({ key, name: key, category: "Bills", kind: "bill", cadence: "monthly", count: 6, monthsSeen: 6, typicalCents: 50_00, last12Cents: 0, annualCents: 0, firstDate: "", lastDate: "", lastCents: 0, active: true, changeCents: null, lastRowId: "", fixed: true, yearAgo: null, ...over });
 const run = (over: Partial<AnomalyInputs>) => findAnomalies({ rows: [], dayOf: (r) => r.date, months: months(1, 8), recurring: [], explainedRow: () => false, ...over });
 const kinds = (r: ReturnType<typeof run>) => r.items.map((i) => [i.kind, i.merchant]);
 

@@ -5,7 +5,9 @@ import { compositeOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { RecurringCharge } from "@/lib/book/reports/spending";
 import { NA, usd0, usdDelta } from "@/lib/formatMoney";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { personalInflation } from "@/lib/book/reports/personalInflation";
+import { formatPercentRatio } from "@/lib/formatMoney";
 import type { Ctx } from "./CashFlowClient";
 import { sum } from "./model";
 import { categoryColor, Dot } from "./parts";
@@ -50,6 +52,8 @@ export function RecurringTab({ ctx }: { ctx: Ctx }) {
       >
         <BillTable ctx={ctx} list={show === "active" ? active : stopped} />
       </Card>
+
+      <Prices ctx={ctx} />
 
       <Card title="Habits" subtitle="Merchants you return to often for varying amounts — coffee, lunch, rides, groceries. Small charges that add up; the yearly figure is the last 12 months.">
         <div className={table.wrap}>
@@ -147,5 +151,67 @@ function BillTable({ ctx, list }: { ctx: Ctx; list: RecurringCharge[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Your prices, a year on (reports/personalInflation.ts): each bill's latest charge against the
+ * same bill's a year before, by category and in all, weighted by cost. Like for like: the same
+ * bill twice, so buying more or less never reads as a price change.
+ */
+function Prices({ ctx }: { ctx: Ctx }) {
+  const p = useMemo(() => personalInflation(ctx.report.recurring), [ctx.report.recurring]);
+  if (!p.all) return null;
+  const pct = (x: number) => `${x > 0 ? "+" : ""}${formatPercentRatio(x, 1)}`;
+  const row = (x: { rowId: string; cents: number }) => ({ descriptor: { report: "row" as const, rowId: x.rowId }, shownCents: -x.cents });
+  return (
+    <Card
+      title={<>Your prices, a year on: <ProofValue proof={ctx.dp("price-all")}>{pct(p.all.change)}</ProofValue></>}
+      subtitle="Each bill for a set amount (subscriptions, rent, premiums, tuition) against the same bill a year before, weighted by what the bills cost: a price change, never a change in how much you used or bought. Metered bills and tax payments aren't prices. Spending that varies (groceries, dining) has no like-for-like price; Year over year shows how its dollars moved."
+    >
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[40rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Bill</th>
+              <th className={table.thR}>A year before</th>
+              <th className={table.thR}>Latest</th>
+              <th className={table.thR}>Change</th>
+            </tr>
+          </thead>
+          {p.categories.map((g) => (
+            <tbody key={g.category}>
+              <tr className="border-t border-line-strong bg-surface-2 font-semibold">
+                <td className={table.td}>
+                  <span className="flex items-center gap-2">
+                    <Dot color={categoryColor(ctx.chart, g.category)} />
+                    {g.category}
+                  </span>
+                </td>
+                <td className={table.tdR} />
+                <td className={table.tdR} />
+                <td className={`${table.tdR} ${g.change > 0.0005 ? "text-neg" : g.change < -0.0005 ? "text-pos" : "text-muted"}`}>
+                  <ProofValue proof={ctx.dp("price-category", g.category)}>{pct(g.change)}</ProofValue>
+                </td>
+              </tr>
+              {g.bills.map((b) => (
+                <tr key={b.key} className={table.trHover}>
+                  <td className={`${table.td} pl-6`}>{b.name}</td>
+                  <td className={`${table.tdR} text-muted`}>
+                    <ProofValue proof={row(b.then)}>{usd0(b.then.cents)}</ProofValue> <span className="text-[11px] text-faint">{b.then.date}</span>
+                  </td>
+                  <td className={table.tdR}>
+                    <ProofValue proof={row(b.now)}>{usd0(b.now.cents)}</ProofValue> <span className="text-[11px] text-faint">{b.now.date}</span>
+                  </td>
+                  <td className={`${table.tdR} ${b.change > 0.0005 ? "text-neg" : b.change < -0.0005 ? "text-pos" : "text-muted"}`}>
+                    <ProofValue proof={ctx.dp("price-bill", b.key)}>{pct(b.change)}</ProofValue>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          ))}
+        </table>
+      </div>
+    </Card>
   );
 }
