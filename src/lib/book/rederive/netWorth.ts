@@ -7,6 +7,7 @@ import type { Book, BookRow } from "../load.ts";
 import { centsRoute, invariant, ratioRoute, rederiveList, textRoute } from "../proof/independence.ts";
 import type { Rederivation, RederivedRoute } from "../proof/types.ts";
 import { markStep } from "../reports/records.ts";
+import { drawdown } from "../reports/drawdown.ts";
 import { cashFlowRows, dayOfFor } from "../reports/cashFlow.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 
@@ -189,6 +190,23 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
         const of = col === "household" ? "every investment account's timeline" : "the account's timeline";
         return [ratioRoute(`each month re-worked from ${of} (Modified Dietz), chained`, v, c.total, `${c.months} of ${periodsBetween(start, end, "month").length} months measured, chained`, 1e-9)];
       }
+      case "drawdown-max":
+      case "drawdown-now": {
+        // Each month of the stretch re-worked from the timelines and chained here.
+        const from = portfolioFrom;
+        if (!from) return null;
+        const d = drawdown(periodsBetween(from, through, "month").map((m) => ({ label: m.start, r: monthRatio(m.start) })));
+        const want = f.figure === "drawdown-max" ? (d?.max?.ratio ?? null) : (d?.now.ratio ?? null);
+        return [ratioRoute(ROUTE, v, want, "the chained index against its running high", 1e-9)];
+      }
+      case "growth-since": {
+        const from = portfolioFrom;
+        if (!from || !f.key) return null;
+        const cents = periodsBetween(from, through, "month").reduce((s, m) => s + (partsIn(m.start).get(f.key!)?.gainCents ?? 0), 0);
+        return [centsRoute("each month's Modified Dietz gain re-worked from the account's timeline, added", v, cents, `months from ${from}`, 2 * periodsBetween(from, through, "month").length)];
+      }
+      case "fees-since":
+        return { none: "Each month's fees as the accounts' statements print them: the statements are the source, and How it was built states each account's month." };
       case "change-typical":
         return { none: "The mean of the same figure over the whole proven periods before it: each of those is a figure of its own on this tab (its change, saving, markets, income, spending or category), re-derived by its own proof." };
       case "accounts-measured":

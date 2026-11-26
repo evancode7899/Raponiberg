@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { builtDerived, netWorthDerived, recordsDerived } from "@/lib/book/derived/netWorth";
+import { builtDerived, netWorthDerived, recordsDerived, stretchOf } from "@/lib/book/derived/netWorth";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
@@ -22,7 +22,8 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AccountsTab } from "./AccountsTab";
 import { ChangesTab } from "./ChangesTab";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { unswept } from "@/lib/book/proof/clearance";
+import { noFigure, unswept } from "@/lib/book/proof/clearance";
+import { sumOf } from "@/lib/book/proof/compose";
 
 const TABS = ["overview", "changes", "built", "returns", "accounts"] as const;
 type Granularity = "month" | "quarter" | "year";
@@ -679,6 +680,7 @@ function Returns({ r }: { r: NetWorthReport }) {
           </RechartsResponsive>
         </div>
       </Card>
+      <StretchCard r={r} derived={derived} />
       <Card
         title="By account"
         subtitle={
@@ -725,5 +727,54 @@ function Returns({ r }: { r: NetWorthReport }) {
         </div>
       </Card>
     </>
+  );
+}
+
+/**
+ * Investment returns › falls and where the growth came from (derived/netWorth.ts stretchOf):
+ * over the portfolio's proven stretch, the deepest fall from a high and the distance below
+ * the high now (time-weighted), each account's growth net of fees with its share, and the fees.
+ */
+function StretchCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<typeof netWorthDerived> }) {
+  const s = useMemo(() => stretchOf(r), [r]);
+  if (!s.from || !s.drawdown) return null;
+  const names = new Map(r.accounts.map((a) => [a.id, a.name]));
+  const d = s.drawdown;
+  const total = s.growth.reduce((t, g) => t + g.cents, 0);
+  const growthRef = (id: string) => derivedTarget("net-worth", derived, "growth-since", id);
+  const totalRef = sumOf(s.growth.map((g) => growthRef(g.accountId)), total);
+  return (
+    <Card title={`Falls and growth since ${s.from}`} subtitle="Over the stretch the portfolio return chains: the deepest fall from a high and how far below its high it is now (time-weighted, so money in and out moves neither), and the growth each account added, net of fees.">
+      <StatGrid cols={4}>
+        <StatCell proof={d.max ? derivedTarget("net-worth", derived, "drawdown-max") : noFigure("no fall from a high yet")} label="Deepest fall" value={d.max ? formatPercentRatio(d.max.ratio, 1) : "—"} sub={d.max ? `${d.max.peak ?? "the start"} → ${d.max.trough}` : "it hasn't fallen from a high"} tone={d.max ? "neg" : "neutral"} />
+        <StatCell proof={derivedTarget("net-worth", derived, "drawdown-now")} label="Below the high now" value={d.now.ratio ? formatPercentRatio(d.now.ratio, 1) : "—"} sub={d.now.ratio ? `high: ${d.now.peak ?? "the start"}` : "at a high"} />
+        <StatCell proof={totalRef} label="Growth, net of fees" value={usd0(total)} sub={`${s.growth.length} accounts`} tone={total < 0 ? "neg" : "neutral"} />
+        <StatCell proof={derivedTarget("net-worth", derived, "fees-since")} label="Fees taken" value={s.feesCents ? usd0(s.feesCents) : "—"} sub="advisory, plan and fund fees on statements" />
+      </StatGrid>
+      {s.growth.length > 1 && (
+        <div className={`${table.wrap} mt-3`}>
+          <table className={`${table.table} min-w-[28rem]`}>
+            <thead className={table.head}>
+              <tr>
+                <th className={table.th}>Account</th>
+                <th className={table.thR}>Growth, net of fees</th>
+                <th className={table.thR}>Of the growth</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.growth.map((g) => (
+                <tr key={g.accountId} className={table.tr}>
+                  <td className={table.td}>{names.get(g.accountId)}</td>
+                  <td className={`${table.tdR} ${g.cents < 0 ? "text-neg" : ""}`}>
+                    <ProofValue proof={growthRef(g.accountId)}>{usd0(g.cents)}</ProofValue>
+                  </td>
+                  <td className={table.tdR}>{total ? <ProofValue proof={compositeOf("share", [growthRef(g.accountId), totalRef], { ratio: g.cents / total })}>{formatPercentRatio(g.cents / total, 0)}</ProofValue> : NA}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

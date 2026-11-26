@@ -1,5 +1,6 @@
 import type { NetWorthReport } from "../reports/netWorth.ts";
 import type { NetWorthChange, NetWorthChangesReport } from "../reports/netWorthChanges.ts";
+import { drawdown } from "../reports/drawdown.ts";
 import { netWorthRecords, roundMark } from "../reports/records.ts";
 import type { ProofValue } from "../proof/types.ts";
 import type { RollforwardReport } from "../../profile/rollforwards.ts";
@@ -32,11 +33,49 @@ export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" |
       lines: [ln("Accounts with an unbroken proven stretch", t(String(rep.proven.returns.byAccount.length)))],
       parts: rep.proven.returns.byAccount.map((a) => ({ label: names.get(a.accountId) ?? a.accountId, value: r(a.total), sub: `since ${a.from}` })),
     },
+    ...stretchDerived(rep),
     // Each account's own, over its unbroken proven stretch.
     ...rep.proven.returns.byAccount.flatMap((a): DerivedFigure[] => [
       { figure: "account-return", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, cumulative and time-weighted`, value: r(a.total), lines: [ln(`Each month's return, chained from ${a.from}`, r(a.total), undefined, { note: "(1 + r₁) × (1 + r₂) × … − 1" })] },
       ...(a.annualized == null ? [] : [{ figure: "account-return-annualized", key: a.accountId, describes: `${names.get(a.accountId) ?? "An account"}: return since ${a.from}, a year`, value: r(a.annualized), lines: [ln("Cumulative", r(a.total)), ln("Over its days, a year", r(a.annualized))] }]),
     ]),
+  ];
+}
+
+/** The portfolio's proven stretch, month by month (Investment returns): the months its return chains, for drawdowns and the growth by account. */
+export function stretchOf(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts">) {
+  const p = rep.proven.returns.portfolio;
+  // As the portfolio return chains them: only blockers on investment accounts (or the whole household) break the stretch.
+  const investment = new Set(rep.accounts.filter((a) => a.isInvestment).map((a) => a.id));
+  const run = p ? rep.periods.filter((x) => x.start >= p.from && !x.blockers.some((b) => !b.accountId || investment.has(b.accountId))) : [];
+  const growth = new Map<string, number>();
+  for (const x of run) for (const a of x.byAccount) if (investment.has(a.accountId) && a.growthNetOfFeesCents) growth.set(a.accountId, (growth.get(a.accountId) ?? 0) + a.growthNetOfFeesCents);
+  return {
+    from: p?.from ?? null,
+    run,
+    drawdown: drawdown(run.map((x) => ({ label: x.label, r: x.household.portfolioReturn }))),
+    /** Growth net of fees by account over the stretch, largest first (the household's is their sum). */
+    growth: [...growth].map(([accountId, cents]) => ({ accountId, cents })).sort((a, b) => b.cents - a.cents),
+    feesCents: run.reduce((s, x) => s + x.household.feesCents, 0),
+  };
+}
+
+/**
+ * Investment returns › drawdowns and where the growth came from: over the portfolio's proven
+ * stretch, the deepest fall from a high and where it stands against its high now (each month's
+ * return chained), each account's growth net of fees, and the fees taken.
+ */
+function stretchDerived(rep: Pick<NetWorthReport, "proven" | "periods" | "accounts">): DerivedFigure[] {
+  const s = stretchOf(rep);
+  if (!s.from || !s.drawdown) return [];
+  const names = new Map(rep.accounts.map((a) => [a.id, a.name]));
+  const months = ln(`Each month's return, chained from ${s.from}`, t(`${s.run.length} months`));
+  const d = s.drawdown;
+  return [
+    ...(d.max ? [{ figure: "drawdown-max", describes: `The deepest fall from a high since ${s.from}, time-weighted`, value: r(d.max.ratio), lines: [months, ln(`High: ${d.max.peak ?? "the start"}`, t("—")), ln(`Low after it: ${d.max.trough}`, t("—")), ln("Low ÷ high − 1", r(d.max.ratio), "=")] }] : []),
+    { figure: "drawdown-now", describes: `Below the latest high (${d.now.peak ?? "the start"}) now, time-weighted`, value: r(d.now.ratio), lines: [months, ln("Now ÷ the highest month-end − 1", r(d.now.ratio), "=")] },
+    ...s.growth.map((g): DerivedFigure => ({ figure: "growth-since", key: g.accountId, describes: `${names.get(g.accountId) ?? "An account"}: growth net of fees since ${s.from}`, value: c(g.cents), lines: [ln(`Each month's growth net of fees, added from ${s.from}`, c(g.cents), undefined, { note: "Each month's is its cell on How it was built (month)." })] })),
+    { figure: "fees-since", describes: `Fees the accounts took since ${s.from}`, value: c(s.feesCents), lines: [ln(`Each month's fees, added from ${s.from}`, c(s.feesCents))] },
   ];
 }
 
