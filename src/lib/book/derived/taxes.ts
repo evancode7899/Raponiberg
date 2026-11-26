@@ -5,6 +5,9 @@ import { incomeCells } from "../../tax/incomeExtras.ts";
 import { overviewCells } from "../../tax/overviewExtras.ts";
 import { W4_REACHES, w4Cells } from "../../tax/w4Extras.ts";
 import { c, ln, r, tableFigures, type DerivedFigure, type TableCell } from "./types.ts";
+import { bracketFill } from "../../tax/bracketFill.ts";
+import { estimateColumns, type EstimateKey } from "../../tax/estimateLines.ts";
+import { taxYearParams } from "../../tax/params.ts";
 
 /**
  * Taxes' derived figures for a year: the tables the tabs draw from the year's report beyond
@@ -26,9 +29,41 @@ export function taxesDerived(report: TaxReport): DerivedFigure[] {
     ...(Math.abs(cmp.diff) >= 100 ? [{ figure: "compare-diff", key: String(y), describes: `${y}: separate returns' tax less the joint return's`, value: c(cmp.diff), lines: [] }] : []),
     ...tableFigures("overview", y, overviewCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...W4_REACHES.flatMap((reach) => tableFigures("w4", `${y}:${reach}`, w4Cells(report, reach).map((x) => ({ ...x, describes: `${y} ${x.describes}, the new W-4 reaching paycheck ${Number(reach) + 1} from now` })))),
+    ...bracketDerived(report),
     ...tableFigures("income", y, incomeCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...(["projected", "ytd"] as const).flatMap((basis) => tableFigures("worksheet", `${y}:${basis}`, worksheetCells(report, basis).map((x) => ({ ...x, describes: `${y} ${basis === "ytd" ? "to date" : "projected"}: ${x.describes}` })))),
   ];
+}
+
+/** A bracket's key: the year and the bracket (0 = 10%). */
+export const bracketKey = (year: number, i: number) => `${year}|${i}`;
+
+/** The household's return's ordinary taxable income as it fills the federal brackets (tax/bracketFill.ts). */
+export function bracketsOf(report: TaxReport) {
+  const joint = estimateColumns(report, "projected").cols.find((x) => x.id === "joint")!;
+  const f = joint.r.federal;
+  const ordinary = Math.max(0, f.taxableIncome - Math.min(Math.max(0, f.preferentialIncome), Math.max(0, f.taxableIncome)));
+  return { ordinary, taxable: f.taxableIncome, preferential: f.preferentialIncome, slices: bracketFill(ordinary, taxYearParams(report.year).federal.brackets[report.filingStatus]) };
+}
+
+/**
+ * Overview › the brackets: each federal bracket's share of the year's ordinary taxable income
+ * and the tax on it (key: bracketKey), worked out from the Worksheet's taxable income less the
+ * part taxed at 0/15/20%. A bracket the income doesn't reach is left out.
+ */
+export function bracketDerived(report: TaxReport): DerivedFigure[] {
+  const y = report.year;
+  const b = bracketsOf(report);
+  const est = (key: EstimateKey, label: string, cents: number, op?: "−") => ln(label, c(cents), op, { source: "derived", link: { label, descriptor: { report: "tax-estimate", year: y, basis: "projected", key } } });
+  const base = [est("fed.taxableIncome", "Federal taxable income", b.taxable), est("fed.preferentialIncome", "Taxed at 0/15/20% instead", Math.min(Math.max(0, b.preferential), Math.max(0, b.taxable)), "−"), ln("Ordinary taxable income", c(b.ordinary), "=")];
+  return b.slices.flatMap((s, i): DerivedFigure[] => {
+    if (!s.incomeCents) return [];
+    const span = `${Math.round(s.rate * 100)}% bracket`;
+    return [
+      { figure: "bracket-income", key: bracketKey(y, i), describes: `${y}: ordinary taxable income in the ${span}`, value: c(s.incomeCents), lines: [...base, ln(`The part of it in the ${span}`, c(s.incomeCents), undefined, { source: "law", note: "Between the bracket's bounds for the year and filing status." })] },
+      { figure: "bracket-tax", key: bracketKey(y, i), describes: `${y}: tax on the income in the ${span}`, value: c(s.taxCents), lines: [ln(`Income in the ${span}`, c(s.incomeCents)), ln("× the bracket's rate", r(s.rate), "×", { source: "law" }), ln("Tax", c(s.taxCents), "=")] },
+    ];
+  });
 }
 
 /** The year's federal marginal rate on the next dollar of joint income (key: the year): what the Mortgage page links for the interest deduction. */

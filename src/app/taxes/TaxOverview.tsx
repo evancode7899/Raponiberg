@@ -6,10 +6,10 @@ import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/Sh
 import type { SafeHarbor } from "@/lib/tax/computeReturn";
 import type { TruePlan } from "@/lib/tax/buildTaxReport";
 import { estimateColumns, lineValue, type EstimateKey } from "@/lib/tax/estimateLines";
-import { NotFigure } from "@/components/ui/kit";
+import { NotFigure, table } from "@/components/ui/kit";
 import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
-import { taxesDerived } from "@/lib/book/derived/taxes";
+import { bracketKey, bracketsOf, taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { employerRow, showsNyW2 } from "@/lib/tax/incomeExtras";
 import { atFilingReturns, dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
@@ -92,6 +92,9 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
       <div className="grid gap-4 lg:grid-cols-2">
         <NextThousand r={r} />
         {r.isCurrentYear ? <Calendar r={r} /> : <FiledVerdict r={r} onGo={onGo} />}
+      </div>
+      <div className="grid gap-4">
+        <Brackets r={r} />
       </div>
 
       {r.isCurrentYear && <ForecastBasis r={r} onGo={onGo} />}
@@ -796,5 +799,60 @@ function ProjectedW2s({ r }: { r: TaxResponse }) {
           : []),
       ]}
     />
+  );
+}
+
+/**
+ * How the year's ordinary taxable income fills the federal brackets (derived/taxes.ts
+ * bracketDerived): a bar per bracket, filled as far as the income reaches, its income and its
+ * tax beside it. The bracket's rate and bounds are the law's, not figures of yours.
+ */
+function Brackets({ r }: { r: TaxResponse }) {
+  const derived = useMemo(() => taxesDerived(r), [r]);
+  const b = useMemo(() => bracketsOf(r), [r]);
+  const used = b.slices.filter((s) => s.incomeCents > 0);
+  if (!used.length) return null;
+  const top = used.length - 1;
+  const dollars = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
+  return (
+    <Card title={`How ${r.year}'s income fills the federal brackets`} subtitle={`Ordinary taxable income, projected for the year (${r.filingStatus === "MFJ" ? "married filing jointly" : "single"}); qualified dividends and long-term gains stack on top at 0/15/20%. Each bar is a bracket, filled as far as the income reaches.`}>
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[36rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Bracket</th>
+              <th className={table.th}>By law</th>
+              <th className={`${table.th} w-[30%]`} aria-label="How full" />
+              <th className={table.thR}>Income in it</th>
+              <th className={table.thR}>Tax on it</th>
+            </tr>
+          </thead>
+          <tbody>
+            {b.slices.map((s, i) => {
+              const width = s.to == null ? null : s.to - s.from;
+              const full = width ? Math.min(1, s.incomeCents / width) : s.incomeCents > 0 ? 1 : 0;
+              if (i > top + 1) return null;
+              return (
+                <tr key={s.rate} className={`${table.tr} ${s.incomeCents ? "" : "text-faint"}`}>
+                  <td className={`${table.td} num font-medium`}>
+                    <NotFigure why="the bracket's rate, by law">{Math.round(s.rate * 100)}%</NotFigure>
+                  </td>
+                  <td className={`${table.td} num text-xs text-muted`}>
+                    <NotFigure why="the bracket's bounds for the year and filing status, by law">{s.to == null ? `over ${dollars(s.from)}` : `${dollars(s.from)} – ${dollars(s.to)}`}</NotFigure>
+                  </td>
+                  <td className={table.td}>
+                    <span aria-hidden className="relative block h-2.5 bg-surface-3">
+                      <span className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${full * 100}%` }} />
+                    </span>
+                  </td>
+                  <td className={table.tdR}>{s.incomeCents ? <ProofValue proof={derivedTarget("taxes", derived, "bracket-income", bracketKey(r.year, i))}>{usd(s.incomeCents)}</ProofValue> : "—"}</td>
+                  <td className={table.tdR}>{s.incomeCents ? <ProofValue proof={derivedTarget("taxes", derived, "bracket-tax", bracketKey(r.year, i))}>{usd(s.taxCents)}</ProofValue> : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
