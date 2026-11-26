@@ -478,11 +478,21 @@ export function EmptyState({ title, children, action }: { title: ReactNode; chil
   );
 }
 
-export function Loading({ label = "Loading…" }: { label?: ReactNode }) {
+const SKELETON_ROWS = ["w-[92%]", "w-[78%]", "w-[86%]", "w-[64%]"];
+
+/**
+ * What's coming, drawn as its shape: a few still bars where the rows will be, and what it's
+ * waiting for in words. No spinner and no motion: the page fills in place, nothing jumps.
+ */
+export function Loading({ label = "Loading…", rows = 4 }: { label?: ReactNode; rows?: number }) {
   return (
-    <div className="flex items-center gap-2 py-6 text-sm text-muted" role="status">
-      <span className="h-3 w-3 animate-spin rounded-full border-2 border-line-strong border-t-accent" aria-hidden />
-      {label}
+    <div className="flex flex-col gap-2 py-3" role="status" aria-live="polite" data-skeleton="">
+      {SKELETON_ROWS.concat(SKELETON_ROWS)
+        .slice(0, rows)
+        .map((w, i) => (
+          <span key={i} aria-hidden className={`block h-3 rounded-sm bg-surface-3 ${w}`} />
+        ))}
+      <span className="text-2xs text-faint">{label}</span>
     </div>
   );
 }

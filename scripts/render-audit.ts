@@ -177,8 +177,8 @@ function glance(): string {
   const figures = document.querySelectorAll("[data-proof-key]");
   let text = 0;
   figures.forEach((f) => (text += (f.textContent ?? "").length));
-  // A figure still verifying, or a spinner (kit Loading: data not loaded yet), means the view isn't drawn yet.
-  const waiting = document.querySelectorAll('[data-clearance="verifying"], [role="status"] .animate-spin').length;
+  // A figure still verifying, or a skeleton (kit Loading: data not loaded yet), means the view isn't drawn yet.
+  const waiting = document.querySelectorAll('[data-clearance="verifying"], [data-skeleton]').length;
   return `${waiting}|${figures.length}|${text}|${document.body.textContent?.length ?? 0}|${document.querySelectorAll('[role="dialog"]').length}`;
 }
 
