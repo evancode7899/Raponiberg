@@ -1,7 +1,7 @@
 import { AUDIT_ACTOR_APP, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
-import { dataStamp, stampTag } from "@/lib/book/cache";
-import { loadCardPerksPage } from "@/lib/cardPerks/page";
+import { jsonBody } from "@/lib/book/cache";
+import { cachedCardPerksAnswer } from "@/lib/cardPerks/page";
 import { CARD_PERKS_KEY, normalizeCardPerks } from "@/lib/cardPerks/settings";
 import { prisma } from "@/lib/db";
 import { saveJsonSetting } from "@/lib/settingsStore";
@@ -17,8 +17,7 @@ export async function GET(request: NextRequest) {
   const y = Number(request.nextUrl.searchParams.get("year"));
   const year = Number.isInteger(y) && y >= 1990 && y <= 2200 ? y : undefined;
   // The stamp of the data read, taken before reading it: a change during the read makes it stale, never newer.
-  const stamp = dataStamp();
-  return NextResponse.json(await loadCardPerksPage(prisma, year), { headers: { "x-data-stamp": stampTag(stamp) } });
+  return jsonBody(await cachedCardPerksAnswer(prisma, year));
 }
 
 /** Body: the owner's choices (CardPerksSettings): products, point values, hidden cards. */

@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { blockersFor } from "../book/blockers.ts";
-import { cachedReport } from "../book/cache.ts";
+import { statSync } from "node:fs";
+import { cachedReport, dataStamp } from "../book/cache.ts";
 import type { Book } from "../book/load.ts";
 import { refs, type BlockerRef } from "../book/reports/blockerRef.ts";
 import { SKIPS_IDLE_STATEMENTS } from "../book/idleCards.ts";
@@ -8,7 +9,7 @@ import { readClosedAccounts } from "../ledger/closedAccounts.ts";
 import { loadJsonSetting } from "../settingsStore.ts";
 import { CARD_PRODUCTS } from "./catalog.ts";
 import { buildCardPerks } from "./report.ts";
-import { cardRewards, type CardDoc } from "./rewardsScan.ts";
+import { cardRewards, cardRewardsFile, type CardDoc } from "./rewardsScan.ts";
 import { CARD_PERKS_KEY, normalizeCardPerks, type CardPerksSettings } from "./settings.ts";
 import type { CardAccount, CardPerksReport, PerkRow, StatementRewards } from "./types.ts";
 
@@ -106,4 +107,33 @@ export async function loadCardPerksPage(db: Db, year?: number, book?: Book, opts
   }
   const report = buildCardPerks({ settings, accounts: inputs.accounts, rows: inputs.rows, householdRows: inputs.householdRows, snapshots, today: inputs.today, year });
   return { report: { ...report, blockers: inputs.blockers[String(report.year)] ?? [], reading: rewards.pending }, settings };
+}
+
+const g = globalThis as unknown as { __pfCardPerksAnswers?: Map<string, { body: string; stamp: string }> };
+
+/**
+ * The route's answer, kept per data stamp, year and rewards file: the page reads the cached
+ * Book's inputs, but parsing them, matching rewards and building the year cost 100+ ms a
+ * visit. Kept only once no statement is still being read (the page asks again until then),
+ * and a few at most (the years the owner flips between).
+ */
+export async function cachedCardPerksAnswer(db: Db, year?: number): Promise<{ body: string; stamp: string }> {
+  const stamp = dataStamp();
+  let rewards = "none";
+  try {
+    rewards = String(statSync(cardRewardsFile()).mtimeMs);
+  } catch {
+    // No rewards read yet.
+  }
+  const key = `${stamp}\n${year ?? "current"}\n${rewards}`;
+  const store = (g.__pfCardPerksAnswers ??= new Map());
+  const hit = store.get(key);
+  if (hit) return hit;
+  const page = await loadCardPerksPage(db, year);
+  const answer = { body: JSON.stringify(page), stamp };
+  if (page.report.reading === 0) {
+    store.set(key, answer);
+    while (store.size > 6) store.delete(store.keys().next().value!);
+  }
+  return answer;
 }
