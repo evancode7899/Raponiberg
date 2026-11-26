@@ -11,6 +11,8 @@ export const PREFERENCE_BOOTSTRAP_SCRIPT = `
       document.documentElement.setAttribute("data-theme", "terminal");
     }
     if (localStorage.getItem("pf-hide-amounts") === "1") document.documentElement.setAttribute("data-hide-amounts", "");
+    if (localStorage.getItem("pf-updown") === "blue") document.documentElement.setAttribute("data-updown", "blue");
+    if (localStorage.getItem("pf-motion") === "reduce") document.documentElement.setAttribute("data-motion", "reduce");
     var f = localStorage.getItem("pf-font-scale");
     if (f === "sm" || f === "md" || f === "lg") {
       document.documentElement.setAttribute("data-font-scale", f);

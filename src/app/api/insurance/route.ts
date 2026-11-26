@@ -4,7 +4,7 @@ import { dataStamp, stampTag } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { INSURANCE_NOTES_KEY, normalizeInsuranceNotes } from "@/lib/insurance/notes";
 import { loadInsurancePage } from "@/lib/insurance/page";
-import { saveJsonSetting } from "@/lib/settingsStore";
+import { loadJsonSetting, saveJsonSetting } from "@/lib/settingsStore";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +33,9 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected the policy notes" }, { status: 400 });
   }
+  const before = await loadJsonSetting(prisma, INSURANCE_NOTES_KEY, normalizeInsuranceNotes);
   const saved = await saveJsonSetting(prisma, INSURANCE_NOTES_KEY, body, normalizeInsuranceNotes);
   // Names stay in the setting; the audit trail only says how many policies have notes.
-  await logAuditEvent({ action: "insurance_notes_updated", actor: AUDIT_ACTOR_APP, payload: { policies: Object.keys(saved.policies).length } });
+  await logAuditEvent({ action: "insurance_notes_updated", actor: AUDIT_ACTOR_APP, before, after: saved, payload: { policies: Object.keys(saved.policies).length } });
   return NextResponse.json(saved);
 }

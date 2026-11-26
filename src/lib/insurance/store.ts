@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import type { InsuranceDocsFile } from "./types.ts";
+import { writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * data/insurance-documents.json: the life insurance documents found in the statements
@@ -29,9 +30,7 @@ export function readInsuranceDocs(file = insuranceDocsFile()): InsuranceDocsFile
 
 /** Writes the scan atomically (a reader never sees half a file). */
 export function writeInsuranceDocs(f: InsuranceDocsFile, file = insuranceDocsFile()): void {
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(f, null, 1));
-  renameSync(tmp, file);
+  writeJsonAtomic(file, f, { indent: 1, newline: false });
 }
 
 /** Content hashes of the insurance documents on file: the folder scan leaves them out of the statement import. */

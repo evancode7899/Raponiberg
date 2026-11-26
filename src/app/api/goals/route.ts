@@ -32,7 +32,8 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected { goals: [...] }" }, { status: 400 });
   }
+  const before = await loadJsonSetting(prisma, GOALS_KEY, normalizeGoals);
   const saved = await saveJsonSetting(prisma, GOALS_KEY, body, normalizeGoals);
-  await logAuditEvent({ action: "goals_updated", actor: AUDIT_ACTOR_APP, payload: { goals: saved.goals.length } });
+  await logAuditEvent({ action: "goals_updated", actor: AUDIT_ACTOR_APP, before, after: saved, payload: { goals: saved.goals.length } });
   return NextResponse.json(saved);
 }

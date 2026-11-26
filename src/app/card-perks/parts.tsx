@@ -9,6 +9,7 @@ import type { CardPerksPage } from "@/lib/cardPerks/page";
 import { useMemo } from "react";
 import { formatUsdCents, NA, usd0 } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
+import { dateLabel, monthLabel } from "@/lib/dates/display";
 
 export const fmtPoints = (n: number) => `${Math.round(n).toLocaleString("en-US")} pts`;
 export const fmtCpp = (cpp: number) => `${+cpp.toFixed(2)}¢`;
@@ -16,8 +17,8 @@ export const fmtCpp = (cpp: number) => `${+cpp.toFixed(2)}¢`;
 export const fmtRewards = (kind: RewardKind, n: number, whole = false) => (kind === "CASH" ? (whole ? usd0(n) : formatUsdCents(n)) : kind === "POINTS" ? fmtPoints(n) : NA);
 /** A rate: "4×" for points, "3%" for cash back. */
 export const fmtRate = (kind: RewardKind, rate: number) => (kind === "CASH" ? `${+rate.toFixed(2)}%` : `${+rate.toFixed(2)}×`);
-export const fmtDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-export const fmtMonth = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+export const fmtDate = (iso: string) => dateLabel(iso);
+export const fmtMonth = (iso: string) => monthLabel(iso);
 /** Dollars, saying $0 rather than a dash where the sentence needs a number. */
 export const money = (cents: number) => (cents === 0 ? "$0" : usd0(cents));
 export const pct = (r: number | null) => (r == null ? NA : `${Math.round(r * 100)}%`);

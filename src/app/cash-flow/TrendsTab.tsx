@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { crosshair, endLabel as lineEnd, useLegendHighlight, useZoom, ZoomReset } from "@/components/charts/interact";
 import { last12At, momentumCategories, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
 import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
@@ -10,7 +11,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, Brush, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { Ctx } from "./CashFlowClient";
 import { categoryGroup, KINDS, sliceStart, sum, trailing } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot, openMonthOnClick } from "./parts";
@@ -43,6 +44,8 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
     month: pick(m) / 100,
     avg3: t3[lo + i] == null ? null : t3[lo + i]! / 300,
     avg12: t12[lo + i] == null ? null : t12[lo + i]! / 1200,
+    // The same 12-month average a year before, drawn dashed under it to compare.
+    avg12Before: t12[lo + i - 12] == null ? null : t12[lo + i - 12]! / 1200,
   }));
 
   // Headline: the last twelve months against the twelve before.
@@ -88,6 +91,10 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
     const total = Math.max(1, sum([...GROUPS], (g) => Math.max(0, by[g]!)));
     return { label: m.label, ...Object.fromEntries(GROUPS.map((g) => [g, Math.max(0, by[g]!) / total])) };
   });
+
+  const smoothLit = useLegendHighlight();
+  const growthZoom = useZoom(growth.length, chart);
+  const growthLit = useLegendHighlight();
 
   return (
     <>
@@ -185,13 +192,15 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
               <YAxis {...ui.yAxis} tickFormatter={axisUsd} />
               <Tooltip {...ui.tooltip} formatter={(v, n) => [v == null ? NA : formatUsd(Math.round(Number(v))), String(n)]} />
-              <Legend {...ui.legend} />
-              <Bar dataKey="month" name="Month" fill={chart.neutral} fillOpacity={0.55} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
-              <Line dataKey="avg3" name="3-month average" stroke={chart.spending} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
-              <Line dataKey="avg12" name="12-month average" stroke={chart.lineBalance} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+              <Legend {...ui.legend} {...smoothLit.legend} />
+              <Bar dataKey="month" name="Month" fill={chart.neutral} fillOpacity={0.55} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} {...smoothLit.fade("month")} />
+              <Line dataKey="avg12Before" name="12-month average, a year before" stroke={chart.lineBalance} strokeWidth={1.25} strokeDasharray="4 3" dot={false} connectNulls={false} isAnimationActive={false} {...smoothLit.fade("avg12Before")} />
+              <Line dataKey="avg3" name="3-month average" stroke={chart.spending} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} {...smoothLit.fade("avg3")} />
+              <Line dataKey="avg12" name="12-month average" stroke={chart.lineBalance} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} {...smoothLit.fade("avg12")} />
             </ComposedChart>
           </RechartsResponsive>
         </div>
+
       </Card>
 
       <Card
@@ -270,18 +279,20 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         >
           <div className="h-[260px] w-full min-w-0">
             <RechartsResponsive>
-              <LineChart data={growth} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <LineChart data={growth} margin={{ top: 8, right: 64, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
                 <YAxis {...ui.yAxis} width={40} domain={["auto", "auto"]} />
-                <Tooltip {...ui.tooltip} formatter={(v, n) => [Math.round(Number(v)).toString(), String(n)]} />
-                <Legend {...ui.legend} />
+                <Tooltip {...ui.tooltip} cursor={crosshair(chart)} formatter={(v, n) => [Math.round(Number(v)).toString(), String(n)]} />
+                <Legend {...ui.legend} {...growthLit.legend} />
                 <ReferenceLine y={100} stroke={chart.axisLine} strokeDasharray="4 4" />
-                <Line dataKey="income" name="Income (12 mo)" stroke={chart.income} strokeWidth={2} dot={false} isAnimationActive={false} />
-                <Line dataKey="spending" name="Spending (12 mo)" stroke={chart.spending} strokeWidth={2} dot={false} isAnimationActive={false} />
+                <Line dataKey="income" name="Income (12 mo)" stroke={chart.income} strokeWidth={2} dot={false} isAnimationActive={false} label={lineEnd("Income", chart.income, growth, "income")} {...growthLit.fade("income")} />
+                <Line dataKey="spending" name="Spending (12 mo)" stroke={chart.spending} strokeWidth={2} dot={false} isAnimationActive={false} label={lineEnd("Spending", chart.spending, growth, "spending")} {...growthLit.fade("spending")} />
+                {growth.length > 6 && <Brush dataKey="label" {...growthZoom.brush} />}
               </LineChart>
             </RechartsResponsive>
           </div>
+          <ZoomReset zoom={growthZoom} />
         </Card>
         <Card title="Savings rate, trailing 12 months" subtitle="Income minus spending over the twelve months ending each month — steadier than any single month, which a bonus or a tax payment can swing.">
           <div className="h-[260px] w-full min-w-0">

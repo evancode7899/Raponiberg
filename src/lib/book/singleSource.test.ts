@@ -25,6 +25,8 @@ const ALLOWED: Record<string, string> = {
   "src/lib/review/rowDecisions.ts": "re-applies the owner's saved row-by-row review answers",
   "src/lib/review/answerRows.ts": "row editor: files the rows the owner answers, and undoes it",
   "src/lib/backup/backup.ts": "copies the database file (no figures)",
+  "src/lib/backup/drill.ts": "the restore drill: counts each table's rows in a backup copy and in the live database to tell they match (no figures)",
+  "src/lib/ingest/deletedDocuments.ts": "says whether a deleted document's stored file is on file again, before it is read again (no figures)",
   "src/lib/db.ts": "the database connection (sets SQLite PRAGMAs)",
   "src/app/api/transactions/route.ts": "row viewer: lists rows; totals come from the Book",
   "src/app/api/transfers/route.ts": "transfer review queue",

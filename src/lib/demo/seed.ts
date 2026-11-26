@@ -11,6 +11,7 @@ import { forecastSnapshotsFile } from "../forecast/snapshots.ts";
 import { priceIndexFile } from "../priceIndex.ts";
 import type { PriceIndexFile } from "../priceIndexMath.ts";
 import { medicalDocsFile } from "../medical/store.ts";
+import { insuranceDocsFile } from "../insurance/store.ts";
 import { commitDocument } from "../ingest/commitDocument.ts";
 import { refreshDerived } from "../ledger/maintenance.ts";
 import { writeScenarios } from "../scenarios/store.ts";
@@ -40,6 +41,7 @@ export async function seedDemo(db: PrismaClient, opts: DemoOptions = {}): Promis
   writeFileSync(hsaFilePath(), JSON.stringify(data.hsa, null, 2) + "\n");
   writeFileSync(medicalDocsFile(), JSON.stringify(data.medical.docs, null, 1) + "\n");
   writeFileSync(healthPlansFile(), JSON.stringify(data.medical.plans, null, 2) + "\n");
+  writeFileSync(insuranceDocsFile(), JSON.stringify(data.insurance, null, 1) + "\n");
   writeFileSync(forecastSnapshotsFile(), JSON.stringify({ version: 1, snapshots: data.forecastSnapshots }, null, 2) + "\n");
   writeFileSync(priceIndexFile(), JSON.stringify(demoPriceIndex(), null, 1) + "\n");
   writeScenarios(demoScenarios());

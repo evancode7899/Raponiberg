@@ -33,10 +33,11 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected an investment settings object" }, { status: 400 });
   }
+  const before = await loadJsonSetting(prisma, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings);
   const saved = await saveJsonSetting(prisma, INVESTMENT_SETTINGS_KEY, body, normalizeInvestmentSettings);
   await logAuditEvent({
     action: "investment_settings_updated",
-    actor: AUDIT_ACTOR_APP,
+    actor: AUDIT_ACTOR_APP, before, after: saved,
     payload: { securities: Object.keys(saved.securities).length, target: saved.target != null },
   });
   return NextResponse.json(saved);

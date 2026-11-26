@@ -12,12 +12,13 @@ import type { FundsState, Patch } from "./HomeBudgetClient";
 import { Row } from "./parts";
 import { fmtValue, RangeSlider, type SliderSpec } from "./RangeSlider";
 import { FUNDS_SHARE_SPEC, spec } from "./specs";
+import { dateLabel, monthLabel } from "@/lib/dates/display";
 
 const DEF = defaultHomeBudgetInputs();
 const pct = (v: number, d = 1) => `${(v * 100).toFixed(d).replace(/\.0+$/, "")}%`;
 const kUsd = (v: number) => fmtValue(v, "usd");
 const short = (v: number) => (Math.abs(v) >= 1_000_000 ? `$${+(v / 1_000_000).toFixed(2)}M` : `$${Math.round(v / 1000)}k`);
-const longDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const longDate = (iso: string) => dateLabel(iso);
 
 export const LABELS: Partial<Record<keyof HomeBudgetInputs, string>> = {
   annualHouseholdSalary: "Household salary",
@@ -465,7 +466,7 @@ export function GainsTaxControl({ ins, patch, funds, full }: { ins: HomeBudgetIn
 }
 
 /** "Mar 2028" from YYYY-MM. */
-const monthYear = (key: string) => new Date(`${key}-01T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+const monthYear = (key: string) => monthLabel(key);
 
 /** Twelve months after `key` (YYYY-MM): the first "later" a buy date jumps to. */
 const nextYearKey = (key: string) => `${Number(key.slice(0, 4)) + 1}${key.slice(4)}`;

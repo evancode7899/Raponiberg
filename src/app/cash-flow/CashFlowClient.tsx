@@ -9,22 +9,14 @@ import { useChartPalette, type ChartPalette } from "@/components/shell/chartPale
 import { btn, Drawer, EmptyState, ErrorNote, Loading, PageBody, scrollToTop, Segmented, selectCls, Tabs, usePersistentState, useTabParam } from "@/components/ui/kit";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BudgetTab } from "./BudgetTab";
 import { CategoryDrill, MerchantDrill, MonthDrill } from "./Drills";
-import { IncomeTab } from "./IncomeTab";
-import { MerchantsTab } from "./MerchantsTab";
 import { monthKey, proofTarget, sliceRange, type ProofOptions, type RangeId, type Report, type Slice } from "./model";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { OverviewTab } from "./OverviewTab";
-import { PatternsTab } from "./PatternsTab";
+import { BudgetTab, IncomeTab, MerchantsTab, PatternsTab, RecurringTab, SpendingTab, TrendsTab, UnusualTab, YoyTab } from "./lazyTabs";
 import { WithheldStrip } from "./parts";
-import { RecurringTab } from "./RecurringTab";
-import { SpendingTab } from "./SpendingTab";
-import { TrendsTab } from "./TrendsTab";
-import { UnusualTab } from "./UnusualTab";
-import { YoyTab } from "./YoyTab";
 
 const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", "recurring", "unusual", "budget", "income"] as const;
 export type CashTab = (typeof TABS)[number];

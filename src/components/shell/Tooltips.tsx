@@ -59,6 +59,16 @@ export function Tooltips() {
     };
     const key = (e: KeyboardEvent) => e.key === "Escape" && leave();
 
+    // A hint shown by pointing (cursor-help: a badge, an ⓘ) takes a Tab stop too, so the keyboard reaches what the mouse does.
+    const reach = () => {
+      for (const el of document.querySelectorAll<HTMLElement>(".cursor-help:not([tabindex]):not(a, button, input, select, textarea)")) if (el.closest("[title]")) el.tabIndex = 0;
+    };
+    let queued = 0;
+    const watch = new MutationObserver(() => {
+      if (!queued) queued = requestAnimationFrame(() => ((queued = 0), reach()));
+    });
+    reach();
+    watch.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("pointerover", over);
     document.addEventListener("pointerout", out);
     document.addEventListener("focusin", focus);
@@ -67,6 +77,8 @@ export function Tooltips() {
     document.addEventListener("scroll", leave, true);
     document.addEventListener("keydown", key);
     return () => {
+      watch.disconnect();
+      cancelAnimationFrame(queued);
       leave();
       document.removeEventListener("pointerover", over);
       document.removeEventListener("pointerout", out);

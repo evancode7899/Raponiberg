@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import { isIsoDate } from "../dates/isoDate.ts";
 import type { RowFingerprint } from "../review/rowDecisions.ts";
 import { asObject, asString, isNum } from "../settingsStore.ts";
 import { isExpenseKind, type ExpenseKind } from "./qualify.ts";
+import { appendJournal, writeTextAtomic } from "../jsonStore.ts";
 
 /**
  * The HSA receipts log: medical expenses paid out of pocket that the HSA could reimburse
@@ -128,19 +129,9 @@ export function readHsaFile(file = hsaFilePath()): HsaFile {
 }
 
 function write(file: string, data: HsaFile, journal: Record<string, unknown>) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), ...journal }) + "\n");
+  appendJournal(journalPath(file), journal);
   data.expenses.sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
-  const text = JSON.stringify(data, null, 2) + "\n";
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, text);
-  try {
-    renameSync(tmp, file);
-  } catch {
-    // OneDrive can briefly lock the file mid-sync (EPERM on rename); write in place instead.
-    writeFileSync(file, text);
-    rmSync(tmp, { force: true });
-  }
+  writeTextAtomic(file, JSON.stringify(data, null, 2) + "\n");
 }
 
 // ---------------------------------------------------------------------------- validation

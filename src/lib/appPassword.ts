@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "./dataDir.ts";
+import { writeTextAtomic } from "./jsonStore.ts";
 
 /**
  * The lock screen's password: a deterrent against someone casually opening the app on an
@@ -43,14 +44,5 @@ export function writeAppPassword(password: unknown, file = appPasswordFilePath()
   if (typeof password !== "string" || password.length === 0) throw new Error("Enter a password");
   if (password.length > MAX_LENGTH) throw new Error(`Keep it under ${MAX_LENGTH} characters`);
   const data: AppPasswordFile = { version: 1, password, savedAt: new Date().toISOString() };
-  mkdirSync(path.dirname(file), { recursive: true });
-  const text = JSON.stringify(data, null, 2) + "\n";
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, text);
-  try {
-    renameSync(tmp, file);
-  } catch {
-    writeFileSync(file, text);
-    rmSync(tmp, { force: true });
-  }
+  writeTextAtomic(file, JSON.stringify(data, null, 2) + "\n");
 }

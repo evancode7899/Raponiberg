@@ -1,3 +1,4 @@
+import { sum } from "../num.ts";
 import {
   FEDERAL_RATES,
   SAFE_HARBOR_RULES,
@@ -332,7 +333,6 @@ export type ReturnResult = {
   };
 };
 
-const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const total = (people: PersonIncome[], f: (p: PersonIncome) => number) => sum(people.map(f));
 const r = Math.round;
 const pos = (n: number) => Math.max(0, n);

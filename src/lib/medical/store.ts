@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import type { MedicalDocsFile } from "./types.ts";
+import { writeJsonAtomic } from "../jsonStore.ts";
 
 /**
  * data/medical-documents.json: the health coverage statements (EOBs) found in the
@@ -29,9 +30,7 @@ export function readMedicalDocs(file = medicalDocsFile()): MedicalDocsFile | nul
 
 /** Writes the scan atomically (a reader never sees half a file). */
 export function writeMedicalDocs(f: MedicalDocsFile, file = medicalDocsFile()): void {
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(f, null, 1));
-  renameSync(tmp, file);
+  writeJsonAtomic(file, f, { indent: 1, newline: false });
 }
 
 /** Content hashes of the health coverage documents on file: the folder scan leaves them out of the statement import. */

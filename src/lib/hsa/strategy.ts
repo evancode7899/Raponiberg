@@ -1,3 +1,4 @@
+import { usdText } from "../formatMoney.ts";
 /**
  * Paying a medical bill from the HSA today, or out of pocket and reimbursing it later: the
  * money math behind the Growth & strategy tab. Pure, so each piece is tested on its own.
@@ -80,7 +81,7 @@ export function hsaAfterTax(a: Pick<StrategyAssumptions, "rate" | "growthCovered
   return 1 + growth * (a.growthCovered ? 1 : 1 - a.exitRate);
 }
 
-const usd = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-US")}`;
+const usd = (cents: number) => usdText(cents, { whole: true });
 const pct = (v: number) => `${+(v * 100).toFixed(2)}%`;
 
 /** The two ways to pay a bill of `billCents` with the HSA maxed either way; waiting reimburses it in `planYear`. */

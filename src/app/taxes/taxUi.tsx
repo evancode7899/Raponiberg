@@ -11,6 +11,7 @@ import { useMemo, type ReactNode } from "react";
 import { taxesDerived } from "@/lib/book/derived/taxes";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import type { TaxReport, TaxReportBlocked } from "@/lib/tax/buildTaxReport";
+import { dateLabel } from "@/lib/dates/display";
 
 /** Whole dollars from cents; exact zero shows an em dash. */
 export const usd = (cents: number | null | undefined) => (cents == null ? NA : formatUsd(Math.round(cents / 100)));
@@ -157,8 +158,7 @@ export function EstimateValue({ year, k, cents, basis = "projected", filer, draw
 }
 
 export function formatDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y!, m! - 1, d!)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return dateLabel(iso);
 }
 
 /** Draws one of the year's Overview cells (lib/tax/overviewExtras) as its figure, by row and column. */

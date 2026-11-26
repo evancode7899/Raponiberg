@@ -22,7 +22,8 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected a tax profile object" }, { status: 400 });
   }
+  const before = await loadTaxProfile(prisma);
   const saved = await saveTaxProfile(prisma, body);
-  await logAuditEvent({ action: "tax_profile_updated", actor: AUDIT_ACTOR_APP, payload: { years: Object.keys(saved.years) } });
+  await logAuditEvent({ action: "tax_profile_updated", actor: AUDIT_ACTOR_APP, before, after: saved, payload: { years: Object.keys(saved.years) } });
   return NextResponse.json(saved);
 }

@@ -5,14 +5,19 @@ import { commandForPath, NAV_GROUPS, TERMINAL_COMMANDS, type TerminalCommand } f
 import { isUnlocked, LockScreen, setUnlocked } from "@/components/shell/LockScreen";
 import { TerminalCommandBar } from "@/components/shell/TerminalCommandBar";
 import { Tooltips } from "@/components/shell/Tooltips";
+import { KeyMap } from "@/components/shell/KeyMap";
+import { isSplitPane, SplitPane, useSplit } from "@/components/shell/SplitView";
+import { Tour } from "@/components/shell/Tour";
+import { DropAnywhere } from "@/components/shell/DropAnywhere";
 import { ask, FeedbackHost, notify } from "@/components/ui/Feedback";
 import { ProofProvider } from "@/components/ui/proof/ProofProvider";
 import { amountsHidden, applyTheme, idleLockMinutes, isAppTheme, PREFERENCE_CHANGED_EVENT, setAmountsHidden, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 const NAV_COLLAPSED_KEY = "pf-nav-collapsed";
+const DEFAULT_PASSWORD_SAID = "pf-default-password-said";
 const THEME_LABEL: Record<AppTheme, string> = { light: "Light", dark: "Dark", terminal: "Terminal" };
 
 /** Pages call this after changing the ledger so the sidebar badge refreshes (and no page draws from answers given before the change). */
@@ -126,7 +131,32 @@ export function AppShell({ children }: { children: ReactNode }) {
   const attention = useAttention(pathname);
   const page = commandForPath(pathname);
   const main = useScrollMemory(locked === false && !shuttingDown);
+  // A new page puts the keyboard at its start (the sidebar link or command line it came from is behind it), and a screen reader reads it.
+  const seenPage = useRef<string | null>(null);
+  useEffect(() => {
+    const was = seenPage.current;
+    seenPage.current = pathname;
+    if (was == null || was === pathname) return;
+    const el = main.current;
+    if (el && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
+  }, [pathname, main]);
   const [hidden, setHidden] = useState(false);
+  /** The lock screen still takes the default password: said once a session, after unlocking (never on the lock screen itself). */
+  const [defaultPassword, setDefaultPassword] = useState(false);
+  /** This page is the right-hand side of a split (the app framed by itself): drawn without the top bar and sidebar. */
+  const [pane, setPane] = useState(false);
+  const [split, setSplit] = useSplit();
+  const router = useRouter();
+  useEffect(() => {
+    if (locked !== false || !defaultPassword || pane) return;
+    try {
+      if (sessionStorage.getItem(DEFAULT_PASSWORD_SAID)) return;
+      sessionStorage.setItem(DEFAULT_PASSWORD_SAID, "1");
+    } catch {
+      /* storage unavailable: say it anyway */
+    }
+    notify("The app password is still the default one. Anyone at this computer can open Raponiberg with it.", { tone: "info", action: { label: "Set your own", run: () => router.push("/settings?tab=general") } });
+  }, [locked, defaultPassword, pane, router]);
   useEffect(() => {
     const read = () => setHidden(amountsHidden());
     read();
@@ -134,19 +164,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(PREFERENCE_CHANGED_EVENT, read);
   }, []);
   // The demo has no lock screen to lock to.
-  useIdleLock(locked === false && !demoExit && !shuttingDown, () => {
+  useIdleLock(locked === false && !demoExit && !shuttingDown && !pane, () => {
     setUnlocked(false);
     setLocked(true);
   });
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: whether the page is framed, and the unlock flag in sessionStorage, are the browser's to say
+    setPane(isSplitPane());
     const unlocked = isUnlocked();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- read after mount: the unlock flag lives in sessionStorage, which the server render can't see
     if (unlocked) setLocked(false);
     // The demo instance has no lock screen; the real app shows it unless this tab is unlocked.
     fetch("/api/app-password")
       .then((r) => r.json())
-      .then((j: { demo?: boolean; exitUrl?: string }) => {
+      .then((j: { demo?: boolean; exitUrl?: string; isDefault?: boolean }) => {
+        setDefaultPassword(j.isDefault === true);
         if (j.demo) {
           setDemoExit(j.exitUrl ?? "/");
           setLocked(false);
@@ -217,6 +249,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   if (locked === null) return <div className="h-dvh bg-canvas" />;
+  if (pane) {
+    // The frame shares this tab's unlock flag; a locked app shows nothing beside it.
+    if (locked) return <div className="flex h-dvh items-center justify-center bg-canvas text-xs text-muted">Locked</div>;
+    return (
+      <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-canvas text-[13px] text-fg">
+        <main id="main" ref={main} tabIndex={-1} className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden outline-none">
+          {page && pathname !== "/" && <PageHeader page={page} />}
+          <ProofProvider>{children}</ProofProvider>
+        </main>
+        <FeedbackHost />
+        <Tooltips />
+        <KeyMap />
+      </div>
+    );
+  }
   if (locked) {
     return (
       <>
@@ -351,13 +398,26 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <main id="main" ref={main} className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <main id="main" ref={main} tabIndex={-1} className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden outline-none">
           {page && pathname !== "/" && <PageHeader page={page} />}
           <ProofProvider>{children}</ProofProvider>
         </main>
+        {split && (
+          <SplitPane
+            href={split}
+            onClose={() => setSplit(null)}
+            onOpenHere={() => {
+              setSplit(null);
+              router.push(split);
+            }}
+          />
+        )}
       </div>
       <FeedbackHost />
       <Tooltips />
+      <KeyMap />
+      <Tour auto={!!demoExit} />
+      <DropAnywhere />
     </div>
   );
 }

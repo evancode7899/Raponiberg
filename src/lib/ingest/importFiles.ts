@@ -21,6 +21,13 @@ export type FileOutcome =
 
 export type ImportFile = { fileName: string; bytes: Buffer };
 
+/** How an import is getting on, file by file: read, then committed in order, then the ledger refreshed once. */
+export type ImportProgress =
+  | { step: "reading"; fileName: string; index: number; of: number }
+  | { step: "committing"; fileName: string }
+  | { step: "done"; fileName: string; ok: boolean; reason?: string }
+  | { step: "refreshing" };
+
 /**
  * Commit order: statements before summaries, then by period end (start breaks ties), so a
  * quarter-end statement lands after the monthly statements inside its quarter.
@@ -42,21 +49,28 @@ export function commitOrder(a: ParsedDocument, b: ParsedDocument): number {
 export async function importStatementFiles(
   db: PrismaClient,
   files: ImportFile[],
-  opts: { review?: boolean } = {},
+  opts: { review?: boolean; onProgress?: (p: ImportProgress) => void } = {},
 ): Promise<{ outcomes: FileOutcome[]; maintenance: MaintenanceReport | null }> {
   const outcomes: FileOutcome[] = [];
   const parsed: { file: ImportFile; text: string; doc: ParsedDocument }[] = [];
+  const say = opts.onProgress ?? (() => {});
+  // Each outcome is said as it's settled.
+  const settle = (o: FileOutcome) => {
+    outcomes.push(o);
+    say({ step: "done", fileName: o.fileName, ok: o.ok, ...(o.ok ? {} : { reason: o.reason }) });
+  };
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
+    say({ step: "reading", fileName: file.fileName, index, of: files.length });
     if (file.bytes.subarray(0, 5).toString("latin1") !== "%PDF-") {
-      outcomes.push({ fileName: file.fileName, ok: false, reason: "NOT_PDF", message: "Not a PDF file." });
+      settle({ fileName: file.fileName, ok: false, reason: "NOT_PDF", message: "Not a PDF file." });
       continue;
     }
     let text: string;
     try {
       text = await extractPdfText(file.bytes);
     } catch (e) {
-      outcomes.push({
+      settle({
         fileName: file.fileName,
         ok: false,
         reason: "UNREADABLE",
@@ -67,17 +81,17 @@ export async function importStatementFiles(
     const result = parseStatementText(text, householdPatterns());
     if (!result.ok && result.reason === "UNRECOGNIZED" && insuranceKind(text)) {
       // A policy packet or premium notice: the Insurance page reads it from the folder; it has no place in the ledger.
-      outcomes.push({ fileName: file.fileName, ok: false, reason: "INSURANCE", message: "A life insurance document: it is read on the Insurance page, not imported as a statement." });
+      settle({ fileName: file.fileName, ok: false, reason: "INSURANCE", message: "A life insurance document: it is read on the Insurance page, not imported as a statement." });
       continue;
     }
     if (!result.ok && result.reason === "UNRECOGNIZED" && (eobCoverage(text) || planDocument(text))) {
       // An insurer's Explanation of Benefits or a plan document: the Medical page reads it from the folder; it moves no money, so it has no place in the ledger.
       const what = eobCoverage(text) ? "A health insurance Explanation of Benefits" : "A health plan document";
-      outcomes.push({ fileName: file.fileName, ok: false, reason: "MEDICAL", message: `${what}: it is read on the Medical page, not imported as a statement.` });
+      settle({ fileName: file.fileName, ok: false, reason: "MEDICAL", message: `${what}: it is read on the Medical page, not imported as a statement.` });
       continue;
     }
     if (!result.ok) {
-      outcomes.push({
+      settle({
         fileName: file.fileName,
         ok: false,
         reason: result.reason,
@@ -94,6 +108,7 @@ export async function importStatementFiles(
   parsed.sort((a, b) => commitOrder(a.doc, b.doc));
 
   for (const { file, text, doc } of parsed) {
+    say({ step: "committing", fileName: file.fileName });
     await dropOutdatedReading(db, file.bytes, doc);
     const result = await commitDocument(db, {
       doc,
@@ -104,13 +119,14 @@ export async function importStatementFiles(
       autoCommit: !opts.review,
       skipRefresh: true,
     });
-    outcomes.push(
+    settle(
       result.ok
         ? { fileName: file.fileName, ok: true, result }
         : { fileName: file.fileName, ok: false, reason: result.reason, message: result.message },
     );
   }
 
+  if (outcomes.some((o) => o.ok)) say({ step: "refreshing" });
   const maintenance = outcomes.some((o) => o.ok) ? await refreshDerived(db) : null;
   return { outcomes, maintenance };
 }

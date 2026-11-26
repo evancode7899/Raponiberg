@@ -1,21 +1,24 @@
 "use client";
 
-import { lastDataStamp } from "@/components/ledger/useApi";
-import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
+import { apiSecretHeaders, lastDataStamp } from "@/components/ledger/useApi";
+import { PINS_CHANGED_EVENT } from "./context";
+import { notify } from "@/components/ui/Feedback";
+import { monthEndLine, proofText, type MonthEndNote } from "@/lib/book/proof/proofText";
+import { Badge, btn, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/components/ui/kit";
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
 import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
 import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue, Rederivation } from "@/lib/book/proof/types";
-import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { EM_DASH, formatPercentRatio, formatUsdFromCents, NA, usd0 } from "@/lib/formatMoney";
 import { QUALITY_TEXT } from "@/lib/ledger/qualityText";
 import type { Quality } from "@/lib/ledger/timeline";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProofEntry } from "./ProofProvider";
+import { dateLabel, monthLabel } from "@/lib/dates/display";
 
-const date = (iso: string) => formatDisplayDateFromYmd(iso);
+const date = (iso: string) => dateLabel(iso);
 const cents = (c: number) => formatUsdFromCents(Math.round(c));
-const month = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+const month = (iso: string) => monthLabel(iso);
 const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd0(v.cents) : cents(v.cents)) : "ratio" in v ? formatPercentRatio(v.ratio, 2) : v.text === EM_DASH ? NA : v.text);
 
 /**
@@ -24,8 +27,26 @@ const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd
  * chains), the statements, every check over it, and what's estimated. Links open the
  * linked proof on top; Back (or Escape) returns. Read only: findings are fixed on
  * Statements → Issues.
+ *
+ * Copy puts the proof on the clipboard as plain text (proofText.ts). Pin keeps it: the next
+ * figure opened shows beside it, so two proofs can be read side by side, and the command line
+ * finds it by name (data/pins.json, lib/pins.ts) until it's unpinned.
  */
-export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofEntry[]; onFollow: (d: ProofDescriptor) => void; onBack: () => void; onClose: () => void }) {
+export function ProofPanel({
+  stack,
+  pinned,
+  onPin,
+  onFollow,
+  onBack,
+  onClose,
+}: {
+  stack: ProofEntry[];
+  pinned: ProofEntry | null;
+  onPin: (e: ProofEntry | null) => void;
+  onFollow: (d: ProofDescriptor) => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
   const top = stack.at(-1);
   const prev = stack.at(-2);
   const p = top?.proof;
@@ -44,24 +65,96 @@ export function ProofPanel({ stack, onFollow, onBack, onClose }: { stack: ProofE
     return () => window.removeEventListener("keydown", onKey, true);
   }, [depth, onBack, onClose]);
 
+  const isPinned = !!top && !!pinned && pinned.id === top.id;
+  const beside = pinned && top && !isPinned ? pinned : null;
+  const copy = () => {
+    if (!p) return;
+    navigator.clipboard
+      .writeText(proofText(p, top?.clearance))
+      .then(() => notify("Copied the proof as text."))
+      .catch(() => notify("The browser didn't allow copying.", { tone: "bad" }));
+  };
+  const current = (
+    <>
+      {prev && (
+        <button type="button" onClick={onBack} className="mb-3 text-xs font-medium text-accent hover:underline">
+          ← Back{prev.proof ? ` to ${prev.proof.describes}` : ""}
+        </button>
+      )}
+      {top && <EntryView entry={top} bodyKey={stack.length} onFollow={onFollow} />}
+    </>
+  );
   return (
     <Drawer
       open={!!top}
       onClose={onClose}
       title={p ? p.describes : "How this figure adds up"}
       subtitle={p ? `From statements on file · data runs through ${date(p.through)}` : undefined}
-      width="46rem"
+      width={beside ? "96rem" : "46rem"}
     >
-      {prev && (
-        <button type="button" onClick={onBack} className="mb-3 text-xs font-medium text-accent hover:underline">
-          ← Back{prev.proof ? ` to ${prev.proof.describes}` : ""}
-        </button>
+      {p && (
+        <div className="mb-3 flex items-center gap-2" data-proof-actions="">
+          <button type="button" className={btn.secondary} onClick={copy} title="Copy this proof as plain text: the figure, how it adds up, its statements and checks">
+            Copy as text
+          </button>
+          <button type="button" className={btn.secondary} aria-pressed={isPinned} onClick={() => {
+              onPin(isPinned ? null : top);
+              void savePin(p, !isPinned);
+            }} title={isPinned ? "Stop keeping this proof" : "Keep this proof: the next figure you open shows beside it"}>
+            {isPinned ? "Unpin" : "Pin"}
+          </button>
+        </div>
       )}
-      {top?.clearance && <ClearanceNote c={top.clearance} quality={top.quality} />}
-      {top?.error && <ErrorNote>{top.error}</ErrorNote>}
-      {top?.target && !p && !top.error && <Loading label="Adding up the parts…" />}
-      {top?.target && p && <ProofBody key={stack.length} p={p} shownCents={top.target.shownCents} perMonths={top.target.perMonths} onFollow={onFollow} />}
+      {beside ? (
+        <div className="grid grid-cols-2 gap-6">
+          <section aria-label={`Pinned: ${beside.proof?.describes ?? "proof"}`} className="min-w-0 border-r border-line pr-6">
+            <div className="mb-3 flex items-baseline gap-2 text-xs">
+              <span className="font-mono font-bold text-accent">PINNED</span>
+              <span className="min-w-0 flex-1 truncate font-medium text-fg">{beside.proof?.describes}</span>
+              <button
+                type="button"
+                className="font-medium text-accent hover:underline"
+                onClick={() => {
+                  onPin(null);
+                  if (beside.proof) void savePin(beside.proof, false);
+                }}
+              >
+                Unpin
+              </button>
+            </div>
+            <EntryView entry={beside} bodyKey={-1} onFollow={onFollow} />
+          </section>
+          <section aria-label={`Open: ${p?.describes ?? "proof"}`} className="min-w-0">
+            {current}
+          </section>
+        </div>
+      ) : (
+        current
+      )}
     </Drawer>
+  );
+}
+
+/** Keeps a pinned figure for the command line (by what it describes), or takes it off. */
+async function savePin(p: Proof, on: boolean) {
+  const name = p.describes.slice(0, 80);
+  const res = on
+    ? await fetch("/api/pins", { method: "POST", headers: { ...apiSecretHeaders(), "content-type": "application/json" }, body: JSON.stringify({ kind: "figure", name, descriptor: p.descriptor }) }).catch(() => null)
+    : await fetch(`/api/pins?kind=figure&name=${encodeURIComponent(name)}`, { method: "DELETE", headers: apiSecretHeaders() }).catch(() => null);
+  if (res?.ok) window.dispatchEvent(new Event(PINS_CHANGED_EVENT));
+  else if (on) notify("Pinned here, but the command line couldn't keep it.", { tone: "bad" });
+}
+
+/** One proof: whether the page may show it, then the proof itself once it arrives. */
+function EntryView({ entry, bodyKey, onFollow }: { entry: ProofEntry; bodyKey: number; onFollow: (d: ProofDescriptor) => void }) {
+  const p = entry.proof;
+  return (
+    <>
+      {entry.clearance && <ClearanceNote c={entry.clearance} quality={entry.quality} />}
+      {entry.error && <ErrorNote>{entry.error}</ErrorNote>}
+      {entry.target && !p && !entry.error && <Loading label="Adding up the parts…" />}
+      {entry.target && p && <ProofBody key={bodyKey} p={p} shownCents={entry.target.shownCents} perMonths={entry.target.perMonths} onFollow={onFollow} />}
+    </>
   );
 }
 
@@ -122,7 +215,7 @@ function ClearanceNote({ c, quality }: { c: Clearance; quality?: Quality }) {
   );
 }
 
-function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?: string }; shownCents: number | null; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
+function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?: string; monthEnd?: MonthEndNote | null }; shownCents: number | null; perMonths?: number; onFollow: (d: ProofDescriptor) => void }) {
   const stamp = p.stamp;
   const self = selfOf(p);
   // A statement proof is its own statement: nothing else to list.
@@ -163,6 +256,11 @@ function ProofBody({ p, shownCents, perMonths, onFollow }: { p: Proof & { stamp?
           </div>
         )}
         {p.rederived && <Rederived r={p.rederived} figure={p.figure} onFollow={onFollow} />}
+        {p.monthEnd && (
+          <p data-proof-month-end={p.monthEnd.moved ? "moved" : "same"} className={`mt-2 text-xs ${p.monthEnd.moved && p.monthEnd.was ? "text-fg-2" : "text-muted"}`}>
+            {monthEndLine(p.monthEnd)}
+          </p>
+        )}
         {p.withheld && (
           <div className="mt-2">
             <Callout tone="warn" title="Part of this is withheld">

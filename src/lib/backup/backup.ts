@@ -275,8 +275,8 @@ function writeReadme(root: string) {
 }
 
 /** One backup at a time per machine (the server's timer and a script could overlap). */
-function lock(): () => void {
-  const file = path.join(os.tmpdir(), "pf-backup.lock");
+function lock(dir = os.tmpdir()): () => void {
+  const file = path.join(dir, "pf-backup.lock");
   try {
     if (existsSync(file) && Date.now() - statSync(file).mtimeMs > 10 * 60_000) rmSync(file, { force: true });
     closeSync(openSync(file, "wx"));
@@ -297,7 +297,8 @@ async function latestMigration(db: BackupDb): Promise<string | null> {
   }
 }
 
-export type BackupOptions = { reason?: string; root?: string; dataDir?: string; now?: Date };
+/** lockDir: where the one-at-a-time lock lives (the machine's temp folder; a test uses its own). */
+export type BackupOptions = { reason?: string; root?: string; dataDir?: string; now?: Date; lockDir?: string };
 
 /** Backs up the database and data/ into the backup folder (see the top of this file). */
 export async function createBackup(db: BackupDb, opts: BackupOptions = {}): Promise<BackupResult> {
@@ -308,7 +309,7 @@ export async function createBackup(db: BackupDb, opts: BackupOptions = {}): Prom
   const dataDir = opts.dataDir ?? defaultDataDir();
   const now = opts.now ?? new Date();
 
-  const unlock = lock();
+  const unlock = lock(opts.lockDir);
   const work = mkdtempSync(path.join(os.tmpdir(), "pf-backup-"));
   try {
     const dbCopy = path.join(work, "finance.db");

@@ -2,6 +2,7 @@ import { addDays } from "../dates/isoDate.ts";
 import { normPayee, sameRow, type RowFingerprint } from "../review/rowFingerprint.ts";
 import type { ReimbursementLink, ReimbursementLinksFile, ReimbursementSource, StubLineRef } from "../reimbursements/store.ts";
 import type { Book, BookAccount, BookRow, BookStub } from "./load.ts";
+import { usdText } from "../formatMoney.ts";
 
 /**
  * Reimbursement links (reimbursements/store.ts) found again in the Book, and what they do
@@ -79,7 +80,7 @@ export const stubReimbursementLines = (s: BookStub) => s.lines.filter((l) => l.k
 const sameStubLine = (a: StubLineRef, s: BookStub) =>
   s.employerKey === a.employerKey && s.payDate === a.payDate && stubReimbursementLines(s).some((l) => l.name === a.line && l.current === a.cents);
 
-const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const usd = (c: number) => usdText(c);
 
 /** What a source is in a few words ("Pat's pay stub 2026-03-13 · Parking Reimb"). */
 export function sourceLabel(src: ReimbursementSource, personName?: string | null): string {

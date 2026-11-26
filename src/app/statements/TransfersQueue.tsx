@@ -2,7 +2,9 @@
 
 import type { Api } from "@/components/ledger/useApi";
 import { notifyLedgerChanged } from "@/components/shell/AppShell";
+import { holdBack } from "@/components/ui/holdBack";
 import { btn, Card, ErrorNote, Loading, table } from "@/components/ui/kit";
+import { dateLabel } from "@/lib/dates/display";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatUsdFromCents } from "@/lib/formatMoney";
 import { useCallback, useEffect, useState } from "react";
@@ -25,7 +27,7 @@ function Legs({ legs, pick }: { legs: ReviewRow[]; pick?: { selected: Set<string
                 <input type="checkbox" checked={pick.selected.has(r.id)} onChange={() => pick.toggle(r.id)} aria-label="Pair this row" />
               </td>
             )}
-            <td className={`${table.td} num whitespace-nowrap text-muted`}>{r.date.slice(0, 10)}</td>
+            <td className={`${table.td} num whitespace-nowrap text-muted`}>{dateLabel(r.date)}</td>
             <td className={`${table.td} whitespace-nowrap text-fg-2`}>{r.account.name}</td>
             <td className={`${table.td} w-full max-w-0 truncate text-muted`} title={r.payee ?? undefined}>
               {r.payee}
@@ -64,47 +66,62 @@ export function TransfersQueue({ api, onCount }: { api: Api; onCount: (n: number
       .catch((e: Error) => setError(e.message));
   }, [api, version, onCount]);
 
+  // Rows decided a moment ago: off the lists while Undo is open, then sent (holdBack).
+  const [settled, setSettled] = useState<ReadonlySet<string>>(new Set());
   const act = useCallback(
-    async (action: "confirm" | "reject", transactionIds: string[]) => {
-      setBusy(true);
+    (action: "confirm" | "reject", transactionIds: string[]) => {
       setError(null);
-      try {
-        await api.call("/api/transfers", { method: "POST", json: { action, transactionIds } });
-        setPicked({});
-        notifyLedgerChanged();
-        setVersion((v) => v + 1);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed");
-      } finally {
-        setBusy(false);
-      }
+      holdBack({
+        say: action === "confirm" ? `Paired ${transactionIds.length} rows as one transfer` : "Marked: never pair these rows",
+        hide: () => {
+          // Ticks are kept by a group's place in the list, which moves when one leaves it.
+          setPicked({});
+          setSettled((s) => new Set([...s, ...transactionIds]));
+        },
+        show: () => setSettled((s) => new Set([...s].filter((id) => !transactionIds.includes(id)))),
+        commit: async ({ keepalive }) => {
+          setBusy(true);
+          try {
+            await api.call("/api/transfers", { method: "POST", json: { action, transactionIds }, keepalive });
+          } finally {
+            setBusy(false);
+          }
+        },
+        done: () => {
+          setPicked({});
+          notifyLedgerChanged();
+          setVersion((v) => v + 1);
+        },
+      });
     },
     [api],
   );
 
   if (!data) return error ? <ErrorNote>{error}</ErrorNote> : <Loading label="Matching transfers…" />;
+  const open = (legs: ReviewRow[]) => !legs.some((l) => settled.has(l.id));
+  const view = { ...data, suggestions: data.suggestions.filter((x) => open(x.legs)), ambiguous: data.ambiguous.filter(open) };
 
   return (
     <div className="flex flex-col gap-4">
       {error && <ErrorNote>{error}</ErrorNote>}
       <Card
-        title={`Almost-matching transfers (${data.suggestions.length})`}
+        title={`Almost-matching transfers (${view.suggestions.length})`}
         subtitle="Same money, amounts a little apart — usually a fee or a residual taken in transit. Confirm to pair them; the difference shows as a transfer cost instead of disappearing. On a rent bill it counts as housing: the landlord changed the bill without listing the change."
       >
-        {data.suggestions.length === 0 ? (
+        {view.suggestions.length === 0 ? (
           <p className="text-sm text-muted">None — nothing to confirm.</p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {data.suggestions.map((s, i) => (
+            {view.suggestions.map((s, i) => (
               <li key={i} className="rounded-md border border-line p-3">
                 <Legs legs={s.legs} />
                 <div className="mt-2 flex items-center gap-2">
                   <span className="num text-xs text-muted">Difference {formatUsdFromCents(s.differenceCents)}</span>
                   <span className="flex-1" />
-                  <button type="button" className={btn.secondary} disabled={busy} onClick={() => void act("reject", s.legs.map((l) => l.id))}>
+                  <button type="button" className={btn.secondary} disabled={busy} onClick={() => act("reject", s.legs.map((l) => l.id))}>
                     Not related
                   </button>
-                  <button type="button" className={btn.primary} disabled={busy} onClick={() => void act("confirm", s.legs.map((l) => l.id))}>
+                  <button type="button" className={btn.primary} disabled={busy} onClick={() => act("confirm", s.legs.map((l) => l.id))}>
                     Same transfer
                   </button>
                 </div>
@@ -114,12 +131,12 @@ export function TransfersQueue({ api, onCount }: { api: Api; onCount: (n: number
         )}
       </Card>
 
-      <Card title={`Could pair more than one way (${data.ambiguous.length})`} subtitle="The matcher never guesses between equally good candidates. Tick the rows that belong together and pair them.">
-        {data.ambiguous.length === 0 ? (
+      <Card title={`Could pair more than one way (${view.ambiguous.length})`} subtitle="The matcher never guesses between equally good candidates. Tick the rows that belong together and pair them.">
+        {view.ambiguous.length === 0 ? (
           <p className="text-sm text-muted">None.</p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {data.ambiguous.map((g, i) => {
+            {view.ambiguous.map((g, i) => {
               const sel = picked[i] ?? new Set<string>();
               return (
                 <li key={i} className="rounded-md border border-line p-3">
@@ -136,7 +153,7 @@ export function TransfersQueue({ api, onCount }: { api: Api; onCount: (n: number
                     }}
                   />
                   <div className="mt-2 flex justify-end">
-                    <button type="button" className={btn.primary} disabled={busy || sel.size < 2} onClick={() => void act("confirm", [...sel])}>
+                    <button type="button" className={btn.primary} disabled={busy || sel.size < 2} onClick={() => act("confirm", [...sel])}>
                       Pair selected
                     </button>
                   </div>

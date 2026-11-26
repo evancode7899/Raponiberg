@@ -73,7 +73,11 @@ function readUrl(): Filters {
   };
 }
 
+/** How far the render audit pages through (data-audit-more): every row to here is drawn and held, as before Show all could reach 20,000. */
+const AUDIT_ROWS = 2000;
+
 /** Statements › Transactions (was its own page, /transactions): every row, searchable, with its filters in the URL. */
+
 export function TransactionsPanel({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
   const [f, setF] = useState<Filters | null>(null);
@@ -320,9 +324,14 @@ export function TransactionsPanel({ requiresApiSecret }: { requiresApiSecret: bo
                 <div className="mt-3 flex items-center gap-3 text-xs text-muted">
                   Showing the {newestFirst ? "latest" : "first"} {data.transactions.length.toLocaleString()} of {data.total.count.toLocaleString()}
                   {newestFirst ? "" : " in this order"}.
-                  {limit < 2000 && (
-                    <button type="button" className={btn.secondary} onClick={() => setLimit(Math.min(2000, limit * 3))} data-audit-more="">
+                  {limit < 20_000 && (
+                    <button type="button" className={btn.secondary} onClick={() => setLimit(Math.min(20_000, limit * 3))} {...(limit < AUDIT_ROWS ? { "data-audit-more": "" } : {})}>
                       Show more
+                    </button>
+                  )}
+                  {limit < 20_000 && (
+                    <button type="button" className={btn.ghost} onClick={() => setLimit(20_000)}>
+                      Show all
                     </button>
                   )}
                 </div>

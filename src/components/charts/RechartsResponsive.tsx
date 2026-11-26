@@ -1,9 +1,9 @@
 "use client";
 
-import {
-  ResponsiveContainer,
-  type ResponsiveContainerProps,
-} from "recharts";
+import { Drawer, table as tableCls } from "@/components/ui/kit";
+import { chartTable } from "@/lib/chartSeries";
+import { Children, Fragment, isValidElement, useState, type ReactElement, type ReactNode } from "react";
+import { Area, Bar, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, type ResponsiveContainerProps } from "recharts";
 
 /**
  * Recharts throttles ResizeObserver when debounce > 0 (`leading: false`), which can
@@ -19,22 +19,113 @@ const DEFAULT_DEBOUNCE_MS = 0;
  */
 const INITIAL_DIMENSION = { width: 1, height: 1 };
 
+type Props = Record<string, unknown>;
+const SERIES = new Set<unknown>([Line, Bar, Area, Scatter]);
+
+/** Every element under the chart, through arrays and fragments. */
+function flatten(children: ReactNode): ReactElement<Props>[] {
+  return Children.toArray(children).flatMap((c) => (isValidElement<Props>(c) ? (c.type === Fragment ? flatten(c.props.children as ReactNode) : [c]) : []));
+}
+
+/**
+ * What the chart draws, read off the chart itself: its points, the x axis's key, each series
+ * by its name, and the chart's own tooltip formatter, so the table says each value exactly as
+ * hovering the chart does. Null for a chart it can't read (no points, no series).
+ */
+export function readChart(chart: ReactNode): { rows: Record<string, unknown>[]; x: string; series: { key: string; name: string }[]; format: (v: number, name: string, row: Record<string, unknown>) => string } | null {
+  if (!isValidElement<Props>(chart)) return null;
+  const rows = chart.props.data;
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const parts = flatten(chart.props.children as ReactNode);
+  const xKey = parts.find((p) => p.type === XAxis)?.props.dataKey;
+  const series = parts
+    .filter((p) => SERIES.has(p.type) && typeof p.props.dataKey === "string" && p.props.legendType !== "none")
+    .map((p) => ({ key: p.props.dataKey as string, name: typeof p.props.name === "string" ? p.props.name : (p.props.dataKey as string) }))
+    .filter((s, i, all) => all.findIndex((o) => o.key === s.key) === i);
+  if (!series.length || typeof xKey !== "string") return null;
+  const formatter = parts.find((p) => p.type === Tooltip)?.props.formatter as ((v: unknown, n: unknown, item: unknown, i: number, payload: unknown) => unknown) | undefined;
+  const format = (v: number, name: string, row: Record<string, unknown>) => {
+    if (!formatter) return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    try {
+      const out = formatter(v, name, { payload: row, value: v, name, dataKey: name }, 0, []);
+      return String(Array.isArray(out) ? out[0] : out);
+    } catch {
+      return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    }
+  };
+  return { rows: rows as Record<string, unknown>[], x: xKey, series, format };
+}
+
+/**
+ * The container every chart sits in. Besides sizing it, it offers the chart as a table: a
+ * small Table button (by pointer or Tab) opens the same points, each value in the chart's own
+ * tooltip words, for a screen reader or anyone who'd rather read numbers. The table is drawn
+ * only when asked for, as the tooltip is.
+ */
 export function RechartsResponsive({
   debounce = DEFAULT_DEBOUNCE_MS,
   children,
+  tableTitle = "The chart as a table",
   ...rest
 }: Omit<ResponsiveContainerProps, "width" | "height"> & {
   debounce?: number;
+  /** What the chart shows, as the table's title. */
+  tableTitle?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const readable = readChart(children as ReactNode) != null;
   return (
-    <ResponsiveContainer
-      width="100%"
-      height="100%"
-      debounce={debounce}
-      initialDimension={INITIAL_DIMENSION}
-      {...rest}
-    >
-      {children}
-    </ResponsiveContainer>
+    <div className="group/chart relative h-full w-full">
+      <ResponsiveContainer width="100%" height="100%" debounce={debounce} initialDimension={INITIAL_DIMENSION} {...rest}>
+        {children}
+      </ResponsiveContainer>
+      {readable && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Show the chart's points as a table"
+          className="absolute right-0 top-0 z-[2] rounded border border-line bg-surface px-1.5 py-0.5 text-2xs text-muted opacity-0 outline-none hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-focus group-hover/chart:opacity-100"
+        >
+          Table
+        </button>
+      )}
+      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function ChartTableDrawer({ chart, title, onClose }: { chart: ReactNode; title: string; onClose: () => void }) {
+  const read = readChart(chart);
+  if (!read) return null;
+  const t = chartTable(read.rows, read.x, read.series, () => "");
+  const body = read.rows.map((r, i) => [t.body[i]![0]!, ...read.series.map((s) => (typeof r[s.key] === "number" ? read.format(r[s.key] as number, s.name, r) : ""))]);
+  return (
+    <Drawer open onClose={onClose} title={title} subtitle="Each value as the chart's tooltip says it." width="40rem">
+      <div className={tableCls.wrap}>
+        <table className={tableCls.table}>
+          <caption className="sr-only">{title}</caption>
+          <thead className={tableCls.head}>
+            <tr>
+              {t.head.map((h, i) => (
+                <th key={i} scope="col" className={i ? tableCls.thR : tableCls.th}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((r, i) => (
+              <tr key={i} className={tableCls.tr}>
+                {r.map((c, j) => (
+                  <td key={j} className={j ? tableCls.tdR : tableCls.td}>
+                    {c}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Drawer>
   );
 }

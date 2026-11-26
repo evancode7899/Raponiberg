@@ -1,3 +1,4 @@
+import { MAX_DATABASE_UPLOAD_BYTES, bytesLabel, requestTooLarge } from "@/lib/uploadLimits";
 import { AUDIT_ACTOR_SETTINGS, logAuditEvent } from "@/lib/audit/logAuditEvent";
 import { proofSweep } from "@/lib/book/proof/sweepProcess";
 import { dataDir } from "@/lib/dataDir";
@@ -68,6 +69,9 @@ export async function POST(req: Request) {
     );
   }
 
+  if (requestTooLarge(req.headers.get("content-length"), MAX_DATABASE_UPLOAD_BYTES)) {
+    return NextResponse.json({ error: `A database file may be up to ${bytesLabel(MAX_DATABASE_UPLOAD_BYTES)}.` }, { status: 413 });
+  }
   let form: FormData;
   try {
     form = await req.formData();

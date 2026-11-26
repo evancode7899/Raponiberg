@@ -41,7 +41,8 @@ const ledgerOf = (book: Book): Ledger => ({
 
 export async function loadInsurancePage(db: Db, book?: Book, opts: { /** False: the folder as last scanned (the Dashboard never scans it). */ scan?: boolean } = {}): Promise<InsurancePage> {
   const [docs, notes, ledger] = await Promise.all([
-    opts.scan === false ? readInsuranceDocs() : refreshInsuranceDocs(db),
+    // No folder to scan (the demo, or before one is set): the last scan, as it was.
+    opts.scan === false ? readInsuranceDocs() : refreshInsuranceDocs(db).then((d) => d ?? readInsuranceDocs()),
     loadJsonSetting(db, INSURANCE_NOTES_KEY, normalizeInsuranceNotes),
     // The sweep passes its own Book; the route reads the cached one (through JSON either way).
     (book ? Promise.resolve(JSON.stringify(ledgerOf(book))) : cachedReport(db, "insurance-rows", ledgerOf)).then((t) => JSON.parse(t) as Ledger),

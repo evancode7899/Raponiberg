@@ -23,7 +23,8 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected a budget object" }, { status: 400 });
   }
+  const before = await loadBudget(prisma);
   const saved = await saveBudget(prisma, body);
-  await logAuditEvent({ action: "spending_budget_updated", actor: AUDIT_ACTOR_APP, payload: { categories: Object.keys(saved.targets).length } });
+  await logAuditEvent({ action: "spending_budget_updated", actor: AUDIT_ACTOR_APP, before, after: saved, payload: { categories: Object.keys(saved.targets).length } });
   return NextResponse.json(saved);
 }

@@ -5,6 +5,8 @@ import { integrityDerived } from "@/lib/book/derived/integrity";
 import { derivedTarget } from "@/lib/book/derived/types";
 import { Badge, btn, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { SweepProblemKind, SweepReport } from "@/lib/book/proof/sweep";
+import { trustOf } from "@/lib/book/proof/trust";
+import { Restatements } from "./Restatements";
 import type { AcceptedFinding, Finding, RetiredException, StaleException } from "@/lib/book/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { useEffect, useMemo, useState } from "react";
@@ -60,6 +62,7 @@ function SweepCard({ api }: { api: Api }) {
           <p className={`mb-2 text-sm ${bad ? "font-semibold text-neg" : "text-pos"}`}>
             {bad ? `${bad} figure${bad === 1 ? "" : "s"} disagree with their proofs: a bug in the app, not your documents. Each one is withheld on its page.` : "Every figure ties to its proof, to the cent."}
           </p>
+          <TrustList r={r} />
           <div className={table.wrap}>
             <table className={`${table.table} min-w-[32rem]`}>
               <thead className={table.head}>
@@ -100,6 +103,47 @@ function SweepCard({ api }: { api: Api }) {
         </>
       )}
     </Card>
+  );
+}
+
+/**
+ * How far to trust the figures (lib/book/proof/trust.ts): the sweep's own counts side by side,
+ * and the account whose latest statement is oldest. Counts and a date only, nothing worked out here.
+ */
+function TrustList({ r }: { r: SweepReport }) {
+  const t = trustOf(r);
+  const n = (x: number) => (x ? x.toLocaleString() : "—");
+  const rows: [string, string, string][] = [
+    ["Cleared", `${n(t.cleared)} of ${n(t.figures)}`, "Figures the sweep held to their proofs and let the pages show"],
+    ["Re-derived independently", n(t.rederived), "Worked out again by a second route that shares nothing with the page's report"],
+    ["Can't be re-derived", n(t.declared), "A typed input or a model's draw: each proof says why"],
+    ["Re-derived by their proof, from the Book", n(t.ownRoute), "Worked out again by the figure's own kind of proof from the statements, not read off the page's report"],
+    ["Own route only", n(t.unchecked), "Re-run on the page's own report or model only: no second route yet (as in the table below)"],
+    ["Rest on an estimate", n(t.estimates), "Proven from other sources than a statement's printed lines; the proof lists the estimate"],
+    ["Rest on an accepted exception", n(t.accepted), "A finding you accepted, listed below with your note"],
+    ["Flagged", n(t.problems), "Withheld on their pages until fixed"],
+  ];
+  return (
+    <section aria-label="How far to trust the figures" data-trust="" className="mb-3 rounded-md border border-line p-3">
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-accent">How far to trust the figures</h3>
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+        {rows.map(([label, value, help]) => (
+          <div key={label} className="flex items-baseline justify-between gap-3" title={help}>
+            <dt className="text-muted">{label}</dt>
+            <dd className="num text-fg">{value}</dd>
+          </div>
+        ))}
+        {t.sources && (
+          <div className="flex items-baseline justify-between gap-3 sm:col-span-2" title="Of the accounts the cleared figures read statements from, the one whose latest statement ends earliest">
+            <dt className="text-muted">Oldest source</dt>
+            <dd className="min-w-0 truncate text-right text-fg">
+              {t.sources.oldest ? `${t.sources.oldest.account}, through ${formatDisplayDateFromYmd(t.sources.oldest.through)}` : "—"}
+              <span className="text-muted"> · {n(t.sources.statements)} statements from {n(t.sources.accounts)} accounts</span>
+            </dd>
+          </div>
+        )}
+      </dl>
+    </section>
   );
 }
 
@@ -182,6 +226,7 @@ export function ChecksPanel({ r, onRetire, api }: { r: BookReport; onRetire: OnR
   return (
     <>
       <SweepCard api={api} />
+      <Restatements api={api} />
       <Card title="Checks" subtitle="What stands behind every figure. Counts are items checked (statements, stubs, transfers, years…).">
         <div className={table.wrap}>
           <table className={`${table.table} min-w-[48rem]`}>

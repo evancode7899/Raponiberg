@@ -2,7 +2,8 @@
 
 import { apiSecretHeaders, lastDataStamp, onDataStamp } from "@/components/ledger/useApi";
 import type { Proof, ProofDescriptor } from "@/lib/book/proof";
-import { sweepAnswer, type Clearance, type SweepState } from "@/lib/book/proof/clearance";
+import type { MonthEndNote } from "@/lib/book/proof/proofText";
+import { clearanceOf, sweepAnswer, type Clearance, type SweepState } from "@/lib/book/proof/clearance";
 import type { Quality } from "@/lib/ledger/timeline";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { DataStampContext, ProofContext, SweepContext, type ProofTarget } from "./context";
@@ -10,7 +11,13 @@ import { ProofPanel } from "./ProofPanel";
 import { SweepNotice } from "./SweepNotice";
 
 /** One proof in the drawer: what was asked for (none for a figure with no proof), why the page shows or withholds it, and the answer once it arrives. */
-export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string }) | null; error: string | null };
+export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string; monthEnd?: MonthEndNote | null }) | null; error: string | null; id?: number };
+
+/** Opens a figure's proof from anywhere in the app: dispatch it on window with { descriptor, shownCents } (openProof below). */
+export const OPEN_PROOF_EVENT = "pf:open-proof";
+export function openProof(t: ProofTarget): void {
+  window.dispatchEvent(new CustomEvent<ProofTarget>(OPEN_PROOF_EVENT, { detail: t }));
+}
 
 /** How long to wait before asking again while the sweep runs, and after it failed. */
 const PENDING_POLL_MS = 2000;
@@ -49,6 +56,8 @@ export function ProofProvider({ children }: { children: ReactNode }) {
   const open = useCallback((t: ProofTarget | null, clearance?: Clearance, quality?: Quality) => load(t, clearance ?? null, "open", quality), [load]);
   const follow = useCallback((descriptor: ProofDescriptor) => load({ descriptor, shownCents: null }, null, "push"), [load]);
   const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
+  // A proof kept beside whichever one is open next, to compare two figures side by side.
+  const [pinned, setPinned] = useState<ProofEntry | null>(null);
   const close = useCallback(() => setStack([]), []);
 
   // The data the page's figures were built from: the stamp of the latest answer useApi got.
@@ -67,16 +76,23 @@ export function ProofProvider({ children }: { children: ReactNode }) {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let staleTries = 0;
+    // One read at a time: the page's data often arrives before the first answer does, and a
+    // second read then would fetch the whole sweep again (megabytes on a big Book). What lands
+    // is checked against the page's data below, and read again if it's stale.
+    let inflight = false;
     const later = (ms: number) => {
       clearTimeout(timer);
       timer = setTimeout(read, ms);
     };
     const read = () => {
       clearTimeout(timer);
+      if (inflight) return;
+      inflight = true;
       fetch("/api/proof/sweep", { headers: apiSecretHeaders() })
         .then(async (r) => sweepAnswer(r.status, await r.json().catch(() => null)))
         .catch((e: Error) => sweepAnswer(null, null, e.message))
         .then((next) => {
+          inflight = false;
           if (!live) return;
           // The same verdicts keep the same state: a new one redraws every figure on the page.
           setSweep((old) => (old.stamp === next.stamp && old.status === next.status && old.status === "ready" ? old : next));
@@ -100,13 +116,27 @@ export function ProofProvider({ children }: { children: ReactNode }) {
     if (pageStamp && pageStamp !== sweep.stamp) readRef.current();
   }, [pageStamp, sweep.stamp]);
 
+  // A figure opened from outside a page (the command line, a pin): its proof, cleared as any figure is.
+  const sweepRef = useRef(sweep);
+  useEffect(() => {
+    sweepRef.current = sweep;
+  }, [sweep]);
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const t = (e as CustomEvent<ProofTarget>).detail;
+      if (t?.descriptor) open(t, t.shownCents == null ? undefined : clearanceOf(t, sweepRef.current, stampRef.current));
+    };
+    window.addEventListener(OPEN_PROOF_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_PROOF_EVENT, onOpen);
+  }, [open]);
+
   return (
     <ProofContext.Provider value={open}>
       <SweepContext.Provider value={sweep}>
         <DataStampContext.Provider value={pageStamp}>
           <SweepNotice />
           {children}
-          <ProofPanel stack={stack} onFollow={follow} onBack={back} onClose={close} />
+          <ProofPanel stack={stack} pinned={pinned} onPin={setPinned} onFollow={follow} onBack={back} onClose={close} />
         </DataStampContext.Provider>
       </SweepContext.Provider>
     </ProofContext.Provider>

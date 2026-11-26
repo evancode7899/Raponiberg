@@ -1,9 +1,10 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
 import { ensureCategories } from "../classifier/persist.ts";
 import { normPayee, sameRow, type RowFingerprint } from "./rowFingerprint.ts";
+import { appendJournal, writeTextAtomic } from "../jsonStore.ts";
 
 export { normPayee, sameRow, type RowFingerprint };
 
@@ -59,18 +60,8 @@ export function readRowDecisions(file = rowDecisionsFilePath()): RowDecisionsFil
 }
 
 function write(file: string, data: RowDecisionsFile, journal: Record<string, unknown>) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  appendFileSync(journalPath(file), JSON.stringify({ at: new Date().toISOString(), ...journal }) + "\n");
-  const tmp = `${file}.tmp`;
-  const text = JSON.stringify(data, null, 2) + "\n";
-  writeFileSync(tmp, text);
-  try {
-    renameSync(tmp, file);
-  } catch {
-    // OneDrive can briefly lock the file mid-sync (EPERM on rename); write in place instead.
-    writeFileSync(file, text);
-    rmSync(tmp, { force: true });
-  }
+  appendJournal(journalPath(file), journal);
+  writeTextAtomic(file, JSON.stringify(data, null, 2) + "\n");
 }
 
 /**

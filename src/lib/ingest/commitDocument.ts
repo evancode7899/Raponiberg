@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient, StatementType } from "@prisma/client";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { chainedAuditRow, withAuditChain, writeAuditHead } from "../audit/chainStore.ts";
+import type { ChainLink } from "../audit/chain.ts";
 import { classificationData, ensureCategories, loadClassifyContext } from "../classifier/persist.ts";
 import { classifyTransaction } from "../classifier/classify.ts";
 import { dataDir } from "../dataDir.ts";
@@ -121,7 +123,9 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
 
   let result: Extract<CommitResult, { ok: true }>;
   try {
-    result = await db.$transaction(
+    // The import's own audit event is written in its transaction, so it holds the chain until it commits.
+    let link: ChainLink | null = null;
+    result = await withAuditChain(() => db.$transaction(
       async (tx) => {
         const outcomes: SectionOutcome[] = [];
         const toWrite: { section: ParsedAccountSection; outcome: SectionOutcome }[] = [];
@@ -308,11 +312,10 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
 
         const stubs = await storeDocumentFacts(tx, document.id, doc);
 
-        await tx.auditEvent.create({
-          data: {
-            action: "statement_imported",
-            actor: "app",
-            payloadJson: {
+        const audit = await chainedAuditRow(tx, {
+          action: "statement_imported",
+          actor: "app",
+          payload: {
               documentId: document.id,
               institution: doc.institution,
               kind: doc.kind,
@@ -328,8 +331,9 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
               })),
               payStubsCreated: stubs.created,
             },
-          },
         });
+        await tx.auditEvent.create({ data: audit.data });
+        link = audit.link;
 
         return {
           ok: true as const,
@@ -342,7 +346,8 @@ export async function commitDocument(db: PrismaClient, input: CommitInput): Prom
         };
       },
       { timeout: 120_000, maxWait: 30_000 },
-    );
+    ));
+    if (link) writeAuditHead(link);
   } catch (e) {
     if (e instanceof OverlapError) return { ok: false, reason: "OVERLAP", message: e.message };
     throw e;

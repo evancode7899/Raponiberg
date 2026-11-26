@@ -1,6 +1,17 @@
 "use client";
 
-import { suggest, type Suggestion } from "@/components/shell/commandSearch";
+import { apiSecretHeaders } from "@/components/ledger/useApi";
+import { figuresOfSummary } from "@/components/shell/commandFigures";
+import { suggest, type CommandContext, type Suggestion } from "@/components/shell/commandSearch";
+import { notify } from "@/components/ui/Feedback";
+import { openProof } from "@/components/ui/proof/ProofProvider";
+import { openSplit } from "@/components/shell/SplitView";
+import { TOUR_EVENT } from "@/components/shell/Tour";
+import { PINS_CHANGED_EVENT, type ProofTarget } from "@/components/ui/proof/context";
+import { localToday } from "@/lib/dates/isoDate";
+import type { CommandIndex } from "@/lib/commandIndex";
+import type { HomeSummary } from "@/lib/dashboard/homeSummary";
+import type { Pin } from "@/lib/pins";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -16,10 +27,48 @@ function readHistory(): string[] {
   }
 }
 
+const getJson = <T,>(url: string): Promise<T | null> =>
+  fetch(url, { headers: apiSecretHeaders() })
+    .then((r) => (r.ok ? (r.json() as Promise<T>) : null))
+    .catch(() => null);
+
+/** Everything the line can find besides pages, read when it is first used and again after a change to the data or the pins. */
+async function loadContext(): Promise<CommandContext> {
+  const [index, pins, summary] = await Promise.all([getJson<CommandIndex>("/api/command/index"), getJson<{ pins: Pin[] }>("/api/pins"), getJson<HomeSummary>("/api/dashboard/home-summary")]);
+  const all = pins?.pins ?? [];
+  return {
+    accounts: index?.accounts ?? [],
+    merchants: index?.merchants ?? [],
+    views: all.flatMap((p) => (p.kind === "view" ? [{ name: p.name, href: p.href }] : [])),
+    pinned: all.flatMap((p) => (p.kind === "figure" ? [{ name: p.name, descriptor: p.descriptor }] : [])),
+    figures: summary ? figuresOfSummary(summary) : [],
+    today: localToday(),
+  };
+}
+
+export { PINS_CHANGED_EVENT };
+
+/** Saves the page as it is now (its tab and filters) under a name, with Undo. */
+async function saveView(name: string) {
+  const href = window.location.pathname + window.location.search;
+  const res = await fetch("/api/pins", { method: "POST", headers: { ...apiSecretHeaders(), "content-type": "application/json" }, body: JSON.stringify({ kind: "view", name, href }) });
+  const j = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) return notify(j.error ?? "Couldn't save the view.", { tone: "bad" });
+  window.dispatchEvent(new Event(PINS_CHANGED_EVENT));
+  notify(`Saved this view as “${name}”: type its name in the command line to come back.`, {
+    undo: async () => {
+      await fetch(`/api/pins?kind=view&name=${encodeURIComponent(name)}`, { method: "DELETE", headers: apiSecretHeaders() });
+      window.dispatchEvent(new Event(PINS_CHANGED_EVENT));
+    },
+  });
+}
+
 /**
- * The command line: a code (NW, CF, TXN), a code and words (CF TRENDS, TAX W-4, CF DINING), or
- * words to find in the statements. Ctrl+K (⌘K) or "/" focuses it from anywhere; ↑ on an empty
- * line brings back earlier commands; Esc leaves it.
+ * The command line: a code (NW, CF, TXN), a code and words (CF TRENDS, TAX W-4, CF DINING), a
+ * period (CF 24M DINING, FIND 2025 PHARMACY), an account, a merchant or a figure by name (a
+ * figure opens its proof), a saved view or pin, SAVE name, or words to find in the statements.
+ * Ctrl+K (⌘K) or "/" focuses it from anywhere; ↑ on an empty line brings back earlier
+ * commands; Esc leaves it.
  */
 export function TerminalCommandBar({ onShutdown }: { onShutdown?: () => void }) {
   const router = useRouter();
@@ -32,7 +81,22 @@ export function TerminalCommandBar({ onShutdown }: { onShutdown?: () => void }) 
   /** Which earlier command the line shows: -1 is what's being typed. */
   const [past, setPast] = useState(-1);
 
-  const matches = useMemo(() => suggest(line), [line]);
+  const [ctx, setCtx] = useState<CommandContext>({});
+  const loaded = useRef(false);
+  const load = useCallback(() => {
+    loaded.current = true;
+    void loadContext().then(setCtx);
+  }, []);
+  useEffect(() => {
+    const again = () => loaded.current && load();
+    window.addEventListener(PINS_CHANGED_EVENT, again);
+    window.addEventListener("pf:ledger-changed", again);
+    return () => {
+      window.removeEventListener(PINS_CHANGED_EVENT, again);
+      window.removeEventListener("pf:ledger-changed", again);
+    };
+  }, [load]);
+  const matches = useMemo(() => suggest(line, 14, ctx), [line, ctx]);
   const showList = open && matches.length > 0;
 
   const go = useCallback(
@@ -50,6 +114,10 @@ export function TerminalCommandBar({ onShutdown }: { onShutdown?: () => void }) 
       setOpen(false);
       inputRef.current?.blur();
       if (s.action === "shutdown") return onShutdown?.();
+      if (s.action === "tour") return void window.dispatchEvent(new Event(TOUR_EVENT));
+      if (s.action === "save-view") return void saveView(s.arg ?? "");
+      if (s.action === "split") return openSplit(s.href || null);
+      if (s.proof) return openProof(s.proof as ProofTarget);
       router.push(s.href);
     },
     [line, router, onShutdown],
@@ -117,13 +185,16 @@ export function TerminalCommandBar({ onShutdown }: { onShutdown?: () => void }) 
           aria-activedescendant={showList ? `${listId}-${highlight}` : undefined}
           role="combobox"
           className="min-w-0 flex-1 bg-transparent font-mono text-[13px] text-fg outline-none placeholder:text-faint"
-          placeholder="NW · CF TRENDS · TAX W-4 · or words to find"
+          placeholder="NW · CF 24M DINING · an account, merchant or figure · SAVE name"
           onChange={(e) => {
             setLine(e.target.value);
             setPast(-1);
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            setOpen(true);
+            if (!loaded.current) load();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();

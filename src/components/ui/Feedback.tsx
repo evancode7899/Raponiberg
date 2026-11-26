@@ -4,8 +4,8 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { btn } from "./kit";
 
 type Ask = { title: string; body?: ReactNode; confirm?: string; danger?: boolean };
-type Toast = { id: number; text: string; tone: "good" | "bad" | "info"; undo?: () => void | Promise<void> };
-type ToastOptions = { tone?: Toast["tone"]; undo?: Toast["undo"] };
+type Toast = { id: number; text: string; tone: "good" | "bad" | "info"; undo?: () => void | Promise<void>; action?: { label: string; run: () => void } };
+type ToastOptions = { tone?: Toast["tone"]; undo?: Toast["undo"]; action?: Toast["action"] };
 type Host = { confirm: (ask: Ask) => Promise<boolean>; toast: (text: string, opts?: ToastOptions) => void };
 
 const STAYS_MS = 6000;
@@ -33,8 +33,8 @@ export function FeedbackHost() {
   const toast = useCallback<Host["toast"]>(
     (text, opts = {}) => {
       const id = ++seq.current;
-      setToasts((t) => [...t.slice(-3), { id, text, tone: opts.tone ?? "good", undo: opts.undo }]);
-      setTimeout(() => drop(id), opts.undo ? STAYS_MS * 2 : STAYS_MS);
+      setToasts((t) => [...t.slice(-3), { id, text, tone: opts.tone ?? "good", undo: opts.undo, action: opts.action }]);
+      setTimeout(() => drop(id), opts.undo || opts.action ? STAYS_MS * 2 : STAYS_MS);
     },
     [drop],
   );
@@ -68,6 +68,18 @@ export function FeedbackHost() {
                 }}
               >
                 Undo
+              </button>
+            )}
+            {t.action && (
+              <button
+                type="button"
+                className={btn.link}
+                onClick={() => {
+                  drop(t.id);
+                  t.action!.run();
+                }}
+              >
+                {t.action.label}
               </button>
             )}
             <button type="button" className="text-muted hover:text-fg" aria-label="Dismiss" onClick={() => drop(t.id)}>
