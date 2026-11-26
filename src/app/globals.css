@@ -31,11 +31,63 @@
   --color-focus: var(--focus);
   --font-ui: var(--ui-font);
   --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+
+  /*
+   * The type scale: five steps, every size on screen is one of them (typeScale.test.ts holds
+   * pages to it). Tailwind's own names land on a step: base is body, xl is a title, and
+   * 2xl–5xl are the one display size of headline figures.
+   */
+  --text-2xs: var(--step-meta);
+  --text-2xs--line-height: 1.35;
+  --text-xs: var(--step-small);
+  --text-xs--line-height: 1.45;
+  --text-sm: var(--step-body);
+  --text-sm--line-height: 1.5;
+  --text-base: var(--step-body);
+  --text-base--line-height: 1.5;
+  --text-lg: var(--step-title);
+  --text-lg--line-height: 1.35;
+  --text-xl: var(--step-title);
+  --text-xl--line-height: 1.35;
+  --text-2xl: var(--step-display);
+  --text-2xl--line-height: 1.15;
+  --text-3xl: var(--step-display);
+  --text-3xl--line-height: 1.15;
+  --text-4xl: var(--step-display);
+  --text-4xl--line-height: 1.15;
+  --text-5xl: var(--step-display);
+  --text-5xl--line-height: 1.15;
 }
 
 html {
   --app-font-scale: 1.0625;
   font-size: calc(16px * var(--app-font-scale));
+  /* The five steps, in pixels at the default font size; Settings › Appearance scales them all. */
+  --type-scale: calc(var(--app-font-scale) / 1.0625);
+  --step-meta: calc(11px * var(--type-scale));
+  --step-small: calc(12px * var(--type-scale));
+  --step-body: calc(13px * var(--type-scale));
+  --step-title: calc(17px * var(--type-scale));
+  --step-display: calc(26px * var(--type-scale));
+}
+
+/*
+ * Sizes pages wrote in pixels before the scale: each is drawn at its step (unlayered, so it
+ * wins over the utility). New code uses text-2xs / text-xs / text-sm / text-lg / text-3xl.
+ */
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\],
+.text-\[11\.5px\] {
+  font-size: var(--step-meta);
+}
+.text-\[12px\],
+.text-\[12\.5px\] {
+  font-size: var(--step-small);
+}
+.text-\[13px\],
+.text-\[15px\] {
+  font-size: var(--step-body);
 }
 html[data-font-scale="sm"] {
   --app-font-scale: 0.9296875;
@@ -256,6 +308,40 @@ html[data-theme="terminal"] [data-panel-head]:focus-within [data-panel-words] {
 }
 html[data-theme="terminal"] [data-panel-body] {
   padding: 7px 8px 8px;
+}
+/* In light and dark a long explanation is two lines; the head's hover or focus lays the rest over what's below, the same way. */
+html:not([data-theme="terminal"]) [data-panel-sub] {
+  position: relative;
+}
+html:not([data-theme="terminal"]) [data-panel-words] {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+html:not([data-theme="terminal"]) [data-panel-head]:hover [data-panel-words][data-clamped],
+html:not([data-theme="terminal"]) [data-panel-head]:focus-within [data-panel-words][data-clamped] {
+  position: absolute;
+  inset: -3px auto auto -6px;
+  z-index: 30;
+  width: max-content;
+  max-width: min(100% + 12px, 48rem);
+  padding: 2px 6px 4px;
+  -webkit-line-clamp: unset;
+  background: var(--surface-2);
+  border-radius: 4px;
+  outline: 1px solid var(--line-strong);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
+}
+/* A card with nothing in it is its title alone: no empty box below. */
+[data-panel-body]:empty {
+  display: none;
+}
+section:has(> [data-panel-body]:empty) > [data-panel-head] {
+  padding-bottom: 0.75rem;
+}
+html[data-theme="terminal"] section:has(> [data-panel-body]:empty) > [data-panel-head] {
+  padding-bottom: 2px;
 }
 /* Labels are amber: table heads, small capitals, chart axes and legends. Sentences aren't. */
 html[data-theme="terminal"] :is(th, dt, .uppercase.text-muted, thead) {

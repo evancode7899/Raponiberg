@@ -15,14 +15,15 @@ import type { ClaimView, LimitUse, Slice, YearView } from "@/lib/medical/report"
 import type { Coverage, EobBalance } from "@/lib/medical/types";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
+import { dateLabel, monthName } from "@/lib/dates/display";
 
 const URL = "/api/medical";
 const TABS = ["overview", "claims", "providers", "plan", "documents"] as const;
 const COVERAGE_LABEL: Record<Coverage, string> = { MEDICAL: "Medical", DENTAL: "Dental", VISION: "Vision" };
 
 const money = (cents: number) => (cents === 0 ? "$0.00" : formatUsdFromCents(cents));
-const shortDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-const monthLabel = (m: string) => new Date(`${m}-15T12:00:00`).toLocaleDateString("en-US", { month: "short" });
+const shortDate = (d: string) => dateLabel(d);
+const monthLabel = (m: string) => monthName(m);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const PER_LABEL: Record<string, string> = { CALENDAR_YEAR: "a calendar year", PLAN_YEAR: "a plan year", "12_MONTHS": "every 12 months", "24_MONTHS": "every 24 months", "36_MONTHS": "every 36 months", "60_MONTHS": "every 60 months", "3_YEARS": "every 3 years", "10_YEARS": "every 10 years", LIFETIME: "a lifetime" };
 const SHORT_KIND: Record<EobBalance["kind"], string> = { DEDUCTIBLE: "deductible", OUT_OF_POCKET: "out-of-pocket", ANNUAL_MAXIMUM: "annual maximum" };

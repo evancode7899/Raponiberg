@@ -11,13 +11,14 @@ import { icsFile } from "@/lib/dates/ics";
 import { usd0 } from "@/lib/formatMoney";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { weekdayLabel } from "@/lib/dates/display";
 
 const CALENDAR_URL = "/api/calendar";
 
 const KIND: Record<CalendarKind, string> = { save: "Save", tax: "Tax", file: "Return" };
 
 const daysUntil = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
-const longDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" });
+const longDate = (d: string) => weekdayLabel(d);
 const inDays = (n: number) => (n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`);
 
 export function CalendarClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {

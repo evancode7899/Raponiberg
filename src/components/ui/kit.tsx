@@ -270,13 +270,43 @@ export function Card({
         <header data-panel-head="" className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-3.5">
           <div className="min-w-0 flex-1">
             {title && <h2 className="text-[13px] font-semibold text-fg">{title}</h2>}
-            {subtitle && <div data-panel-sub="" className="mt-0.5 max-w-3xl text-xs leading-relaxed text-muted"><div data-panel-words="">{subtitle}</div></div>}
+            {subtitle && <CardSubtitle>{subtitle}</CardSubtitle>}
           </div>
           {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
       {children !== undefined && <div data-panel-body="" className={`min-w-0 px-4 pb-4 ${title || actions ? "pt-3" : "pt-4"} ${bodyClassName}`}>{children}</div>}
     </section>
+  );
+}
+
+/**
+ * A card's explanation: two lines (one in Terminal), the rest laid over the page when the
+ * card's head is pointed at or focused (globals.css). When it is cut short it takes a Tab
+ * stop, so the keyboard can open it too.
+ */
+function CardSubtitle({ children }: { children: ReactNode }) {
+  const words = useRef<HTMLDivElement>(null);
+  const [clamped, setClamped] = useState(false);
+  useEffect(() => {
+    const el = words.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const check = () => {
+      // Open (laid over the page) it isn't clamped: only a closed one is measured.
+      if (el.matches(":hover, :focus-within") || el.closest("[data-panel-head]")?.matches(":hover, :focus-within")) return;
+      setClamped(el.scrollHeight > el.clientHeight + 1);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div data-panel-sub="" className="mt-0.5 max-w-3xl text-xs leading-relaxed text-muted">
+      <div ref={words} data-panel-words="" {...(clamped ? { "data-clamped": "", tabIndex: 0 } : {})} className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-focus">
+        {children}
+      </div>
+    </div>
   );
 }
 

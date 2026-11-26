@@ -5,17 +5,17 @@ import { Badge, Callout, Drawer, ErrorNote, Loading, table, type Tone } from "@/
 import type { Proof, ProofBlock, ProofDescriptor, ProofLink } from "@/lib/book/proof";
 import type { Clearance, WithheldReason } from "@/lib/book/proof/clearance";
 import type { ChainLine, ProofCheck, ProofFact, ProofGroup, ProofRow, ProofStatement, ProofValue, Rederivation } from "@/lib/book/proof/types";
-import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { EM_DASH, formatPercentRatio, formatUsdFromCents, NA, usd0 } from "@/lib/formatMoney";
 import { QUALITY_TEXT } from "@/lib/ledger/qualityText";
 import type { Quality } from "@/lib/ledger/timeline";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProofEntry } from "./ProofProvider";
+import { dateLabel, monthLabel } from "@/lib/dates/display";
 
-const date = (iso: string) => formatDisplayDateFromYmd(iso);
+const date = (iso: string) => dateLabel(iso);
 const cents = (c: number) => formatUsdFromCents(Math.round(c));
-const month = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+const month = (iso: string) => monthLabel(iso);
 const valueText = (v: ProofValue, whole = false) => ("cents" in v ? (whole ? usd0(v.cents) : cents(v.cents)) : "ratio" in v ? formatPercentRatio(v.ratio, 2) : v.text === EM_DASH ? NA : v.text);
 
 /**
