@@ -3,7 +3,7 @@
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { useChanged } from "@/components/useChanged";
-import { ErrorNote, Loading, PageBody, Tabs, useTabParam } from "@/components/ui/kit";
+import { ErrorNote, Loading, PageBody, Tabs, useTabParam, btn } from "@/components/ui/kit";
 import type { ForecastData } from "@/lib/forecast/load";
 import type { FinancialProfileSettings } from "@/lib/profile/settings";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -65,6 +65,13 @@ export function AnnualClient({ requiresApiSecret }: { requiresApiSecret: boolean
       <PageBody>
         <ApiSecretField api={api} />
         {error && <ErrorNote>{error}</ErrorNote>}
+        {data && tab === "statement" && (
+          <div className="flex justify-end" data-no-print="">
+            <button type="button" className={btn.secondary} title="The statement, every year on it, on paper or as a PDF: the browser's own print (choose Save as PDF there)" onClick={printYearBook}>
+              Print year book
+            </button>
+          </div>
+        )}
         {!api.ready ? null : !data ? (
           loading && <Loading label="Running every check…" />
         ) : tab === "statement" ? (
@@ -77,4 +84,20 @@ export function AnnualClient({ requiresApiSecret }: { requiresApiSecret: boolean
       </PageBody>
     </>
   );
+}
+
+/**
+ * Prints the statement with the browser's own print (no PDF viewer of the app's): in the light
+ * theme, which reads on paper, then back to the theme in use once the print dialog closes.
+ */
+function printYearBook() {
+  const root = document.documentElement;
+  const was = root.getAttribute("data-theme");
+  root.setAttribute("data-theme", "light");
+  const restore = () => {
+    if (was) root.setAttribute("data-theme", was);
+    window.removeEventListener("afterprint", restore);
+  };
+  window.addEventListener("afterprint", restore);
+  window.print();
 }
