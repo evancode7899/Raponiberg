@@ -6,6 +6,19 @@ export const APP_KEYS: Shortcut[] = [
   ["Enter", "Go to the highlighted function"],
   ["↑ ↓", "Move through command-bar matches"],
   ["Esc", "Close the command list, a side panel or the menu"],
+  ["G  then a letter", "Go to a page (the letters are listed below)"],
+  ["[  ]", "Previous and next tab of the page"],
+  ["?", "Show the keys for where you are"],
+  ["SAVE name", "In the command bar: keep this page, tab and filters as a view; type its name to come back"],
+];
+
+/** Every table's keys (components/shell/KeyMap.tsx, components/ui/DataTable.tsx). */
+export const TABLE_KEYS: Shortcut[] = [
+  ["J  K", "Next and previous row (from anywhere on the page: the first row in view)"],
+  ["Enter", "Open the row"],
+  ["C", "Copy the table as CSV, each amount as the page shows it"],
+  ["X  or  Space", "Pick the row, in a table with bulk changes"],
+  ["Home  End", "First and last row"],
 ];
 
 export const DASHBOARD_KEYS: Shortcut[] = [

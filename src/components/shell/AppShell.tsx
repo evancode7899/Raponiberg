@@ -5,6 +5,7 @@ import { commandForPath, NAV_GROUPS, TERMINAL_COMMANDS, type TerminalCommand } f
 import { isUnlocked, LockScreen, setUnlocked } from "@/components/shell/LockScreen";
 import { TerminalCommandBar } from "@/components/shell/TerminalCommandBar";
 import { Tooltips } from "@/components/shell/Tooltips";
+import { KeyMap } from "@/components/shell/KeyMap";
 import { ask, FeedbackHost, notify } from "@/components/ui/Feedback";
 import { ProofProvider } from "@/components/ui/proof/ProofProvider";
 import { amountsHidden, applyTheme, idleLockMinutes, isAppTheme, PREFERENCE_CHANGED_EVENT, setAmountsHidden, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
@@ -358,6 +359,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
       <FeedbackHost />
       <Tooltips />
+      <KeyMap />
     </div>
   );
 }
