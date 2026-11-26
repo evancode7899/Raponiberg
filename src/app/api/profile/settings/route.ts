@@ -25,10 +25,11 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected a settings object" }, { status: 400 });
   }
+  const before = await loadProfileSettings(prisma);
   const saved = await saveProfileSettings(prisma, body);
   await logAuditEvent({
     action: "financial_profile_updated",
-    actor: AUDIT_ACTOR_APP,
+    actor: AUDIT_ACTOR_APP, before, after: saved,
     payload: { oneOffs: Object.keys(saved.oneOffs).length, nonRecurringCategories: saved.nonRecurringCategories.length },
   });
   return NextResponse.json(saved);

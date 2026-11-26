@@ -4,7 +4,7 @@ import { dataStamp, stampTag } from "@/lib/book/cache";
 import { loadCardPerksPage } from "@/lib/cardPerks/page";
 import { CARD_PERKS_KEY, normalizeCardPerks } from "@/lib/cardPerks/settings";
 import { prisma } from "@/lib/db";
-import { saveJsonSetting } from "@/lib/settingsStore";
+import { loadJsonSetting, saveJsonSetting } from "@/lib/settingsStore";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,8 @@ export async function PUT(request: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Expected the card perks settings" }, { status: 400 });
   }
+  const before = await loadJsonSetting(prisma, CARD_PERKS_KEY, normalizeCardPerks);
   const saved = await saveJsonSetting(prisma, CARD_PERKS_KEY, body, normalizeCardPerks);
-  await logAuditEvent({ action: "card_perks_updated", actor: AUDIT_ACTOR_APP, payload: { cards: Object.keys(saved.cards).length, pointValues: Object.keys(saved.pointValues).length } });
+  await logAuditEvent({ action: "card_perks_updated", actor: AUDIT_ACTOR_APP, before, after: saved, payload: { cards: Object.keys(saved.cards).length, pointValues: Object.keys(saved.pointValues).length } });
   return NextResponse.json(saved);
 }
