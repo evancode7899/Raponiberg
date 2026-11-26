@@ -11,6 +11,7 @@ import type { CardPerksSettings } from "@/lib/cardPerks/settings";
 import { usd0 } from "@/lib/formatMoney";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { useCallback, useEffect, useState } from "react";
+import { catalogAge } from "@/lib/cardPerks/catalogAge";
 import { CreditsTab } from "./CreditsTab";
 import { OptimizerTab } from "./OptimizerTab";
 import { OverviewTab } from "./OverviewTab";
@@ -84,6 +85,7 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
       <PageBody>
         <ApiSecretField api={api} />
         {error && <ErrorNote>{error}</ErrorNote>}
+        {r && <CatalogAge today={r.today} />}
         {!r || !t || !d ? (
           api.ready && !error && <Loading label="Matching card credits and rewards to the statements…" />
         ) : !r.cards.length && !r.hidden.length ? (
@@ -133,5 +135,17 @@ export function CardPerksClient({ requiresApiSecret }: { requiresApiSecret: bool
         )}
       </PageBody>
     </>
+  );
+}
+
+/** When the card terms (fees, credits, earn rates) were read: issuers change them, and the app fetches nothing to check. */
+function CatalogAge({ today }: { today: string }) {
+  const a = catalogAge(today);
+  const when = new Date(`${a.asOf}-01T12:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  return (
+    <p className={`text-xs ${a.stale ? "text-warn" : "text-muted"}`}>
+      Card terms (annual fees, credits, earn rates) are as of {when}
+      {a.months > 0 ? `, ${a.months} month${a.months === 1 ? "" : "s"} ago` : ""}. {a.stale ? "Issuers change them: check each card's own terms before acting on these." : "Issuers change them from time to time; the app checks nothing online."}
+    </p>
   );
 }
