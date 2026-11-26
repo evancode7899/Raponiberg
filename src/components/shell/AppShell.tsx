@@ -8,6 +8,7 @@ import { Tooltips } from "@/components/shell/Tooltips";
 import { KeyMap } from "@/components/shell/KeyMap";
 import { isSplitPane, SplitPane, useSplit } from "@/components/shell/SplitView";
 import { Tour } from "@/components/shell/Tour";
+import { DropAnywhere } from "@/components/shell/DropAnywhere";
 import { ask, FeedbackHost, notify } from "@/components/ui/Feedback";
 import { ProofProvider } from "@/components/ui/proof/ProofProvider";
 import { amountsHidden, applyTheme, idleLockMinutes, isAppTheme, PREFERENCE_CHANGED_EVENT, setAmountsHidden, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
@@ -416,6 +417,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Tooltips />
       <KeyMap />
       <Tour auto={!!demoExit} />
+      <DropAnywhere />
     </div>
   );
 }

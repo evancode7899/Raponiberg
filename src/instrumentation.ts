@@ -46,6 +46,7 @@ export async function register() {
       reports: [
         "/api/ledger/attention",
         "/api/command/index",
+        "/api/statements/edge",
         "/api/dashboard/home-summary",
         "/api/dashboard/briefing",
         "/api/dashboard/upcoming",

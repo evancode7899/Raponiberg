@@ -1,6 +1,10 @@
 "use client";
 
-import type { Api } from "@/components/ledger/useApi";
+import { apiSecretHeaders, clearCachedResponses, type Api } from "@/components/ledger/useApi";
+import { FILES_DROPPED_EVENT, pdfsOf, takeDroppedFiles } from "@/components/shell/DropAnywhere";
+import { dateLabel, monthLabel } from "@/lib/dates/display";
+import type { ImportProgress } from "@/lib/ingest/importFiles";
+import { unlockedBetween, type Edge, type Unlocked } from "@/lib/ingest/unlocked";
 import { Badge, btn, Card, ErrorNote } from "@/components/ui/kit";
 import { formatUsdFromCents } from "@/lib/formatMoney";
 import type { FileOutcome } from "@/lib/ingest/importFiles";
@@ -32,6 +36,21 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
   const [scans, setScans] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  // Each file's step while an import runs, the ledger refresh after, and what the import unlocked.
+  const [steps, setSteps] = useState<Record<string, string>>({});
+  const [phase, setPhase] = useState<string | null>(null);
+  const [unlocked, setUnlocked] = useState<Unlocked | "working" | null>(null);
+
+  // PDFs dropped anywhere else in the app (components/shell/DropAnywhere.tsx) join the list.
+  useEffect(() => {
+    const take = () => {
+      const dropped = takeDroppedFiles();
+      if (dropped.length) setFiles((prev) => [...prev, ...dropped]);
+    };
+    take();
+    window.addEventListener(FILES_DROPPED_EVENT, take);
+    return () => window.removeEventListener(FILES_DROPPED_EVENT, take);
+  }, []);
 
   // The results card sits below the tall import card, often off-screen: bring it into view.
   useEffect(() => {
@@ -47,7 +66,7 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
 
   const addFiles = (list: FileList | null) => {
     if (!list) return;
-    setFiles((prev) => [...prev, ...[...list].filter((f) => f.name.toLowerCase().endsWith(".pdf"))]);
+    setFiles((prev) => [...prev, ...pdfsOf(list)]);
   };
 
   const upload = useCallback(async () => {
@@ -55,20 +74,35 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
     if (tooBig) return setError(tooBig);
     setBusy("upload");
     setError(null);
+    setUnlocked(null);
+    setSteps(Object.fromEntries(files.map((f) => [f.name, "Waiting"])));
+    const before = await readEdge();
     try {
       const form = new FormData();
       for (const f of files) form.append("file", f);
       if (hold) form.set("review", "true");
-      const res = await api.call<UploadResponse>("/api/statements/import", { method: "POST", body: form });
-      setResult(res);
+      const res = await fetch("/api/statements/import?stream=1", { method: "POST", body: form, headers: apiSecretHeaders() });
+      clearCachedResponses();
+      if (!res.ok || !res.body) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `Import failed (${res.status})`);
+      const done = await readImport(res.body, (p) => {
+        if (p.step === "refreshing") setPhase("Refreshing the ledger: transfers and pay stubs…");
+        else setSteps((s) => ({ ...s, [p.fileName]: STEP_WORDS[p.step === "done" ? (p.ok ? "done" : p.reason?.startsWith("DUPLICATE") ? "duplicate" : "failed") : p.step] }));
+      });
+      setResult(done);
       setFiles([]);
       onChanged();
+      if (before && done.outcomes.some((o) => o.ok)) {
+        setUnlocked("working");
+        const after = await readEdge();
+        setUnlocked(after ? unlockedBetween(before, after) : null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusy(null);
+      setPhase(null);
     }
-  }, [api, files, hold, onChanged]);
+  }, [files, hold, onChanged]);
 
   const scan = useCallback(async () => {
     setBusy("scan");
@@ -123,6 +157,7 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
         <div
           role="button"
           tabIndex={0}
+          data-drop-zone=""
           onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
@@ -164,6 +199,7 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
                   <span className="text-faint">PDF</span>
                   <span className="truncate">{f.name}</span>
                   <span className="num ml-auto text-faint">{Math.round(f.size / 1024)} KB</span>
+                  {steps[f.name] && busy === "upload" && <span className="w-28 shrink-0 text-right text-accent">{steps[f.name]}</span>}
                 </li>
               ))}
             </ul>
@@ -193,6 +229,11 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
             (subfolders included) that isn&apos;t on file yet.
           </span>
         </div>
+        {phase && (
+          <p role="status" className="mt-2 text-xs text-accent">
+            {phase}
+          </p>
+        )}
         {summary && busy === null && (
           <p role="status" className={`mt-2 text-xs font-medium ${imported > 0 ? "text-pos" : failed > 0 ? "text-neg" : "text-fg-2"}`}>
             {summary}
@@ -241,6 +282,7 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
             </>
           }
         >
+          {unlocked && <UnlockedNote u={unlocked} />}
           {failed > 0 && <p className="mb-2 text-xs text-neg">{failed} file{failed === 1 ? "" : "s"} couldn&apos;t be imported.</p>}
           {shown.length === 0 && <p className="text-sm text-muted">Nothing new to import.</p>}
           <ul className="flex flex-col gap-2">
@@ -256,7 +298,7 @@ export function UploadPanel({ api, onChanged, onGo }: { api: Api; onChanged: () 
                       <li key={j} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span>{s.accountName}</span>
                         <span className="num text-muted">
-                          {s.periodStart} → {s.periodEnd} · {s.transactionCount} rows
+                          {dateLabel(s.periodStart)} → {dateLabel(s.periodEnd)} · {s.transactionCount} rows
                         </span>
                         {s.outcome === "DUPLICATE" ? (
                           <Badge>already on file</Badge>
@@ -331,5 +373,58 @@ function SkippedList({ label, note, outcomes }: { label: string; note: string; o
         ))}
       </ul>
     </details>
+  );
+}
+
+const STEP_WORDS: Record<"reading" | "committing" | "done" | "failed" | "duplicate", string> = { reading: "Reading…", committing: "Committing…", done: "Imported", failed: "Not imported", duplicate: "Already on file" };
+
+/** The proven-through date and each account's latest statement (/api/statements/edge), or null when it can't be read. */
+async function readEdge(): Promise<Edge | null> {
+  const r = await fetch("/api/statements/edge", { headers: apiSecretHeaders() }).catch(() => null);
+  return r?.ok ? ((await r.json()) as Edge) : null;
+}
+
+/** Reads an import's streamed answer (/api/statements/import?stream=1): each step as it comes, then the result. */
+async function readImport(body: ReadableStream<Uint8Array>, onStep: (p: ImportProgress) => void): Promise<UploadResponse> {
+  const reader = body.getReader();
+  const text = new TextDecoder();
+  let rest = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    rest += value ? text.decode(value, { stream: true }) : "";
+    const lines = rest.split("\n");
+    rest = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const m = JSON.parse(line) as { progress?: ImportProgress; done?: UploadResponse; error?: string };
+      if (m.progress) onStep(m.progress);
+      if (m.error) throw new Error(m.error);
+      if (m.done) return m.done;
+    }
+    if (done) throw new Error("The import stopped before it finished.");
+  }
+}
+
+/** What the import unlocked: the months every page now runs to, and the accounts whose statements moved on. */
+function UnlockedNote({ u }: { u: Unlocked | "working" }) {
+  if (u === "working") return <p className="mb-3 text-xs text-muted">Working out what this unlocked…</p>;
+  return (
+    <div data-unlocked="" className="mb-3 rounded-md border border-line bg-surface-2 px-3 py-2 text-xs">
+      <p className="font-medium text-fg">
+        {u.edge
+          ? `Unlocked ${u.months.length ? u.months.map(monthLabel).join(", ") : "more days"}: every page now runs through ${dateLabel(u.edge.to)} (was ${dateLabel(u.edge.from)}).`
+          : "The proven-through date didn't move: another account's statement still holds it."}
+      </p>
+      {u.accounts.length > 0 && (
+        <ul className="mt-1 flex flex-col gap-0.5 text-fg-2">
+          {u.accounts.map((a) => (
+            <li key={a.name}>
+              {a.name}: {a.from ? `through ${dateLabel(a.to)} (was ${dateLabel(a.from)})` : `new, through ${dateLabel(a.to)}`}
+            </li>
+          ))}
+        </ul>
+      )}
+      {u.heldBy.length > 0 && <p className="mt-1 text-muted">Next to move it on: a newer statement from {u.heldBy.join(", ")}.</p>}
+    </div>
   );
 }
