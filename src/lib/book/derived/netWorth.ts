@@ -56,6 +56,8 @@ export function stretchOf(rep: Pick<NetWorthReport, "proven" | "periods" | "acco
     drawdown: drawdown(run.map((x) => ({ label: x.label, r: x.household.portfolioReturn }))),
     /** Growth net of fees by account over the stretch, largest first (the household's is their sum). */
     growth: [...growth].map(([accountId, cents]) => ({ accountId, cents })).sort((a, b) => b.cents - a.cents),
+    /** The accounts' growth added up (the household's over the stretch). */
+    growthCents: [...growth.values()].reduce((s, x) => s + x, 0),
     feesCents: run.reduce((s, x) => s + x.household.feesCents, 0),
   };
 }

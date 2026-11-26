@@ -47,6 +47,9 @@ export function splitOf(changeCents: number, savedCents: number, firstOnFileCent
   return { savingCents, oneTimeCents: firstOnFileCents, marketsCents, transitCents: changeCents - savingCents - firstOnFileCents - marketsCents };
 }
 
+/** The split bar's length: every part's size, whichever way it moved (not a figure: the bar's scale). */
+export const splitScale = (parts: readonly { cents: number }[]) => parts.reduce((t, x) => t + Math.abs(x.cents), 0);
+
 /** One category against its average over the comparison periods. */
 export type ChangeMover = { category: string; cents: number; typicalCents: number; deltaCents: number; proof: ProofDescriptor };
 

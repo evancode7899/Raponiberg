@@ -740,7 +740,7 @@ function StretchCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<ty
   if (!s.from || !s.drawdown) return null;
   const names = new Map(r.accounts.map((a) => [a.id, a.name]));
   const d = s.drawdown;
-  const total = s.growth.reduce((t, g) => t + g.cents, 0);
+  const total = s.growthCents;
   const growthRef = (id: string) => derivedTarget("net-worth", derived, "growth-since", id);
   const totalRef = sumOf(s.growth.map((g) => growthRef(g.accountId)), total);
   return (

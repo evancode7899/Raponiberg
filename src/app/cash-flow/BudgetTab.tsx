@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, btn, Callout, Card, ErrorNote, Loading, MoneyInput, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { budgetPaceKey, budgetPaceMonth, budgetRunning, cashFlowDerived, categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
+import { budgetPaceKey, budgetPaceMonth, budgetRunning, budgetTotal, cashFlowDerived, categoryKey, windowKey } from "@/lib/book/derived/cashFlow";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { axisUsd, formatUsd } from "@/lib/formatMoney";
@@ -244,7 +244,7 @@ function PaceCard({ ctx, targets, dp }: { ctx: Ctx; targets: Record<string, numb
   const { m, day, days } = at;
   const ui = chartChrome(ctx.chart);
   const running = budgetRunning(m, targets);
-  const budgeted = Object.values(targets).reduce((s, v) => s + v, 0);
+  const budgeted = budgetTotal(targets);
   const data = running.map((cents, d) => ({ day: d + 1, spent: d < day ? cents / 100 : null, budget: Math.round((budgeted * (d + 1)) / days) / 100 }));
   const spent = running[day - 1] ?? 0;
   const plan = Math.round((budgeted * day) / days);

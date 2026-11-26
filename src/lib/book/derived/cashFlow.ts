@@ -239,6 +239,9 @@ export function budgetPaceMonth(rep: Pick<SpendingReport, "months"> & Partial<Pi
   return { m, day: m.through ? Number(m.through.slice(8, 10)) : days, days };
 }
 
+/** The saved targets added up: the monthly budget (budget-monthly's figure). */
+export const budgetTotal = (targets: Record<string, number>) => Object.values(targets).reduce((s, v) => s + v, 0);
+
 /** A budget pace figure's key: the month and the day. */
 export const budgetPaceKey = (start: string, day: number) => `${start}|${day}`;
 

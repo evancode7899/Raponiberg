@@ -8,7 +8,7 @@ import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { btn, Card, EmptyState, Loading, NotFigure, Segmented, selectCls, StatCell, StatGrid, table } from "@/components/ui/kit";
 import type { ProofDescriptor } from "@/lib/book/proof";
-import type { ChangeMover, HighlightSeg, NetWorthChange, NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
+import { splitScale, type ChangeMover, type HighlightSeg, type NetWorthChange, type NetWorthChangesReport } from "@/lib/book/reports/netWorthChanges";
 import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/lib/formatMoney";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
@@ -357,7 +357,7 @@ function SplitCard({ p, granularity, steps }: { p: NetWorthChange; granularity: 
     { key: "transit", label: "In transit", cents: s.transitCents, proof: derivedTarget("net-worth", steps, "change-split", splitKey(granularity, p.start, "transit")), tone: "bg-faint", hint: "Money mid-move between your own accounts at the edges, or a confirmed transfer cost." },
   ];
   const shown = rows.filter((x) => x.cents !== 0 || x.key === "saving" || x.key === "markets");
-  const scale = shown.reduce((t, x) => t + Math.abs(x.cents), 0);
+  const scale = splitScale(shown);
   return (
     <Card title="Where the change came from" subtitle="Saving, one-time money and markets, and what was in transit at the edges: they add up to the change to the cent.">
       {scale > 0 && (
