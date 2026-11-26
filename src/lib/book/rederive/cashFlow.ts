@@ -1,4 +1,6 @@
 import { addDays, endOfMonth, startOfMonth } from "../../dates/isoDate.ts";
+import { readPriceIndex } from "../../priceIndex.ts";
+import { addMonths, CPI, indexChange } from "../../priceIndexMath.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { bookedCents } from "../booking.ts";
 import { savingsRate } from "../definitions.ts";
@@ -272,6 +274,24 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       case "recurring-annual":
       case "recurring-change":
         return { none: "The recurring-charge detector's reading of one merchant's charges (its usual charge, its latest, its cadence): the merchant's spending figure re-adds the same rows." };
+      case "cpi-year": {
+        const s = readPriceIndex().series[CPI];
+        const to = k;
+        return [ratioRoute("the price-index file, read again", v, indexChange(s, addMonths(to, -12), to)?.change ?? null, `CPI ${to} over CPI a year before, less one`, 1e-12)];
+      }
+      case "real-spending": {
+        const s = readPriceIndex().series[CPI];
+        const [win, to] = [k.split("|")[0]!, k.split("|").at(-1)!];
+        const level = s?.months[to];
+        if (!s || !level) return null;
+        let cents = 0;
+        for (const m of windowOf(win)) {
+          const at = s.months[m.start.slice(0, 7)];
+          if (!at) return null;
+          cents += m.spending * (level / at);
+        }
+        return [centsRoute(ROWS, v, Math.round(cents), `each month's rows re-added, × CPI ${to} ÷ CPI that month`, windowOf(win).length)];
+      }
       case "price-bill":
       case "price-category":
       case "price-all": {

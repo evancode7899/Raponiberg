@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { windowKey } from "@/lib/book/derived/cashFlow";
+import { realKey, realYears, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Callout, Card, NotFigure, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -460,6 +460,8 @@ function YearTable({ ctx }: { ctx: Ctx }) {
   const { report, chart } = ctx;
   const [as, setAs] = useState<"avg" | "total">("avg");
   const years = byYear(report.months).map(([y, ms]) => ({ y, months: ms.filter((m): m is SpendingMonth => m != null) }));
+  // Spending in the latest CPI month's dollars (derived/cashFlow.ts realYears), where CPI covers every month of the year.
+  const real = useMemo(() => realYears(report), [report]);
   const val = (ms: SpendingMonth[], f: (m: SpendingMonth) => number) => (as === "avg" ? sum(ms, f) / Math.max(1, ms.length) : sum(ms, f));
   const comparable = (i: number) => i > 0 && (as === "avg" || (years[i]!.months.length === 12 && years[i - 1]!.months.length === 12));
   const cashRows: YearRow[] = [
@@ -553,7 +555,32 @@ function YearTable({ ctx }: { ctx: Ctx }) {
           </thead>
           <tbody>
             {heading("Cash flow")}
-            {cashRows.map(line)}
+            {cashRows.slice(0, 2).map(line)}
+            {real.length > 0 && (
+              <tr className={table.trHover}>
+                <td className={`${table.td} whitespace-nowrap !pl-6 text-fg-2`} title={`Each month's spending × CPI ${real[0]!.to} ÷ CPI that month: what the year's spending comes to at today's prices (${ctx.report.cpi?.name ?? "CPI"}).`}>
+                  <span className="cursor-help">In {real[0]!.to} dollars</span>
+                </td>
+                {years.map((y) => {
+                  const x = real.find((r) => r.year === y.y);
+                  return (
+                    <td key={y.y} className={table.tdR}>
+                      {x ? (
+                        <ProofValue proof={ctx.dp("real-spending", realKey(x.months, x.to))} drawn={as === "avg" ? { per: x.months.length } : undefined}>
+                          {usd0(as === "avg" ? x.cents / Math.max(1, x.months.length) : x.cents)}
+                        </ProofValue>
+                      ) : (
+                        NA
+                      )}
+                      <div className="leading-none">
+                        <span className="text-xs">&nbsp;</span>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
+            {cashRows.slice(2).map(line)}
             <tr className={table.trHover}>
               <td className={`${table.td} font-semibold`}>Savings rate</td>
               {years.map((y, i) => {
