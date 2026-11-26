@@ -5,6 +5,7 @@ import { taxLink } from "@/lib/forecast/forecast";
 import { loadForecast } from "@/lib/forecast/load";
 import { buildTaxReport } from "@/lib/tax/buildTaxReport";
 import { startedTaxYears, TAX_YEARS } from "@/lib/tax/params";
+import { taxMoved } from "@/lib/tax/whyMoved";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,11 @@ export async function GET(request: NextRequest) {
         const year = supported.includes(raw) ? raw : Math.max(...supported);
         const { forecast } = await loadForecast(prisma, book);
         // Birth years (the 401(k) catch-up limit) come from the Book, as on every page.
-        return { ...buildTaxReport(book, year, { forecast: forecast ? taxLink(forecast) : null }), supportedYears: supported };
+        const link = forecast ? taxLink(forecast) : null;
+        const report = buildTaxReport(book, year, { forecast: link });
+        // Overview › why tax moved: the year before on the same terms, where both can be proven.
+        const prior = !report.blocked && supported.includes(year - 1) ? buildTaxReport(book, year - 1, { forecast: link }) : null;
+        return { ...report, supportedYears: supported, moved: !report.blocked && prior && !prior.blocked ? taxMoved(report, prior) : null };
       }),
     );
   } catch (e) {

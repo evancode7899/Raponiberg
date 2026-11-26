@@ -8,6 +8,7 @@ import { c, ln, r, tableFigures, type DerivedFigure, type TableCell } from "./ty
 import { bracketFill } from "../../tax/bracketFill.ts";
 import { harborQuarters } from "../../tax/harborQuarters.ts";
 import { bonusGaps } from "../../tax/bonusGap.ts";
+import type { TaxMoved } from "../../tax/whyMoved.ts";
 import { estimateColumns, type EstimateKey } from "../../tax/estimateLines.ts";
 import { taxYearParams } from "../../tax/params.ts";
 
@@ -82,6 +83,18 @@ function bonusGapCells(report: TaxReport): TableCell[] {
       ].filter((cell) => !("cents" in cell.value) || cell.value.cents !== 0);
     }),
   );
+}
+
+/** Overview › why tax moved (tax/whyMoved.ts): rows the parts and the total, columns prior, now, change. Key scope: the later year. */
+export function movedDerived(m: TaxMoved): DerivedFigure[] {
+  const cells = [...m.rows, m.total].flatMap((x): TableCell[] =>
+    [
+      { row: x.id, col: "prior", describes: `${x.label}, ${m.prior}`, value: c(x.priorCents) },
+      { row: x.id, col: "now", describes: `${x.label}, ${m.year}`, value: c(x.cents) },
+      { row: x.id, col: "change", describes: `${x.label}: ${m.year} less ${m.prior}`, value: c(x.deltaCents) },
+    ].filter((cell) => "cents" in cell.value! && Math.round(cell.value!.cents) !== 0),
+  );
+  return tableFigures("moved", m.year, cells);
 }
 
 /** A bracket's key: the year and the bracket (0 = 10%). */

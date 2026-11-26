@@ -1,6 +1,7 @@
 "use client";
 
 import { Segmented, ApiSecretField } from "@/components/ledger/LedgerBits";
+import type { TaxMoved } from "@/lib/tax/whyMoved";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
 import { useChanged } from "@/components/useChanged";
 import { ErrorNote, Loading, PageBody, Tabs, useTabParam } from "@/components/ui/kit";
@@ -17,8 +18,8 @@ import { TaxPayments } from "./TaxPayments";
 import { TaxW4 } from "./TaxW4";
 import { TaxWorksheet } from "./TaxWorksheet";
 
-export type TaxResponse = (TaxReport | TaxReportBlocked) & { supportedYears: number[] };
-export type ProvenTaxResponse = TaxReport & { supportedYears: number[] };
+export type TaxResponse = (TaxReport | TaxReportBlocked) & { supportedYears: number[]; moved?: TaxMoved | null };
+export type ProvenTaxResponse = TaxReport & { supportedYears: number[]; moved?: TaxMoved | null };
 const TABS = ["overview", "worksheet", "compare", "income", "payments", "w4", "filed", "inputs"] as const;
 
 /**

@@ -19,7 +19,8 @@ import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxA
 import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { integrityDerived } from "./integrity.ts";
-import { marginalDerived, taxesDerived } from "./taxes.ts";
+import { marginalDerived, movedDerived, taxesDerived } from "./taxes.ts";
+import { taxMoved } from "../../tax/whyMoved.ts";
 import { forecastDerived, vsActualDerived } from "./forecast.ts";
 import { forecastVsActual } from "../../forecast/vsActual.ts";
 import { readForecastSnapshots } from "../../forecast/snapshots.ts";
@@ -121,7 +122,14 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
   },
   taxes: async (ctx) => {
     const year = Number(ctx.book.today.slice(0, 4));
-    const figures = (await taxYears(ctx)).flatMap((y) => (y.tax.blocked ? [] : [...taxesDerived(y.tax as TaxReport), ...(y.year === year ? marginalDerived(y.tax as TaxReport) : [])]));
+    const ys = await taxYears(ctx);
+    const figures = ys.flatMap((y) => {
+      if (y.tax.blocked) return [];
+      // Overview › why tax moved: against the year before, where it is proven too (the route builds it the same way).
+      const prior = ys.find((p) => p.year === y.year - 1)?.tax;
+      const moved = prior && !prior.blocked ? movedDerived(taxMoved(y.tax as TaxReport, prior as TaxReport)) : [];
+      return [...taxesDerived(y.tax as TaxReport), ...(y.year === year ? marginalDerived(y.tax as TaxReport) : []), ...moved];
+    });
     return { figures, rederived: declared(TAXES_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
   },
   forecast: async ({ book, db }) => {

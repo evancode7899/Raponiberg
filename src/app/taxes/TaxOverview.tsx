@@ -9,7 +9,8 @@ import { estimateColumns, lineValue, type EstimateKey } from "@/lib/tax/estimate
 import { NotFigure, table } from "@/components/ui/kit";
 import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
 import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
-import { bracketKey, bracketsOf, taxesDerived } from "@/lib/book/derived/taxes";
+import { bracketKey, bracketsOf, movedDerived, taxesDerived } from "@/lib/book/derived/taxes";
+import type { TaxMoved } from "@/lib/tax/whyMoved";
 import { cellKey, derivedTarget } from "@/lib/book/derived/types";
 import { employerRow, showsNyW2 } from "@/lib/tax/incomeExtras";
 import { atFilingReturns, dependentEffect, nextThousand, PAID_ROWS, paidTotal, taxBuckets } from "@/lib/tax/overviewExtras";
@@ -95,6 +96,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
       </div>
       <div className="grid gap-4">
         <Brackets r={r} />
+        {r.moved && <WhyMoved r={r} m={r.moved} />}
       </div>
 
       {r.isCurrentYear && <ForecastBasis r={r} onGo={onGo} />}
@@ -850,6 +852,50 @@ function Brackets({ r }: { r: TaxResponse }) {
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Why tax moved from the year before (tax/whyMoved.ts): the total tax on each year's return
+ * split into the return's parts, each one's change beside it; the changes add up to the
+ * change in the total.
+ */
+function WhyMoved({ r, m }: { r: TaxResponse; m: TaxMoved }) {
+  const derived = useMemo(() => movedDerived(m), [m]);
+  const cell = (row: string, col: string, cents: number, signed = false) =>
+    Math.round(cents) ? <ProofValue proof={derivedTarget("taxes", derived, "moved", `${m.year}|${row}|${col}`)}>{signed && cents > 0 ? `+${usd(cents)}` : usd(cents)}</ProofValue> : "—";
+  const moved = [...m.rows].sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents));
+  return (
+    <Card title={`Why tax moved from ${m.prior}`} subtitle={`The total tax on each year's return in its parts${r.isCurrentYear ? ` (${m.year} projected to December 31)` : ""}, the biggest change first. The changes add up to the change in the total.`}>
+      <div className={table.wrap}>
+        <table className={`${table.table} min-w-[36rem]`}>
+          <thead className={table.head}>
+            <tr>
+              <th className={table.th}>Part</th>
+              <th className={table.thR}>{m.prior}</th>
+              <th className={table.thR}>{m.year}</th>
+              <th className={table.thR}>Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {moved.map((x) => (
+              <tr key={x.id} className={table.tr}>
+                <td className={table.td}>{x.label}</td>
+                <td className={table.tdR}>{cell(x.id, "prior", x.priorCents)}</td>
+                <td className={table.tdR}>{cell(x.id, "now", x.cents)}</td>
+                <td className={`${table.tdR} ${x.deltaCents > 0 ? "text-neg" : x.deltaCents < 0 ? "text-pos" : ""}`}>{cell(x.id, "change", x.deltaCents, true)}</td>
+              </tr>
+            ))}
+            <tr className={`${table.tr} font-semibold`}>
+              <td className={table.td}>{m.total.label}</td>
+              <td className={table.tdR}>{cell("total", "prior", m.total.priorCents)}</td>
+              <td className={table.tdR}>{cell("total", "now", m.total.cents)}</td>
+              <td className={table.tdR}>{cell("total", "change", m.total.deltaCents, true)}</td>
+            </tr>
           </tbody>
         </table>
       </div>
