@@ -261,6 +261,43 @@ html[data-theme="terminal"] {
   --slider-thumb-border: #140d00;
 }
 
+/*
+ * Up and down that color-blind eyes tell apart (Settings › Appearance): up is blue rather than
+ * green, so it never rests on red against green. Down keeps its red.
+ */
+html[data-updown="blue"] {
+  --pos: #1d5fb8;
+  --pos-soft: #e7f0fc;
+}
+html[data-updown="blue"][data-theme="dark"] {
+  --pos: #6aa8f0;
+  --pos-soft: #16263b;
+}
+html[data-updown="blue"][data-theme="terminal"] {
+  --pos: #5fb0f5;
+  --pos-soft: #0b1a28;
+}
+
+/* No motion: when the computer asks for less, or the app is told to (Settings › Appearance). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
 html[data-theme="terminal"] body {
   font-stretch: 86%;
   font-variant-numeric: tabular-nums;

@@ -1,9 +1,9 @@
 "use client";
 
 import type { ChartPalette } from "@/components/shell/chartPalette";
-import { btn, table as tableCls } from "@/components/ui/kit";
-import { chartTable, lastIndexWith, zoomWindow } from "@/lib/chartSeries";
-import { useId, useState, type ReactElement, type ReactNode } from "react";
+import { btn } from "@/components/ui/kit";
+import { lastIndexWith, zoomWindow } from "@/lib/chartSeries";
+import { useState, type ReactElement } from "react";
 import { ReferenceLine } from "recharts";
 
 /**
@@ -11,7 +11,8 @@ import { ReferenceLine } from "recharts";
  * brush to zoom into a stretch of time, a dashed "the same time before" overlay
  * (lib/chartSeries.ts withCompare), flags on the dates things happened, names written at the
  * ends of the lines, and a series lit up while its legend entry is pointed at. Nothing moves
- * by itself: no animation, no transition.
+ * by itself: no animation, no transition. Every chart's points open as a table from its
+ * container (RechartsResponsive).
  */
 
 /** A thin dashed line under the pointer, for line and area charts (bar charts keep their band). */
@@ -92,72 +93,12 @@ export function endLabel(name: string, color: string, rows: readonly Record<stri
   return EndLabel;
 }
 
-/**
- * Under a chart: the same points as a table, for a screen reader or anyone who wants the
- * numbers, and Reset zoom when it's zoomed. The table is drawn only once asked for, as the
- * chart's own tooltip is: it shows what the chart shows, in the chart's own words.
- */
-export function ChartFoot({
-  rows,
-  x,
-  series,
-  format,
-  zoom,
-  label,
-  children,
-}: {
-  rows: readonly Record<string, unknown>[];
-  x: string;
-  series: readonly { key: string; name: string }[];
-  format: (v: number) => string;
-  zoom?: { zoomed: boolean; reset: () => void };
-  /** What the chart shows, for the table's caption. */
-  label: string;
-  children?: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  const t = open ? chartTable(rows, x, series, format) : null;
+/** Reset zoom, shown only while a chart is zoomed. */
+export function ZoomReset({ zoom }: { zoom: { zoomed: boolean; reset: () => void } }) {
+  if (!zoom.zoomed) return null;
   return (
-    <div className="mt-1 flex flex-col gap-1">
-      <div className="flex items-center gap-2 text-2xs">
-        <button type="button" className={btn.link} aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)}>
-          {open ? "Hide the table" : "Show as a table"}
-        </button>
-        {zoom?.zoomed && (
-          <button type="button" className={btn.link} onClick={zoom.reset}>
-            Reset zoom
-          </button>
-        )}
-        {children}
-      </div>
-      {t && (
-        <div id={id} className={`${tableCls.wrap} max-h-72 overflow-y-auto rounded border border-line`}>
-          <table className={tableCls.table}>
-            <caption className="sr-only">{label}</caption>
-            <thead className={`${tableCls.head} sticky top-0 bg-[var(--card-bg,var(--surface))]`}>
-              <tr>
-                {t.head.map((h, i) => (
-                  <th key={i} scope="col" className={i ? tableCls.thR : tableCls.th}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {t.body.map((r, i) => (
-                <tr key={i} className={tableCls.tr}>
-                  {r.map((c, j) => (
-                    <td key={j} className={j ? tableCls.tdR : tableCls.td}>
-                      {c}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+    <button type="button" className={`${btn.link} mt-1 text-2xs`} onClick={zoom.reset}>
+      Reset zoom
+    </button>
   );
 }

@@ -127,6 +127,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const attention = useAttention(pathname);
   const page = commandForPath(pathname);
   const main = useScrollMemory(locked === false && !shuttingDown);
+  // A new page puts the keyboard at its start (the sidebar link or command line it came from is behind it), and a screen reader reads it.
+  const seenPage = useRef<string | null>(null);
+  useEffect(() => {
+    const was = seenPage.current;
+    seenPage.current = pathname;
+    if (was == null || was === pathname) return;
+    const el = main.current;
+    if (el && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
+  }, [pathname, main]);
   const [hidden, setHidden] = useState(false);
   useEffect(() => {
     const read = () => setHidden(amountsHidden());
@@ -352,7 +361,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <main id="main" ref={main} className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <main id="main" ref={main} tabIndex={-1} className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden outline-none">
           {page && pathname !== "/" && <PageHeader page={page} />}
           <ProofProvider>{children}</ProofProvider>
         </main>

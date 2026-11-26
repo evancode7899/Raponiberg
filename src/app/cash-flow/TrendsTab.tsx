@@ -1,7 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
-import { ChartFoot, crosshair, endLabel as lineEnd, useLegendHighlight, useZoom } from "@/components/charts/interact";
+import { crosshair, endLabel as lineEnd, useLegendHighlight, useZoom, ZoomReset } from "@/components/charts/interact";
 import { last12At, momentumCategories, momentumWindows } from "@/lib/book/reports/cashFlowWindows";
 import { windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
@@ -200,18 +200,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
             </ComposedChart>
           </RechartsResponsive>
         </div>
-        <ChartFoot
-          label="Spending by month, with trailing averages"
-          rows={smooth}
-          x="label"
-          series={[
-            { key: "month", name: "Month" },
-            { key: "avg3", name: "3-month average" },
-            { key: "avg12", name: "12-month average" },
-            { key: "avg12Before", name: "12-month average, a year before" },
-          ]}
-          format={(v) => formatUsd(Math.round(v))}
-        />
+
       </Card>
 
       <Card
@@ -303,7 +292,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
               </LineChart>
             </RechartsResponsive>
           </div>
-          <ChartFoot label="Income and spending growth, indexed to 100" rows={growth} x="label" series={[{ key: "income", name: "Income (12 mo)" }, { key: "spending", name: "Spending (12 mo)" }]} format={(v) => Math.round(v).toString()} zoom={growthZoom} />
+          <ZoomReset zoom={growthZoom} />
         </Card>
         <Card title="Savings rate, trailing 12 months" subtitle="Income minus spending over the twelve months ending each month — steadier than any single month, which a bonus or a tax payment can swing.">
           <div className="h-[260px] w-full min-w-0">
