@@ -72,6 +72,8 @@ export type GoalProgress = {
    * this one list, so the page and the proof can't disagree about what withholds it.
    */
   blockerAccountIds: string[];
+  /** The burn-up: what the goal counted at each of the last twelve month-ends (goalHistory), oldest first, ending at asOf. */
+  history: { date: string; cents: number }[];
 };
 
 /** One funding account as a goal sees it: its balance, what earlier goals claimed, and what this goal counts. */
@@ -204,8 +206,11 @@ export function buildGoals(
       sharedWith: settings.goals.filter((o) => o.id !== goal.id && fundersOf(o).some((a) => ids.includes(a.id))).map((o) => o.name),
       blockers: refs(netWorthAtBlockers(book, asOf, blockerAccountIds)),
       blockerAccountIds,
+      history: [],
     };
   });
+  const history = goalHistory(book, settings, goals.map((g) => g.targetCents), asOf);
+  goals.forEach((g, i) => (g.history = history[i]!));
 
   const used = open.filter((a) => settings.goals.some((g) => fundersOf(g).includes(a)));
   const funding = claimer.rows(used);
@@ -219,6 +224,38 @@ export function buildGoals(
     accounts: open.map((a) => ({ id: a.id, name: a.name, group: a.group, cents: balance.get(a.id) ?? 0 })),
     groups: GROUP_ORDER.filter((g) => g !== "Credit cards" && open.some((a) => a.group === g)),
   };
+}
+
+/**
+ * Each goal's burn-up: at each of the last twelve month-ends (and asOf), what the goal would
+ * have counted from the balances that day, claimed in the same order with the same targets
+ * (an emergency fund's at today's living cost), the cards owed then claiming bank cash first.
+ * A month-end before every funding account was on file counts only those that were.
+ */
+export function goalHistory(book: Book, settings: GoalSettings, targets: (number | null)[], asOf: string): { date: string; cents: number }[][] {
+  const accounts = household(book).ledger.accounts;
+  const dates: string[] = [];
+  for (let k = 12; k >= 1; k--) {
+    const d = new Date(`${asOf.slice(0, 7)}-01T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() - k + 1);
+    dates.push(addDays(d.toISOString().slice(0, 10), -1));
+  }
+  dates.push(asOf);
+  const out: { date: string; cents: number }[][] = settings.goals.map(() => []);
+  for (const date of dates) {
+    const open = accounts.filter((a) => a.group !== "Credit cards" && a.timeline.firstDay && a.timeline.firstDay <= date && (!a.closed || (a.timeline.lastDay ?? date) >= date));
+    if (!open.length) continue;
+    const balance = new Map(open.map((a) => [a.id, valueAt(a.timeline, date).cents]));
+    const claimer = goalClaimer(balance);
+    const owed = -accounts.filter((a) => a.group === "Credit cards" && a.timeline.firstDay && a.timeline.firstDay <= date).reduce((s, a) => s + valueAt(a.timeline, date).cents, 0);
+    if (owed > 0) claimer.reserve(open.filter((a) => a.group === "Cash").sort((x, y) => (balance.get(y.id) ?? 0) - (balance.get(x.id) ?? 0)), owed, "Card balances owed");
+    settings.goals.forEach((goal, i) => {
+      const funders = open.filter((a) => goal.groups.includes(a.group) || goal.accountIds.includes(a.id));
+      const { accounts: got } = claimer.claim(goal, funders, targets[i] ?? null);
+      out[i]!.push({ date, cents: got.reduce((s, a) => s + a.earmarkedCents, 0) });
+    });
+  }
+  return out;
 }
 
 /**
