@@ -68,7 +68,7 @@ function harborCells(report: TaxReport): TableCell[] {
 }
 
 /** W-4 › bonus withholding (tax/bonusGap.ts), per person: rows `<person>:<check>`, columns gross, withheld, at-rate, gap. */
-export const bonusGapsOf = (report: TaxReport) => report.people.map((p) => ({ id: p.id, name: p.name, rows: bonusGaps(p.bonusChecks ?? [], report.marginal.federal) }));
+export const bonusGapsOf = (report: TaxReport) => (!report.isCurrentYear ? [] : report.people).map((p) => ({ id: p.id, name: p.name, rows: bonusGaps(p.bonusChecks ?? [], report.marginal.federal) }));
 
 function bonusGapCells(report: TaxReport): TableCell[] {
   return bonusGapsOf(report).flatMap((p) =>

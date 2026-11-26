@@ -184,7 +184,8 @@ export function changeSplitDerived(rep: Pick<NetWorthChangesReport, "granularity
     const s = p.split;
     const value = { saving: s.savingCents, "one-time": s.oneTimeCents, transit: s.transitCents } as const;
     const change = { label: `The change in net worth, ${p.label}`, descriptor: p.proofs.change };
-    return (["saving", "one-time", "transit"] as const).map((part): DerivedFigure => ({
+    // A zero part draws a dash, not a figure.
+    return (["saving", "one-time", "transit"] as const).filter((part) => value[part] !== 0).map((part): DerivedFigure => ({
       figure: "change-split",
       key: splitKey(rep.granularity, p.start, part),
       describes: `${SPLIT_LABEL[part]}, ${p.label}`,

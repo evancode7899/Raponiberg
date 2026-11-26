@@ -884,7 +884,9 @@ function WhyMoved({ r, m }: { r: TaxResponse; m: TaxMoved }) {
           <tbody>
             {moved.map((x) => (
               <tr key={x.id} className={table.tr}>
-                <td className={table.td}>{x.label}</td>
+                <td className={table.td}>
+                  <NotFigure why="the line's name, with the law's rate">{x.label}</NotFigure>
+                </td>
                 <td className={table.tdR}>{cell(x.id, "prior", x.priorCents)}</td>
                 <td className={table.tdR}>{cell(x.id, "now", x.cents)}</td>
                 <td className={`${table.tdR} ${x.deltaCents > 0 ? "text-neg" : x.deltaCents < 0 ? "text-pos" : ""}`}>{cell(x.id, "change", x.deltaCents, true)}</td>
