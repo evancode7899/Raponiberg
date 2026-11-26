@@ -28,7 +28,7 @@ export type ChartPalette = {
   debt: string;
 };
 
-const FALLBACK_SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+const FALLBACK_SERIES = ["#2a78d6", "#eb6834", "#0f6e4a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 
 function read(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;

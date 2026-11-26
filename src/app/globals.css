@@ -138,7 +138,7 @@ html[data-theme="light"] {
   --chart-legend: #3a3a37;
   --chart-series-0: #2a78d6;
   --chart-series-1: #eb6834;
-  --chart-series-2: #1baf7a;
+  --chart-series-2: #0f6e4a;
   --chart-series-3: #eda100;
   --chart-series-4: #e87ba4;
   --chart-series-5: #008300;
@@ -188,7 +188,7 @@ html[data-theme="dark"] {
   --chart-legend: #d6d5ce;
   --chart-series-0: #3987e5;
   --chart-series-1: #d95926;
-  --chart-series-2: #199e70;
+  --chart-series-2: #4fd6a0;
   --chart-series-3: #c98500;
   --chart-series-4: #d55181;
   --chart-series-5: #008300;
@@ -248,7 +248,7 @@ html[data-theme="terminal"] {
   --chart-legend: #ddd5c4;
   --chart-series-0: #5fb0f5;
   --chart-series-1: #ffa53c;
-  --chart-series-2: #3fc48b;
+  --chart-series-2: #249a68;
   --chart-series-3: #f0d060;
   --chart-series-4: #e58bb8;
   --chart-series-5: #8fd14f;
