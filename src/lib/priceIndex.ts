@@ -9,7 +9,8 @@ export type { IndexSeries, PriceIndexFile };
 /**
  * Published price series the app reads but never fetches (data/price-index.json): the
  * consumer price index for Cash flow (personal inflation beside CPI, spending in today's
- * dollars) and a market index for Investment returns' benchmark. Claude refreshes the file in
+ * dollars). Investment returns' benchmark is a fund the household holds, from its own statements
+ * (book/reports/fundBenchmark.ts), never this file. Claude refreshes the file in
  * chat from the publisher's own download, each series saying where it came from and when.
  * In the Book's stamp (a figure reads it), so a refresh rebuilds what uses it.
  */

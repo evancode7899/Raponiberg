@@ -1,6 +1,7 @@
 import { inclusiveDays, maxIso, minIso, type Granularity } from "../../dates/isoDate.ts";
 import { buildNetWorthReport as buildFromLedger, spanQuality, type NetWorthPeriod, type NetWorthReport as LedgerNetWorthReport } from "../../ledger/netWorthReport.ts";
-import { BENCHMARK, type IndexSeries } from "../../priceIndexMath.ts";
+import type { IndexSeries } from "../../priceIndexMath.ts";
+import { benchmarkCandidates, fundBenchmark, type FundStep } from "./fundBenchmark.ts";
 import { GROUP_ORDER } from "../../ledger/loadLedger.ts";
 import { chainReturns } from "../../ledger/timeline.ts";
 import { netWorthAtBlockers, netWorthBlockers } from "../blockers.ts";
@@ -40,8 +41,10 @@ export type NetWorthSummary = {
 };
 
 export type NetWorthReport = Omit<LedgerNetWorthReport, "periods" | "current"> & {
-  /** The market benchmark as published (data/price-index.json), or null without one on file. */
+  /** The benchmark: a broad index fund the household holds, its level from its own statements (fundBenchmark.ts), or null without one. */
   benchmark: IndexSeries | null;
+  /** Which fund that is, each step read off its statements, and the funds the owner may pick instead. */
+  benchmarkFund: { key: string; name: string; steps: (FundStep & { statementId: string | null })[]; candidates: { key: string; name: string; months: number }[] } | null;
   /** Last day every open account has a statement for; nothing is reported past it. */
   provenThrough: string;
   periods: NetWorthPeriodWithBlockers[];
@@ -142,7 +145,10 @@ export function buildNetWorth(book: Book, opts: { granularity: Granularity; from
 
   return {
     ...r,
-    benchmark: book.prices?.series[BENCHMARK] ?? null,
+    ...(() => {
+      const fund = fundBenchmark(book.holdings, book.brokerage, book.benchmarkFund ?? null);
+      return { benchmark: fund?.series ?? null, benchmarkFund: fund ? { key: fund.key, name: fund.name, steps: fund.steps.map((s) => ({ ...s, statementId: book.statements.find((x) => x.documentId === s.documentId)?.id ?? null })), candidates: benchmarkCandidates(book.holdings) } : null };
+    })(),
     summary,
     provenThrough: through,
     periods,

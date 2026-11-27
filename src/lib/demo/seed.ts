@@ -81,7 +81,6 @@ function demoPriceIndex(): PriceIndexFile {
     version: 1,
     series: {
       "cpi-u": { name: "Demo consumer prices (invented)", source: "Invented for the demo", url: "", fetchedOn: "2026-07-01", kind: "price", months: months(260, () => 0.0025) },
-      benchmark: { name: "Demo market index (invented)", source: "Invented for the demo", url: "", fetchedOn: "2026-07-01", kind: "total-return", months: months(1000, (k) => (k >= "2025-03" && k <= "2025-05" ? -0.04 : 0.008)) },
     },
   };
 }

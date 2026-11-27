@@ -50,7 +50,7 @@ export function netWorthDerived(rep: Pick<NetWorthReport, "proven" | "periods" |
  * monthly returns chained and the benchmark's change. Null without a benchmark, or when it
  * doesn't reach back to the stretch's start.
  */
-export function benchmarkOf(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark">>) {
+export function benchmarkOf(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark" | "benchmarkFund">>) {
   const p = rep.proven.returns.portfolio;
   const s = rep.benchmark;
   if (!p || !s) return null;
@@ -62,20 +62,29 @@ export function benchmarkOf(rep: Pick<NetWorthReport, "proven" | "periods"> & Pa
   if (!b) return null;
   const months = run.filter((x) => x.start.slice(0, 7) <= to!);
   const portfolio = months.reduce((g, x) => g * (1 + x.household.portfolioReturn!), 1) - 1;
-  return { from: p.from, to: b.to, name: s.name, kind: s.kind, source: s.source, fetchedOn: s.fetchedOn, months: months.length, portfolio, benchmark: b.change, levels: { from: b.fromLevel, to: b.toLevel, fromMonth: b.from } };
+  // The fund's steps the change chains: after the month before the stretch, through the last month both cover.
+  const steps = (rep.benchmarkFund?.steps ?? []).filter((x) => x.month > b.from && x.month <= b.to);
+  return { from: p.from, to: b.to, name: s.name, kind: s.kind, source: s.source, fetchedOn: s.fetchedOn, months: months.length, portfolio, benchmark: b.change, levels: { from: b.fromLevel, to: b.toLevel, fromMonth: b.from }, steps };
 }
 
-function benchmarkDerived(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark">>): DerivedFigure[] {
+function benchmarkDerived(rep: Pick<NetWorthReport, "proven" | "periods"> & Partial<Pick<NetWorthReport, "benchmark" | "benchmarkFund">>): DerivedFigure[] {
   const x = benchmarkOf(rep);
   if (!x) return [];
-  const src = { source: "proven" as const, note: `${x.name}: ${x.source}, as fetched ${x.fetchedOn}.` };
+  // Each statement's step: its price plus the dividends a share since the one before, over the price then.
+  const stepLine = (s: (typeof x.steps)[number], i: number) =>
+    ln(
+      `${s.asOf}: ${s.price} + ${s.dividendCents == null ? "no dividends on file" : `${(s.dividendCents / 100).toFixed(2)} of dividends on ${s.quantity} shares`}, over ${s.prevPrice}`,
+      r((s.price + (s.dividendCents ? s.dividendCents / 100 / s.quantity : 0)) / s.prevPrice),
+      i ? "×" : undefined,
+      { source: "proven", ...(s.statementId ? { link: { label: `The statement of ${s.asOf}`, descriptor: { report: "statement" as const, statementId: s.statementId } } } : {}) },
+    );
   return [
     {
       figure: "benchmark-return",
       key: x.to,
-      describes: `${x.name}: change from the end of ${x.levels.fromMonth} to ${x.to}${x.kind === "price" ? " (price only, dividends not in it)" : ""}`,
+      describes: `${x.name}, a fund you hold: its return from the end of ${x.levels.fromMonth} to ${x.to}${x.kind === "price" ? " (its price only: dividends not on file for every month)" : ", dividends in"}`,
       value: r(x.benchmark),
-      lines: [ln(`Level, ${x.to}`, t(String(x.levels.to)), undefined, src), ln(`Level, ${x.levels.fromMonth}`, t(String(x.levels.from)), "÷", src), ln("Change", r(x.benchmark), "=")],
+      lines: [...x.steps.map(stepLine), ln("Chained, less one", r(x.benchmark), "=", { note: "Each step is a month of Modified Dietz on one share with no money in or out, chained as the portfolio's months are." })],
     },
     {
       figure: "benchmark-portfolio",
