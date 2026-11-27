@@ -20,7 +20,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, Locator, Page } from "playwright-core";
-import { auditRender, BYPASS_PENDING, drawerStrays, figureFamily, pageOf, UNDRAWN_PENDING, type DrawnView, type RenderProblem, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
+import { auditRender, BYPASS_PENDING, CHART_TABLE_PENDING, chartTableOf, drawerStrays, figureFamily, pageOf, UNDRAWN_PENDING, type DrawnView, type RenderProblem, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** --merge <shard files…>: no browser, just the whole run's audit from what each shard drew. */
@@ -667,9 +667,15 @@ function finish(parts: Drawn[]) {
     console.log(`\n[WHAT-IF] Exploratory regions (kit WhatIf): their numbers are scenarios, held only to keep real data out:`);
     for (const [page, whys] of regions) console.log(`   ${page.padEnd(16)} ${String(Object.keys(whys).length).padStart(3)} region(s): ${Object.keys(whys).join("; ")}`);
   }
-  if (audit.pending.length) {
-    console.log(`\n[PENDING] ${audit.pending.length} bypass(es) on pages a later stage holds (BYPASS_PENDING, lib/book/proof/renderAudit.ts):`);
-    for (const [page, n] of count(audit.pending.map((p) => pageOf(p.view)))) console.log(`   ${page.padEnd(16)} ${String(n).padStart(5)}  ${BYPASS_PENDING[page]}`);
+  const bypasses = audit.pending.filter((p) => p.kind === "RENDER_BYPASS");
+  if (bypasses.length) {
+    console.log(`\n[PENDING] ${bypasses.length} bypass(es) on pages a later stage holds (BYPASS_PENDING, lib/book/proof/renderAudit.ts):`);
+    for (const [page, n] of count(bypasses.map((p) => pageOf(p.view)))) console.log(`   ${page.padEnd(16)} ${String(n).padStart(5)}  ${BYPASS_PENDING[page]}`);
+  }
+  const waiting = audit.pending.filter((p) => p.kind !== "RENDER_BYPASS");
+  if (waiting.length) {
+    console.log(`\n[PENDING] ${waiting.length} chart-table value(s) drawn n.a. while the owner chooses how to prove them (CHART_TABLE_PENDING, lib/book/proof/renderAudit.ts):`);
+    for (const [table, n] of count(waiting.map((p) => chartTableOf(p.view) ?? p.view))) console.log(`   ${table.padEnd(40)} ${String(n).padStart(5)}  ${CHART_TABLE_PENDING[table] ?? ""}`);
   }
   const undrawn = audit.missing.filter((k) => UNDRAWN_PENDING[figureFamily(k)]);
   if (undrawn.length) {
