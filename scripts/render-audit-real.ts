@@ -15,7 +15,7 @@
  *     the repo. --detail prints each problem in full, for working through them locally.
  *
  * Usage:
- *   npm run audit:real                         every page, drills capped (default 10 a view)
+ *   npm run audit:real                         every page, drills at CI's depth (80 a view)
  *   npm run audit:real -- --pages /taxes,/hsa  just those pages (a partial run)
  *   npm run audit:real -- --drills 0           no drill-downs (fastest); --drills 80 is CI's depth
  *   npm run audit:real -- --detail             each problem with its view, value and key (local only)
@@ -144,7 +144,7 @@ try {
       RENDER_AUDIT_UNLOCK: "1",
       RENDER_AUDIT_REDACT: flag("--detail") ? "0" : "1",
       RENDER_AUDIT_JSON: json,
-      RENDER_AUDIT_DRILLS: option("--drills") ?? process.env.RENDER_AUDIT_DRILLS ?? "10",
+      RENDER_AUDIT_DRILLS: option("--drills") ?? process.env.RENDER_AUDIT_DRILLS ?? "80",
       RENDER_AUDIT_BUDGET_MS: process.env.RENDER_AUDIT_BUDGET_MS ?? "300000",
       ...(option("--pages") ? { RENDER_AUDIT_ONLY: option("--pages") } : {}),
     },

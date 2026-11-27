@@ -313,7 +313,7 @@ function EdgeList({ r, findings, onAccept, onGo }: { r: BookReport; findings: Fi
       subtitle={`Every account has statements through ${date(r.horizon.netWorth)}, the data edge. Past it some have arrived and some haven't, so the pages stop there and nothing here withholds a figure. These clear as the statements on the To download tab come in.`}
     >
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        <button type="button" className={`${btn.link} text-xs`} onClick={() => setOpen(!open)}>
+        <button type="button" className={`${btn.link} text-xs`} onClick={() => setOpen(!open)} {...(open ? {} : { "data-audit-drill": "Show what's waiting" })}>
           {open ? "Hide what's waiting" : `Show what's waiting (${findings.length}${fails ? `, ${fails} that won't pair even with both statements on file` : ""})`}
         </button>
         <button type="button" className={`${btn.link} text-xs`} onClick={() => onGo("plan")}>
@@ -323,7 +323,8 @@ function EdgeList({ r, findings, onAccept, onGo }: { r: BookReport; findings: Fi
       {open && (
         <ul className="mt-2 flex flex-col divide-y divide-line">
           {groupByFix(findings).map(([fix, fs]) => (
-            <FindingGroup key={fix} fix={fix} findings={fs} onAccept={onAccept} />
+            // Opening the list is the reveal: each group shows every finding.
+            <FindingGroup key={fix} fix={fix} findings={fs} onAccept={onAccept} expanded />
           ))}
         </ul>
       )}
@@ -351,8 +352,8 @@ function FindingList({ title, subtitle, findings, onAccept }: { title: string; s
   );
 }
 
-function FindingGroup({ fix, findings, onAccept }: { fix: string; findings: Finding[]; onAccept: OnAccept }) {
-  const [all, setAll] = useState(false);
+function FindingGroup({ fix, findings, onAccept, expanded = false }: { fix: string; findings: Finding[]; onAccept: OnAccept; expanded?: boolean }) {
+  const [all, setAll] = useState(expanded);
   const shown = all ? findings : findings.slice(0, 3);
   return (
     <li className="py-2.5">

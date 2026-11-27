@@ -417,11 +417,12 @@ function explainNy(lines: CheckLine[], report: TaxReport, federal: CheckLine[], 
 /** Each W-2 against its pay stubs; each 1099 against its statements; each 1099-INT against the bank. */
 function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
   /** `explained`: a known difference in how the document and the statements count (added to the ledger side); a gap it fully closes is a match, with its note. */
-  const push = (label: string, document: string, documentValue: number, ledgerValue: number | null, note: string | null = null, explained?: { amount: number; note: string }) => {
+  const push = (label: string, document: string, documentValue: number, ledgerValue: number | null, note: string | null = null, explained?: { amount: number; note: () => string }) => {
     let status: SourceCheck["status"] = ledgerValue == null ? "LEDGER_MISSING" : Math.abs(documentValue - ledgerValue) <= 100 ? "MATCH" : "DIFFERENT";
     if (status === "DIFFERENT" && explained && explained.amount !== 0 && Math.abs(documentValue - (ledgerValue! + explained.amount)) <= 100) {
       status = "MATCH";
-      note = explained.note;
+      // Written only when it explains the gap, so its amounts are recorded only where they're drawn.
+      note = explained.note();
     }
     out.push({ label, document, documentValue, ledgerValue, status, note });
   };
@@ -455,7 +456,7 @@ function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
       a.ytd.ordinaryDividends + a.ytd.capGainDistShort,
       s ? s.ordinaryDividends + s.capGainDistShort : null,
       s ? null : "No statements for this account are on file.",
-      { amount: -priorYear, note: notes.say((x) => `The statements' January dividend of ${x.usd(priorYear, `the January dividend declared in ${report.year - 1}`, undefined, usdCents)} isn't on this 1099: a fund dividend declared in December and paid in January is taxed in ${report.year - 1}.`) },
+      { amount: -priorYear, note: () => notes.say((x) => `The statements' January dividend of ${x.usd(priorYear, `the January dividend declared in ${report.year - 1}`, undefined, usdCents)} isn't on this 1099: a fund dividend declared in December and paid in January is taxed in ${report.year - 1}.`) },
     );
     if (!s) continue;
     push(`${a.label} · qualified dividends`, a.doc!.file, a.ytd.qualifiedDividends, s.qualifiedDividends, "The statements can't tell qualified from not; the app's estimate is checked here.");
@@ -465,7 +466,7 @@ function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
     const fees = -(form?.proceedsInvestmentExpenses ?? 0);
     push(`${a.label} · realized gains`, a.doc!.file, a.ytd.shortTermGain + a.ytd.longTermGain + a.ytd.capGainDistLong, s.shortTermGain + s.longTermGain + s.capGainDistLong, null, {
       amount: fees,
-      note: notes.say((x) => `The statements net ${x.usd(fees, "proceeds investment expenses (trust fees) the statements net into gains", undefined, usdCents)} of proceeds investment expenses (trust fees) into gains; the 1099 lists them as supplemental information, not in its gains.`),
+      note: () => notes.say((x) => `The statements net ${x.usd(fees, "proceeds investment expenses (trust fees) the statements net into gains", undefined, usdCents)} of proceeds investment expenses (trust fees) into gains; the 1099 lists them as supplemental information, not in its gains.`),
     });
   }
   for (const f of docs.ints) {
