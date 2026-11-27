@@ -113,7 +113,7 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
               <dt className="text-muted">Balance {last ? `on ${fmtDate(last.date)}` : ""}</dt>
               <dd className="num text-lg font-semibold">
                 {last ? (
-                  <ProofValue proof={{ descriptor: { report: "statement", statementId: last.statementId }, shownCents: null }}>{fmtRewards(kind, last.balance, kind !== "CASH")}</ProofValue>
+                  <ProofValue proof={cf.pool(p.key, `printed:${last.statementId}`, "balance")}>{fmtRewards(kind, last.balance, kind !== "CASH")}</ProofValue>
                 ) : (
                   NA
                 )}
@@ -154,7 +154,7 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
             <RechartsResponsive
               tableTitle="Rewards balance, statement by statement"
               {...(kind === "CASH"
-                ? { cellProof: (row: Record<string, unknown>) => ({ descriptor: { report: "statement" as const, statementId: row.statementId as string }, shownCents: null }) }
+                ? { cellProof: (row: Record<string, unknown>) => cf.pool(p.key, `printed:${row.statementId as string}`, "balance") }
                 : { plainSeries: { balance: "points, as each statement prints the balance: not dollars" } })}
             >
               <AreaChart data={data} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
