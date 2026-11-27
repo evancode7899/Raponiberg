@@ -6,6 +6,7 @@ import { findingStart } from "../checks/collector.ts";
 import type { Book, BookStub } from "../load.ts";
 import { payBreakdown, personPayYear, stubGroups, UNKNOWN_PERSON } from "../pay.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
+import { sayer, type Amount, type SaidLine } from "../said.ts";
 
 /**
  * Bonuses: what each award letter promised (headline bonus, cash up front, deferred
@@ -184,6 +185,8 @@ export type BonusWarning = {
   /** The days it's about: a vesting window, or the award's year. */
   from: string;
   to: string;
+  /** The amounts its text prints (lib/book/said.ts, field "text"): drawn as figures. */
+  amounts?: Amount[];
 };
 export type ReviewedWarning = BonusWarning & { note: string; reviewedAt: string };
 
@@ -332,12 +335,14 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string): Bonus
 
   for (const w of windows) {
     if (w.status === "PAID_DIFFERENT") {
-      const text = `${w.label}: the letter schedules ${dollars(w.scheduledCents)} but the stubs show ${dollars(w.paidCents)} of bonus paid (${w.payments.map((p) => p.date).join(", ")}).`;
-      warnings.push({ id: `${w.key}|paid`, gapCents: w.paidCents - w.scheduledCents, from: w.from, to: w.to, text });
+      const say = sayer(`bonus:${w.key}|paid`, "text", dollars);
+      const text = `${w.label}: the letter schedules ${say.usd(w.scheduledCents, `what the letter schedules for ${w.label}`, [windowLine(w.key, "scheduled", w.scheduledCents)])} but the stubs show ${say.usd(w.paidCents, `the bonus the stubs show paid for ${w.label}`, [windowLine(w.key, "paid", w.paidCents)])} of bonus paid (${w.payments.map((p) => p.date).join(", ")}).`;
+      warnings.push({ id: `${w.key}|paid`, gapCents: w.paidCents - w.scheduledCents, from: w.from, to: w.to, text, amounts: say.amounts });
     }
     if (w.status === "NOT_ON_STUBS") {
-      const text = `${w.label}: ${dollars(w.scheduledCents)} was due from ${letters.find((l) => l.id === w.letterId)?.employer} and no bonus line on the stubs pays it.`;
-      warnings.push({ id: `${w.key}|not-on-stubs`, gapCents: -w.scheduledCents, from: w.from, to: w.to, text });
+      const say = sayer(`bonus:${w.key}|not-on-stubs`, "text", dollars);
+      const text = `${w.label}: ${say.usd(w.scheduledCents, `what the letter schedules for ${w.label}`, [windowLine(w.key, "scheduled", w.scheduledCents)])} was due from ${letters.find((l) => l.id === w.letterId)?.employer} and no bonus line on the stubs pays it.`;
+      warnings.push({ id: `${w.key}|not-on-stubs`, gapCents: -w.scheduledCents, from: w.from, to: w.to, text, amounts: say.amounts });
     }
   }
   const review = applyExceptions(book, warnings);
@@ -428,6 +433,10 @@ export function buildBonuses(book: Book, file: AwardsFile, today: string): Bonus
   };
 }
 
+/** A vesting window's scheduled or paid amount, as a sentence's line opening its bonuses proof. */
+const windowLine = (window: string, measure: "scheduled" | "paid", cents: number): SaidLine => ({ label: measure === "paid" ? "Paid, on the stubs" : "Scheduled, on the letter", cents, link: { label: "The window", descriptor: { report: "bonuses", figure: "window", window, measure } } });
+/** An award's part as a sentence's line, opening the award's proof. */
+const awardLine = (letterId: string, year: number, measure: "upfront" | "deferred" | "planDeferred" | "headline" | "base" | "totalComp", label: string, cents: number): SaidLine => ({ label, cents, link: { label: "The award", descriptor: { report: "bonuses", figure: "award", letterId, year, measure } } });
 const dollars = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
 const windowKey = (letterId: string, p: Pick<ScheduledPayment, "from" | "to">) => `${letterId}|${p.from}|${p.to}`;
@@ -527,18 +536,24 @@ function letterChecks(letter: AwardLetter, a: AwardRow): BonusWarning[] {
   // One-offs are outside the headline bonus, so only the cash, deferred and plan parts must add to it.
   const tol = 100 * Math.max(1, a.tranches.filter((t) => t.kind === "UPFRONT" || t.kind === "DEFERRED").length + (a.planDeferredCents ? 1 : 0));
   const parts = a.upfrontCents + a.deferredCents + a.planDeferredCents;
+  const aw = (measure: Parameters<typeof awardLine>[2], label: string, cents: number) => [awardLine(letter.id, a.year, measure, label, cents)];
   if (!a.partial && a.totalBonusCents != null && Math.abs(parts - a.totalBonusCents) > tol) {
-    const plan = a.planDeferredCents ? ` + to the deferral plan ${dollars(a.planDeferredCents)}` : "";
-    const text = `${letter.title}, ${a.year}: up front ${dollars(a.upfrontCents)} + deferred ${dollars(a.deferredCents)}${plan} doesn't add up to the ${dollars(a.totalBonusCents)} bonus.`;
-    out.push({ id: id("bonus-adds-up"), gapCents: parts - a.totalBonusCents, ...year, text });
+    const say = sayer(`bonus:${id("bonus-adds-up")}`, "text", dollars);
+    const front = say.usd(a.upfrontCents, `the ${a.year} award paid up front`, aw("upfront", "Up front, on the letter", a.upfrontCents));
+    const deferred = say.usd(a.deferredCents, `the ${a.year} award deferred`, aw("deferred", "Deferred, on the letter", a.deferredCents));
+    const plan = a.planDeferredCents ? ` + to the deferral plan ${say.usd(a.planDeferredCents, `the ${a.year} award to the deferral plan`, aw("planDeferred", "To the deferral plan, on the letter", a.planDeferredCents))}` : "";
+    const text = `${letter.title}, ${a.year}: up front ${front} + deferred ${deferred}${plan} doesn't add up to the ${say.usd(a.totalBonusCents, `the ${a.year} headline bonus`, aw("headline", "Headline bonus, on the letter", a.totalBonusCents))} bonus.`;
+    out.push({ id: id("bonus-adds-up"), gapCents: parts - a.totalBonusCents, ...year, text, amounts: say.amounts });
   }
   if (a.totalCompCents != null && a.baseCents != null && a.totalBonusCents != null && Math.abs(a.baseCents + a.totalBonusCents - a.totalCompCents) > 100) {
-    const text = `${letter.title}, ${a.year}: base ${dollars(a.baseCents)} + bonus ${dollars(a.totalBonusCents)} doesn't add up to the ${dollars(a.totalCompCents)} total compensation.`;
-    out.push({ id: id("comp-adds-up"), gapCents: a.baseCents + a.totalBonusCents - a.totalCompCents, ...year, text });
+    const say = sayer(`bonus:${id("comp-adds-up")}`, "text", dollars);
+    const text = `${letter.title}, ${a.year}: base ${say.usd(a.baseCents, `the letter's ${a.year} base salary`, aw("base", "Base salary, on the letter", a.baseCents))} + bonus ${say.usd(a.totalBonusCents, `the ${a.year} headline bonus`, aw("headline", "Headline bonus, on the letter", a.totalBonusCents))} doesn't add up to the ${say.usd(a.totalCompCents, `the letter's ${a.year} total compensation`, aw("totalComp", "Total compensation, on the letter", a.totalCompCents))} total compensation.`;
+    out.push({ id: id("comp-adds-up"), gapCents: a.baseCents + a.totalBonusCents - a.totalCompCents, ...year, text, amounts: say.amounts });
   }
   if (a.baseCents != null && a.stubBaseCents != null && Math.abs(a.baseCents - a.stubBaseCents) > 100) {
-    const text = `${letter.title}, ${a.year}: the letter's base salary is ${dollars(a.baseCents)}; regular pay on the stubs that year is ${dollars(a.stubBaseCents)}.`;
-    out.push({ id: id("base-vs-stubs"), gapCents: a.stubBaseCents - a.baseCents, ...year, text });
+    const say = sayer(`bonus:${id("base-vs-stubs")}`, "text", dollars);
+    const text = `${letter.title}, ${a.year}: the letter's base salary is ${say.usd(a.baseCents, `the letter's ${a.year} base salary`, aw("base", "Base salary, on the letter", a.baseCents))}; regular pay on the stubs that year is ${say.usd(a.stubBaseCents, `regular pay on the ${a.year} stubs`)}.`;
+    out.push({ id: id("base-vs-stubs"), gapCents: a.stubBaseCents - a.baseCents, ...year, text, amounts: say.amounts });
   }
   return out;
 }

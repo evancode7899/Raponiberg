@@ -1,6 +1,7 @@
 "use client";
 
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
+import { Said } from "@/components/ui/proof/Said";
 import { NA } from "@/lib/formatMoney";
 import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, Segmented, StatCell, StatGrid } from "@/components/ui/kit";
@@ -251,7 +252,7 @@ export function AnnualStatement({ r, est }: { r: AnnualProfileReport; est: YearE
 
 function Footnotes({ r, est }: { r: AnnualProfileReport; est: YearEstimate | null }) {
   const cur = r.years.find((y) => y.isCurrent);
-  const partials = r.years.flatMap((y) => (y.people ?? []).flatMap((p) => p.partial.map((note) => ({ key: `${y.year}-${note}`, text: `${y.label}: ${note}` }))));
+  const partials = r.years.flatMap((y) => (y.people ?? []).flatMap((p) => p.partial.map((note) => ({ key: `${y.year}-${note}`, label: y.label, note, amounts: p.partialAmounts }))));
   const partner = mergedPartner(r);
   return (
     <ul className="mt-3 flex flex-col gap-0.5 text-[11px] text-muted">
@@ -282,7 +283,9 @@ function Footnotes({ r, est }: { r: AnnualProfileReport; est: YearEstimate | nul
         </li>
       )}
       {partials.map((p) => (
-        <li key={p.key}>{p.text}</li>
+        <li key={p.key}>
+          {p.label}: <Said text={p.note} amounts={p.amounts} field="title" page="integrity" />
+        </li>
       ))}
     </ul>
   );

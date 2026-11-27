@@ -48,7 +48,7 @@ import { rederiveCashFlow } from "../rederive/cashFlow.ts";
 import { rederiveNetWorth, rederiveRollforwards } from "../rederive/netWorth.ts";
 import { rederiveInvestments } from "../rederive/investments.ts";
 import { rederiveCar } from "../rederive/car.ts";
-import { CALENDAR_WHY, declared, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical, rederiveVsActual } from "../rederive/pages.ts";
+import { CALENDAR_WHY, declared, SAID_WHY, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical, rederiveVsActual } from "../rederive/pages.ts";
 
 /**
  * Each page's derived figures, from its report built as the page's route builds it, once
@@ -108,7 +108,8 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
   },
   integrity: async ({ book }) => {
     const figures = integrityDerived({ ...book.integrity, horizon: book.horizon });
-    return { figures, rederived: declared(INTEGRITY_WHY)(figures), scope: null, through: book.horizon.netWorth };
+    const said = figures.filter((f) => f.figure === "amount");
+    return { figures, rederived: { ...declared(INTEGRITY_WHY)(figures.filter((f) => f.figure !== "amount")), ...declared(SAID_WHY)(said) }, scope: null, through: book.horizon.netWorth };
   },
   hsa: async ({ db, book }) => {
     const r = await loadHsaReport(db);

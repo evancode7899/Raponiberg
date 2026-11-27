@@ -3,7 +3,8 @@
 import { cachedResponse, type Api } from "@/components/ledger/useApi";
 import { integrityDerived } from "@/lib/book/derived/integrity";
 import { derivedTarget } from "@/lib/book/derived/types";
-import { Badge, btn, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { Badge, btn, Card, NotFigure, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { Said } from "@/components/ui/proof/Said";
 import type { SweepProblemKind, SweepReport } from "@/lib/book/proof/sweep";
 import { trustOf } from "@/lib/book/proof/trust";
 import { Restatements } from "./Restatements";
@@ -12,6 +13,9 @@ import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { useEffect, useMemo, useState } from "react";
 import type { BookReport, OnAccept, OnRetire } from "./useBookReport";
 
+/** Words you wrote, or a finding as it read when you accepted it: a record, not a figure worked out now. */
+const YOUR_NOTE = "your note, as you wrote it";
+const AS_ACCEPTED = "the finding as it read when you accepted it";
 const date = (iso: string) => formatDisplayDateFromYmd(iso);
 
 const KIND_WORDS: Record<SweepProblemKind, string> = {
@@ -276,8 +280,12 @@ export function ChecksPanel({ r, onRetire, api }: { r: BookReport; onRetire: OnR
                     <Badge tone="warn">partial</Badge>{" "}
                   </>
                 )}
-                <span className="font-medium text-fg">{i.title}</span>
-                <span className="text-muted"> — {i.detail}</span>
+                <span className="font-medium text-fg">
+                  <Said text={i.title} amounts={i.amounts} field="title" page="integrity" />
+                </span>
+                <span className="text-muted">
+                  {" "}— <Said text={i.detail} amounts={i.amounts} field="detail" page="integrity" />
+                </span>
               </li>
             ))}
           </ul>
@@ -349,7 +357,7 @@ function FindingGroup({ fix, findings, onAccept }: { fix: string; findings: Find
   return (
     <li className="py-2.5">
       <div className="text-[13px] font-medium text-fg">
-        {fix}
+        <Said text={fix} amounts={findings[0]?.amounts} field="fix" page="integrity" />
         {findings.length > 1 && <span className="ml-2 text-xs font-normal text-muted">({findings.length} findings)</span>}
       </div>
       <ul className="mt-1.5 flex flex-col gap-1.5">
@@ -375,12 +383,16 @@ function FindingRow({ f, onAccept }: { f: Finding; onAccept: OnAccept }) {
     <li className="rounded-md bg-surface-2 px-2.5 py-2 text-xs">
       <div className="flex flex-wrap items-start gap-2">
         <Badge tone={f.status === "FAIL" ? "neg" : f.atEdge ? "neutral" : "warn"}>{f.status === "FAIL" ? "failing" : f.atEdge ? "awaiting" : "missing"}</Badge>
-        <span className="min-w-0 flex-1 font-medium text-fg">{f.title}</span>
+        <span className="min-w-0 flex-1 font-medium text-fg">
+          <Said text={f.title} amounts={f.amounts} field="title" page="integrity" />
+        </span>
         <button type="button" className={btn.link} onClick={() => setOpen(!open)}>
           {open ? "Cancel" : "Accept as explained…"}
         </button>
       </div>
-      <p className="mt-1 text-muted">{f.detail}</p>
+      <p className="mt-1 text-muted">
+        <Said text={f.detail} amounts={f.amounts} field="detail" page="integrity" />
+      </p>
       <p className="mt-0.5 text-faint">
         {f.atEdge
           ? "Past the data edge: withholds nothing the pages show."
@@ -467,14 +479,18 @@ function AcceptedRow({ f, onRetire }: { f: AcceptedFinding; onRetire: OnRetire }
     <li className="rounded-md bg-surface-2 px-2.5 py-2">
       <div className="flex flex-wrap items-start gap-2">
         <Badge tone="info">accepted</Badge>
-        <span className="min-w-0 flex-1 font-medium text-fg">{f.title}</span>
+        <span className="min-w-0 flex-1 font-medium text-fg">
+          <Said text={f.title} amounts={f.amounts} field="title" page="integrity" />
+        </span>
         <button type="button" className={btn.link} onClick={() => setOpen(!open)}>
           {open ? "Cancel" : "Withdraw…"}
         </button>
       </div>
-      <p className="mt-1 text-muted">{f.detail}</p>
+      <p className="mt-1 text-muted">
+        <Said text={f.detail} amounts={f.amounts} field="detail" page="integrity" />
+      </p>
       <p className="mt-0.5 text-fg-2">
-        Your note: “{f.note}” · {date(f.acceptedAt.slice(0, 10))}
+        Your note: “<NotFigure why={YOUR_NOTE}>{f.note}</NotFigure>” · {date(f.acceptedAt.slice(0, 10))}
       </p>
       {open && <RetireForm id={f.exceptionId} initial="" label="Withdraw" onRetire={onRetire} onDone={() => setOpen(false)} />}
     </li>
@@ -502,19 +518,25 @@ function StaleRow({ e, onRetire }: { e: StaleException; onRetire: OnRetire }) {
     <li className="rounded-md bg-surface-2 px-2.5 py-2">
       <div className="flex flex-wrap items-start gap-2">
         <Badge tone="warn">to review</Badge>
-        <span className="min-w-0 flex-1 font-medium text-fg">{e.finding.title}</span>
+        <span className="min-w-0 flex-1 font-medium text-fg">
+          <NotFigure why={AS_ACCEPTED}>{e.finding.title}</NotFigure>
+        </span>
         <button type="button" className={btn.link} onClick={() => setOpen(!open)}>
           {open ? "Cancel" : "Approve retiring…"}
         </button>
       </div>
-      <p className="mt-1 text-muted">{e.finding.detail}</p>
+      <p className="mt-1 text-muted">
+        <NotFigure why={AS_ACCEPTED}>{e.finding.detail}</NotFigure>
+      </p>
       <p className="mt-0.5 text-fg-2">
-        Your note: “{e.note}” · {date(e.acceptedAt.slice(0, 10))}
+        Your note: “<NotFigure why={YOUR_NOTE}>{e.note}</NotFigure>” · {date(e.acceptedAt.slice(0, 10))}
       </p>
       <div className="mt-1.5 font-medium text-fg">Why it no longer arises</div>
       <ul className="mt-0.5 list-disc pl-4 text-muted">
         {e.evidence.map((x) => (
-          <li key={x}>{x}</li>
+          <li key={x}>
+            <NotFigure why="why the finding no longer arises: the checks' words, quoting what changed">{x}</NotFigure>
+          </li>
         ))}
       </ul>
       {open && <RetireForm id={e.id} initial={e.evidence.join(" ")} label="Retire" onRetire={onRetire} onDone={() => setOpen(false)} />}
@@ -530,12 +552,14 @@ function RetiredList({ retired }: { retired: RetiredException[] }) {
         <ul className="mt-2 flex flex-col gap-2">
           {[...retired].reverse().map((e) => (
             <li key={`${e.id}@${e.retiredAt}`} className="rounded-md bg-surface-2 px-2.5 py-2">
-              <div className="font-medium text-fg">{e.finding.title}</div>
+              <div className="font-medium text-fg">
+                <NotFigure why={AS_ACCEPTED}>{e.finding.title}</NotFigure>
+              </div>
               <p className="mt-0.5 text-fg-2">
-                Your note: “{e.note}” · accepted {date(e.acceptedAt.slice(0, 10))}
+                Your note: “<NotFigure why={YOUR_NOTE}>{e.note}</NotFigure>” · accepted {date(e.acceptedAt.slice(0, 10))}
               </p>
               <p className="mt-0.5 text-muted">
-                Retired {date(e.retiredAt.slice(0, 10))}: {e.reason}
+                Retired {date(e.retiredAt.slice(0, 10))}: <NotFigure why="your reason, as you wrote it">{e.reason}</NotFigure>
               </p>
             </li>
           ))}

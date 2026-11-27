@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, btn, Card, Segmented } from "@/components/ui/kit";
+import { Said } from "@/components/ui/proof/Said";
 import { useProof, type ProofTarget } from "@/components/ui/proof/context";
 import type { Granularity } from "@/lib/dates/isoDate";
 import type { BlockerTimeline, TimelineCell, TimelineFinding, TimelineLane, TimelinePeriod } from "@/lib/book/reports/timeline";
@@ -142,7 +143,7 @@ export function Timeline({ t }: { t: BlockerTimeline }) {
       {focus && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted">Highlighting:</span>
-          <span className="font-medium text-fg">{byId.get(focus)?.title}</span>
+          <span className="font-medium text-fg">{byId.get(focus) ? <Said text={byId.get(focus)!.title} amounts={byId.get(focus)!.amounts} field="title" page="integrity" /> : null}</span>
           <button type="button" className={btn.link} onClick={() => setFocus(null)}>
             Clear
           </button>
@@ -172,12 +173,12 @@ export function Timeline({ t }: { t: BlockerTimeline }) {
             <li key={f.id} className={`rounded-md bg-surface-2 px-2.5 py-2 text-xs ${focus === f.id ? "ring-2 ring-accent" : ""}`}>
               <div className="flex flex-wrap items-start gap-2">
                 <Badge tone={f.status === "FAIL" ? "neg" : "warn"}>{f.status === "FAIL" ? "clash" : "missing"}</Badge>
-                <span className="min-w-0 flex-1 font-medium text-fg">{f.title}</span>
+                <span className="min-w-0 flex-1 font-medium text-fg"><Said text={f.title} amounts={f.amounts} field="title" page="integrity" /></span>
                 <button type="button" className={btn.link} onClick={() => setFocus(focus === f.id ? null : f.id)}>
                   {focus === f.id ? "Unhighlight" : "Highlight"}
                 </button>
               </div>
-              <p className="mt-0.5 text-fg-2">{f.fix}</p>
+              <p className="mt-0.5 text-fg-2"><Said text={f.fix} amounts={f.amounts} field="fix" page="integrity" /></p>
               <dl className="mt-1 grid gap-x-3 gap-y-0.5 sm:grid-cols-[6rem_1fr]">
                 {per.map((x) => (
                   <div key={x.lane} className="contents">
@@ -313,7 +314,7 @@ function CellDetail({ sel, byId, onFocus, onClose }: { sel: NonNullable<Selectio
           <ul className="mt-0.5 list-disc pl-4 text-muted">
             {edge.map((f) => (
               <li key={f.id}>
-                <span className={f.status === "FAIL" ? "text-neg" : "text-fg-2"}>{f.title}</span> — {f.fix}
+                <span className={f.status === "FAIL" ? "text-neg" : "text-fg-2"}><Said text={f.title} amounts={f.amounts} field="title" page="integrity" /></span> — <Said text={f.fix} amounts={f.amounts} field="fix" page="integrity" />
               </li>
             ))}
           </ul>
@@ -325,13 +326,13 @@ function CellDetail({ sel, byId, onFocus, onClose }: { sel: NonNullable<Selectio
             <li key={f.id} className="rounded bg-surface px-2.5 py-2">
               <div className="flex flex-wrap items-start gap-2">
                 <Badge tone={f.status === "FAIL" ? "neg" : "warn"}>{f.status === "FAIL" ? "clash" : "missing"}</Badge>
-                <span className="min-w-0 flex-1 font-medium text-fg">{f.title}</span>
+                <span className="min-w-0 flex-1 font-medium text-fg"><Said text={f.title} amounts={f.amounts} field="title" page="integrity" /></span>
                 <button type="button" className={btn.link} onClick={() => onFocus(f.id)}>
                   Show every period it gates
                 </button>
               </div>
-              <p className="mt-0.5 text-muted">{f.detail}</p>
-              <p className="mt-0.5 text-fg-2">Fix: {f.fix}</p>
+              <p className="mt-0.5 text-muted"><Said text={f.detail} amounts={f.amounts} field="detail" page="integrity" /></p>
+              <p className="mt-0.5 text-fg-2">Fix: <Said text={f.fix} amounts={f.amounts} field="fix" page="integrity" /></p>
             </li>
           ))}
         </ul>

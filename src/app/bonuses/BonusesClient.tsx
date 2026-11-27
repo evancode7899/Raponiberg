@@ -1,6 +1,7 @@
 "use client";
 
 import { compositeOf, sumOf } from "@/components/ui/proof/context";
+import { Said } from "@/components/ui/proof/Said";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
@@ -185,7 +186,7 @@ function WarningCallout({ w, onReview }: { w: BonusWarning; onReview: OnReview }
         </button>
       }
     >
-      {w.text}
+      <Said text={w.text} amounts={w.amounts} field="text" page="integrity" />
       {open && (
         <NoteForm
           placeholder="Why this is fine (required) — e.g. employer rounding, in my favor"

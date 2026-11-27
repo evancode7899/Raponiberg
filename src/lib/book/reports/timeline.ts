@@ -23,7 +23,7 @@ export type TimelineCell = {
 
 export type TimelinePeriod = { label: string; start: string; end: string } & Record<TimelineLane, TimelineCell>;
 
-export type TimelineFinding = Pick<Finding, "id" | "check" | "status" | "title" | "detail" | "fix" | "atEdge">;
+export type TimelineFinding = Pick<Finding, "id" | "check" | "status" | "title" | "detail" | "fix" | "atEdge" | "amounts">;
 
 export type BlockerTimeline = {
   from: string;
@@ -50,7 +50,7 @@ export function buildBlockerTimeline(book: Book): BlockerTimeline {
   const used = new Map<string, TimelineFinding>();
   const ids = (fs: Finding[]) =>
     fs.map((f) => {
-      used.set(f.id, { id: f.id, check: f.check, status: f.status, title: f.title, detail: f.detail, fix: f.fix, atEdge: f.atEdge });
+      used.set(f.id, { id: f.id, check: f.check, status: f.status, title: f.title, detail: f.detail, fix: f.fix, atEdge: f.atEdge, ...(f.amounts?.length ? { amounts: f.amounts } : {}) });
       return f.id;
     });
 

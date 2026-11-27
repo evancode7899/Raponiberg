@@ -1,4 +1,5 @@
 import { addDays } from "../../dates/isoDate.ts";
+import { sayer, type Sayer } from "../said.ts";
 import { sameLeg, type LegFingerprint } from "../../transfers/decisionStore.ts";
 import { money } from "../coverage.ts";
 import type { Book, BookRow } from "../load.ts";
@@ -34,7 +35,7 @@ export function checkDecisions(book: Book, c: Collector) {
     .filter((r) => amounts.has(r.amountCents))
     .map((r) => ({ row: r, fp: { institution: accountOf.get(r.accountId)?.institution ?? "", identifiers: accountOf.get(r.accountId)?.identifiers ?? [], date: r.date, amountCents: r.amountCents } }));
   const hits = (leg: LegFingerprint) => rows.filter((x) => sameLeg(leg, x.fp)).map((x) => x.row);
-  const describe = (leg: LegFingerprint) => `${leg.date} ${money(leg.amountCents)} (${leg.institution} ••${leg.identifiers[0]?.slice(-4) ?? "?"})`;
+  const describe = (leg: LegFingerprint, say?: Sayer) => `${leg.date} ${say ? say.usd(leg.amountCents, `the ${leg.date} leg, as your decision records it`) : money(leg.amountCents)} (${leg.institution} ••${leg.identifiers[0]?.slice(-4) ?? "?"})`;
   const keyOf = (legs: LegFingerprint[]) =>
     legs
       .map((l) => `${l.institution.trim().toUpperCase()}#${[...l.identifiers].sort()[0] ?? "?"}:${l.date}:${l.amountCents}`)
@@ -48,7 +49,7 @@ export function checkDecisions(book: Book, c: Collector) {
 
   for (const d of book.decisions.confirmed) {
     const found = d.legs.map((leg) => ({ leg, rows: hits(leg) }));
-    const label = d.legs.map(describe).join(" ↔ ");
+    const label = d.legs.map((l) => describe(l)).join(" ↔ ");
     const missing = found.filter((f) => f.rows.length === 0);
     const ambiguous = found.filter((f) => f.rows.length > 1);
     const rs = found.map((f) => f.rows[0]).filter((r): r is BookRow => !!r);
@@ -57,38 +58,44 @@ export function checkDecisions(book: Book, c: Collector) {
       c.pass("transfer.decisions", { subject: `Your confirmed pairing ${label}`, ...scopeOf(d.legs) });
       continue;
     }
+    const id = `transfer.decisions:confirmed:${keyOf(d.legs)}`;
+    const t = sayer(id, "title");
+    const dt = sayer(id, "detail");
     const why = missing.length
-      ? `${missing.map((f) => describe(f.leg)).join(" and ")} isn't on any statement in the ledger (removed, re-read with a different date or amount, or held for review)`
+      ? `${missing.map((f) => describe(f.leg, dt)).join(" and ")} isn't on any statement in the ledger (removed, re-read with a different date or amount, or held for review)`
       : ambiguous.length
-        ? `${ambiguous.map((f) => `${describe(f.leg)} matches ${f.rows.length} rows`).join("; ")}, so it can't tell which one you meant`
+        ? `${ambiguous.map((f) => `${describe(f.leg, dt)} matches ${f.rows.length} rows`).join("; ")}, so it can't tell which one you meant`
         : "the rows are on file but aren't paired together — the ledger hasn't been refreshed since they were imported";
     c.add({
-      id: `transfer.decisions:confirmed:${keyOf(d.legs)}`,
+      id,
       check: "transfer.decisions",
       status: "FAIL",
-      title: `Your confirmed pairing ${label} isn't applied`,
+      title: `Your confirmed pairing ${d.legs.map((l) => describe(l, t)).join(" ↔ ")} isn't applied`,
       detail: `You confirmed it on ${d.confirmedAt.slice(0, 10)}${d.note ? ` ("${d.note}")` : ""}, but ${why}.`,
       fix: missing.length || ambiguous.length
         ? "Check the statements for those dates in Statements → Documents; once both legs are on file once each, the pairing re-applies itself."
         : "Refresh the ledger (Settings → Data → Re-run classifier) and it re-applies itself.",
       scope: scopeOf(d.legs),
+      amounts: [...t.amounts, ...dt.amounts],
     });
   }
 
   for (const d of book.decisions.rejected) {
     const rs = d.legs.map((leg) => hits(leg));
     if (rs.some((x) => x.length !== 1) || !pairedTogether(rs.map((x) => x[0]!))) {
-      c.pass("transfer.decisions", { subject: `Your rejected pairing ${d.legs.map(describe).join(" ↔ ")} stays unpaired`, ...scopeOf(d.legs) });
+      c.pass("transfer.decisions", { subject: `Your rejected pairing ${d.legs.map((l) => describe(l)).join(" ↔ ")} stays unpaired`, ...scopeOf(d.legs) });
       continue;
     }
+    const rt = sayer(`transfer.decisions:rejected:${keyOf(d.legs)}`, "title");
     c.add({
       id: `transfer.decisions:rejected:${keyOf(d.legs)}`,
       check: "transfer.decisions",
       status: "FAIL",
-      title: `A pairing you rejected is paired again: ${d.legs.map(describe).join(" ↔ ")}`,
+      title: `A pairing you rejected is paired again: ${d.legs.map((l) => describe(l, rt)).join(" ↔ ")}`,
       detail: `You rejected it on ${d.rejectedAt.slice(0, 10)}, but the ledger pairs those rows.`,
       fix: "Refresh the ledger (Settings → Data → Re-run classifier); if it's still paired, unpair it on Statements › Transfers.",
       scope: scopeOf(d.legs),
+      amounts: rt.amounts,
     });
   }
 }

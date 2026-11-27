@@ -1,3 +1,4 @@
+import type { Amount } from "./said.ts";
 /**
  * The Book: the household's single source of truth. One loader (loadBook) reads every
  * stored fact — committed statements and their rows, pay stubs with every line item,
@@ -84,6 +85,8 @@ export type Finding = {
   detail: string;
   /** What to do about it, in plain words. */
   fix: string;
+  /** The amounts its title, detail and fix print, each recorded where it was written (lib/book/said.ts): drawn as figures. */
+  amounts?: Amount[];
   scope: FindingScope;
   /** Further windows it blocks, for kinds of figures whose window differs (see statement.history). */
   extraScopes?: FindingScope[];
@@ -129,6 +132,8 @@ export type Inference = {
    * stub, from its year-to-date totals). Shown, but labelled partial wherever it appears.
    */
   partial?: boolean;
+  /** The amounts its title and detail print (lib/book/said.ts): drawn as figures. */
+  amounts?: Amount[];
   scope?: Pick<FindingScope, "personId" | "employerKey" | "from" | "to"> & { accountId?: string };
 };
 

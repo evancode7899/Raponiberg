@@ -1,5 +1,5 @@
 import { startedTaxYears } from "../../tax/params.ts";
-import { money } from "../coverage.ts";
+import { sentences } from "../said.ts";
 import { accountRef } from "../findingKeys.ts";
 import type { Book } from "../load.ts";
 import { chetYear, iraYear, type CustodianTie } from "../taxAdvantaged.ts";
@@ -25,15 +25,17 @@ export function checkCustodianContributions(book: Book, c: Collector) {
         continue;
       }
       const { ref, accounts } = accountRef(book, t.accountId);
+      const w = sentences(`contributions.custodian:${ref}:${year}`);
       c.add({
         id: `contributions.custodian:${ref}:${year}`,
         accounts,
         check: "contributions.custodian",
         status: "FAIL",
-        title: `${subject}: the statements say ${money(t.statement)}, the ledger's deposits ${money(t.ledger)}`,
-        detail: `The custodian's contributions-this-year line (through ${t.through}) and the deposits the ledger shows into the account differ by ${money(Math.abs(t.statement - t.ledger))}. One side was misread, or a deposit is missing from the rows.`,
+        title: `${subject}: the statements say ${w.title.usd(t.statement, `${year} contributions, as the statements' contributions line prints them`)}, the ledger's deposits ${w.title.usd(t.ledger, `${year} contributions, from the deposits in the account's rows`)}`,
+        detail: `The custodian's contributions-this-year line (through ${t.through}) and the deposits the ledger shows into the account differ by ${w.detail.usd(Math.abs(t.statement - t.ledger), "how far the statements and the ledger differ")}. One side was misread, or a deposit is missing from the rows.`,
         fix: "Compare the statements' contributions line with the account's rows on Transactions. A row read wrong is a bug in the statement reader; a contribution the custodian books differently (a prior-year contribution made this year) belongs in an exception with a note.",
         scope,
+        amounts: w.amounts,
       });
     }
   }

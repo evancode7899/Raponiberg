@@ -1,6 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ledger/LedgerBits";
+import { Said } from "@/components/ui/proof/Said";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import type { ProofRef } from "@/components/ui/proof/context";
 import type { ChildIncome, PersonReport } from "@/lib/tax/buildTaxReport";
@@ -141,7 +142,23 @@ function PersonIncome({ p, year, isCurrentYear, cell }: { p: PersonReport; year:
   return (
     <Card
       title={p.name}
-      subtitle={p.payrollSource === "NONE" ? `No ${year} pay stubs on file.` : p.partial.length ? `From pay stubs — partial: ${p.partial.join("; ")}` : "From pay stubs."}
+      subtitle={
+        p.payrollSource === "NONE" ? (
+          `No ${year} pay stubs on file.`
+        ) : p.partial.length ? (
+          <>
+            From pay stubs — partial:{" "}
+            {p.partial.map((x, i) => (
+              <span key={x}>
+                {i ? "; " : ""}
+                <Said text={x} amounts={p.partialAmounts} field="title" page="integrity" />
+              </span>
+            ))}
+          </>
+        ) : (
+          "From pay stubs."
+        )
+      }
     >
       <div className="flex flex-col gap-4">
         {p.payroll.map((e) => (

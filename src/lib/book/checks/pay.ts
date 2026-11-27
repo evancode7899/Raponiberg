@@ -1,6 +1,7 @@
 import { addDays } from "../../dates/isoDate.ts";
 import { stubChecks } from "../../ingest/payroll/checks.ts";
 import { accountsByLast4, isCovered, money, uncovered } from "../coverage.ts";
+import { rowLine, sentences, stubLine, type SaidLine } from "../said.ts";
 import { personRef, stubRef } from "../findingKeys.ts";
 import type { Book, BookStub } from "../load.ts";
 import { employerDeposits, netYtd, stubGroups, UNKNOWN_PERSON } from "../pay.ts";
@@ -34,16 +35,19 @@ export function checkPay(book: Book, c: Collector) {
     // Arithmetic.
     const bad = stubChecks(s).filter((x) => !x.ok);
     if (bad.length === 0 && s.warnings.length === 0) c.pass("paystub.arithmetic", stubPass(s, "adds up"));
-    else
+    else {
+      const w = sentences(`paystub.arithmetic:${stubRef(s)}`);
       c.add({
         id: `paystub.arithmetic:${stubRef(s)}`,
         check: "paystub.arithmetic",
         status: "FAIL",
         title: `${label(s)} doesn't add up`,
-        detail: [...bad.map((x) => `${x.label}: printed ${money(x.expected)}, lines give ${money(x.actual)}`), ...s.warnings].join("; "),
+        detail: [...bad.map((x) => `${x.label}: printed ${w.detail.usd(x.expected, `${x.label}, as the stub prints it`, [stubLine(`${x.label}, printed`, x.expected, s.id)])}, lines give ${w.detail.usd(x.actual, `${x.label}, from the stub's lines`)}`), ...s.warnings].join("; "),
         fix: `The stub (${s.documentTitle}) was read wrong — the ${s.source} extractor needs fixing for this layout.`,
         scope: yearScope(s),
+        amounts: w.amounts,
       });
+    }
 
     // Person.
     if (s.personId) c.pass("paystub.person", stubPass(s, `belongs to ${personName(s.personId)}`));
@@ -65,19 +69,21 @@ export function checkPay(book: Book, c: Collector) {
     }
     const accounts = s.deposits.flatMap((d) => (d.last4 ? accountsByLast4(book, d.last4) : []));
     const covered = accounts.some((a) => isCovered(book, a.id, s.payDate));
-    const where = s.deposits.map((d) => `••${d.last4 ?? "?"} ${money(d.amount)}`).join(" + ") || "an unknown account";
+    const dep = sentences(`paystub.deposit:${stubRef(s)}`);
+    const net = (x: typeof dep.title) => x.usd(s.printed.netCurrent, `the ${s.payDate} stub's net pay`, [stubLine("Net pay, as the stub prints it", s.printed.netCurrent, s.id)]);
+    const where = s.deposits.map((d) => `••${d.last4 ?? "?"} ${dep.detail.usd(d.amount, `the part deposited to ••${d.last4 ?? "?"}`, [stubLine(`Deposit to ••${d.last4 ?? "?"}, as the stub prints it`, d.amount, s.id)])}`).join(" + ") || "an unknown account";
     c.add({
       id: `paystub.deposit:${stubRef(s)}`,
       check: "paystub.deposit",
       status: covered && s.deposits.length === 1 ? "FAIL" : "MISSING",
-      title: `${label(s)}: net pay ${money(s.printed.netCurrent)} isn't on a bank statement`,
+      title: `${label(s)}: net pay ${net(dep.title)} isn't on a bank statement`,
       detail:
         s.deposits.length > 1
           ? `The paycheck was split (${where}); split deposits can't be matched to one bank row yet.`
           : accounts.length === 0
             ? `It was deposited to ${where}, which isn't a tracked account.`
             : covered
-              ? `${accounts[0]!.name}'s statement covers ${s.payDate}, but no deposit of ${money(s.printed.netCurrent)} is within 5 days of it.`
+              ? `${accounts[0]!.name}'s statement covers ${s.payDate}, but no deposit of ${net(dep.detail)} is within 5 days of it.`
               : `No statement for ${accounts[0]!.name} covers ${s.payDate}.`,
       fix:
         accounts.length === 0
@@ -86,6 +92,7 @@ export function checkPay(book: Book, c: Collector) {
             ? "Check the stub and the bank row (Transactions) — one of them was read wrong."
             : `Download the ${accounts[0]!.institution ?? ""} statement covering ${s.payDate}.`,
       scope: yearScope(s),
+      amounts: dep.amounts,
     });
   }
 
@@ -124,6 +131,8 @@ export function checkPay(book: Book, c: Collector) {
       const jump = netYtd(s) - paid - prevNet;
       const isFirst = prevDate === `${year - 1}-12-31`;
       if (jump !== 0) {
+        const cont = sentences(`pay.continuity:${stubRef(s)}`);
+        const jumpLines: SaidLine[] = [stubLine(`Year-to-date net on the ${s.payDate} stub`, netYtd(s), s.id), { label: "This check", cents: -paid }, { label: "Year-to-date net before it", cents: -prevNet }];
         const between = unlinked.filter((r) => r.date > addDays(prevDate, 3) && r.date < addDays(s.payDate, -3));
         const explained = between.reduce((t, r) => t + r.amountCents, 0);
         if (jump > 0 && isFirst && explained !== jump) {
@@ -136,8 +145,9 @@ export function checkPay(book: Book, c: Collector) {
             check: "pay.continuity",
             partial: true,
             title: `${who}: pay before ${s.payDate} is known only from year-to-date totals (partial)`,
-            detail: `The first stub on file (${s.payDate}) already shows ${money(jump)} of net pay earlier in ${year}. Those earlier stubs aren't available, so that pay is taken from the ${s.payDate} stub's year-to-date figures and can't be checked paycheck by paycheck.`,
+            detail: `The first stub on file (${s.payDate}) already shows ${cont.detail.usd(jump, `net pay earlier in ${year}, before the first stub on file`, jumpLines)} of net pay earlier in ${year}. Those earlier stubs aren't available, so that pay is taken from the ${s.payDate} stub's year-to-date figures and can't be checked paycheck by paycheck.`,
             scope: { personId: scope.personId, employerKey, from: `${year}-01-01`, to: addDays(s.payDate, -1) },
+            amounts: cont.amounts,
           });
         } else if (jump > 0 && explained === jump) {
           for (const r of between) {
@@ -148,7 +158,8 @@ export function checkPay(book: Book, c: Collector) {
             id: `pay.continuity:${stubRef(s)}`,
             check: "pay.continuity",
             title: `${who}: ${between.length} paycheck(s) between ${prevDate} and ${s.payDate} have no stub`,
-            detail: `Their total (${money(jump)} net) is inferred from two sources: the year-to-date figures on the ${s.payDate} stub and the deposits the bank received (${between.map((r) => `${r.date} ${money(r.amountCents)}`).join(", ")}).`,
+            detail: `Their total (${cont.detail.usd(jump, "net pay of the paychecks with no stub", jumpLines)} net) is inferred from two sources: the year-to-date figures on the ${s.payDate} stub and the deposits the bank received (${between.map((r) => `${r.date} ${cont.detail.usd(r.amountCents, `the ${r.date} deposit`, [rowLine(r.date, r.amountCents, r.id)])}`).join(", ")}).`,
+            amounts: cont.amounts,
           });
         } else {
           broken = true;
@@ -159,10 +170,11 @@ export function checkPay(book: Book, c: Collector) {
             title: jump < 0 ? `${who}: year-to-date pay goes backwards at ${s.payDate}` : `${who}: pay stub(s) missing between ${prevDate} and ${s.payDate}`,
             detail:
               jump < 0
-                ? `The ${s.payDate} stub's year-to-date net is ${money(-jump)} less than the stub before it plus this check.`
-                : `Year-to-date net pay jumps ${money(jump)} more than this check, and the bank deposits in between ${between.length ? `(${money(explained)})` : "(none found)"} don't account for it.`,
+                ? `The ${s.payDate} stub's year-to-date net is ${cont.detail.usd(-jump, "how far year-to-date net falls short", jumpLines.map((l) => ({ ...l, cents: -l.cents })))} less than the stub before it plus this check.`
+                : `Year-to-date net pay jumps ${cont.detail.usd(jump, "the jump in year-to-date net beyond this check", jumpLines)} more than this check, and the bank deposits in between ${between.length ? `(${cont.detail.usd(explained, "the deposits in between", between.map((r) => rowLine(r.date, r.amountCents, r.id)))})` : "(none found)"} don't account for it.`,
             fix: jump < 0 ? "One of the two stubs was read wrong; check them in Statements → Documents." : `Download the ${s.employer} pay stub(s) dated between ${prevDate} and ${s.payDate}.`,
             scope,
+            amounts: cont.amounts,
           });
         }
       }
@@ -175,29 +187,34 @@ export function checkPay(book: Book, c: Collector) {
     // pay after the last stub unread: the stubs on file prove the year up to it.
     const after = unlinked.filter((r) => r.date > addDays(last.payDate, 3) && r.date <= yearEnd);
     if (after.length === 0) c.pass("pay.after-last-stub", { subject: `${who}: nothing paid after the ${last.payDate} stub`, ...scope });
-    else
+    else {
+      const aft = sentences(`pay.after-last-stub:${groupRef}`);
       c.add({
         id: `pay.after-last-stub:${groupRef}`,
         check: "pay.after-last-stub",
         status: "MISSING",
         title: `${who}: ${after.length} paycheck(s) after the ${last.payDate} stub have no stub`,
-        detail: `Deposits: ${after.map((r) => `${r.date} ${money(r.amountCents)}`).join(", ")}. The year's pay can't be read without the latest stub.`,
+        detail: `Deposits: ${after.map((r) => `${r.date} ${aft.detail.usd(r.amountCents, `the ${r.date} deposit`, [rowLine(r.date, r.amountCents, r.id)])}`).join(", ")}. The year's pay can't be read without the latest stub.`,
         fix: `Download the ${last.employer} pay stub(s) dated after ${last.payDate}.`,
         scope: { ...scope, from: addDays(last.payDate, 1) },
+        amounts: aft.amounts,
       });
+    }
 
     // Paychecks deposited to an account with no statements available: from the stubs, partial.
     const lost = stubs.filter(toUnavailable);
     const lostNet = lost.reduce((t, s) => t + s.printed.netCurrent, 0);
     if (lost.length) {
       const where = [...new Set(lost.flatMap((s) => s.deposits.map((d) => d.last4!)))];
+      const un = sentences(`pay.unavailable:${groupRef}`);
       c.infer({
         id: `pay.unavailable:${groupRef}`,
         check: "pay.deposits-tie",
         partial: true,
-        title: `${who}: ${lost.length} paycheck(s), ${money(lostNet)} net, went to ${where.map((l) => `••${l}`).join(", ")} (no statements available)`,
+        title: `${who}: ${lost.length} paycheck(s), ${un.title.usd(lostNet, "net pay of those paychecks", lost.map((x) => stubLine(`${x.payDate} stub, net pay`, x.printed.netCurrent, x.id)))} net, went to ${where.map((l) => `••${l}`).join(", ")} (no statements available)`,
         detail: `${where.map((l) => `••${l}: ${unavailable.get(l) || "statements unavailable"}`).join("; ")}. That pay is taken from the stubs; the deposits can't be checked.`,
         scope: { personId: scope.personId, employerKey, from: `${year}-01-01`, to: yearEnd },
+        amounts: un.amounts,
       });
     }
 
@@ -211,6 +228,9 @@ export function checkPay(book: Book, c: Collector) {
     const linkedHere = stubs.map((s) => (s.depositTransactionId ? book.rowById.get(s.depositTransactionId) : undefined)).filter((r) => !!r);
     const received =
       linkedHere.reduce((t, r) => t + r!.amountCents, 0) + unlinked.filter((r) => r.date >= `${year}-01-01` && r.date <= addDays(last.payDate, 3)).reduce((t, r) => t + r.amountCents, 0);
+    const tie = sentences(`pay.deposits-tie:${groupRef}`);
+    const ytd = (x: typeof tie.title) => x.usd(netYtd(last), `year-to-date net on the ${last.payDate} stub`, [stubLine("Year-to-date net, as the stub prints it", netYtd(last), last.id)]);
+    const got = (x: typeof tie.title) => x.usd(received, `what tracked bank accounts received from ${last.employer}`, [...linkedHere.map((r) => rowLine(r!.date, r!.amountCents, r!.id)), ...unlinked.filter((r) => r.date >= `${year}-01-01` && r.date <= addDays(last.payDate, 3)).map((r) => rowLine(r.date, r.amountCents, r.id))]);
     if (tracked.length === 0 && expected === 0) {
       c.pass("pay.deposits-tie", { subject: `${who}: no paychecks to tracked accounts`, ...scope });
     } else if (depositAccounts.length === 0 || holes.length > 0) {
@@ -230,10 +250,11 @@ export function checkPay(book: Book, c: Collector) {
         id: `pay.deposits-tie:${groupRef}`,
         check: "pay.deposits-tie",
         status: "MISSING",
-        title: `${who}: ${money(expected - received)} of net pay never reached a tracked account`,
-        detail: `The ${last.payDate} stub says ${money(netYtd(last))} net so far${carriedIn ? ` (${money(carriedIn)} of it before the first stub on file)` : ""}${lostNet ? ` (${money(lostNet)} to accounts with no statements)` : ""}; tracked bank accounts received ${money(received)} from ${last.employer}. The rest was deposited to an account that isn't on file (or its deposits aren't recognized as this employer's).`,
+        title: `${who}: ${tie.title.usd(expected - received, "net pay that never reached a tracked account", [{ label: "Net pay the stubs say went to tracked accounts", cents: expected }, { label: "What tracked accounts received", cents: -received }])} of net pay never reached a tracked account`,
+        detail: `The ${last.payDate} stub says ${ytd(tie.detail)} net so far${carriedIn ? ` (${tie.detail.usd(carriedIn, "net pay before the first stub on file")} of it before the first stub on file)` : ""}${lostNet ? ` (${tie.detail.usd(lostNet, "net pay to accounts with no statements")} to accounts with no statements)` : ""}; tracked bank accounts received ${got(tie.detail)} from ${last.employer}. The rest was deposited to an account that isn't on file (or its deposits aren't recognized as this employer's).`,
         fix: "Add statements for the account those paychecks went to, or the missing pay stubs that name it.",
         scope,
+        amounts: tie.amounts,
       });
     else
       c.add({
@@ -241,9 +262,10 @@ export function checkPay(book: Book, c: Collector) {
         check: "pay.deposits-tie",
         status: "FAIL",
         title: `${who}: the bank received more from ${last.employer} than the stubs paid`,
-        detail: `The ${last.payDate} stub says ${money(netYtd(last))} net so far; the bank received ${money(received)} (difference ${money(received - expected)}).`,
+        detail: `The ${last.payDate} stub says ${ytd(tie.detail)} net so far; the bank received ${got(tie.detail)} (difference ${tie.detail.usd(received - expected, "what the bank received beyond the stubs", [{ label: "What tracked accounts received", cents: received }, { label: "Net pay the stubs say went to tracked accounts", cents: -expected }])}).`,
         fix: "A deposit from this employer that isn't pay (an expense reimbursement?) or a misread stub. Compare the stubs with the deposits on Transactions.",
         scope,
+        amounts: tie.amounts,
       });
   }
 
@@ -303,14 +325,16 @@ export function checkPay(book: Book, c: Collector) {
   }
   for (const [k, rows] of orphans) {
     const year = k.split("|").at(-1)!;
+    const orph = sentences(`pay.unexplained-deposits:${k}`);
     c.add({
       id: `pay.unexplained-deposits:${k}`,
       check: "pay.unexplained-deposits",
       status: "MISSING",
       title: `${rows.length} paycheck deposit(s) from "${rows[0]!.payee}" in ${year} have no pay stub`,
-      detail: `${rows.map((r) => `${r.date} ${money(r.amountCents)}`).join(", ")}. Without the stubs, the gross pay, taxes and deductions behind them are unknown.`,
+      detail: `${rows.map((r) => `${r.date} ${orph.detail.usd(r.amountCents, `the ${r.date} deposit`, [rowLine(r.date, r.amountCents, r.id)])}`).join(", ")}. Without the stubs, the gross pay, taxes and deductions behind them are unknown.`,
       fix: "Download the pay stubs for these paychecks (or, if a deposit isn't pay, recategorize it on Transactions).",
       scope: { from: `${year}-01-01`, to: `${year}-12-31`, affects: ["PAY", "TAX"] },
+      amounts: orph.amounts,
     });
   }
 }

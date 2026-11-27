@@ -1,4 +1,5 @@
 import type { IntegrityReport } from "../types.ts";
+import { amountFigures } from "./said.ts";
 import { ln, t, type DerivedFigure } from "./types.ts";
 
 type Report = Pick<IntegrityReport, "checks" | "findings" | "inferences" | "accepted" | "stale"> & { horizon: { netWorth: string } };
@@ -34,5 +35,7 @@ export function integrityDerived(r: Report): DerivedFigure[] {
     },
     count("inferred", "Facts inferred from other sources", r.inferences, "Inferences"),
     { ...count("accepted", "Exceptions you accepted", r.accepted, "Accepted exceptions"), lines: [ln("Accepted exceptions", t(String(r.accepted.length)), undefined, { source: "assumption" }), ln("To review (their finding no longer arises)", t(String(r.stale.length)))] },
+    // The amounts the findings' sentences print (lib/book/said.ts), each a figure where it's drawn.
+    ...amountFigures([...r.findings, ...r.accepted, ...r.inferences].flatMap((f) => f.amounts ?? [])),
   ];
 }

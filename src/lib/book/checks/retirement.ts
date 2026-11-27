@@ -1,7 +1,7 @@
 import { addDays } from "../../dates/isoDate.ts";
+import { rowLine, sentences, stubLine } from "../said.ts";
 import { amountsFromLines } from "../../ingest/payroll/index.ts";
 import { QNEC_LABEL } from "../../ingest/parsers/empower.ts";
-import { money } from "../coverage.ts";
 import { accountRef } from "../findingKeys.ts";
 import type { Book, BookStub } from "../load.ts";
 import type { Collector } from "./collector.ts";
@@ -56,11 +56,13 @@ export function checkRetirement(book: Book, c: Collector) {
         const offPayroll = kind === "employer" ? laneRows.filter((r) => NON_PAYROLL_EMPLOYER.test(r.payee)) : [];
         const onStatement = laneRows.filter((r) => !offPayroll.includes(r)).reduce((t, r) => t + r.amountCents, 0);
         if (offPayroll.length) {
+          const q = sentences(`retirement.contributions:${ref}:${st.periodStart}:${st.periodEnd}:qnec`);
           c.infer({
             id: `retirement.contributions:${ref}:${st.periodStart}:${st.periodEnd}:qnec`,
             check: "retirement.contributions",
-            title: `${account.name} ${st.periodStart} – ${st.periodEnd}: ${money(offPayroll.reduce((t, r) => t + r.amountCents, 0))} qualified non-elective contribution`,
+            title: `${account.name} ${st.periodStart} – ${st.periodEnd}: ${q.title.usd(offPayroll.reduce((t, r) => t + r.amountCents, 0), "the contribution made outside payroll", offPayroll.map((x) => rowLine(`${x.date} ${x.payee}`, x.amountCents, x.id)))} qualified non-elective contribution`,
             detail: "The plan sponsor deposited this outside payroll (a corrective contribution), so no pay stub carries it. It counts as employer money but is not compared with the stubs.",
+            amounts: q.amounts,
           });
         }
         const amounts = stubs.map((s) => ({ date: s.payDate, v: per(s)[kind] }));
@@ -78,17 +80,21 @@ export function checkRetirement(book: Book, c: Collector) {
         const stubTotal = amounts.filter((a) => a.date >= st.periodStart && a.date <= st.periodEnd).reduce((t, a) => t + a.v, 0);
         if (ok)
           c.pass("retirement.contributions", { subject: `${account.name} ${st.periodStart} – ${st.periodEnd}: ${kind} money ties to the stubs`, personId, employerKey, accountId: account.id, from: st.periodStart, to: st.periodEnd, affects: ["PAY"] });
-        else
+        else {
+          const k = sentences(`retirement.contributions:${ref}:${st.periodStart}:${st.periodEnd}:${kind}`);
+          const inQuarter = stubs.filter((x) => x.payDate >= st.periodStart && x.payDate <= st.periodEnd);
           c.add({
             id: `retirement.contributions:${ref}:${st.periodStart}:${st.periodEnd}:${kind}`,
             accounts,
             check: "retirement.contributions",
             status: "FAIL",
             title: `${account.name} ${st.periodStart} – ${st.periodEnd}: ${kind} contributions don't match the pay stubs`,
-            detail: `The statement shows ${money(onStatement)} of ${kind} money; the stubs paid in that quarter withheld ${money(stubTotal)}, and no shift of a paycheck across the quarter's boundaries reconciles them.`,
+            detail: `The statement shows ${k.detail.usd(onStatement, `the ${kind} money on the statement`, laneRows.filter((x) => !offPayroll.includes(x)).map((x) => rowLine(`${x.date} ${x.payee}`, x.amountCents, x.id)))} of ${kind} money; the stubs paid in that quarter withheld ${k.detail.usd(stubTotal, `the ${kind} 401(k) money the quarter's stubs withheld`, inQuarter.map((x) => stubLine(`${x.payDate} stub`, per(x)[kind], x.id)))}, and no shift of a paycheck across the quarter's boundaries reconciles them.`,
             fix: "Compare the statement's contribution lines with the stubs' 401(k) lines — one of them was read wrong, or contributions went to another plan.",
             scope: { personId, employerKey, accountId: account.id, from: st.periodStart, to: st.periodEnd, affects: ["PAY"] },
+            amounts: k.amounts,
           });
+        }
       }
     }
   }

@@ -1,3 +1,4 @@
+import type { Amount } from "../book/said.ts";
 import { taxBlockers, taxYearThrough, yearProvenToEnd } from "../book/blockers.ts";
 import type { Book, BookBrokerage, BookStub } from "../book/load.ts";
 import { personPayYear } from "../book/pay.ts";
@@ -172,6 +173,8 @@ export type PersonReport = {
   payrollSource: "STUBS" | "W2" | "NONE";
   /** Pay taken from year-to-date totals only (earlier stubs not available). */
   partial: string[];
+  /** The amounts those partial notes print (their inferences' title amounts, lib/book/said.ts). */
+  partialAmounts: Amount[];
   payroll: PayrollEntry[];
   accounts: AccountIncome[];
   retirement: { conversions: number; basis: number; rollovers: number; otherDistributions: number; taxable: number; source: "STATEMENTS" | "1099-R" };
@@ -390,10 +393,12 @@ export function buildTaxReport(
   // ---------------------------------------------------------------- payroll
   const stubsByPerson = new Map<string, BookStub[]>();
   const partialByPerson = new Map<string, string[]>();
+  const partialAmountsByPerson = new Map<string, Amount[]>();
   for (const p of profile.persons) {
     const pay = personPayYear(book, p.id, year, through);
     stubsByPerson.set(p.id, pay.employers.flatMap((e) => e.stubs));
     partialByPerson.set(p.id, pay.partial.map((i) => i.title));
+    partialAmountsByPerson.set(p.id, pay.partial.flatMap((i) => (i.amounts ?? []).filter((a) => a.field === "title")));
   }
 
   // ---------------------------------------------------------------- payments
@@ -763,6 +768,7 @@ export function buildTaxReport(
       bonusChecks: bonusChecksOf(stubs, fromForecast?.items ?? []),
       payrollSource,
       partial: partialByPerson.get(person.id) ?? [],
+      partialAmounts: partialAmountsByPerson.get(person.id) ?? [],
       payroll,
       accounts: mine.map(({ a }) => a),
       retirement: { conversions, basis, rollovers, otherDistributions, taxable: retirementTaxable, source: rForms.length ? "1099-R" : "STATEMENTS" },

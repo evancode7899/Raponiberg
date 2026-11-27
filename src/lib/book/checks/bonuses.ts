@@ -1,4 +1,5 @@
 import type { Book } from "../load.ts";
+import { sayer } from "../said.ts";
 import { awardsOf, bonusFindingId, buildBonuses } from "../reports/bonuses.ts";
 import type { Collector } from "./collector.ts";
 
@@ -27,17 +28,21 @@ export function checkBonusLetters(book: Book, c: Collector) {
     return;
   }
   const open = new Set(report.warnings.map((w) => w.id));
-  for (const w of report.warnings)
+  for (const w of report.warnings) {
+    const off = sayer(bonusFindingId(w), "detail");
     c.add({
       id: bonusFindingId(w),
       check: "bonus.letters",
       // A letter from an employer with no stubs on file can't be checked: missing, not wrong.
       status: w.id.endsWith("|no-stubs") ? "MISSING" : "FAIL",
       title: w.text,
-      detail: w.gapCents ? `Off by ${(Math.abs(w.gapCents) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}. The pay stubs are what counts as pay; the letter feeds the Bonuses page and the forecast's scheduled bonuses.` : "The pay stubs are what counts as pay; the letter feeds the Bonuses page and the forecast's scheduled bonuses.",
+      detail: w.gapCents ? `Off by ${off.usd(Math.abs(w.gapCents), "how far the stubs and the letter differ")}. The pay stubs are what counts as pay; the letter feeds the Bonuses page and the forecast's scheduled bonuses.` : "The pay stubs are what counts as pay; the letter feeds the Bonuses page and the forecast's scheduled bonuses.",
       fix: "Correct the letter in data/bonus-awards.json if it was typed wrong; otherwise accept the gap with a note saying why (Bonuses, or Statements → Issues).",
       scope: { from: w.from, to: w.to, affects: ["BONUS"] },
+      // The warning's text is the finding's title: its amounts go with it.
+      amounts: [...(w.amounts ?? []).map((a) => ({ ...a, field: "title" })), ...off.amounts],
     });
+  }
   // Every vesting window the stubs paid as scheduled.
   for (const w of report.windows)
     if (w.status === "PAID" && !open.has(`${w.key}|paid`)) c.pass("bonus.letters", { subject: `${w.label}: paid as the letter schedules`, from: w.from, to: w.to, affects: ["BONUS"] });

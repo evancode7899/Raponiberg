@@ -1,8 +1,8 @@
 import { addDays } from "../../dates/isoDate.ts";
+import { sentences } from "../said.ts";
 import { buildNetWorthReport } from "../../ledger/netWorthReport.ts";
 import { billAccountIds, carriesDifference, transferDifferenceAdjustments } from "../../ledger/transferFees.ts";
 import { bookedShare } from "../booking.ts";
-import { money } from "../coverage.ts";
 import type { Book, BookRow } from "../load.ts";
 import type { Collector } from "./collector.ts";
 
@@ -69,11 +69,12 @@ export function checkNetWorth(book: Book, c: Collector) {
     }
     const expected = inFlight + fromUnavailable;
     const h = p.household;
+    const w = sentences(`networth.reconciles:${p.start.slice(0, 7)}`);
     const problems: string[] = [];
-    if (h.unexplainedCents !== 0) problems.push(`${money(h.unexplainedCents)} of change no statement explains`);
+    if (h.unexplainedCents !== 0) problems.push(`${w.detail.usd(h.unexplainedCents, `${p.label}: change no statement explains`)} of change no statement explains`);
     if (Math.abs(h.transferResidualCents - expected) > Math.ceil(fractional / 2))
       problems.push(
-        `transfers between your accounts net to ${money(h.transferResidualCents)}, but only ${money(Math.round(expected))} was in flight at the month's edges or came from accounts with no statements`,
+        `transfers between your accounts net to ${w.detail.usd(h.transferResidualCents, `${p.label}: what transfers between your accounts net to`)}, but only ${w.detail.usd(Math.round(expected), `${p.label}: what was in flight or came from accounts with no statements`)} was in flight at the month's edges or came from accounts with no statements`,
       );
     if (problems.length === 0) {
       // A month whose opening or closing value is an estimate (an investment statement's
@@ -104,6 +105,7 @@ export function checkNetWorth(book: Book, c: Collector) {
       detail: problems.join("; ") + ".",
       fix: "A row is in the wrong lane (e.g. an own-account transfer filed as spending), or a lossy transfer needs confirming on Statements › Transfers.",
       scope: { from: p.start, to: end, affects: ["NET_WORTH", "CASH_FLOW"] },
+      amounts: w.amounts,
     });
   }
 }

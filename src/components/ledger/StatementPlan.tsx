@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, Card, Segmented } from "@/components/ui/kit";
+import { Said } from "@/components/ui/proof/Said";
 import type { PlanAccount, PlanEmployer, PlanLane, PlanStatement, PlanStub, StatementPlan as Plan } from "@/lib/book/reports/statementPlan";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { useMemo, useState } from "react";
@@ -241,7 +242,7 @@ export function StatementPlan({ plan }: { plan: Plan }) {
               .filter((o) => LANES.some((l) => (o.neededFrom[l.id] ?? "9999") <= target.end))
               .map((o) => (
                 <li key={o.id}>
-                  <span className="font-medium text-fg">{o.title}</span> — {o.fix}
+                  <span className="font-medium text-fg"><Said text={o.title} amounts={o.amounts} field="title" page="integrity" /></span> — <Said text={o.fix} amounts={o.amounts} field="fix" page="integrity" />
                 </li>
               ))}
           </ul>
@@ -374,7 +375,7 @@ function AccountRow({ a, need, today }: { a: PlanAccount; need: PlanStatement[];
                   <ul className="mt-0.5 list-disc pl-4">
                     {s.settles.map((f) => (
                       <li key={f.id}>
-                        {f.title}
+                        <Said text={f.title} amounts={f.amounts} field="title" page="integrity" />
                         {f.anyOf.length > 1 && <span> (any of those accounts&apos; statements settles it)</span>}
                       </li>
                     ))}
