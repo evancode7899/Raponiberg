@@ -4,7 +4,7 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { merchantKeyOf, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Card, StatCell, StatGrid, table } from "@/components/ui/kit";
-import { compositeOf } from "@/components/ui/proof/context";
+import { compositeOf, sumOf } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
@@ -51,7 +51,13 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Income by type" subtitle="What reached your bank accounts each month. Payroll 401(k) deferrals never touch checking, so they aren't here.">
           <div className="h-[280px] w-full min-w-0">
-            <RechartsResponsive>
+            <RechartsResponsive
+              tableTitle="Income by kind, month by month"
+              cellProof={(r, c) => {
+                const m = slice.months.find((x) => x.label === r.label)!;
+                return ctx.proof("income", [m], { category: c, shownCents: m.incomeByCategory.find((x) => x.category === c)?.cents ?? 0 });
+              }}
+            >
               <BarChart data={stack} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
@@ -67,7 +73,14 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
         </Card>
         <Card title="Cumulative savings" subtitle={`Income minus spending, added up month by month since ${slice.months[0]!.label}.`}>
           <div className="h-[280px] w-full min-w-0">
-            <RechartsResponsive>
+            <RechartsResponsive
+              tableTitle="Saved so far, month by month"
+              cellProof={(r) => {
+                // Saved by each month: that month's and every earlier month's net, summed.
+                const upTo = slice.months.slice(0, slice.months.findIndex((x) => x.label === r.label) + 1);
+                return sumOf(upTo.map((m) => ctx.proof("net", [m], { shownCents: m.netCents })), upTo.reduce((s, m) => s + m.netCents, 0));
+              }}
+            >
               <AreaChart data={cumulative} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />

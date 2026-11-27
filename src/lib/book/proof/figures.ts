@@ -69,7 +69,7 @@ const cents = (c: number | null | undefined): ProofValue | null => (c == null ? 
 
 // ------------------------------------------------------------------ Cash flow
 
-/** Each proven month's income, spending and saved, each category of its spending, and (from the spending report) each band of spending. */
+/** Each proven month's income, spending and saved, each category of its income and its spending (Cash flow's charts and their tables), and (from the spending report) each band of spending. */
 export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKinds })[], accountIds?: string[]): PageFigure[] {
   const out: PageFigure[] = [];
   const scope = accountIds?.length ? { accountIds } : {};
@@ -82,6 +82,7 @@ export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKin
       { page: "Cash flow", descriptor: d("net"), shown: cents(p.netCents) },
     );
     for (const c of p.spendingByCategory) out.push({ page: "Cash flow", descriptor: d("spending", c.category), shown: cents(c.cents) });
+    for (const c of p.incomeByCategory) out.push({ page: "Cash flow", descriptor: d("income", c.category), shown: cents(c.cents) });
     if (p.kinds)
       for (const [spendingKind, shown] of [["bill", p.kinds.billCents], ["big", p.kinds.bigCents], ["everyday", p.kinds.everydayCents]] as const)
         out.push({ page: "Cash flow", descriptor: { ...(d("spending") as CashFlowDescriptor), spendingKind }, shown: cents(shown) });
