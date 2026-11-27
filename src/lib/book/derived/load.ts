@@ -47,7 +47,7 @@ import { investmentsDerived } from "./investments.ts";
 import type { DerivedFigure, DerivedPage } from "./types.ts";
 import { rederiveCashFlow } from "../rederive/cashFlow.ts";
 import { rederiveNetWorth, rederiveRollforwards } from "../rederive/netWorth.ts";
-import { rederiveInvestments } from "../rederive/investments.ts";
+import { rederiveInvestments, rederiveReturns } from "../rederive/investments.ts";
 import { rederiveCar } from "../rederive/car.ts";
 import { CALENDAR_WHY, declared, SAID_WHY, FUNDS_WHY, INTEGRITY_WHY, LIMITS_WHY, TAXES_WHY, BUILT_WHY, FORECAST_WHY, rederiveCardPerks, rederiveHsa, rederiveInsurance, rederiveMedical, rederiveVsActual } from "../rederive/pages.ts";
 
@@ -71,7 +71,7 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
     // The forecast's return prices a fee over 20 years, as the page's route serves it.
     const returnRate = profile.outlook.returnRate;
     const figures = investmentsDerived(r, returnRate);
-    return { figures, rederived: rederiveInvestments(book, r, figures, returnRate), scope: { query: { affects: "NET_WORTH", from: r.asOf, to: r.asOf }, checks: INVESTMENTS_CHECKS }, through: r.asOf };
+    return { figures, rederived: { ...rederiveInvestments(book, r, figures, returnRate), ...rederiveReturns(book, r, figures) }, scope: { query: { affects: "NET_WORTH", from: r.asOf, to: r.asOf }, checks: INVESTMENTS_CHECKS }, through: r.asOf };
   },
   car: async ({ book, db }) => {
     const g = garagePage(book, await loadJsonSetting(db, CAR_KEY, normalizeGarage));

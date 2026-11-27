@@ -1,9 +1,11 @@
-import { decompose, valueAt } from "../../ledger/timeline.ts";
+import { minIso, periodsBetween } from "../../dates/isoDate.ts";
+import { isSp500Fund } from "../../investments/sp500.ts";
+import { decompose, dietzParts, MIN_RETURN_CAPITAL_CENTS, valueAt } from "../../ledger/timeline.ts";
 import type { DerivedFigure } from "../derived/types.ts";
 import { FEE_YEARS } from "../derived/investments.ts";
 import { household } from "../householdView.ts";
 import type { Book } from "../load.ts";
-import { centsRoute, invariant, ratioRoute, rederiveList } from "../proof/independence.ts";
+import { centsRoute, invariant, ratioRoute, rederiveList, textRoute } from "../proof/independence.ts";
 import type { Rederivation, RederivedRoute } from "../proof/types.ts";
 import type { InvestmentsReport, PositionRow } from "../reports/investments.ts";
 
@@ -149,3 +151,109 @@ export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "as
   });
 }
 
+
+/**
+ * Investments › Returns worked out a second way: each quarter's portfolio return from every
+ * investment account's timeline month by month (Modified Dietz), chained, never the report's
+ * own; the S&P 500's from the statements' holdings re-read from the Book; each balance and the
+ * money in from the timelines; the chains and counts from the quarters' own figures.
+ */
+export function rederiveReturns(book: Book, rep: Pick<InvestmentsReport, "returns">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const ledger = household(book).ledger;
+  const accounts = ledger.accounts.filter((a) => a.isInvestment);
+  const through = book.horizon.netWorth;
+  const quarters = new Map(rep.returns.quarters.map((q) => [q.quarter, q]));
+  const fig = new Map(figures.map((f) => [`${f.figure}|${f.key ?? ""}`, f.value]));
+  const ratioOf = (figure: string, key: string) => {
+    const v = fig.get(`${figure}|${key}`);
+    return v && "ratio" in v ? v.ratio : null;
+  };
+  const DIETZ = "each month re-worked from every investment account's timeline (Modified Dietz), chained";
+  const quarterReturn = (start: string, end: string) => {
+    let g = 1;
+    let months = 0;
+    for (const m of periodsBetween(start, minIso(end, through), "month")) {
+      const to = minIso(m.end, through);
+      let gain = 0;
+      let capital = 0;
+      for (const a of accounts) {
+        if (!a.timeline.firstDay || a.timeline.firstDay > to || (a.timeline.lastDay ?? to) < m.start) continue;
+        const p = dietzParts(a.timeline, m.start, to);
+        gain += p.gainCents;
+        capital += p.capitalCents;
+      }
+      if (capital < MIN_RETURN_CAPITAL_CENTS) continue;
+      g *= 1 + gain / capital;
+      months++;
+    }
+    return months ? g - 1 : null;
+  };
+  const sp500Position = (documentId: string) => book.holdings.find((h) => h.documentId === documentId)?.positions.find((p) => isSp500Fund(p));
+  const balance = (iso: string) => accounts.reduce((s, a) => (a.timeline.firstDay && a.timeline.firstDay <= iso ? s + valueAt(a.timeline, iso).cents : s), 0);
+  const w = rep.returns.window;
+
+  return rederiveList(figures, (f) => {
+    const v = f.value;
+    const [, quarter, col] = (f.key ?? "").split("|");
+    switch (f.figure) {
+      case "ret-quarter": {
+        const q = quarters.get(quarter!);
+        if (!q) return null;
+        if (col === "portfolio") return [ratioRoute(DIETZ, v, quarterReturn(q.start, q.end), `${q.start} to ${q.end}`, 1e-9)];
+        const s = q.sp500?.source;
+        if (!s) return null;
+        const STMT = "the statements' holdings, re-read from the Book";
+        if (s.kind === "printed") return [ratioRoute(STMT, v, sp500Position(s.documentId)?.printedIndex?.threeMonth ?? null, "the S&P 500 Index's 3-month return the statement prints", 1e-12)];
+        if (s.kind === "unit-value") {
+          const at = (id: string) => {
+            const p = sp500Position(id);
+            return p?.quantity ? p.valueCents / p.quantity : null;
+          };
+          const a = at(s.from.documentId);
+          const b = at(s.to.documentId);
+          return [ratioRoute(STMT, v, a && b ? b / a - 1 : null, "the trust's value over its units at each end", 1e-12)];
+        }
+        if (s.kind === "backed-out") {
+          const year = sp500Position(s.documentId)?.printedIndex?.oneYear;
+          const later = s.after.map((x) => ratioOf("ret-quarter", `returns|${x.quarter}|sp500`));
+          return [ratioRoute(`${STMT}, and the later quarters' own figures`, v, year != null && later.every((x) => x != null) ? (1 + year) / later.reduce((g, x) => g * (1 + x!), 1) - 1 : null, "(1 + the printed year) ÷ the three later quarters − 1", 1e-12)];
+        }
+        return { none: "The fund's monthly statements, price and the dividends its account's statements print, chained as Net worth's benchmark chains them: each month's line links its statement." };
+      }
+      case "ret-cum": {
+        if (!w) return null;
+        const upto = w.points.slice(0, w.points.findIndex((p) => p.quarter === quarter) + 1);
+        const chained = upto.reduce((g, p) => {
+          const x = ratioOf("ret-quarter", `returns|${p.quarter}|${col}`);
+          return g == null || x == null ? null : g * (1 + x);
+        }, 1 as number | null);
+        return [ratioRoute("the quarters' own figures, chained", v, chained == null ? null : chained - 1, `${upto.length} quarters from ${w.fromQuarter}`, 1e-12)];
+      }
+      case "ret-value": {
+        const p = w?.points.find((x) => x.quarter === quarter);
+        if (!p || !w) return null;
+        if (col === "actual") return [centsRoute("every investment account's balance from its timeline", v, balance(p.end), `on ${p.end}`)];
+        if (col === "money-in") {
+          let cents = 0;
+          for (const a of accounts) {
+            const t = a.timeline;
+            if (!t.firstDay || t.firstDay > p.end) continue;
+            const d = decompose(t, t.firstDay > w.from ? t.firstDay : w.from, p.end);
+            cents += d.openingCents + d.contributionsCents;
+          }
+          return [centsRoute("every investment account's timeline: on hand at the start (or when first on file) and every dollar in and out since", v, cents, `${w.from} to ${p.end}`, accounts.length)];
+        }
+        return { none: "A what-if: the S&P 500's quarters (each re-derived on its own) applied to the same money in and out (re-derived from the timelines)." };
+      }
+      case "ret-since":
+      case "ret-annualized":
+        return { none: "The last quarter's chained figure in the table (each quarter re-derived on its own), and that over its days, a year." };
+      case "ret-ahead": {
+        const both = rep.returns.quarters.map((q) => [ratioOf("ret-quarter", `returns|${q.quarter}|portfolio`), ratioOf("ret-quarter", `returns|${q.quarter}|sp500`)]).filter(([a, b]) => a != null && b != null);
+        return [textRoute("the quarters' own figures, counted", v, `${both.filter(([a, b]) => a! > b!).length} of ${both.length}`, "quarters with both returns, and those the portfolio's is higher")];
+      }
+      default:
+        return null;
+    }
+  });
+}

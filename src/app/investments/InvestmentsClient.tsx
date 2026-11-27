@@ -17,6 +17,7 @@ import type { InvestmentSettings } from "@/lib/investments/settings";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LpPanel, PrivateFunds } from "./LpView";
+import { ReturnsTab } from "./ReturnsTab";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { costOver, FEE_YEARS, growthKey, idleCash, investmentsDerived, positionKey } from "@/lib/book/derived/investments";
 import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
@@ -25,7 +26,7 @@ import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/t
 const TYPED_TARGET = "your target allocation, as you typed it";
 const SECURITY_NAME = "the security's name, as the statement prints it";
 
-const TABS = ["overview", "holdings", "fees", "gains", "growth", "funds"] as const;
+const TABS = ["returns", "overview", "holdings", "fees", "gains", "growth", "funds"] as const;
 type Data = {
   report: InvestmentsReport;
   settings: InvestmentSettings;
@@ -54,7 +55,7 @@ const positionTarget = (p: PositionRow): ProofTarget =>
 
 export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
   const api = useApi(requiresApiSecret);
-  const [tab, setTab] = useTabParam(TABS, "overview");
+  const [tab, setTab] = useTabParam(TABS, "returns");
   const [data, setData] = useState(() => cachedResponse<Data>("/api/investments"));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -95,6 +96,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
     <>
       <Tabs
         tabs={[
+          { id: "returns", label: "Returns" },
           { id: "overview", label: "Allocation" },
           { id: "holdings", label: "Holdings", count: r?.unclassified.length || null },
           { id: "fees", label: "Fees" },
@@ -122,6 +124,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
         ) : (
           <>
             <BlockedNote what="every account's latest balance" blockers={r!.blockers} />
+            {tab === "returns" && <ReturnsTab r={r!} d={investmentsDerived(r!, data.returnRate)} />}
             {tab === "overview" && <Overview data={data} save={save} saving={saving} />}
             {tab === "holdings" && <Holdings data={data} save={save} saving={saving} />}
             {tab === "fees" && <Fees r={r!} returnRate={data!.returnRate} />}

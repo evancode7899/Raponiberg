@@ -8,6 +8,14 @@ import type { ChainLine, Proof, ProofContext, ProofKind } from "./types.ts";
  * page clears the figure from the parts' cleared values; this is what the drawer shows.
  */
 
+/**
+ * How deep composites may nest: pages draw a share of a difference of sums (Cash flow › Trends'
+ * savings rate, each month's trailing year), which the browser clears from its parts at any
+ * depth (composite.ts clearedValue), so its drawer must open too. Bounded, so no request can
+ * make the server build proofs without end.
+ */
+const MAX_NESTING = 3;
+
 export function parseCompositeDescriptor(d: Record<string, unknown>, depth = 0): CompositeDescriptor | { error: string } {
   const op = d.op as CompositeOp;
   if (!Object.hasOwn(COMPOSITE_OPS, op)) return { error: `op must be one of: ${Object.keys(COMPOSITE_OPS).join(", ")}.` };
@@ -15,8 +23,8 @@ export function parseCompositeDescriptor(d: Record<string, unknown>, depth = 0):
   if (!Array.isArray(d.of) || d.of.length < min || d.of.length > max) return { error: `of must list ${min === max ? min : `${min} to ${max}`} figures.` };
   const of: CompositeDescriptor["of"][number][] = [];
   for (const x of d.of) {
-    // One level of nesting (a share of a sum); a part's parts are figures of their own.
-    if (depth > 0 && x && typeof x === "object" && (x as { report?: unknown }).report === "composite") return { error: "A composite nests one level at most." };
+    // A part may itself be a composite (a share of a sum), down to MAX_NESTING levels; each part's proof is built by its own kind.
+    if (depth >= MAX_NESTING && x && typeof x === "object" && (x as { report?: unknown }).report === "composite") return { error: `A composite nests ${MAX_NESTING} levels at most.` };
     const p = x && typeof x === "object" && (x as { report?: unknown }).report === "composite" ? parseCompositeDescriptor(x as Record<string, unknown>, depth + 1) : parseDescriptor(x);
     if ("error" in p) return { error: `A part: ${p.error}` };
     of.push(p as CompositeDescriptor["of"][number]);
