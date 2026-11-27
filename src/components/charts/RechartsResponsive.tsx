@@ -144,9 +144,9 @@ function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText
       // A what-if's points are a scenario's: plain, inside the region the table is marked as.
       if (whatIf != null) return text;
       const plain = plainSeries?.[s.key];
-      if (plain) return <NotFigure why={plain}>{text}</NotFigure>;
+      if (plain) return <NotFigure key={s.key} why={plain}>{text}</NotFigure>;
       return (
-        <ProofValue proof={cellProof?.(r, s.key) ?? NO_CELL_PROOF} drawn={cellDrawn?.[s.key]}>
+        <ProofValue key={s.key} proof={cellProof?.(r, s.key) ?? NO_CELL_PROOF} drawn={cellDrawn?.[s.key]}>
           {text}
         </ProofValue>
       );
