@@ -357,7 +357,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
       const o = openers.nth(i);
       // The button shows on hover or focus: focus it, so a chart the page draws is opened whether or not the mouse is there.
       if (!(await o.count())) continue;
-      const label = ((await o.getAttribute("data-chart-table")) || `chart ${i + 1}`).replace(/s+/g, " ").trim();
+      const label = ((await o.getAttribute("data-chart-table")) || `chart ${i + 1}`).replace(/\s+/g, " ").trim();
       await o.focus().catch(() => {});
       if (!(await o.isVisible().catch(() => false))) continue;
       await o.click();

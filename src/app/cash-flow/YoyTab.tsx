@@ -5,7 +5,8 @@ import { realKey, realYears, windowKey } from "@/lib/book/derived/cashFlow";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { Callout, Card, NotFigure, Segmented, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, medianOf, type ProofRef } from "@/components/ui/proof/context";
+import { monthCents, monthProof, runSum, type MonthPick } from "./cells";
 import type { CashFlowMetric } from "@/lib/book/proof/cashFlowProof";
 import type { SpendingKind, SpendingMonth } from "@/lib/book/reports/spending";
 import { axisUsd, formatPercentRatio, formatUsd, formatUsdCents, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
@@ -337,6 +338,19 @@ function AllYears({ ctx }: { ctx: Ctx }) {
     return ms.length && ms.every(Boolean) ? ctx.proof(METRIC[metric].proof.metric, ms as SpendingMonth[], { spendingKind: METRIC[metric].proof.spendingKind, shownCents: cents }) : noFigure("a month isn't proven");
   };
 
+  // A point's proof: its month (Monthly) or the year's months through it added up (Running total); the middle of earlier years, the middle month's.
+  const pick: MonthPick = { metric: METRIC[metric].proof.metric as MonthPick["metric"], ...(METRIC[metric].proof.spendingKind ? { spendingKind: METRIC[metric].proof.spendingKind } : {}) };
+  const yearCells = (r: Record<string, unknown>, key: string): ProofRef => {
+    const i = MONTH_NAMES.indexOf(r.name as string);
+    if (key === "middle") {
+      const earlier = [...yearMonths].filter(([y]) => latest && y < latest.y).flatMap(([, ms]) => (ms[i] ? [ms[i]!] : []));
+      return medianOf(earlier.map((m) => ({ cents: monthCents(m, pick), proof: monthProof(ctx.proof, m, pick) })));
+    }
+    const ms = (yearMonths.get(Number(key)) ?? []).slice(view === "monthly" ? i : 0, i + 1);
+    if (!ms.length || !ms.every(Boolean)) return noFigure("a month isn't proven");
+    return runSum(ctx.proof, ms as SpendingMonth[], pick);
+  };
+
   return (
     <Card
       title={`${METRIC[metric].label}, every year`}
@@ -417,7 +431,7 @@ function AllYears({ ctx }: { ctx: Ctx }) {
         </div>
       )}
       <div className="h-[300px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle={`${METRIC[metric].label}, every year by month`} cellProof={yearCells}>
           <ComposedChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} />

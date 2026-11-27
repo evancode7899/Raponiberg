@@ -58,3 +58,27 @@ export function sumOf(parts: readonly ProofRef[], cents: number): ProofRef {
   if (!parts.length) return noFigure("nothing to add up");
   return parts.length === 1 ? parts[0]! : compositeOf("sum", parts, { cents });
 }
+
+/**
+ * A run's average per month (a trailing average a chart draws): the sum of its months'
+ * figures, shown divided by how many months (perMonths), so the proof is the months added up.
+ * `totalCents` is the run's total as the page added it, before the division.
+ */
+export function averageOf(parts: readonly ProofRef[], totalCents: number): ProofRef {
+  const s = sumOf(parts, totalCents);
+  if (isUnswept(s) || parts.length <= 1) return s;
+  return { ...s, perMonths: parts.length };
+}
+
+/**
+ * The median of a few figures that have proofs (a typical month): the middle one's own proof,
+ * or with an even count the two middle ones averaged, as `median` works it out. Each item's
+ * `cents` is the value the page sorts by.
+ */
+export function medianOf(items: readonly { cents: number; proof: ProofRef }[]): ProofRef {
+  if (!items.length) return noFigure("nothing to take the middle of");
+  const s = [...items].sort((a, b) => a.cents - b.cents);
+  const m = Math.floor(s.length / 2);
+  if (s.length % 2) return s[m]!.proof;
+  return averageOf([s[m - 1]!.proof, s[m]!.proof], s[m - 1]!.cents + s[m]!.cents);
+}

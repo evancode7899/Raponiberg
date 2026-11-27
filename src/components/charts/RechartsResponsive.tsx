@@ -1,7 +1,7 @@
 "use client";
 
 import { Drawer, NotFigure, table as tableCls } from "@/components/ui/kit";
-import { ProofValue } from "@/components/ui/proof/ProofValue";
+import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import { unswept, type ProofRef } from "@/components/ui/proof/context";
 import { chartTable } from "@/lib/chartSeries";
 import { Children, Fragment, isValidElement, useRef, useState, type ReactElement, type ReactNode } from "react";
@@ -76,13 +76,18 @@ export function readChart(chart: ReactNode): { rows: Record<string, unknown>[]; 
 export type CellProof = (row: Record<string, unknown>, series: string) => ProofRef | null | undefined;
 /** What a table cell says when its chart names no proof for that point. */
 export const NO_CELL_PROOF = unswept("This chart doesn't name a proof for this point: the figure on the page beside it has one.");
+/** How a series draws its values when not as the number itself (an index of 100 drawn for a ratio of 1): ProofValue's drawn. */
+export type CellDrawn = Readonly<Record<string, FigureProps["drawn"]>>;
 
 export function RechartsResponsive({
   debounce = DEFAULT_DEBOUNCE_MS,
   children,
   tableTitle = "The chart as a table",
   cellProof,
+  cellDrawn,
+  cellText,
   plainSeries,
+  pendingProof,
   ...rest
 }: Omit<ResponsiveContainerProps, "width" | "height"> & {
   debounce?: number;
@@ -90,8 +95,18 @@ export function RechartsResponsive({
   tableTitle?: string;
   /** The proof of each point, for the table (above). */
   cellProof?: CellProof;
+  /** How a series draws its values, by data key, when not as the number itself. */
+  cellDrawn?: CellDrawn;
+  /** A cell's words when the tooltip's say more than its one figure (a share and the count behind it): the figure alone. */
+  cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined;
   /** Series that aren't money or a rate, by data key: why each is no figure. */
   plainSeries?: Readonly<Record<string, string>>;
+  /**
+   * A chart whose points have no proof yet and wait on the owner's choice of how to prove
+   * them (per-day series): each value draws n.a. saying this, and the render audit lists
+   * the table under CHART_TABLE_PENDING instead of failing it (renderAudit.ts).
+   */
+  pendingProof?: string;
 }) {
   const [open, setOpen] = useState<false | { whatIf: string | null }>(false);
   const box = useRef<HTMLDivElement>(null);
@@ -112,12 +127,12 @@ export function RechartsResponsive({
           Table
         </button>
       )}
-      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} whatIf={open.whatIf} cellProof={cellProof} plainSeries={plainSeries} onClose={() => setOpen(false)} />}
+      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} whatIf={open.whatIf} cellProof={pendingProof ? () => unswept(pendingProof) : cellProof} cellDrawn={cellDrawn} cellText={cellText} plainSeries={plainSeries} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function ChartTableDrawer({ chart, title, whatIf, cellProof, plainSeries, onClose }: { chart: ReactNode; title: string; whatIf: string | null; cellProof?: CellProof; plainSeries?: Readonly<Record<string, string>>; onClose: () => void }) {
+function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText, plainSeries, onClose }: { chart: ReactNode; title: string; whatIf: string | null; cellProof?: CellProof; cellDrawn?: CellDrawn; cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined; plainSeries?: Readonly<Record<string, string>>; onClose: () => void }) {
   const read = readChart(chart);
   if (!read) return null;
   const t = chartTable(read.rows, read.x, read.series, () => "");
@@ -125,12 +140,16 @@ function ChartTableDrawer({ chart, title, whatIf, cellProof, plainSeries, onClos
     t.body[i]![0]!,
     ...read.series.map((s) => {
       if (typeof r[s.key] !== "number") return "";
-      const text = read.format(r[s.key] as number, s.name, r);
+      const text = cellText?.(r[s.key] as number, s.key, r) ?? read.format(r[s.key] as number, s.name, r);
       // A what-if's points are a scenario's: plain, inside the region the table is marked as.
       if (whatIf != null) return text;
       const plain = plainSeries?.[s.key];
       if (plain) return <NotFigure why={plain}>{text}</NotFigure>;
-      return <ProofValue proof={cellProof?.(r, s.key) ?? NO_CELL_PROOF}>{text}</ProofValue>;
+      return (
+        <ProofValue proof={cellProof?.(r, s.key) ?? NO_CELL_PROOF} drawn={cellDrawn?.[s.key]}>
+          {text}
+        </ProofValue>
+      );
     }),
   ]);
   return (

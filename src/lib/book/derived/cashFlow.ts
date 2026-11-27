@@ -85,11 +85,18 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
       add("weekend-share", "Weekends' share of everyday spending", r(wk.weekend), [ln("Everyday spending on Saturdays and Sundays", c(wk.total * wk.weekend)), ln("÷ all everyday spending", c(wk.total), "÷"), ln("Share", r(wk.weekend), "=")]);
       add("weekday-top", `The priciest weekday (${wk.top.name}): an average one`, c(wk.top.avgCents), [ln(`Everyday spending on ${wk.top.name}s ÷ how many there were`, c(wk.top.avgCents))]);
       add("weekday-low", `The cheapest weekday (${wk.low.name}): an average one`, c(wk.low.avgCents), [ln(`Everyday spending on ${wk.low.name}s ÷ how many there were`, c(wk.low.avgCents))]);
+      // Patterns › By weekday draws each weekday's average day (its chart's table opens them).
+      wk.rows.forEach((w, i) => add("weekday-avg", `An average ${w.name}: everyday spending`, c(w.avgCents), [ln(`Everyday spending on ${w.name}s ÷ how many there were`, c(w.avgCents))], weekdayKey(months, i)));
     }
     const cs = chargeSplit(months);
     if (cs.n) {
       add("small-charges-count", "Charges under $50: share of the count", r(cs.smallCount), [ln("Charges under $50 ÷ all charges", r(cs.smallCount))]);
       add("small-charges-dollars", "Charges under $50: share of the dollars", r(cs.smallUsd), [ln("Their dollars ÷ all charge dollars", r(cs.smallUsd))]);
+      // Patterns › Charge sizes draws each size's share of the count and of the dollars.
+      cs.buckets.forEach((b, i) => {
+        add("charge-size-count", `Charges of size ${i + 1} of ${cs.buckets.length}: share of the count`, r(b.count / cs.n), [ln("Charges of this size", t(String(b.count))), ln("÷ all charges", t(String(cs.n)), "÷"), ln("Share", r(b.count / cs.n), "=")], bucketKey(months, i));
+        add("charge-size-dollars", `Charges of size ${i + 1} of ${cs.buckets.length}: share of the dollars`, cs.cents ? r(b.cents / cs.cents) : null, [ln("Their dollars", c(b.cents)), ln("÷ all charge dollars", c(cs.cents), "÷"), ln("Share", cs.cents ? r(b.cents / cs.cents) : t("—"), "=")], bucketKey(months, i));
+      });
     }
     const bd = billDays(months);
     if (bd.firstWeek != null) add("bills-first-week", "Bill money that leaves in the first week of the month", r(bd.firstWeek), [ln("An average month's bills on days 1–7 ÷ all its bills", r(bd.firstWeek))]);
@@ -348,6 +355,10 @@ const cumulative = (xs: number[]) => {
 };
 const paceDays = (m: SpendingMonth, basis: PaceBasis) => (basis === "all" ? m.daily.allCents : m.daily.everydayCents);
 const basisWords = (basis: PaceBasis) => (basis === "all" ? "all spending" : "everyday spending (no bills, nothing over $1,500)");
+/** A weekday's figure over a run of months (Monday = 0). */
+export const weekdayKey = (months: SpendingMonth[], weekday: number) => `${windowKey(months)}|${weekday}`;
+/** A charge-size bucket's figure over a run of months (CHARGE_BUCKETS order). */
+export const bucketKey = (months: SpendingMonth[], bucket: number) => `${windowKey(months)}|${bucket}`;
 /** A pace figure's key: the month, which spending, and (a running total) through which day. */
 export const paceKey = (m: Pick<SpendingMonth, "start">, basis: PaceBasis, day?: number) => `${m.start}|${basis}${day != null ? `|${day}` : ""}`;
 

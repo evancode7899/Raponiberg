@@ -14,6 +14,7 @@ import type { BudgetSettings } from "@/lib/budget/settings";
 import { formatPercentRatio, NA, usd0 } from "@/lib/formatMoney";
 import { useEffect, useState } from "react";
 import type { Ctx } from "./CashFlowClient";
+import { DAY_PENDING } from "./cells";
 import { categoryCents, median, SPEND_CATEGORIES, totals } from "./model";
 import { Bar, categoryColor, Dot } from "./parts";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
@@ -262,7 +263,7 @@ function PaceCard({ ctx, targets, dp }: { ctx: Ctx; targets: Record<string, numb
         .
       </p>
       <div className="h-[200px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle="Spending pace, day by day" pendingProof={DAY_PENDING}>
           <LineChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="day" {...ui.xAxis} />
