@@ -26,7 +26,7 @@ export type RawView = {
 /** A request a unit's page made, as needed to ask it again: path and query, method, the headers the answer can turn on, and a POST's body. */
 export type Asked = { method: string; url: string; headers: Record<string, string>; body?: string };
 /** What a unit drew; a page's own unit (part 0) also lists the page's tabs. `draws` counts every look, `repeats` those that drew nothing new. */
-export type UnitRun = Unit & { views: RawView[]; ms: number; skipped?: string; tabs?: Unit[]; draws: number; repeats: number; drawers: number; asked?: Asked[] };
+export type UnitRun = Unit & { views: RawView[]; ms: number; skipped?: string; tabs?: Unit[]; draws: number; repeats: number; drawers: number; settleMs?: number; collectMs?: number; asked?: Asked[] };
 
 export const unitName = (u: Unit) => `${u.tab ? `${u.route} › ${u.tab.label}` : u.route}${u.part && u.part.n > 1 ? ` [${u.part.i + 1}/${u.part.n}]` : ""}`;
 /** A tab's identity across runs and shards: its page, tab id and the tab's label (parts share it). */
@@ -285,11 +285,16 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
   // The proof drawers this unit opened, by family (report › page › figure): one of each is enough to hold the
   // drawer's drawing. Per unit, not per run, so which drawers open never depends on which worker or shard got there first.
   const drawerFamilies = new Set<string>();
-  const stats = { draws: 0, repeats: 0, drawers: 0 };
+  // settleMs/collectMs: where a unit's looks spend their time (waiting for the page, reading it), in RENDER_AUDIT_JSON.
+  const stats = { draws: 0, repeats: 0, drawers: 0, settleMs: 0, collectMs: 0 };
 
   const draw = async (name: string, scope?: string): Promise<RawView & { repeat: boolean }> => {
+    const t0 = Date.now();
     const unsettled = await settle(w, cfg);
+    const t1 = Date.now();
     const s = await page.evaluate(collect, scope);
+    stats.settleMs += t1 - t0;
+    stats.collectMs += Date.now() - t1;
     const v: RawView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, ...(s.whatIf.length ? { whatIf: s.whatIf } : {}), errors: [...w.errors.splice(0), ...(unsettled ? [unsettled] : [])] };
     const sig = JSON.stringify([s.figures.map((f) => [f.key, f.clearance, f.text]), s.strays, s.whatIf]);
     const repeat = seen.has(sig) && !v.errors.length;

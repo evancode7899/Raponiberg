@@ -80,6 +80,8 @@ export function mergeParts(runs: readonly UnitRun[]): UnitRun[] {
       draws: parts.reduce((s, p) => s + p.draws, 0),
       repeats: parts.reduce((s, p) => s + p.repeats, 0),
       drawers: parts.reduce((s, p) => s + p.drawers, 0),
+      settleMs: parts.reduce((s, p) => s + (p.settleMs ?? 0), 0),
+      collectMs: parts.reduce((s, p) => s + (p.collectMs ?? 0), 0),
       asked: [...new Map(parts.flatMap((p) => p.asked ?? []).map((a) => [JSON.stringify(a), a])).values()],
     };
   });
