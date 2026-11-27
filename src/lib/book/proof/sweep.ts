@@ -54,6 +54,7 @@ import {
   netWorthFigures,
   sourceFigures,
   taxEstimateFigures,
+  taxFiledFigures,
   type PageFigure,
 } from "./figures.ts";
 import { derivedList, sweptDerivedPages } from "../derived/load.ts";
@@ -204,7 +205,7 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
         skipped.push(blockedTaxYearSkip(y, r.blockers));
         return [];
       }
-      return taxEstimateFigures(r, y === year);
+      return [...taxEstimateFigures(r, y === year), ...taxFiledFigures(r)];
     });
     await page(`Account limits ${y}`, () => {
       const r = buildTaxAccounts(book, y, retirement, link);

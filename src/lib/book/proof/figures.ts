@@ -587,6 +587,26 @@ export function taxEstimateFigures(report: TaxReport, inProgress = false): PageF
   return out;
 }
 
+/**
+ * Taxes › Filed return: every line of each filed return the tab compares, as filed (its
+ * filed-return proof) and as this app has it (the tax estimate, basis "filed"). Only years
+ * with a return in the tax documents folder have any.
+ */
+export function taxFiledFigures(report: TaxReport): PageFigure[] {
+  const check = report.documents?.check;
+  if (!check) return [];
+  const page = `Taxes ${report.year} › Filed return`;
+  const prefix = { FEDERAL: "fed", CT: "ct", NY: "ny" } as const;
+  const out: PageFigure[] = [];
+  for (const [jurisdiction, lines] of [["FEDERAL", check.federal], ["CT", check.ct], ["NY", check.ny]] as const)
+    for (const l of lines) {
+      const v = (n: number): ProofValue => (l.percent ? { ratio: n / 10_000 } : { cents: n });
+      out.push({ page, descriptor: { report: "filed-return", year: report.year, jurisdiction, key: l.key }, shown: l.filed == null ? null : v(l.filed) });
+      if (l.model != null) out.push({ page, descriptor: { report: "tax-estimate", year: report.year, basis: "filed", key: `${prefix[jurisdiction]}.${l.key}` as EstimateKey }, shown: v(l.model) });
+    }
+  return out;
+}
+
 // ------------------------------------------------------------------ Goals
 
 /** Each goal's saved-so-far, target, what's left and monthly need (as its card draws them), and the emergency fund's typical month. */

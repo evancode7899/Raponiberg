@@ -2,7 +2,7 @@ import { overviewPolicies, paidInYear, type AutoView, type CoverPayment, type Ho
 import type { InsurancePage } from "../../insurance/page.ts";
 import type { PolicyView } from "../../insurance/report.ts";
 import type { Coverage } from "../../insurance/types.ts";
-import { c, ln, t, type DerivedFigure } from "./types.ts";
+import { c, ln, r, t, type DerivedFigure } from "./types.ts";
 
 /**
  * Insurance: each policy's figures, read off the insurer's own documents and the premiums
@@ -179,6 +179,42 @@ function lifeDerived(views: PolicyView[]): DerivedFigure[] {
       add("years-paid", "policy years paid of those started", t(`${dueSoFar.filter((y) => paidYears.has(y.year)).length} of ${dueSoFar.length}`), [ln("Years with a premium found", t(String(dueSoFar.filter((y) => paidYears.has(y.year)).length))), ln("Policy years started", t(String(dueSoFar.length)))]),
       add("next-due", "next premium", v.nextDue ? c(v.nextDue.cents) : null, v.nextDue ? [ln(`Due ${v.nextDue.date} (year ${v.nextDue.year})`, c(v.nextDue.cents), undefined, { source: "proven" })] : []),
       add("paid-to", "paid to, per the insurer", v.paidTo ? t(v.paidTo.date) : null, v.paidTo ? [ln(`Policy summary of ${v.paidTo.asOf}`, t(v.paidTo.date), undefined, { source: "proven" })] : []),
+      add("per1000", "annual premium per $1,000 of cover", c(Math.round(v.per1000Cents)), [ln("Annual premium", c(p.annualPremiumCents), undefined, { source: "proven" }), ln("÷ face amount, in thousands", t(String(p.faceCents / 100_000)), "÷"), ln("Per $1,000", c(Math.round(v.per1000Cents)), "=")]),
+      add("policy-fee", "policy fee in the premium", p.policyFeeCents ? c(p.policyFeeCents) : null, p.policyFeeCents ? [ln("Policy fee, as the policy prints it", c(p.policyFeeCents), undefined, { source: "proven" })] : []),
+      ...lifeTables(v),
     ];
   });
+}
+
+/** Life tables, row by row (key: the policy number, then the row): the schedule's years, the payment modes, the insurer's notices and receipts. */
+function lifeTables(v: PolicyView): DerivedFigure[] {
+  const pn = v.policy.policyNumber;
+  const row = (figure: string, k: string, describes: string, value: DerivedFigure["value"], lines: DerivedFigure["lines"]): DerivedFigure => ({ figure, key: `${pn}|${k}`, describes: `Policy ${pn}: ${describes}`, value, lines });
+  const printed = (label: string, cents: number) => [ln(label, c(cents), undefined, { source: "proven" })];
+  return [
+    ...v.years.flatMap((y) => {
+      const per = Math.round((y.maxPremiumCents * 100_000) / y.faceCents);
+      return [
+        row("year-premium", String(y.year), `${y.level ? "premium" : "maximum premium"}, policy year ${y.year}`, c(y.maxPremiumCents), printed(`Year ${y.year}, as the table of premiums prints it`, y.maxPremiumCents)),
+        row("year-face", String(y.year), `face amount, policy year ${y.year}`, c(y.faceCents), printed(`Year ${y.year}, as the schedule prints it`, y.faceCents)),
+        row("year-per1000", String(y.year), `premium per $1,000 of cover, policy year ${y.year}`, c(per), [
+          ln(`Year ${y.year} premium`, c(y.maxPremiumCents), undefined, { source: "proven" }),
+          ln("÷ face amount, in thousands", t(String(y.faceCents / 100_000)), "÷"),
+          ln("Per $1,000", c(per), "="),
+        ]),
+      ];
+    }),
+    ...v.modes.flatMap((m) => [
+      row("mode-each", m.mode, `each ${m.mode.toLowerCase()} payment`, c(m.perPaymentCents), printed(`${m.mode} payment, as the contract's modal factors give it`, m.perPaymentCents)),
+      row("mode-year", m.mode, `a year paid ${m.mode.toLowerCase()}`, c(m.yearCents), [ln(`${m.mode} payment`, c(m.perPaymentCents), undefined, { source: "proven" }), ln("× payments a year", t(String(m.payments)), "×"), ln("A year", c(m.yearCents), "=")]),
+      ...(m.extraCents
+        ? [
+            row("mode-extra", m.mode, `extra a year paid ${m.mode.toLowerCase()}`, c(m.extraCents), [ln("A year", c(m.yearCents)), ln("− annual premium", c(v.policy.annualPremiumCents), "−", { source: "proven" }), ln("Extra", c(m.extraCents), "=")]),
+            row("mode-extra-share", m.mode, `extra paid ${m.mode.toLowerCase()}, as a share of the annual premium`, r(m.extraCents / v.policy.annualPremiumCents), [ln("Extra", c(m.extraCents)), ln("÷ annual premium", c(v.policy.annualPremiumCents), "÷", { source: "proven" }), ln("Share", r(m.extraCents / v.policy.annualPremiumCents), "=")]),
+          ]
+        : []),
+    ]),
+    ...v.bills.map((b) => row("bill", b.file, `premium notice due ${b.dueDate}`, c(b.premiumCents), printed(`Due ${b.dueDate}, as the notice prints it`, b.premiumCents))),
+    ...v.receipts.map((x) => row("receipt", x.file, `payment confirmed ${x.date}`, c(x.cents), printed(`Paid ${x.date}, as the confirmation prints it`, x.cents))),
+  ];
 }

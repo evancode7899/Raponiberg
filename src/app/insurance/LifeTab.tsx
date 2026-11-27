@@ -10,7 +10,7 @@ import type { InsurancePage } from "@/lib/insurance/page";
 import type { Beneficiary, InsuranceNotes, PolicyNotes } from "@/lib/insurance/notes";
 import { addDays } from "@/lib/dates/isoDate";
 import { addYears, type PolicyView } from "@/lib/insurance/report";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { Facts, longDate, PolicyPicker, rowProof, shortDate, SubTabs, until, useViewParam } from "./parts";
 
@@ -18,6 +18,11 @@ import { Facts, longDate, PolicyPicker, rowProof, shortDate, SubTabs, until, use
 
 const VIEWS = ["policy", "premiums", "payments", "terms"] as const;
 const pct = (r: number) => `${+(r * 100).toFixed(2)}%`;
+
+/** A Life figure drawn inline: its derived proof, keyed by the policy number (and the row). */
+function Fig({ figs, figure, k, children }: { figs: readonly DerivedFigure[]; figure: string; k: string; children: ReactNode }) {
+  return <ProofValue proof={derivedTarget("insurance", figs, figure, k)}>{children}</ProofValue>;
+}
 
 export function LifeTab({ data, figs, save }: { data: InsurancePage; figs: readonly DerivedFigure[]; save: (n: InsuranceNotes) => Promise<void> }) {
   const [view, setView] = useViewParam(VIEWS, "policy");
@@ -74,17 +79,35 @@ function Overview({ v, today, notes, save, figs }: { v: PolicyView; today: strin
         actions={<StatusBadge v={v} />}
       >
         <p className="text-sm text-fg-2">
-          {usd0(p.faceCents)} of {p.levelYears ? `${p.levelYears}-year level ` : ""}term life on {p.insured}
-          {p.premiumClass ? ` (${p.premiumClass})` : ""}, for {usd0(p.annualPremiumCents)} a year
+          <Fig figs={figs} figure="face" k={p.policyNumber}>{usd0(p.faceCents)}</Fig> of {p.levelYears ? `${p.levelYears}-year level ` : ""}term life on {p.insured}
+          {p.premiumClass ? ` (${p.premiumClass})` : ""}, for <Fig figs={figs} figure="premium" k={p.policyNumber}>{usd0(p.annualPremiumCents)}</Fig> a year
           {p.levelEndDate ? ` fixed through ${longDate(addDays(p.levelEndDate, -1))}` : ""}.
-          {v.nextDue && ` Next premium ${usd0(v.nextDue.cents)} due ${longDate(v.nextDue.date)}, ${until(today, v.nextDue.date)}.`}
+          {v.nextDue && (
+            <>
+              {" "}Next premium <Fig figs={figs} figure="next-due" k={p.policyNumber}>{usd0(v.nextDue.cents)}</Fig> due {longDate(v.nextDue.date)}, {until(today, v.nextDue.date)}.
+            </>
+          )}
           {v.paidTo && ` The insurer shows it paid to ${longDate(v.paidTo.date)} (as of ${shortDate(v.paidTo.asOf)}).`}
         </p>
       </Card>
 
       <StatGrid cols={4}>
-        <StatCell proof={derivedTarget("insurance", figs, "death-benefit", v.policy.policyNumber)} label="Death benefit" value={usd0(v.faceNowCents ?? p.faceCents)} sub={level && level.faceCents < p.faceCents ? `Drops to ${usd0(level.faceCents)} after year ${p.levelYears}` : "Level for the term"} />
-        <StatCell proof={derivedTarget("insurance", figs, "premium", v.policy.policyNumber)} label="Annual premium" value={usd0(p.annualPremiumCents)} sub={`${formatUsdFromCents(Math.round(v.per1000Cents))} per $1,000 of cover${p.policyFeeCents ? ` · incl. ${usd0(p.policyFeeCents)} policy fee` : ""}`} />
+        <StatCell proof={derivedTarget("insurance", figs, "death-benefit", v.policy.policyNumber)} label="Death benefit" value={usd0(v.faceNowCents ?? p.faceCents)} sub={level && level.faceCents < p.faceCents ? <>Drops to <Fig figs={figs} figure="face-after" k={p.policyNumber}>{usd0(level.faceCents)}</Fig> after year {p.levelYears}</> : "Level for the term"} />
+        <StatCell
+          proof={derivedTarget("insurance", figs, "premium", v.policy.policyNumber)}
+          label="Annual premium"
+          value={usd0(p.annualPremiumCents)}
+          sub={
+            <>
+              <Fig figs={figs} figure="per1000" k={p.policyNumber}>{formatUsdFromCents(Math.round(v.per1000Cents))}</Fig> per thousand of cover
+              {p.policyFeeCents ? (
+                <>
+                  {" "}· incl. <Fig figs={figs} figure="policy-fee" k={p.policyNumber}>{usd0(p.policyFeeCents)}</Fig> policy fee
+                </>
+              ) : null}
+            </>
+          }
+        />
         <StatCell proof={derivedTarget("insurance", figs, "level-end", v.policy.policyNumber)}
           label="Level term ends"
           value={p.levelEndDate ? shortDate(p.levelEndDate) : NA}
@@ -93,7 +116,7 @@ function Overview({ v, today, notes, save, figs }: { v: PolicyView; today: strin
         <StatCell proof={derivedTarget("insurance", figs, "level-total", v.policy.policyNumber)}
           label="Total premiums"
           value={v.levelTotalCents != null ? usd0(v.levelTotalCents) : NA}
-          sub={v.levelTotalCents != null ? `${p.levelYears} × ${usd0(p.annualPremiumCents)}, fixed by contract` : undefined}
+          sub={v.levelTotalCents != null ? <>{p.levelYears} × <Fig figs={figs} figure="premium" k={p.policyNumber}>{usd0(p.annualPremiumCents)}</Fig>, fixed by contract</> : undefined}
         />
       </StatGrid>
 
@@ -304,7 +327,12 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
 
       <Card
         title="Maximum premium by age"
-        subtitle={`What the insurer may charge each year, by the insured's age. Inside the level term it's fixed; after it, the line is the guaranteed ceiling, not a quote, while the cover falls to ${firstRenewal ? usd0(firstRenewal.faceCents) : "the renewal amount"}.`}
+        subtitle={
+          <>
+            What the insurer may charge each year, by the insured&apos;s age. Inside the level term it&apos;s fixed; after it, the line is the guaranteed ceiling, not a quote, while the cover falls to{" "}
+            {firstRenewal ? <Fig figs={figs} figure="face-after" k={p.policyNumber}>{usd0(firstRenewal.faceCents)}</Fig> : "the renewal amount"}.
+          </>
+        }
       >
         <div className="h-64">
           <RechartsResponsive>
@@ -344,7 +372,7 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
                 <th className={table.thR}>Age</th>
                 <th className={table.thR}>Premium</th>
                 <th className={table.thR}>Face amount</th>
-                <th className={table.thR}>Per $1,000</th>
+                <th className={table.thR}>Per thousand</th>
               </tr>
             </thead>
             <tbody>
@@ -360,11 +388,15 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
                     <td className={table.td}>{shortDate(y.start)}</td>
                     <td className={table.tdR}>{y.age ?? NA}</td>
                     <td className={table.tdR}>
-                      {formatUsdFromCents(y.maxPremiumCents)}
+                      <Fig figs={figs} figure="year-premium" k={`${p.policyNumber}|${y.year}`}>{formatUsdFromCents(y.maxPremiumCents)}</Fig>
                       {!y.level && <span className="ml-1 text-faint" title="Guaranteed maximum: the insurer may charge less.">max</span>}
                     </td>
-                    <td className={table.tdR}>{usd0(y.faceCents)}</td>
-                    <td className={table.tdR}>{formatUsdFromCents(Math.round((y.maxPremiumCents * 100_000) / y.faceCents))}</td>
+                    <td className={table.tdR}>
+                      <Fig figs={figs} figure="year-face" k={`${p.policyNumber}|${y.year}`}>{usd0(y.faceCents)}</Fig>
+                    </td>
+                    <td className={table.tdR}>
+                      <Fig figs={figs} figure="year-per1000" k={`${p.policyNumber}|${y.year}`}>{formatUsdFromCents(Math.round((y.maxPremiumCents * 100_000) / y.faceCents))}</Fig>
+                    </td>
                   </tr>
                 );
               })}
@@ -392,10 +424,23 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
                     {m.mode}
                     {m.mode === "Annual" && p.billing.frequency?.toLowerCase().startsWith("annual") && <Badge tone="accent">yours</Badge>}
                   </td>
-                  <td className={table.tdR}>{formatUsdFromCents(m.perPaymentCents)}</td>
+                  <td className={table.tdR}>
+                    <Fig figs={figs} figure="mode-each" k={`${p.policyNumber}|${m.mode}`}>{formatUsdFromCents(m.perPaymentCents)}</Fig>
+                  </td>
                   <td className={table.tdR}>{m.payments}</td>
-                  <td className={table.tdR}>{formatUsdFromCents(m.yearCents)}</td>
-                  <td className={table.tdR}>{m.extraCents ? `+${formatUsdFromCents(m.extraCents)} (${pct(m.extraCents / p.annualPremiumCents)})` : "—"}</td>
+                  <td className={table.tdR}>
+                    <Fig figs={figs} figure="mode-year" k={`${p.policyNumber}|${m.mode}`}>{formatUsdFromCents(m.yearCents)}</Fig>
+                  </td>
+                  <td className={table.tdR}>
+                    {m.extraCents ? (
+                      <>
+                        <Fig figs={figs} figure="mode-extra" k={`${p.policyNumber}|${m.mode}`}>+{formatUsdFromCents(m.extraCents)}</Fig> (
+                        <Fig figs={figs} figure="mode-extra-share" k={`${p.policyNumber}|${m.mode}`}>{pct(m.extraCents / p.annualPremiumCents)}</Fig>)
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -480,7 +525,9 @@ function Payments({ v, accounts, figs }: { v: PolicyView; accounts: Record<strin
                       <td className={`${table.td} max-w-[16rem] truncate text-fg-2`} title={x.file}>
                         {x.file}
                       </td>
-                      <td className={table.tdR}>{formatUsdFromCents(x.cents)}</td>
+                      <td className={table.tdR}>
+                        <Fig figs={figs} figure="receipt" k={`${p.policyNumber}|${x.file}`}>{formatUsdFromCents(x.cents)}</Fig>
+                      </td>
                     </tr>
                   );
                 })}
@@ -516,7 +563,9 @@ function Payments({ v, accounts, figs }: { v: PolicyView; accounts: Record<strin
                       <td className={`${table.td} max-w-[16rem] truncate text-fg-2`} title={b.file}>
                         {b.file}
                       </td>
-                      <td className={table.tdR}>{formatUsdFromCents(b.premiumCents)}</td>
+                      <td className={table.tdR}>
+                        <Fig figs={figs} figure="bill" k={`${p.policyNumber}|${b.file}`}>{formatUsdFromCents(b.premiumCents)}</Fig>
+                      </td>
                     </tr>
                   );
                 })}
@@ -534,8 +583,10 @@ function Payments({ v, accounts, figs }: { v: PolicyView; accounts: Record<strin
 function Terms({ v }: { v: PolicyView }) {
   const p = v.policy;
   const yesNo = (b: boolean) => (b ? "Yes" : "No");
+  // The contract's rules and limits as the packet words them (a conversion minimum, a guaranteed rate): terms, not amounts the statements hold.
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2" data-not-figure="the contract's terms, as the policy packet words them">
+
       <Card title="What kind of policy" subtitle="As the contract's cover page describes it.">
         <Facts
           rows={[

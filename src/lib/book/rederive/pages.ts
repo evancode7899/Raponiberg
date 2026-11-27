@@ -200,7 +200,8 @@ export function rederiveInsurance(book: Book, page: InsuranceInput, figures: rea
       const v = cover.get(f.key ?? "");
       return v ? [centsRoute("the Book's rows, re-added", f.value, rowsCents(v.payments.filter((x) => x.term === v.policy.periodStart).map((x) => x.rowId)), ROWS)] : null;
     }
-    if (["home-premium", "auto-premium", "limit", "coverage-premium", "discount", "discount-total", "term-premium"].includes(f.figure)) return { none: PRINTED };
+    if (["home-premium", "auto-premium", "limit", "coverage-premium", "discount", "discount-total", "term-premium", "year-premium", "year-face", "bill", "receipt", "mode-each", "policy-fee"].includes(f.figure)) return { none: PRINTED };
+    if (["year-per1000", "per1000", "mode-year", "mode-extra", "mode-extra-share"].includes(f.figure)) return { none: `${PRINTED} Scaled per $1,000, to a year, or set against the annual premium, in the chain.` };
     const v = byKey.get(f.key ?? "");
     if (!v) return null;
     if (f.figure === "paid") return [centsRoute("the Book's rows, re-added", f.value, v.payments.reduce((s, x) => s - (book.rowById.get(x.rowId)?.amountCents ?? 0), 0), "each premium row's amount as its statement prints it")];
