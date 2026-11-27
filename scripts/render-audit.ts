@@ -110,9 +110,11 @@ async function launch(): Promise<Browser> {
 }
 
 /** What the page draws now: every figure's data attributes and text, and money drawn outside any figure. Runs in the browser. */
-function collect() {
+function collect(scope?: string) {
   const visible = (el: Element) => (el as HTMLElement).checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? true;
-  const figures = [...document.querySelectorAll<HTMLElement>("[data-proof-key]")].filter(visible).map((el) => {
+  // A view that is a dialog (a chart's table) is that dialog alone: the page behind it is a view of its own.
+  const root: HTMLElement = (scope ? [...document.querySelectorAll<HTMLElement>(scope)].at(-1) : null) ?? document.body;
+  const figures = [...root.querySelectorAll<HTMLElement>("[data-proof-key]")].filter(visible).map((el) => {
     const c = el.cloneNode(true) as HTMLElement;
     c.querySelectorAll("[data-proof-mark]").forEach((m) => m.remove());
     const kind = el.dataset.shownKind ?? "";
@@ -134,9 +136,9 @@ function collect() {
   const re = /\$\s?\d|\d(?:[.,]\d+)*\s?%/;
   const tokenRe = /[+\-−]?\(?\$\s?\d[\d,]*(?:\.\d+)?[kMB]?\)?|[+\-−]?\(?\d[\d,]*(?:\.\d+)?\s?%\)?/g;
   // What-if regions (kit WhatIf): their bare numbers aren't strays, but renderAudit.ts holds them (and the figures inside) to the ledger.
-  const regions = [...document.querySelectorAll<HTMLElement>("[data-what-if]")].filter((r) => visible(r) && !r.closest('[role="dialog"]'));
+  const regions = [...root.querySelectorAll<HTMLElement>("[data-what-if]")].filter((r) => visible(r) && (scope ? true : !r.closest('[role="dialog"]')));
   const regionTokens = new Map<Element, string[]>(regions.map((r) => [r, []]));
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const t = n.textContent ?? "";
     if (!re.test(t)) continue;
@@ -264,9 +266,9 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
   const drawerFamilies = new Set<string>();
   const stats = { draws: 0, repeats: 0, drawers: 0 };
 
-  const draw = async (name: string): Promise<DrawnView & { repeat: boolean }> => {
+  const draw = async (name: string, scope?: string): Promise<DrawnView & { repeat: boolean }> => {
     const unsettled = await settle(page);
-    const s = await page.evaluate(collect);
+    const s = await page.evaluate(collect, scope);
     const v: DrawnView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, ...(s.whatIf.length ? { whatIf: s.whatIf } : {}), errors: [...errors.splice(0), ...(unsettled ? [unsettled] : [])] };
     const sig = JSON.stringify([s.figures.map((f) => [f.key, f.clearance, f.text]), s.strays, s.whatIf]);
     const repeat = seen.has(sig) && !v.errors.length;
@@ -291,8 +293,8 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
     for (const f of picks.slice(0, DRAWERS_PER_VIEW)) {
       if (drawerFamilies.has(familyOf(f.key))) continue;
       drawerFamilies.add(familyOf(f.key));
-      // On a view that is an open dialog (a chart's table), its own figure: the page's copy of it sits behind the dialog.
-      const within = (await page.locator('[role="dialog"]').count()) ? page.locator('[role="dialog"]').last() : page;
+      // On a chart table's view, the table's own figure: the page's copy of it sits behind the dialog.
+      const within = (await page.locator("[data-chart-table-view]").count()) ? page.locator("[data-chart-table-view]").last() : page;
       const el = within.locator(`[data-clearance="cleared"][data-proof-key="${f.key.replace(/["\\]/g, "\\$&")}"]`).first();
       if (!(await el.isVisible().catch(() => false))) continue;
       stats.drawers++;
@@ -363,7 +365,9 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
       if (!(await o.isVisible().catch(() => false))) continue;
       // The button sits over the chart and shows on hover or focus: a pointer click can land on the chart's own layer, so click it as a keyboard user would.
       await o.evaluate((el) => (el as HTMLElement).click());
-      const v = await draw(`${name} ▤ ${label}`);
+      // The table opens in a drawer: read it once it's there.
+      await page.locator("[data-chart-table-view]").last().waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+      const v = await draw(`${name} ▤ ${label}`, "[data-chart-table-view]");
       if (!v.repeat) await drawers(v);
       await closeDialog();
     }
@@ -410,7 +414,11 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
           await tables(at);
           await drills(at);
           await explore(at, i + 1, 1);
-        } else if (depth === 1 && (await page.locator("[data-audit-nest]").count())) await explore(at, i + 1, 2);
+        } else if (depth === 1 && (await page.locator("[data-audit-nest]").count())) {
+          // A page whose views pair up (a coverage, then each year of it) draws each pair's own charts: their tables too.
+          await tables(at);
+          await explore(at, i + 1, 2);
+        }
       };
       if ((await c.evaluate((e) => e.tagName)) === "SELECT") {
         const was = await c.inputValue();
@@ -458,7 +466,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
     // Settled first: a server redirect() lands in the browser after "load".
     await settle(page);
     // A page that draws nothing yet may only be between hydrating and asking for its data on a busy machine: one more look.
-    const first = await page.evaluate(collect);
+    const first = await page.evaluate(collect, undefined);
     if (!first.figures.length && !first.strays.length) {
       await page.waitForTimeout(1000);
       await settle(page);

@@ -161,7 +161,8 @@ function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText
   ]);
   return (
     <Drawer open onClose={onClose} title={title} subtitle={whatIf != null ? "Each value as the chart's tooltip says it: a what-if's, not a proven figure." : "Each value as the chart's tooltip says it; each opens its proof."} width="40rem">
-      <div className={tableCls.wrap} {...(whatIf != null ? { "data-what-if": whatIf || "a what-if chart" } : {})}>
+      {/* data-chart-table-view: what the render audit reads as this table's view (scripts/render-audit.ts). */}
+      <div data-chart-table-view="" className={tableCls.wrap} {...(whatIf != null ? { "data-what-if": whatIf || "a what-if chart" } : {})}>
         <table className={tableCls.table}>
           <caption className="sr-only">{title}</caption>
           <thead className={tableCls.head}>

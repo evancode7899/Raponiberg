@@ -9,6 +9,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { axisUsd, formatPercentRatio, formatUsd, NA, usd0 } from "@/lib/formatMoney";
 import { useMemo } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
+import { monthProof } from "./cells";
 import type { Ctx } from "./CashFlowClient";
 import { mergeCategories, topPayers, totals } from "./model";
 import { CATEGORIES } from "@/lib/classifier/taxonomy";
@@ -55,7 +56,7 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
               tableTitle="Income by kind, month by month"
               cellProof={(r, c) => {
                 const m = slice.months.find((x) => x.label === r.label)!;
-                return ctx.proof("income", [m], { category: c, shownCents: m.incomeByCategory.find((x) => x.category === c)?.cents ?? 0 });
+                return monthProof(ctx.proof, m, { metric: "income", category: c });
               }}
             >
               <BarChart data={stack} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
