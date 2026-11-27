@@ -11,6 +11,13 @@
  * In shards, as CI runs it (RENDER_AUDIT_SHARD=i/N with RENDER_AUDIT_OUT=<file> on each, then):
  *   node scripts/render-audit.ts --merge <file>…
  *
+ * The browser side (opening a tab, clicking through its views, recording what each draws) is
+ * scripts/render-audit-drive.ts; this plans the run, holds what was drawn to the sweep, and
+ * prints. RENDER_AUDIT_CACHE=<folder> keeps each tab's recording with everything it was drawn
+ * from and draws again only the tabs whose inputs changed (scripts/render-audit-cache.ts);
+ * a few kept tabs are drawn again on every run to check the cache (RENDER_AUDIT_RECHECK).
+ * A slow tab is split into parts that run on several workers at once (RENDER_AUDIT_SPLIT=0: never).
+ *
  * Drives the Chrome or Edge already installed (playwright-core downloads no browser);
  * RENDER_AUDIT_BROWSER names another executable. On the owner's own data it runs through
  * scripts/render-audit-real.ts (npm run audit:real), which sets RENDER_AUDIT_UNLOCK and
@@ -19,8 +26,12 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Browser, Locator, Page } from "playwright-core";
+import type { Browser } from "playwright-core";
 import { auditRender, BYPASS_PENDING, CHART_TABLE_PENDING, chartTableOf, drawerStrays, figureFamily, pageOf, UNDRAWN_PENDING, type DrawnView, type RenderProblem, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
+import { dropEntry, loadEntries, Replayer, saveEntry, type Entry } from "./render-audit-cache.ts";
+import { auditUnit, openWorker, tabKey, unitName, type DriveConfig, type RawView, type Unit, type UnitRun, type Worker } from "./render-audit-drive.ts";
+import { byCost, clean, deal, firstDiff, mergeParts, withParts, type Cost } from "./render-audit-plan.ts";
+import { hashFiles } from "../src/lib/importGraph.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** --merge <shard files…>: no browser, just the whole run's audit from what each shard drew. */
@@ -31,25 +42,40 @@ if (!base && !MERGE?.length) {
   process.exit(2);
 }
 
-/** How long a view may take to settle (its data loaded, no figure still verifying). */
-const SETTLE_MS = 30_000;
 /** How many problems of each kind to list; the counts are always whole. */
 const LISTED = Number(process.env.RENDER_AUDIT_LIST ?? 40);
-/** Pages audited at once. */
+/**
+ * Pages audited at once. On an 8-core desktop 6 and 8 take the same time (4 takes half again
+ * as long); CI's 4-core runners spend part of each look waiting, and there 8 beat 4 by a third.
+ */
 const WORKERS = Math.max(1, Number(process.env.RENDER_AUDIT_WORKERS ?? 8));
 /** RENDER_AUDIT_ONLY=/cash-flow,/taxes: just those pages (a partial run: it can't tell what no page draws). */
 const ONLY = process.env.RENDER_AUDIT_ONLY?.split(",").map((s) => s.trim()).filter(Boolean);
-/** The day the server pins (APP_TODAY, set by scripts/demo.ts): the browser's clock reads it too. */
-const TODAY = process.env.APP_TODAY?.trim();
-/** Drill-downs opened per view (RENDER_AUDIT_DRILLS caps it on a big Book), and proof drawers held to their proofs per view. */
-const DRILLS_PER_VIEW = Number(process.env.RENDER_AUDIT_DRILLS ?? 80);
-const DRAWERS_PER_VIEW = 4;
+const CONFIG: DriveConfig = {
+  base,
+  settleMs: 30_000,
+  // As long as the old sampler's gap (two looks 120 ms apart), but every change in between counts now.
+  quietMs: 120,
+  today: process.env.APP_TODAY?.trim() || undefined,
+  // RENDER_AUDIT_UNLOCK=1: the caller had the server check the lock-screen password (render-audit-real.ts), so each tab starts unlocked, as the lock screen leaves it.
+  unlock: process.env.RENDER_AUDIT_UNLOCK === "1",
+  // Drill-downs opened per view (RENDER_AUDIT_DRILLS caps it on a big Book), and proof drawers held to their proofs per view.
+  drillsPerView: Number(process.env.RENDER_AUDIT_DRILLS ?? 80),
+  drawersPerView: 4,
+};
 /** The audit's time budget (F6e), a shard's own when sharded: the owner wants proof checks in minutes, so a slower run fails. RENDER_AUDIT_BUDGET_MS overrides (0: none). */
 const BUDGET_MS = Number(process.env.RENDER_AUDIT_BUDGET_MS ?? 240_000);
-/** RENDER_AUDIT_UNLOCK=1: the caller had the server check the lock-screen password (render-audit-real.ts), so each tab starts unlocked, as the lock screen leaves it. */
-const UNLOCK = process.env.RENDER_AUDIT_UNLOCK === "1";
 /** RENDER_AUDIT_REDACT=1: real data, so the console says problem kinds, pages and counts, never a drawn value, key or name. */
 const REDACT = process.env.RENDER_AUDIT_REDACT === "1";
+/** RENDER_AUDIT_CACHE=<folder>: draw again only the tabs whose inputs changed (render-audit-cache.ts). Not with shards: each must deal the same plan. */
+const CACHE = process.env.RENDER_AUDIT_CACHE?.trim() || null;
+/** Kept tabs drawn again on every run, to check that a kept recording is what the tab draws now. */
+const RECHECK = Math.max(0, Number(process.env.RENDER_AUDIT_RECHECK ?? 3));
+/** A tab costing more than its share is split into parts (up to MAX_PARTS), so no one tab holds the run up. */
+const SPLIT = process.env.RENDER_AUDIT_SPLIT !== "0";
+const MAX_PARTS = 6;
+/** Each part draws the page and its first view again: below this a tab isn't worth splitting. */
+const MIN_PART_MS = 8_000;
 /**
  * RENDER_AUDIT_SHARD=i/N: just the i-th of N shares of the units (CI runs N at once, then
  * --merge). Shares are dealt from the units' last costs, so each shard knows its own without
@@ -68,12 +94,27 @@ const SHARD = (() => {
 /** RENDER_AUDIT_OUT=<file>: every unit this run drew and the sweep it held them to, for --merge. */
 const OUT = process.env.RENDER_AUDIT_OUT?.trim();
 /**
- * What each unit took last time (scripts/render-audit-costs.json): the busiest start first,
- * and shards are dealt from them. Stale costs only slow a run down, never skip a unit: a tab
- * no costs file lists is still found and run. RENDER_AUDIT_COSTS=<file> writes this run's.
+ * What each tab took last time (scripts/render-audit-costs.json): the busiest start first,
+ * slow ones are split, and shards are dealt from them. Stale costs only slow a run down, never
+ * skip a unit: a tab no costs file lists is still found and run. RENDER_AUDIT_COSTS=<file> writes this run's.
  */
 const COSTS_FILE = path.join(ROOT, "scripts", "render-audit-costs.json");
-type Cost = Unit & { ms: number };
+/**
+ * With a cache, what each tab took here last time, kept beside it: the real Book's tabs cost
+ * several times the demo's, and this machine isn't CI's, so a run plans its parts from its own.
+ */
+const LOCAL_COSTS = CACHE ? path.join(CACHE, "costs.json") : null;
+function readCosts(f: string): Cost[] {
+  try {
+    return JSON.parse(readFileSync(f, "utf8")) as Cost[];
+  } catch {
+    return [];
+  }
+}
+function writeCosts(f: string, costs: readonly Cost[]) {
+  const lines = [...costs].sort((a, b) => tabKey(a).localeCompare(tabKey(b))).map((c) => `  ${JSON.stringify({ route: c.route, tab: c.tab, ms: c.ms })}`);
+  writeFileSync(f, `[\n${lines.join(",\n")}\n]\n`);
+}
 
 /** Every page the app has: each folder under src/app with a page.tsx, bar the API and dynamic segments. */
 function routes(): string[] {
@@ -109,431 +150,26 @@ async function launch(): Promise<Browser> {
   throw new Error(`No browser to drive (set RENDER_AUDIT_BROWSER to Chrome or Edge):\n  ${tried.join("\n  ")}`);
 }
 
-/** What the page draws now: every figure's data attributes and text, and money drawn outside any figure. Runs in the browser. */
-function collect(scope?: string) {
-  const visible = (el: Element) => (el as HTMLElement).checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? true;
-  // A view that is a dialog (a chart's table) is that dialog alone: the page behind it is a view of its own.
-  const root: HTMLElement = (scope ? [...document.querySelectorAll<HTMLElement>(scope)].at(-1) : null) ?? document.body;
-  const figures = [...root.querySelectorAll<HTMLElement>("[data-proof-key]")].filter(visible).map((el) => {
-    const c = el.cloneNode(true) as HTMLElement;
-    c.querySelectorAll("[data-proof-mark]").forEach((m) => m.remove());
-    const kind = el.dataset.shownKind ?? "";
-    return {
-      key: el.dataset.proofKey ?? "",
-      shown: el.dataset.shown ?? "",
-      shownKind: (kind === "cents" || kind === "ratio" || kind === "text" ? kind : "") as "" | "cents" | "ratio" | "text",
-      perMonths: el.dataset.perMonths ? Number(el.dataset.perMonths) : null,
-      clearance: el.dataset.clearance ?? "",
-      text: (c.textContent ?? "").trim(),
-      drawn: el.dataset.drawn,
-    };
-  });
-  // Money or a rate in a text node that no figure holds. Form fields, a chart axis's tick
-  // labels (a scale, not data) and text marked data-not-figure with a reason (kit NotFigure:
-  // a rule's threshold, an input you typed) aren't figures. Words that open a proof (data-drawn="words") are held in renderAudit.ts.
-  const strays = new Set<string>();
-  const chart = new Set<string>();
-  const re = /\$\s?\d|\d(?:[.,]\d+)*\s?%/;
-  const tokenRe = /[+\-−]?\(?\$\s?\d[\d,]*(?:\.\d+)?[kMB]?\)?|[+\-−]?\(?\d[\d,]*(?:\.\d+)?\s?%\)?/g;
-  // What-if regions (kit WhatIf): their bare numbers aren't strays, but renderAudit.ts holds them (and the figures inside) to the ledger.
-  const regions = [...root.querySelectorAll<HTMLElement>("[data-what-if]")].filter((r) => visible(r) && (scope ? true : !r.closest('[role="dialog"]')));
-  const regionTokens = new Map<Element, string[]>(regions.map((r) => [r, []]));
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const t = n.textContent ?? "";
-    if (!re.test(t)) continue;
-    const el = n.parentElement;
-    // An open proof drawer's numbers are held to its proof's JSON (drawerTokens), not to this view; a chart tooltip is where the mouse last was.
-    if (!el || el.closest('.pf-drawer:has([data-proof-clearance]), .recharts-tooltip-wrapper, [data-proof-key], [data-not-figure]:not([data-not-figure=""]), .recharts-cartesian-axis-tick-value, #recharts_measurement_span, input, textarea, select, option, script, style, noscript') || !visible(el)) continue;
-    const region = el.closest("[data-what-if]");
-    if (region) {
-      regionTokens.get(region)?.push(...[...t.matchAll(tokenRe)].map((m) => m[0]));
-      continue;
-    }
-    const where = (el.closest("tr, li, [class*='rounded-lg'], section") ?? el).textContent?.replace(/\s+/g, " ").trim().slice(0, 90) ?? "";
-    // In a chart (SVG): a label for a figure the view draws, held to it in renderAudit.ts.
-    if (el.closest("svg")) chart.add(t.replace(/\s+/g, " ").trim());
-    else strays.add(`${t.replace(/\s+/g, " ").trim().slice(0, 60)}" in "${where}`);
-  }
-  const whatIf = regions.map((r) => ({
-    why: r.dataset.whatIf || "(no reason given)",
-    figures: [...r.querySelectorAll<HTMLElement>("[data-proof-key]")].filter(visible).map((f) => ({ key: f.dataset.proofKey ?? "", clearance: f.dataset.clearance ?? "" })),
-    tokens: regionTokens.get(r) ?? [],
-  }));
-  return { figures, strays: [...strays], chart: [...chart], whatIf, verifying: document.querySelectorAll('[data-clearance="verifying"]').length, size: document.body.innerText.length };
-}
-
-/** Money and rates a proof drawer (the dialog the figure opened) draws. Runs in the browser. */
-function drawerTokens(): string[] {
-  const d = [...document.querySelectorAll('[role="dialog"]')].at(-1);
-  if (!d) return [];
-  const re = /[+\-−]?\(?\$\s?\d[\d,]*(?:\.\d+)?[kMB]?\)?|[+\-−]?\(?\d[\d,]*(?:\.\d+)?\s?%\)?/g;
-  return [...((d as HTMLElement).innerText ?? "").matchAll(re)].map((m) => m[0]);
-}
-
-/** The page's requests still in flight, so settle() knows when a click's data has come back. */
-const inflight = new WeakMap<Page, number>();
-
-/** A cheap look at the page: what settle() waits on (figures verifying, how much is drawn). Runs in the browser. */
-function glance(): string {
-  const figures = document.querySelectorAll("[data-proof-key]");
-  let text = 0;
-  figures.forEach((f) => (text += (f.textContent ?? "").length));
-  // A figure still verifying, or a skeleton (kit Loading: data not loaded yet), means the view isn't drawn yet.
-  const waiting = document.querySelectorAll('[data-clearance="verifying"], [data-skeleton]').length;
-  return `${waiting}|${figures.length}|${text}|${document.body.textContent?.length ?? 0}|${document.querySelectorAll('[role="dialog"]').length}`;
-}
-
-/** Waits until the view's data has loaded and nothing changes: no requests in flight, no figure verifying, the same drawing twice. */
-async function settle(page: Page): Promise<string | null> {
-  const until = Date.now() + SETTLE_MS;
-  let last = "";
-  while (Date.now() < until) {
-    const sig = await page.evaluate(glance);
-    if (!sig.startsWith("0|") || inflight.get(page)) last = "";
-    else if (sig === last) return null;
-    else last = sig;
-    await page.waitForTimeout(120);
-  }
-  return `never settled in ${SETTLE_MS / 1000}s (figures still verifying, or the page kept changing)`;
-}
-
-/** One unit of the audit (a page's tab) and what it drew, in order. */
-type Unit = { route: string; tab: { id: string; label: string } | null };
-/** What a unit drew; a page's own unit also lists the page's tabs (each a unit of its own). `draws` counts every look, `repeats` those that drew nothing new. */
-type UnitRun = Unit & { views: DrawnView[]; ms: number; skipped?: string; tabs?: Unit[]; draws: number; repeats: number; drawers: number };
-const unitName = (u: Unit) => (u.tab ? `${u.route} › ${u.tab.label}` : u.route);
-/** A unit's identity across runs and shards: its page, tab id and the tab's label. */
-const unitKey = (u: Unit) => JSON.stringify([u.route, u.tab?.id ?? null, u.tab?.label ?? null]);
-
-const familyOf = (key: string) => {
-  try {
-    const d = JSON.parse(key) as Record<string, unknown>;
-    return [d.report, d.page, d.figure ?? d.metric ?? d.line ?? d.measure ?? d.op].filter((x) => typeof x === "string").join(" › ");
-  } catch {
-    return key;
-  }
-};
-
-/**
- * Audits one tab of one page in a browser context of its own (its own storage). The page's
- * own first tab also lists the others (kit Tabs: data-tab-id) as soon as it has loaded, and
- * hands each to `found` (queued for the next free worker unless already planned), so a page
- * with many tabs runs on several workers at once.
- */
-async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], found: (tab: Unit) => void): Promise<UnitRun> {
-  const t0 = Date.now();
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, reducedMotion: "reduce" });
-  // The demo's day in the browser too (scripts/demo.ts DEMO_TODAY): the year a page opens on, its default range.
-  if (TODAY) await context.clock.setFixedTime(new Date(`${TODAY}T12:00:00`));
-  // The flag the lock screen sets once its password is accepted (components/shell/LockScreen.tsx).
-  if (UNLOCK) await context.addInitScript(() => sessionStorage.setItem("pf-unlocked", "1"));
-  // Long tables draw only the rows in view (components/ui/DataTable.tsx); the audit reads every row a list holds.
-  await context.addInitScript(() => sessionStorage.setItem("pf-draw-every-row", "1"));
-  // The audit only looks: any write (a saved input, a decision) is refused, so the data the sweep cleared is the data drawn.
-  await context.route(/\/api\//, (r) => {
-    const q = r.request();
-    return q.method() === "GET" || (q.method() === "POST" && new URL(q.url()).pathname === "/api/proof") ? r.continue() : r.abort();
-  });
-  const page = await context.newPage();
-  page.setDefaultTimeout(10_000);
-  inflight.set(page, 0);
-  page.on("request", () => inflight.set(page, (inflight.get(page) ?? 0) + 1));
-  const done = () => inflight.set(page, Math.max(0, (inflight.get(page) ?? 1) - 1));
-  page.on("requestfinished", done);
-  page.on("requestfailed", done);
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(`The page threw: ${e.message.split("\n")[0]}`));
-  // A read the page's data came from that failed leaves the page showing an error note, not its figures: said, not drawn as an empty view.
-  const read = (q: { method(): string; url(): string }) => {
-    const p = new URL(q.url()).pathname;
-    return p.startsWith("/api/") && (q.method() === "GET" || p === "/api/proof") ? `${q.method()} ${p}` : null;
-  };
-  page.on("response", (r) => {
-    const what = read(r.request());
-    if (what && r.status() >= 400) errors.push(`${what} answered ${r.status()}`);
-  });
-  page.on("requestfailed", (q) => {
-    const what = read(q);
-    // Aborted is the browser dropping a read the page no longer needs (it moved on), not a failure.
-    if (what && q.failure()?.errorText !== "net::ERR_ABORTED") errors.push(`${what} failed: ${q.failure()?.errorText}`);
-  });
-  const views: DrawnView[] = [];
-  // A view drawn before (the same figures, the same strays): nothing new to drill into or explore from it.
-  const seen = new Set<string>();
-  // The proof drawers this unit opened, by family (report › page › figure): one of each is enough to hold the
-  // drawer's drawing. Per unit, not per run, so which drawers open never depends on which worker or shard got there first.
-  const drawerFamilies = new Set<string>();
-  const stats = { draws: 0, repeats: 0, drawers: 0 };
-
-  const draw = async (name: string, scope?: string): Promise<DrawnView & { repeat: boolean }> => {
-    const unsettled = await settle(page);
-    const s = await page.evaluate(collect, scope);
-    const v: DrawnView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, ...(s.whatIf.length ? { whatIf: s.whatIf } : {}), errors: [...errors.splice(0), ...(unsettled ? [unsettled] : [])] };
-    const sig = JSON.stringify([s.figures.map((f) => [f.key, f.clearance, f.text]), s.strays, s.whatIf]);
-    const repeat = seen.has(sig) && !v.errors.length;
-    seen.add(sig);
-    stats.draws++;
-    if (repeat) stats.repeats++;
-    if (!repeat) views.push(v);
-    // The view itself (drawers() adds to it), marked when it repeats one drawn before.
-    return Object.assign(v, { repeat });
-  };
-  const closeDialog = async () => {
-    for (let k = 0; k < 4 && (await page.locator('[role="dialog"]').count()); k++) {
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(50);
-    }
-    await page.locator('[role="dialog"]').first().waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  };
-
-  /** Opens a few figures' proof drawers (F6e) and holds what each draws to the proof the server answered. */
-  const drawers = async (v: DrawnView) => {
-    const picks = v.figures.filter((f) => f.clearance === "cleared" && !drawerFamilies.has(familyOf(f.key)));
-    for (const f of picks.slice(0, DRAWERS_PER_VIEW)) {
-      if (drawerFamilies.has(familyOf(f.key))) continue;
-      drawerFamilies.add(familyOf(f.key));
-      // On a chart table's view, the table's own figure: the page's copy of it sits behind the dialog.
-      const within = (await page.locator("[data-chart-table-view]").count()) ? page.locator("[data-chart-table-view]").last() : page;
-      const el = within.locator(`[data-clearance="cleared"][data-proof-key="${f.key.replace(/["\\]/g, "\\$&")}"]`).first();
-      if (!(await el.isVisible().catch(() => false))) continue;
-      stats.drawers++;
-      // Caught as it's made: a click that throws mustn't leave it to reject unheard.
-      const answer = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/proof" && r.request().method() === "POST", { timeout: 15_000 }).catch(() => null);
-      await el.click();
-      const res = await answer;
-      if (!res) {
-        v.drawers = [...(v.drawers ?? []), { key: f.key, strays: ["(the drawer asked for no proof)"] }];
-        await closeDialog();
-        continue;
-      }
-      // A response whose body is already gone (the page moved on) leaves this drawer unchecked, not the page broken.
-      const proof = (await res.json().catch(() => null)) as unknown;
-      if (proof == null) {
-        await closeDialog();
-        continue;
-      }
-      await settle(page);
-      v.drawers = [...(v.drawers ?? []), { key: f.key, strays: drawerStrays(await page.evaluate(drawerTokens), proof, f.perMonths) }];
-      await closeDialog();
-    }
-  };
-
-  /**
-   * What each drill-down on the view opens (data-audit-drill: a month, a category, a
-   * merchant) as a view of its own. One that opens a drawer is closed again; one that
-   * changes the page in place (a year month by month) is stepped through with its
-   * data-audit-step buttons, each step drawn, and left with its data-audit-back button.
-   */
-  const drills = async (name: string) => {
-    const openers = page.locator('[data-audit-drill]:not([role="dialog"] *)');
-    const n = Math.min(await openers.count(), DRILLS_PER_VIEW);
-    for (let i = 0; i < n; i++) {
-      const o = openers.nth(i);
-      if (!(await o.isVisible().catch(() => false))) continue;
-      const label = ((await o.getAttribute("data-audit-drill")) || (await o.innerText()).slice(0, 30)).replace(/\s+/g, " ").trim();
-      await o.click();
-      const back = page.locator("[data-audit-back]").first();
-      // A drawer, a view in place with a way back, or a row that opens where it is: whichever came, once it settles.
-      await draw(`${name} ▸ ${label}`);
-      if (await back.isVisible().catch(() => false)) {
-        const steps = page.locator("[data-audit-step]");
-        for (let j = 0; j < (await steps.count()); j++)
-          for (let k = 1; k <= 60 && (await steps.nth(j).isEnabled().catch(() => false)); k++) {
-            await steps.nth(j).click();
-            await draw(`${name} ▸ ${label} ▸ ${(await steps.nth(j).getAttribute("aria-label")) ?? "step"} ${k}`);
-          }
-        await back.click();
-        await settle(page);
-      } else if (await page.locator('[role="dialog"]').count()) await closeDialog();
-    }
-  };
-
-  /**
-   * Each chart's table (RechartsResponsive: data-chart-table), opened as a view of its own:
-   * every value in it is a figure that opens its proof, or n.a. when its chart names none
-   * (owner's rule, 2026-11-26), and a what-if chart's table is marked as that what-if.
-   */
-  const tables = async (name: string) => {
-    const openers = page.locator('[data-chart-table]:not([role="dialog"] *)');
-    const n = await openers.count();
-    for (let i = 0; i < n; i++) {
-      const o = openers.nth(i);
-      // The button shows on hover or focus: focus it, so a chart the page draws is opened whether or not the mouse is there.
-      if (!(await o.count())) continue;
-      const label = ((await o.getAttribute("data-chart-table")) || `chart ${i + 1}`).replace(/\s+/g, " ").trim();
-      if (!(await o.isVisible().catch(() => false))) continue;
-      // The button sits over the chart and shows on hover or focus: a pointer click can land on the chart's own layer, so click it as a keyboard user would.
-      await o.evaluate((el) => (el as HTMLElement).click());
-      // The table opens in a drawer: read it once it's there.
-      await page.locator("[data-chart-table-view]").last().waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-      const v = await draw(`${name} ▤ ${label}`, "[data-chart-table-view]");
-      if (!v.repeat) await drawers(v);
-      await closeDialog();
-    }
-  };
-
-  /**
-   * Every option of each control the page marks as a view (data-audit-view), and with each
-   * one, every option of the controls after it (a year, then its basis): every pair, so a
-   * column only a year and a basis together show is drawn too. Drill-downs open on each
-   * single change, not on every pair. A control marked data-audit-nest (kit Segmented view
-   * nested) is clicked under every pair too: what it shows hangs on both pickers before it.
-   * Options the control names in data-audit-view are left alone (it says why in
-   * data-audit-skip-why).
-   */
-  /**
-   * Clicks an option and waits for the control to show it picked. The control and the view
-   * are drawn from the same state, so once it does, the new option's render has landed.
-   * Without this, a slow runner can settle on the previous option's view, which then reads
-   * as a repeat and the option is never audited.
-   */
-  const pick = async (radio: Locator) => {
-    await radio.click();
-    await radio
-      .and(page.locator('[aria-checked="true"]'))
-      .waitFor({ timeout: SETTLE_MS })
-      .catch(() => {});
-  };
-
-  const explore = async (name: string, from = 0, depth = 0) => {
-    const controls = page.locator('[data-audit-view]:not([role="dialog"] *)');
-    const count = await controls.count();
-    for (let i = from; i < count; i++) {
-      const c = controls.nth(i);
-      if (!(await c.isVisible().catch(() => false))) continue;
-      if (depth === 2 && (await c.getAttribute("data-audit-nest")) == null) continue;
-      const label = (await c.getAttribute("aria-label")) || `view ${i + 1}`;
-      const skip = new Set(((await c.getAttribute("data-audit-view")) ?? "").split(",").filter(Boolean));
-      const show = async (opt: string) => {
-        const at = `${name} · ${label}=${opt}`;
-        const v = await draw(at);
-        if (v.repeat) return;
-        await drawers(v);
-        if (depth === 0) {
-          await tables(at);
-          await drills(at);
-          await explore(at, i + 1, 1);
-        } else if (depth === 1 && (await page.locator("[data-audit-nest]").count())) {
-          // A page whose views pair up (a coverage, then each year of it) draws each pair's own charts: their tables too.
-          await tables(at);
-          await explore(at, i + 1, 2);
-        }
-      };
-      if ((await c.evaluate((e) => e.tagName)) === "SELECT") {
-        const was = await c.inputValue();
-        for (const value of await c.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))) {
-          if (value === was || skip.has(value)) continue;
-          await c.selectOption(value);
-          await show(value);
-        }
-        await c.selectOption(was);
-      } else {
-        const radios = c.locator('[role="radio"]');
-        const n = await radios.count();
-        let on = -1;
-        for (let j = 0; j < n; j++) if ((await radios.nth(j).getAttribute("aria-checked")) === "true") on = j;
-        for (let j = 0; j < n; j++) {
-          if (j === on || skip.has((await radios.nth(j).getAttribute("data-value")) ?? "")) continue;
-          await pick(radios.nth(j));
-          await show((await radios.nth(j).innerText()).trim());
-        }
-        if (on >= 0) await pick(radios.nth(on));
-      }
-      await settle(page);
-    }
-  };
-
-  const visit = async (name: string) => {
-    // "Show more" (data-audit-more) until there is no more: every row the page can list is drawn.
-    const more = page.locator('[data-audit-more]:not([role="dialog"] *)').first();
-    for (let k = 1; k <= 10 && (await more.isVisible().catch(() => false)); k++) {
-      await draw(`${name} (page ${k})`);
-      await more.click();
-    }
-    const v = await draw(name);
-    await drawers(v);
-    await tables(name);
-    await drills(name);
-    await explore(name);
-  };
-
-  const name = unitName(unit);
-  const tabs: Unit[] = [];
-  try {
-    const r = await page.goto(`${base}${unit.route}${unit.tab ? `?tab=${encodeURIComponent(unit.tab.id)}` : ""}`, { waitUntil: "load" }).catch((e: Error) => (errors.push(`Couldn't open: ${e.message.split("\n")[0]}`), null));
-    if (r && !r.ok()) errors.push(`Answered ${r.status()}`);
-    // Settled first: a server redirect() lands in the browser after "load".
-    await settle(page);
-    // A page that draws nothing yet may only be between hydrating and asking for its data on a busy machine: one more look.
-    const first = await page.evaluate(collect, undefined);
-    if (!first.figures.length && !first.strays.length) {
-      await page.waitForTimeout(1000);
-      await settle(page);
-    }
-    // An old address that redirects to a page audited in its own right is that page.
-    const landed = new URL(page.url()).pathname;
-    if (!unit.tab && landed !== unit.route && all.includes(landed)) return { ...unit, views: [], ms: Date.now() - t0, skipped: `redirects to ${landed}`, ...stats };
-    if (!unit.tab) {
-      // The page's other tabs, listed as soon as the page has drawn its tab strip (not after this tab's own
-      // views and drills), each a unit of its own for the next free worker.
-      const strip = page.locator('[role="tablist"] [role="tab"][data-tab-id]');
-      for (let i = 0; i < (await strip.count()); i++) {
-        if ((await strip.nth(i).getAttribute("aria-selected")) === "true") continue;
-        const id = (await strip.nth(i).getAttribute("data-tab-id"))!;
-        const tab = { route: unit.route, tab: { id, label: (await strip.nth(i).innerText()).replace(/\d+$/, "").trim() } };
-        tabs.push(tab);
-        found(tab);
-      }
-    }
-    await visit(name);
-    // Tabs of the page's own (one per car, one per policy): each drawn as a view of this unit.
-    const own = page.locator('[role="tablist"] [role="tab"]:not([data-tab-id])');
-    for (let i = 0; i < (await own.count()); i++) {
-      if ((await own.nth(i).getAttribute("aria-selected")) === "true") continue;
-      const label = (await own.nth(i).innerText()).trim();
-      await own.nth(i).click();
-      await visit(`${name} ▸ ${label}`);
-    }
-  } catch (e) {
-    views.push({ view: name, figures: [], strays: [], errors: [`The audit couldn't finish the page: ${(e as Error).message.split("\n")[0]}`] });
-  } finally {
-    await context.close();
-  }
-  return { ...unit, views, ms: Date.now() - t0, ...(unit.tab ? {} : { tabs }), ...stats };
-}
-
-type Report = SweepVerdicts & { stamp: string; figures: number; problemCount: number };
+type Report = SweepVerdicts & { stamp: string; figures: number; problemCount: number; independence?: { unchecked: number } };
 /** What a run, or one shard of it, drew: every unit and the sweep they were held to (RENDER_AUDIT_OUT, for --merge). */
-type Drawn = { shard: string | null; only: string[] | null; report: Report; runs: UnitRun[]; ms: number };
+type Drawn = { shard: string | null; only: string[] | null; report: Report; runs: UnitRun[]; ms: number; notes?: RenderProblem[] };
 
-/** The units to run, busiest first: every page, and every tab of them the costs file lists. */
+/** The tabs to run, busiest first: every page, and every tab of them the costs file lists. */
 function plan(pages: readonly string[]): Cost[] {
-  let costs: Cost[] = [];
-  try {
-    costs = JSON.parse(readFileSync(COSTS_FILE, "utf8")) as Cost[];
-  } catch {
-    /* no costs yet: every unit costs the same, and tabs are found as their pages load */
-  }
-  const known = new Map(costs.map((c) => [unitKey(c), c.ms]));
+  // No costs yet: every unit costs the same, and tabs are found as their pages load.
+  const local = LOCAL_COSTS ? readCosts(LOCAL_COSTS) : [];
+  const costs = local.length ? local : readCosts(COSTS_FILE);
+  const known = new Map(costs.map((c) => [tabKey(c), c.ms]));
   const sorted = costs.map((c) => c.ms).sort((a, b) => a - b);
   const median = sorted[sorted.length >> 1] ?? 0;
   const units: Unit[] = [...pages.map((route) => ({ route, tab: null })), ...costs.filter((c) => c.tab && pages.includes(c.route)).map(({ route, tab }) => ({ route, tab }))];
-  return units.map((u) => ({ ...u, ms: known.get(unitKey(u)) ?? median })).sort((a, b) => b.ms - a.ms || unitKey(a).localeCompare(unitKey(b)));
+  return units.map((u) => ({ ...u, ms: known.get(tabKey(u)) ?? median })).sort(byCost);
 }
 
-/** Deals the planned units to n shards, busiest first, each to the least loaded so far (a tie to the first): the same deal on every shard. */
-function deal(units: readonly Cost[], n: number): Cost[][] {
-  const shards = Array.from({ length: n }, () => ({ ms: 0, units: [] as Cost[] }));
-  for (const u of units) {
-    const s = shards.reduce((a, b) => (b.ms < a.ms ? b : a));
-    s.units.push(u);
-    s.ms += u.ms;
-  }
-  return shards.map((s) => s.units);
-}
+const line = (u: Unit, r: UnitRun, note = "") =>
+  console.log(`${unitName(u).padEnd(44)} ${r.skipped ?? `${String(r.views.length).padStart(4)} view(s) ${String(r.draws).padStart(4)} look(s) ${String(r.drawers).padStart(3)} drawer(s)`} ${String(r.ms).padStart(7)}ms${note}`);
 
-/** Renders this run's units (all of them, or this shard's) on a few workers at once. */
+/** Renders this run's units (all of them, or this shard's) on a few workers at once, drawing only what the cache can't vouch for. */
 async function run(): Promise<Drawn> {
   const started = Date.now();
   // The sweep the pages clear from, run to the end first: the server's own report. Asked
@@ -541,7 +177,7 @@ async function run(): Promise<Drawn> {
   // header timeout fails on a large Book's cold start.
   let res = await fetch(`${base}/api/proof/sweep`);
   while (res.status === 202) {
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 250));
     res = await fetch(`${base}/api/proof/sweep`);
   }
   if (!res.ok) {
@@ -549,7 +185,12 @@ async function run(): Promise<Drawn> {
     process.exit(1);
   }
   const report = (await res.json()) as Report;
-  console.log(`Sweep${REDACT ? "" : ` of ${report.stamp}`}:${report.figures} figures, ${Object.keys(report.cleared).length} cleared, ${report.problemCount} problem(s) (${Date.now() - started}ms)`);
+  console.log(`Sweep${REDACT ? "" : ` of ${report.stamp}`}: ${report.figures} figures, ${Object.keys(report.cleared).length} cleared, ${report.problemCount} problem(s) (${Date.now() - started}ms)`);
+  const notes: RenderProblem[] = [];
+  // RENDER_AUDIT_SWEEP_GATE=1 (scripts/demo.ts --sweep with --render-audit): the server's sweep is the same sweep npm run proof:sweep runs, so its verdict is held here instead of sweeping twice.
+  if (process.env.RENDER_AUDIT_SWEEP_GATE === "1" && (report.problemCount || report.independence?.unchecked)) {
+    notes.push({ kind: "RENDER_ERROR", view: "(the proof sweep)", detail: `${report.problemCount} sweep problem(s), ${report.independence?.unchecked ?? 0} figure(s) on their own route only: npm run proof:sweep lists them.` });
+  }
 
   const all = routes();
   const todo = ONLY ? all.filter((r) => ONLY.includes(r)) : all;
@@ -557,52 +198,122 @@ async function run(): Promise<Drawn> {
     console.error(`No page to audit${ONLY ? ` among ${ONLY.join(", ")} (pages: ${all.join(" ")})` : ""}.`);
     process.exit(2);
   }
+  const browser = await launch();
   const planned = plan(todo);
-  const mine = SHARD ? deal(planned, SHARD.n)[SHARD.i - 1]! : planned;
-  if (SHARD) console.log(`Shard ${SHARD.i}/${SHARD.n}: ${mine.length} of ${planned.length} unit(s), about ${Math.round(mine.reduce((n, u) => n + u.ms, 0) / 1000)} s of work by the last costs.`);
+  const runs: UnitRun[] = [];
+  const queued = new Set(planned.map(tabKey));
+
+  // The cache: each kept tab whose every answer is the same now is drawn from its recording.
+  const driver = hashFiles(ROOT, [path.join(ROOT, "scripts", "render-audit-drive.ts")], [browser.version(), JSON.stringify({ ...CONFIG, base: null })]);
+  // RENDER_AUDIT_BUILD_ID (scripts/demo.ts, render-audit-real.ts): the id of the build served, read past in its answers.
+  const replayer = new Replayer(base, [report.stamp, process.env.RENDER_AUDIT_BUILD_ID?.trim() ?? ""]);
+  const hits = new Map<string, Entry>();
+  let toDraw: Cost[] = planned;
+  const forced = new Map<string, number>();
+  if (CACHE && !SHARD) {
+    const t0 = Date.now();
+    const kept = loadEntries(CACHE);
+    const check = async (tabs: readonly Cost[]) => {
+      const ok = await Promise.all(tabs.map(async (u) => {
+        const e = kept.get(tabKey(u));
+        return e && e.driver === driver && (await replayer.unchanged(e)) ? e : null;
+      }));
+      ok.forEach((e, i) => e && hits.set(tabKey(tabs[i]!), e));
+    };
+    await check(planned);
+    // Tabs a kept page lists that the costs file doesn't: checked too, else drawn.
+    for (let more = [...hits.values()]; more.length; ) {
+      const extra = more.flatMap((e) => e.run.tabs ?? []).filter((t) => !queued.has(tabKey(t)) && todo.includes(t.route)).map((t) => ({ ...t, ms: 0 }));
+      extra.forEach((t) => queued.add(tabKey(t)));
+      planned.push(...extra);
+      const before = new Set(hits.keys());
+      await check(extra);
+      more = [...hits.entries()].filter(([k]) => !before.has(k)).map(([, e]) => e);
+    }
+    // A few kept tabs drawn again anyway, as they were kept (same parts), and held to what was kept.
+    const recheck = [...hits.keys()].sort(() => Math.random() - 0.5).slice(0, RECHECK);
+    for (const k of recheck) forced.set(k, hits.get(k)!.parts);
+    toDraw = planned.filter((u) => !hits.has(tabKey(u)) || forced.has(tabKey(u)));
+    for (const k of recheck) hits.delete(k);
+    console.log(`Cache: ${hits.size + recheck.length} of ${planned.length} tab(s) unchanged (${replayer.asked} answer(s) asked again, ${Date.now() - t0}ms: ${replayer.spentText() || "none"}); drawing ${toDraw.length - recheck.length}, and ${recheck.length} kept one(s) again to check the cache.`);
+    for (const e of hits.values()) runs.push({ ...e.run, part: null });
+  }
+
+  const units = withParts(toDraw, { workers: WORKERS, shards: SHARD?.n ?? 1, split: SPLIT, minPartMs: MIN_PART_MS, maxParts: MAX_PARTS }, forced);
+  const mine = SHARD ? deal(units, SHARD.n)[SHARD.i - 1]! : units;
+  if (SHARD) console.log(`Shard ${SHARD.i}/${SHARD.n}: ${mine.length} of ${units.length} unit(s), about ${Math.round(mine.reduce((n, u) => n + u.ms, 0) / 1000)} s of work by the last costs.`);
   // Busiest first, so the long units don't finish last; a tab no plan lists joins the queue when its page finds it.
-  const queue: Unit[] = mine.map(({ route, tab }) => ({ route, tab }));
-  const queued = new Set(planned.map(unitKey));
+  const queue: Unit[] = mine.map(({ route, tab, part }) => ({ route, tab, part }));
   const found = (tab: Unit) => {
-    if (queued.has(unitKey(tab))) return;
-    queued.add(unitKey(tab));
+    if (queued.has(tabKey(tab))) return;
+    queued.add(tabKey(tab));
     queue.push(tab);
   };
-  const browser = await launch();
-  const runs: UnitRun[] = [];
+  const fresh: UnitRun[] = [];
   try {
     let busy = 0;
     await Promise.all(
-      Array.from({ length: WORKERS }, async () => {
-        // A worker with nothing queued waits while others may still queue tabs.
-        for (;;) {
-          const unit = queue.shift();
-          if (!unit) {
-            if (!busy) return;
-            await new Promise((r) => setTimeout(r, 100));
-            continue;
-          }
-          busy++;
-          let run: UnitRun;
-          try {
-            run = await auditUnit(browser, unit, all, found);
-            // A unit that hit an error runs once more: one a busy machine caused doesn't change what the run reports, and a real one fails again.
-            if (run.views.some((v) => v.errors.length)) {
-              console.log(`${unitName(unit).padEnd(40)} retried${REDACT ? "" : `: ${run.views.flatMap((v) => v.errors)[0]}`}`);
-              run = await auditUnit(browser, unit, all, found);
+      Array.from({ length: Math.min(WORKERS, Math.max(1, queue.length)) }, async () => {
+        let w: Worker | null = null;
+        try {
+          // A worker with nothing queued waits while others may still queue tabs.
+          for (;;) {
+            const unit = queue.shift();
+            if (!unit) {
+              if (!busy) return;
+              await new Promise((r) => setTimeout(r, 100));
+              continue;
             }
-          } finally {
-            busy--;
+            busy++;
+            let r: UnitRun;
+            try {
+              w ??= await openWorker(browser, CONFIG);
+              r = await auditUnit(w, CONFIG, unit, all, found);
+              // A unit that hit an error runs once more, in a fresh context: one a busy machine caused doesn't change what the run reports, and a real one fails again.
+              if (!clean(r)) {
+                console.log(`${unitName(unit).padEnd(44)} retried${REDACT ? "" : `: ${r.views.flatMap((v) => v.errors)[0]}`}`);
+                await w.context.close().catch(() => {});
+                w = await openWorker(browser, CONFIG);
+                r = await auditUnit(w, CONFIG, unit, all, found);
+              }
+            } finally {
+              busy--;
+            }
+            fresh.push(r);
+            line(unit, r);
           }
-          runs.push(run);
-          console.log(`${unitName(unit).padEnd(40)} ${run.skipped ?? `${String(run.views.length).padStart(4)} view(s) ${String(run.draws).padStart(4)} look(s) ${String(run.drawers).padStart(3)} drawer(s)`} ${String(run.ms).padStart(7)}ms`);
+        } finally {
+          await w?.context.close().catch(() => {});
         }
       }),
     );
   } finally {
     await browser.close();
   }
-  return { shard: SHARD ? `${SHARD.i}/${SHARD.n}` : null, only: ONLY ?? null, report, runs, ms: Date.now() - started };
+
+  if (CACHE && !SHARD) {
+    // Each tab drawn whole and clean is kept with the answers it was drawn from; a rechecked one is held to what was kept first.
+    for (const r of mergeParts(fresh)) {
+      const k = tabKey(r);
+      if (forced.has(k)) {
+        const was = loadEntries(CACHE).get(k);
+        const diff = was && clean(r) ? firstDiff(r, report.stamp, was.run, was.stamp) : null;
+        if (diff) {
+          notes.push({ kind: "RENDER_ERROR", view: unitName({ ...r, part: null }), detail: `Drawn again to check the render cache, it drew something other than what was kept from the same answers (${REDACT ? diff.replace(/"[^"]*"/g, "a view") : diff}): the cache missed something this page draws from, or the page doesn't draw the same twice.` });
+          dropEntry(CACHE, k);
+          continue;
+        }
+      }
+      // An error (a part missing among them) keeps nothing: the tab is drawn again next time.
+      if (!clean(r)) {
+        dropEntry(CACHE, k);
+        continue;
+      }
+      saveEntry(CACHE, { driver, unit: { route: r.route, tab: r.tab }, parts: r.part?.n ?? 1, answers: await replayer.answers(r.asked ?? []), stamp: report.stamp, run: { ...r, asked: undefined } });
+    }
+  }
+  runs.push(...fresh);
+  return { shard: SHARD ? `${SHARD.i}/${SHARD.n}` : null, only: ONLY ?? null, report, runs: runs.map((r) => ({ ...r, asked: undefined })), ms: Date.now() - started, notes };
 }
 
 /** The shards' files, checked to be one whole run: every shard of the same N once, all held to the same sweep. */
@@ -621,37 +332,58 @@ function readShards(files: string[]): Drawn[] {
   return parts;
 }
 
+/** A recorded view as the audit holds it: each drawer's drawing held to its proof (lib/book/proof/renderAudit.ts drawerStrays), now. */
+const held = (v: RawView): DrawnView => ({
+  view: v.view,
+  figures: v.figures,
+  strays: v.strays,
+  ...(v.chart ? { chart: v.chart } : {}),
+  errors: v.errors,
+  ...(v.whatIf ? { whatIf: v.whatIf } : {}),
+  ...(v.rawDrawers ? { drawers: v.rawDrawers.map((d) => ({ key: d.key, strays: "none" in d ? [d.none] : drawerStrays(d.tokens, d.proof, d.perMonths) })) } : {}),
+});
+
 /** The audit of everything drawn (a whole run's, or one shard's on its own), printed; exits 1 on any problem. */
 function finish(parts: Drawn[]) {
   const { report, only } = parts[0]!;
   const shard = parts.length === 1 ? parts[0]!.shard : null;
   // A shard, or some pages only, can't tell a pending page is clean, nor which cleared figures no page draws.
   const partial = !!only || !!shard;
-  const runs = parts.flatMap((p) => p.runs);
+  // Split tabs whole again (a shard alone may hold only some of a tab's parts: those it has).
+  const runs = shard ? parts.flatMap((p) => p.runs) : mergeParts(parts.flatMap((p) => p.runs));
   // A tab the costs file lists that its page no longer has (or names otherwise) drew the page's first tab again: dropped.
-  const tabs = new Set(runs.flatMap((r) => r.tabs ?? []).map(unitKey));
+  const tabs = new Set(runs.flatMap((r) => r.tabs ?? []).map(tabKey));
   const roots = new Set(runs.filter((r) => !r.tab).map((r) => r.route));
-  const stale = new Set(runs.filter((r) => r.tab && roots.has(r.route) && !tabs.has(unitKey(r))).map(unitKey));
-  const kept = runs.filter((r) => !stale.has(unitKey(r)));
+  const stale = new Set(runs.filter((r) => r.tab && roots.has(r.route) && !tabs.has(tabKey(r))).map(tabKey));
+  const kept = runs.filter((r) => !stale.has(tabKey(r)));
   if (stale.size) console.log(`\n${stale.size} tab(s) in scripts/render-audit-costs.json no page has now, dropped: rewrite it (RENDER_AUDIT_COSTS).`);
   // In page order, each page's own tab first: the report reads the same whatever finished first, sharded or not.
   const pages = routes();
   const views = kept
-    .sort((a, b) => pages.indexOf(a.route) - pages.indexOf(b.route) || (a.tab ? 1 : 0) - (b.tab ? 1 : 0) || unitName(a).localeCompare(unitName(b)))
-    .flatMap((r) => r.views);
+    .sort((a, b) => pages.indexOf(a.route) - pages.indexOf(b.route) || (a.tab ? 1 : 0) - (b.tab ? 1 : 0) || unitName(a).localeCompare(unitName(b)) || (a.part?.i ?? 0) - (b.part?.i ?? 0))
+    .flatMap((r) => r.views.map(held));
 
   const audit = auditRender(views, report, BYPASS_PENDING, { partial });
+  audit.problems.push(...parts.flatMap((p) => p.notes ?? []));
   // Every tab a page lists is audited somewhere (a whole run only: a shard sees its own units).
   if (!shard) {
-    const ran = new Set(kept.map(unitKey));
-    for (const r of kept) for (const t of r.tabs ?? []) if (!ran.has(unitKey(t))) audit.problems.push({ kind: "RENDER_ERROR", view: unitName(t), detail: "The page lists this tab, but no shard audited it." });
+    const ran = new Set(kept.map(tabKey));
+    for (const r of kept) for (const t of r.tabs ?? []) if (!ran.has(tabKey(t))) audit.problems.push({ kind: "RENDER_ERROR", view: unitName(t), detail: "The page lists this tab, but no shard audited it." });
   }
   // RENDER_AUDIT_JSON=<file>: everything drawn, each unit's cost and every problem, for working through them.
   if (process.env.RENDER_AUDIT_JSON) writeFileSync(process.env.RENDER_AUDIT_JSON, JSON.stringify({ units: kept.map(({ views: v, ...u }) => ({ ...u, views: v.length })), views, audit }, null, 1));
-  // RENDER_AUDIT_COSTS=<file>: what each unit took, to deal the next runs' shards from (scripts/render-audit-costs.json).
-  if (process.env.RENDER_AUDIT_COSTS && !partial) {
-    const costs: Cost[] = kept.map((r) => ({ route: r.route, tab: r.tab, ms: Math.round(r.ms / 100) * 100 }));
-    writeFileSync(process.env.RENDER_AUDIT_COSTS, `[\n${costs.sort((a, b) => unitKey(a).localeCompare(unitKey(b))).map((c) => `  ${JSON.stringify(c)}`).join(",\n")}\n]\n`);
+  // RENDER_AUDIT_COSTS=<file>: what each tab took (all its parts), to plan the next runs from (scripts/render-audit-costs.json).
+  const costs: Cost[] = kept.map((r) => ({ route: r.route, tab: r.tab, ms: Math.round(r.ms / 100) * 100 }));
+  if (process.env.RENDER_AUDIT_COSTS && !partial) writeCosts(process.env.RENDER_AUDIT_COSTS, costs);
+  // This machine's own, beside the cache (a partial run updates the tabs it ran).
+  if (LOCAL_COSTS && !shard) {
+    const merged = new Map(readCosts(LOCAL_COSTS).map((c) => [tabKey(c), c]));
+    for (const c of costs) merged.set(tabKey(c), c);
+    try {
+      writeCosts(LOCAL_COSTS, [...merged.values()]);
+    } catch {
+      /* the next run plans from CI's costs */
+    }
   }
   const figures = views.reduce((n, v) => n + v.figures.length, 0);
   const opened = views.reduce((n, v) => n + (v.drawers?.length ?? 0), 0);

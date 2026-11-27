@@ -1,7 +1,22 @@
 import { differs, showValue, type SweepProblem } from "./clearance.ts";
-import { clearedValue } from "./composite.ts";
+import { clearedValue as composedValue } from "./composite.ts";
 import { descriptorKey } from "./key.ts";
 import type { ProofValue } from "./types.ts";
+
+/**
+ * A figure's cleared value (composite.ts clearedValue), worked out once per figure per sweep:
+ * a composite (a sum may have thousands of parts) is parsed and its parts keyed afresh on
+ * every call, and the audit asks for the same figures in view after view (on the owner's Book,
+ * most of a run's time). A sweep's verdicts never change once it has answered.
+ */
+const valueMemo = new WeakMap<object, Map<string, ProofValue | null>>();
+function clearedValue(key: string, cleared: Readonly<Record<string, ProofValue>>): ProofValue | null {
+  let m = valueMemo.get(cleared);
+  if (!m) valueMemo.set(cleared, (m = new Map()));
+  let v = m.get(key);
+  if (v === undefined) m.set(key, (v = composedValue(key, cleared)));
+  return v;
+}
 
 /**
  * The render audit (SSOT F6): what the browser actually draws, held to the proof sweep.
@@ -66,7 +81,13 @@ export type WhatIfRegion = { why: string; figures: Pick<DrawnFigure, "key" | "cl
  * proof but a planning one (a statement, a row, net worth, a page's derived figure, a
  * forecast seed), or a composite with such a part. Planning figures are the calculators' own maths.
  */
+const ledgerMemo = new Map<string, boolean>();
 export function isLedgerKey(key: string): boolean {
+  let known = ledgerMemo.get(key);
+  if (known === undefined) ledgerMemo.set(key, (known = ledgerKey(key)));
+  return known;
+}
+function ledgerKey(key: string): boolean {
   const ledger = (d: unknown): boolean => {
     if (!d || typeof d !== "object") return false;
     const x = d as { report?: unknown; of?: unknown };

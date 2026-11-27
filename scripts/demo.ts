@@ -22,14 +22,26 @@
  *                                  one: each seed mints its own record ids, which proof keys carry)
  *   npm run demo -- --render-audit --timings   times every warmed report first (scripts/endpoint-timings.ts)
  *   npm run demo -- --render-audit --ui-checks keyboard, component and visual checks after the audit (scripts/ui-checks.ts)
+ *   npm run demo -- --render-audit --full      every tab drawn afresh, the render cache unused (below)
  * DEMO_PORT changes the port (default 3001).
+ *
+ * The seeded demo is kept (DEMO_SEED_CACHE, default the system temp folder), keyed by every
+ * file the seed runs (lib/importGraph.ts), the schema and migrations, the lockfile and
+ * DEMO_TODAY: the next start with nothing changed copies it back instead of seeding again
+ * (--fresh-seed seeds anyway). The same seed keeps the same record ids, which proof keys carry.
+ * Off CI, --render-audit keeps each tab's drawing in a render cache (RENDER_AUDIT_CACHE,
+ * default the system temp folder; scripts/render-audit-cache.ts) and draws again only the
+ * tabs whose answers changed. With --sweep as well, the server's own sweep (the same sweep,
+ * on the same data) is held to the sweep's rules instead of sweeping a second time.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { REAL_DATA_ENV } from "../src/lib/dataEnv.ts";
 import { latestBuildDir, staleBuild } from "./build-freshness.ts";
+import { filesUnder, hashFiles, importGraph } from "../src/lib/importGraph.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEMO_DIR = path.join(ROOT, "data", "demo");
@@ -66,18 +78,51 @@ const env: Record<string, string | undefined> = {
   PRISMA_HIDE_UPDATE_MESSAGE: "1",
 };
 
-function node(args: string[], what: string) {
-  const r = spawnSync(process.execPath, args, { cwd: ROOT, env: env as NodeJS.ProcessEnv, stdio: "inherit" });
+function node(args: string[], what: string, extra: Record<string, string> = {}) {
+  const r = spawnSync(process.execPath, args, { cwd: ROOT, env: { ...env, ...extra } as NodeJS.ProcessEnv, stdio: "inherit" });
   if (r.status !== 0) throw new Error(`${what} failed.`);
 }
 
-/** A fresh demo database on the current schema, filled with the made-up household. */
+/** Where seeded demos are kept, one folder per seed key; the newest few are kept. */
+const SEED_CACHE = process.env.DEMO_SEED_CACHE?.trim() || path.join(os.tmpdir(), "raponiberg-demo-seed");
+const SEEDS_KEPT = 4;
+
+/** Everything the seeded demo is made from: the seed's code (every local file it imports), the schema and migrations, the packages, and its day. */
+function seedKey(): string {
+  const files = [...importGraph(ROOT, ["scripts/demo-seed.ts", "scripts/seed-categories.mjs"]), ...filesUnder(path.join(ROOT, "prisma")), path.join(ROOT, "package-lock.json")];
+  return hashFiles(ROOT, files, [DEMO_TODAY, process.versions.node.split(".")[0]!]).slice(0, 24);
+}
+
+/** A fresh demo database on the current schema, filled with the made-up household: copied from the kept seed of the same code, or seeded and kept. */
 function buildDemoData() {
+  const key = seedKey();
+  const kept = path.join(SEED_CACHE, key);
   rmSync(DEMO_DIR, { recursive: true, force: true });
+  if (!process.argv.includes("--fresh-seed") && existsSync(path.join(kept, "finance.db"))) {
+    // Times kept too: the data stamp reads them (lib/book/cache.ts), so the same data reads as the same data.
+    cpSync(kept, DEMO_DIR, { recursive: true, preserveTimestamps: true });
+    console.log(`Demo data: the kept seed ${key.slice(0, 12)} (nothing it's made from has changed).`);
+    return;
+  }
   mkdirSync(DEMO_DIR, { recursive: true });
   node([path.join(ROOT, "node_modules", "prisma", "build", "index.js"), "migrate", "deploy"], "Creating the demo database");
   node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", path.join(ROOT, "scripts", "seed-categories.mjs")], "Seeding demo categories");
   node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", path.join(ROOT, "scripts", "demo-seed.ts")], "Filling the demo data");
+  // Kept whole or not at all (another checkout may be keeping the same seed at once).
+  try {
+    mkdirSync(SEED_CACHE, { recursive: true });
+    const tmp = `${kept}.${process.pid}.tmp`;
+    cpSync(DEMO_DIR, tmp, { recursive: true, preserveTimestamps: true });
+    rmSync(kept, { recursive: true, force: true });
+    renameSync(tmp, kept);
+    const all = readdirSync(SEED_CACHE)
+      .filter((n) => !n.endsWith(".tmp"))
+      .map((n) => ({ n, at: statSync(path.join(SEED_CACHE, n)).mtimeMs }))
+      .sort((a, b) => b.at - a.at);
+    for (const { n } of all.slice(SEEDS_KEPT)) rmSync(path.join(SEED_CACHE, n), { recursive: true, force: true });
+  } catch (e) {
+    console.log(`(The seed wasn't kept: ${(e as Error).message})`);
+  }
 }
 
 function buildDir(): string {
@@ -127,7 +172,13 @@ async function renderAudit(dir: string) {
       await new Promise((r) => setTimeout(r, 500));
     }
     if (process.argv.includes("--timings")) node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "endpoint-timings.ts"), base], "The demo's endpoint timings");
-    node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "render-audit.ts"), base], "The demo's render audit");
+    // Off CI, a render cache of the demo's own (CI's shards each deal one plan, and its main runs stay whole).
+    const cache: Record<string, string> = !process.env.CI && !process.argv.includes("--full") && !process.env.RENDER_AUDIT_SHARD ? { RENDER_AUDIT_CACHE: process.env.RENDER_AUDIT_CACHE?.trim() || path.join(os.tmpdir(), "raponiberg-render-audit", "demo") } : {};
+    node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "render-audit.ts"), base], "The demo's render audit", {
+      ...cache,
+      RENDER_AUDIT_BUILD_ID: readFileSync(path.join(ROOT, dir, "BUILD_ID"), "utf8").trim(),
+      ...(process.argv.includes("--sweep") ? { RENDER_AUDIT_SWEEP_GATE: "1" } : {}),
+    });
     if (process.argv.includes("--ui-checks")) node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "ui-checks.ts"), base], "The demo's UI checks");
   } finally {
     server.kill();
@@ -139,7 +190,8 @@ try {
   const auditDir = process.argv.includes("--render-audit") ? freshBuildDir() : null;
   if (!process.argv.includes("--reuse-data")) buildDemoData();
   else if (!existsSync(DB)) throw new Error(`--reuse-data: no demo database at ${path.relative(ROOT, DB)}.`);
-  if (process.argv.includes("--sweep")) {
+  // With --render-audit too, the server's sweep is held to the same rules there (RENDER_AUDIT_SWEEP_GATE): one sweep, not two.
+  if (process.argv.includes("--sweep") && !auditDir) {
     node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "proof-sweep.ts")], "The demo's proof sweep");
   }
   if (auditDir) {

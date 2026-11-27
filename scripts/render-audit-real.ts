@@ -20,12 +20,14 @@
  *   npm run audit:real -- --drills 0           no drill-downs (fastest); --drills 80 is CI's depth
  *   npm run audit:real -- --detail             each problem with its view, value and key (local only)
  *   npm run audit:real -- --json <file>        where the dump goes (outside the repo; default: temp)
+ *   npm run audit:real -- --full               every tab drawn afresh: the render cache (scripts/render-audit-cache.ts,
+ *                                              in the temp folder: it holds real figures) unused
  * AUDIT_PORT picks the port; NEXT_BUILD_DIR the build (default the newer of .next-app and
  * .next; one older than the code is refused);
  * RENDER_AUDIT_BUDGET_MS the time budget (default 5 minutes here).
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -134,6 +136,7 @@ try {
     .then((r) => r.json() as Promise<{ ok?: boolean }>)
     .catch(() => ({ ok: false }));
   if (!unlocked.ok) throw new Error("the server refused the lock-screen password from the data folder.");
+  console.log(`The server answered after ${((Date.now() - started) / 1000).toFixed(1)} s.`);
 
   const r = spawnSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "render-audit.ts"), base], {
     cwd: ROOT,
@@ -144,8 +147,11 @@ try {
       RENDER_AUDIT_UNLOCK: "1",
       RENDER_AUDIT_REDACT: flag("--detail") ? "0" : "1",
       RENDER_AUDIT_JSON: json,
+      RENDER_AUDIT_BUILD_ID: readFileSync(path.join(ROOT, dir, "BUILD_ID"), "utf8").trim(),
       RENDER_AUDIT_DRILLS: option("--drills") ?? process.env.RENDER_AUDIT_DRILLS ?? "10",
       RENDER_AUDIT_BUDGET_MS: process.env.RENDER_AUDIT_BUDGET_MS ?? "300000",
+      // Each tab's drawing, kept beside the dump (real figures: the temp folder, never the repo), drawn again only when its answers change.
+      RENDER_AUDIT_CACHE: flag("--full") ? "" : (process.env.RENDER_AUDIT_CACHE?.trim() || path.join(os.tmpdir(), "raponiberg-render-audit", "real")),
       ...(option("--pages") ? { RENDER_AUDIT_ONLY: option("--pages") } : {}),
     },
   });
