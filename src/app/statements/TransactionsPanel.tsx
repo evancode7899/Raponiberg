@@ -73,8 +73,8 @@ function readUrl(): Filters {
   };
 }
 
-/** How far the render audit pages through (data-audit-more): every row to here is drawn and held, as before Show all could reach 20,000. */
-const AUDIT_ROWS = 2000;
+/** How far the render audit pages through (data-audit-more): to Show all's reach, so every row the sweep holds is drawn. */
+const AUDIT_ROWS = 20_000;
 
 /** Statements › Transactions (was its own page, /transactions): every row, searchable, with its filters in the URL. */
 

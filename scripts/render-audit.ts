@@ -396,6 +396,15 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
       .catch(() => {});
   };
 
+  /** "Show more" (data-audit-more) until there is no more: every row the view can list is drawn. */
+  const showMore = async (name: string) => {
+    const more = page.locator('[data-audit-more]:not([role="dialog"] *)').first();
+    for (let k = 1; k <= 100 && (await more.isVisible().catch(() => false)); k++) {
+      await draw(`${name} (page ${k})`);
+      await more.click();
+    }
+  };
+
   const explore = async (name: string, from = 0, depth = 0) => {
     const controls = page.locator('[data-audit-view]:not([role="dialog"] *)');
     const count = await controls.count();
@@ -407,6 +416,8 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
       const skip = new Set(((await c.getAttribute("data-audit-view")) ?? "").split(",").filter(Boolean));
       const show = async (opt: string) => {
         const at = `${name} · ${label}=${opt}`;
+        // A picker can shorten the list again (a window, a category): every row of each view is drawn.
+        await showMore(at);
         const v = await draw(at);
         if (v.repeat) return;
         await drawers(v);
@@ -445,12 +456,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
   };
 
   const visit = async (name: string) => {
-    // "Show more" (data-audit-more) until there is no more: every row the page can list is drawn.
-    const more = page.locator('[data-audit-more]:not([role="dialog"] *)').first();
-    for (let k = 1; k <= 100 && (await more.isVisible().catch(() => false)); k++) {
-      await draw(`${name} (page ${k})`);
-      await more.click();
-    }
+    await showMore(name);
     const v = await draw(name);
     await drawers(v);
     await tables(name);

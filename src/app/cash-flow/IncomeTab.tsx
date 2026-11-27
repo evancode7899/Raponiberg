@@ -148,7 +148,7 @@ export function IncomeTab({ ctx }: { ctx: Ctx }) {
             <ul className="flex flex-col">
               {external.map((c) => (
                 <li key={c.category} className="flex items-center justify-between gap-3 rounded px-1 py-1.5 text-[13px] hover:bg-surface-2">
-                  <button type="button" onClick={() => ctx.open({ kind: "category", category: c.category })} className="min-w-0 flex-1 text-left text-fg-2 hover:underline">
+                  <button type="button" onClick={() => ctx.open({ kind: "category", category: c.category })} className="min-w-0 flex-1 text-left text-fg-2 hover:underline" data-audit-drill={c.category}>
                     {c.category}
                   </button>
                   <span className={`num font-medium ${c.cents < 0 ? "text-neg" : "text-pos"}`}>

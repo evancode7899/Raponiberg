@@ -71,7 +71,8 @@ export function checkPay(book: Book, c: Collector) {
     const covered = accounts.some((a) => isCovered(book, a.id, s.payDate));
     const dep = sentences(`paystub.deposit:${stubRef(s)}`);
     const net = (x: typeof dep.title) => x.usd(s.printed.netCurrent, `the ${s.payDate} stub's net pay`, [stubLine("Net pay, as the stub prints it", s.printed.netCurrent, s.id)]);
-    const where = s.deposits.map((d) => `••${d.last4 ?? "?"} ${dep.detail.usd(d.amount, `the part deposited to ••${d.last4 ?? "?"}`, [stubLine(`Deposit to ••${d.last4 ?? "?"}, as the stub prints it`, d.amount, s.id)])}`).join(" + ") || "an unknown account";
+    // Written only where the detail says where it went, so its amounts are recorded only where they print.
+    const where = () => s.deposits.map((d) => `••${d.last4 ?? "?"} ${dep.detail.usd(d.amount, `the part deposited to ••${d.last4 ?? "?"}`, [stubLine(`Deposit to ••${d.last4 ?? "?"}, as the stub prints it`, d.amount, s.id)])}`).join(" + ") || "an unknown account";
     c.add({
       id: `paystub.deposit:${stubRef(s)}`,
       check: "paystub.deposit",
@@ -79,9 +80,9 @@ export function checkPay(book: Book, c: Collector) {
       title: `${label(s)}: net pay ${net(dep.title)} isn't on a bank statement`,
       detail:
         s.deposits.length > 1
-          ? `The paycheck was split (${where}); split deposits can't be matched to one bank row yet.`
+          ? `The paycheck was split (${where()}); split deposits can't be matched to one bank row yet.`
           : accounts.length === 0
-            ? `It was deposited to ${where}, which isn't a tracked account.`
+            ? `It was deposited to ${where()}, which isn't a tracked account.`
             : covered
               ? `${accounts[0]!.name}'s statement covers ${s.payDate}, but no deposit of ${net(dep.detail)} is within 5 days of it.`
               : `No statement for ${accounts[0]!.name} covers ${s.payDate}.`,
