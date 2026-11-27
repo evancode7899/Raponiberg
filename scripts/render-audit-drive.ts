@@ -428,9 +428,13 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
   /** "Show more" (data-audit-more) until there is no more: every row the view can list is drawn (each page by part 0; every part clicks through to the whole list). */
   const showMore = async (name: string) => {
     const more = page.locator('[data-audit-more]:not([role="dialog"] *)').first();
+    // Settled first: right after a picker changes, the list (and its button) is still being redrawn.
+    await settle(w, cfg);
     for (let k = 1; k <= 100 && (await more.isVisible().catch(() => false)); k++) {
       if (part.i === 0) await draw(`${name} (page ${k})`);
-      await more.click();
+      // A button the page swapped out mid-click is the end of what it can list, not a page the audit can't finish.
+      if (!(await more.click().then(() => true, () => false))) break;
+      await settle(w, cfg);
     }
   };
 

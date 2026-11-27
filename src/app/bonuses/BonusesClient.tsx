@@ -282,13 +282,13 @@ function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }
           label="Deferred paid out"
           {...total("deferredPaid", t.deferredPaidCents)}
           tone={t.deferredPaidCents ? "pos" : "neutral"}
-          sub={<><ProofValue proof={compositeOf("share", [total("deferredPaid", t.deferredPaidCents).proof, total("deferred", t.deferredCents).proof], { ratio: t.deferredCents ? t.deferredPaidCents / t.deferredCents : 0 })}>{ratio(t.deferredPaidCents, t.deferredCents)}</ProofValue> of deferred</>}
+          sub={t.deferredCents ? <><ProofValue proof={compositeOf("share", [total("deferredPaid", t.deferredPaidCents).proof, total("deferred", t.deferredCents).proof], { ratio: t.deferredPaidCents / t.deferredCents })}>{ratio(t.deferredPaidCents, t.deferredCents)}</ProofValue> of deferred</> : "nothing deferred"}
         />
         <StatCell
           label="Forfeited"
           {...total("forfeited", t.forfeitedCents)}
           tone={t.forfeitedCents ? "neg" : "neutral"}
-          sub={<><ProofValue proof={compositeOf("share", [total("forfeited", t.forfeitedCents).proof, total("deferred", t.deferredCents).proof], { ratio: t.deferredCents ? t.forfeitedCents / t.deferredCents : 0 })}>{ratio(t.forfeitedCents, t.deferredCents)}</ProofValue> of deferred</>}
+          sub={t.deferredCents ? <><ProofValue proof={compositeOf("share", [total("forfeited", t.forfeitedCents).proof, total("deferred", t.deferredCents).proof], { ratio: t.forfeitedCents / t.deferredCents })}>{ratio(t.forfeitedCents, t.deferredCents)}</ProofValue> of deferred</> : "nothing deferred"}
         />
         <StatCell
           label="Still to vest"
