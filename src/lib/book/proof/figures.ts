@@ -796,7 +796,8 @@ export function sourceFigures(book: Book): PageFigure[] {
   }
   const printed = new Map(book.rows.map((r) => [r.id, r.amountCents]));
   for (const r of book.rows) if (r.partOf) printed.set(r.partOf, (printed.get(r.partOf) ?? 0) + r.amountCents);
-  for (const r of book.rows) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });
+  // A bill correction (load.ts) is the Book's own row, printed on no statement: the lists show the rows the statements print, and the totals it's part of open it.
+  for (const r of book.rows) if (!r.id.endsWith(":correction")) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });
   // A pay stub is no page's figure: the pay figures' proofs link to it, and the sweep holds every linked proof (judgeFigures).
   return out;
 }

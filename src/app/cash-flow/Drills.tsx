@@ -59,9 +59,10 @@ function MonthBars({ ctx, values, color, name, proofAt }: { ctx: Ctx; values: nu
   );
 }
 
-export function CategoryDrill({ ctx, category }: { ctx: Ctx; category: string }) {
+export function CategoryDrill({ ctx, category, external = false }: { ctx: Ctx; category: string; external?: boolean }) {
   const { slice, chart } = ctx;
-  const lane = laneOf(category);
+  // Opened from the untracked accounts list it's that money, whatever the name says.
+  const lane = external ? "EXTERNAL_TRANSFER" : laneOf(category);
   const color = lane === "EXPENSE" ? categoryColor(chart, category) : lane === "INCOME" ? chart.income : chart.series[2]!;
   const values = slice.months.map((m) =>
     lane === "EXPENSE" ? categoryCents(m, category) : ((lane === "INCOME" ? m.incomeByCategory : m.externalByCategory).find((c) => c.category === category)?.cents ?? 0),

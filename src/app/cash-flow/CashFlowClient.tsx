@@ -22,7 +22,8 @@ const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", 
 export type CashTab = (typeof TABS)[number];
 
 export type Drill =
-  | { kind: "category"; category: string }
+  /** `external`: a category of money to or from untracked accounts (a name like "Other income" can be both). */
+  | { kind: "category"; category: string; external?: boolean }
   | { kind: "merchant"; key: string; name: string; lane: "EXPENSE" | "INCOME" }
   /** One month, audited: its figures, bands, categories and credits, each opening its rows. */
   | { kind: "month"; start: string };
@@ -223,7 +224,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
         {drill &&
           ctx &&
           (drill.kind === "category" ? (
-            <CategoryDrill ctx={ctx} category={drill.category} />
+            <CategoryDrill ctx={ctx} category={drill.category} external={drill.external} />
           ) : drill.kind === "month" ? (
             drillMonth && <MonthDrill ctx={ctx} month={drillMonth} />
           ) : (
