@@ -246,6 +246,7 @@ function ChargeSizes({ ctx, months }: { ctx: Ctx; months: SpendingMonth[] }) {
           tableTitle="Charge sizes: share of the count and of the dollars"
           cellProof={(r, k) => ctx.dp(k === "charges" ? "charge-size-count" : "charge-size-dollars", bucketKey(months, r.i as number))}
           cellText={(v) => formatPercentRatio(v, 0)}
+          plainX="a size range the chart groups charges by"
         >
           <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
             <CartesianGrid {...ui.grid} />

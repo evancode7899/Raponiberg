@@ -16,6 +16,8 @@ export const outlookKey = (carId: string, line: string) => `${carId}|${line}`;
 
 /** A car's year (Costs › Miles). */
 export const yearKey = (carId: string, year: string) => `${carId}:${year}`;
+/** A car's figure for one month ("YYYY-MM"). */
+export const monthKey = (carId: string, month: string) => `${carId}|${month}`;
 
 const num = (v: number | null | undefined) => (v == null ? null : r(v));
 const money = (v: number | null | undefined) => (v == null ? null : c(v));
@@ -48,11 +50,11 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
       add("insurance-monthly", "insurance, a month", money(car.insurance.monthlyCents), [ln("The latest premium ÷ its months", money(car.insurance.monthlyCents) ?? t("—"))]);
     }
     car.insurance.premiums.forEach((x, i) => {
-      // Costs lists the latest PREMIUMS_LISTED.
-      if (i < car.insurance.premiums.length - PREMIUMS_LISTED) return;
       const k = `${key}|${i}`;
-      out.push({ figure: "premium", key: k, describes: `${car.name}: the premium paid ${x.date}`, value: c(x.cents), lines: [ln("The premium", c(x.cents), undefined, { source: x.source === "STATEMENT" ? "proven" : "assumption" })] });
+      // Costs charts every premium a month; it lists the latest PREMIUMS_LISTED.
       out.push({ figure: "premium-monthly", key: k, describes: `${car.name}: the premium paid ${x.date}, a month`, value: c(x.monthlyCents), lines: [ln("The premium", c(x.cents)), ln(`÷ ${x.months} months`, t(String(x.months)), "÷"), ln("A month", c(x.monthlyCents), "=")] });
+      if (i < car.insurance.premiums.length - PREMIUMS_LISTED) return;
+      out.push({ figure: "premium", key: k, describes: `${car.name}: the premium paid ${x.date}`, value: c(x.cents), lines: [ln("The premium", c(x.cents), undefined, { source: x.source === "STATEMENT" ? "proven" : "assumption" })] });
       if (x.changeShare != null) out.push({ figure: "premium-change", key: k, describes: `${car.name}: the premium paid ${x.date} against the one before`, value: r(x.changeShare), lines: [ln("Change from the premium before", r(x.changeShare))] });
     });
     f.fills.forEach((x) => {
@@ -61,6 +63,9 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
       if (x.pricePerGallon != null) out.push({ figure: "fill-price", key: k, describes: `${car.name}: the fill-up ${x.date}, price a gallon`, value: c(x.pricePerGallon), lines: [ln("Charge ÷ the gallons you logged", c(x.pricePerGallon))] });
       if (x.costPerMile != null) out.push({ figure: "fill-per-mile", key: k, describes: `${car.name}: the fill-up ${x.date}, fuel a mile`, value: r(x.costPerMile), lines: [ln("Charge ÷ miles since the fill before", r(x.costPerMile))] });
     });
+    // Overview › All-in cost per mile, so far: each month's running all-in cost over the miles so far.
+    for (const m of car.months)
+      if (m.cumulativePerMile != null) out.push({ figure: "per-mile-so-far", key: monthKey(key, m.month), describes: `${car.name}: all-in a mile, through ${m.label}`, value: r(m.cumulativePerMile), lines: [ln(`Everything spent and lost to depreciation through ${m.label} ÷ miles driven by then`, r(m.cumulativePerMile))] });
     add("miles-driven", "miles driven since purchase", r(o.driven), [...readings, ln("Miles driven", r(o.driven), "=")], "From the odometer readings in the log.");
     for (const [year, miles] of milesByYear(car))
       out.push({ figure: "miles-year", key: yearKey(key, year), describes: `${car.name}: miles driven in ${year}`, value: r(miles), lines: [ln(`Miles in ${year}'s months, from the odometer readings`, r(miles))] });

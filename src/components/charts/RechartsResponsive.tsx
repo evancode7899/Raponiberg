@@ -88,6 +88,7 @@ export function RechartsResponsive({
   cellText,
   cellValue,
   plainSeries,
+  plainX,
   pendingProof,
   ...rest
 }: Omit<ResponsiveContainerProps, "width" | "height"> & {
@@ -104,6 +105,8 @@ export function RechartsResponsive({
   cellValue?: (row: Record<string, unknown>, series: string) => number | null | undefined;
   /** Series that aren't money or a rate, by data key: why each is no figure. */
   plainSeries?: Readonly<Record<string, string>>;
+  /** Why the x axis's labels hold no figure when they name money (a size range: "$10–$25"). */
+  plainX?: string;
   /**
    * A chart whose points have no proof yet and wait on the owner's choice of how to prove
    * them (per-day series): each value draws n.a. saying this, and the render audit lists
@@ -130,17 +133,17 @@ export function RechartsResponsive({
           Table
         </button>
       )}
-      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} whatIf={open.whatIf} cellProof={pendingProof ? () => unswept(pendingProof) : cellProof} cellDrawn={cellDrawn} cellText={cellText} cellValue={cellValue} plainSeries={plainSeries} onClose={() => setOpen(false)} />}
+      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} whatIf={open.whatIf} cellProof={pendingProof ? () => unswept(pendingProof) : cellProof} cellDrawn={cellDrawn} cellText={cellText} cellValue={cellValue} plainSeries={plainSeries} plainX={plainX} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText, cellValue, plainSeries, onClose }: { chart: ReactNode; title: string; whatIf: string | null; cellProof?: CellProof; cellDrawn?: CellDrawn; cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined; cellValue?: (row: Record<string, unknown>, series: string) => number | null | undefined; plainSeries?: Readonly<Record<string, string>>; onClose: () => void }) {
+function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText, cellValue, plainSeries, plainX, onClose }: { chart: ReactNode; title: string; whatIf: string | null; cellProof?: CellProof; cellDrawn?: CellDrawn; cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined; cellValue?: (row: Record<string, unknown>, series: string) => number | null | undefined; plainSeries?: Readonly<Record<string, string>>; plainX?: string; onClose: () => void }) {
   const read = readChart(chart);
   if (!read) return null;
   const t = chartTable(read.rows, read.x, read.series, () => "");
   const body = read.rows.map((r, i) => [
-    t.body[i]![0]!,
+    plainX ? <NotFigure key="x" why={plainX}>{t.body[i]![0]!}</NotFigure> : t.body[i]![0]!,
     ...read.series.map((s) => {
       const v = cellValue ? cellValue(r, s.key) : r[s.key];
       if (typeof v !== "number") return "";

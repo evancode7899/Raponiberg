@@ -523,6 +523,8 @@ export function carFigures(g: GarageReport): PageFigure[] {
       for (const line of used) add({ span, line }, cents(y.lines[line]));
     }
     for (const line of used) add({ line }, cents(r.accrued[line]));
+    // Overview › Cost by month: each month's lines (its chart's table adds them into its buckets).
+    for (const m of r.months) for (const line of COST_LINES) if (m.lines[line] !== 0) add({ span: m.month, line }, cents(m.lines[line]));
     // Costs › Paid vs used: each kind paid, what of it was used, and financing interest.
     for (const k of CAR_KINDS.filter((k) => r.cash[k] !== 0)) {
       add({ basis: "cash", line: k }, cents(r.cash[k]));

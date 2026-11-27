@@ -288,8 +288,8 @@ function Overview({ y, fig }: { y: YearView; fig: Fig }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="By month" subtitle="Who paid for each month's care, by the first day of each claim">
           <div className="h-56">
-          <RechartsResponsive>
-            <BarChart data={y.months.map((m) => ({ label: monthLabel(m.month), you: m.yourShareCents / 100, plan: m.planCents / 100 }))}>
+          <RechartsResponsive tableTitle="Care by month: you owe and plan paid" cellProof={(row, key) => fig(key === "you" ? "month-you" : "month-plan", sliceKey(y, row.month as string))}>
+            <BarChart data={y.months.map((m) => ({ month: m.month, label: monthLabel(m.month), you: m.yourShareCents / 100, plan: m.planCents / 100 }))}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} />
               <YAxis {...ui.yAxis} tickFormatter={(n: number) => axisUsd(n)} />

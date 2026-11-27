@@ -291,7 +291,9 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
     for (const f of picks.slice(0, DRAWERS_PER_VIEW)) {
       if (drawerFamilies.has(familyOf(f.key))) continue;
       drawerFamilies.add(familyOf(f.key));
-      const el = page.locator(`[data-clearance="cleared"][data-proof-key="${f.key.replace(/["\\]/g, "\\$&")}"]`).first();
+      // On a view that is an open dialog (a chart's table), its own figure: the page's copy of it sits behind the dialog.
+      const within = (await page.locator('[role="dialog"]').count()) ? page.locator('[role="dialog"]').last() : page;
+      const el = within.locator(`[data-clearance="cleared"][data-proof-key="${f.key.replace(/["\\]/g, "\\$&")}"]`).first();
       if (!(await el.isVisible().catch(() => false))) continue;
       stats.drawers++;
       // Caught as it's made: a click that throws mustn't leave it to reject unheard.
@@ -358,9 +360,9 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
       // The button shows on hover or focus: focus it, so a chart the page draws is opened whether or not the mouse is there.
       if (!(await o.count())) continue;
       const label = ((await o.getAttribute("data-chart-table")) || `chart ${i + 1}`).replace(/\s+/g, " ").trim();
-      await o.focus().catch(() => {});
       if (!(await o.isVisible().catch(() => false))) continue;
-      await o.click();
+      // The button sits over the chart and shows on hover or focus: a pointer click can land on the chart's own layer, so click it as a keyboard user would.
+      await o.evaluate((el) => (el as HTMLElement).click());
       const v = await draw(`${name} ▤ ${label}`);
       if (!v.repeat) await drawers(v);
       await closeDialog();
