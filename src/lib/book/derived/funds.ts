@@ -26,7 +26,8 @@ export function fundsDerived(funds: LpFund[]): DerivedFigure[] {
       add("net-cash", "net cash due on the notices", c(f.netCashCents), [ln("Amounts due on the notices, net", c(f.netCashCents), undefined, { source: "proven" }), ln("Bank wires on file", c(f.wiredCents), undefined, { source: "proven" })]),
       add("nav", s ? `capital account at the ${s.asOf} statement` : "capital account", s ? c(s.navCents) : null, s ? [ln(`Capital account, ${s.asOf} statement`, c(s.navCents), undefined, { source: "proven" })] : []),
       add("returned", "contributions returned at later closes", c(f.returnedCents), [ln("Returned on the equalisation notices", c(f.returnedCents), undefined, { source: "proven" })]),
-      add("other", "distributions beyond the notices", c(f.otherDistributionsCents), [ln("Distributions the capital statement reports beyond the notices", c(f.otherDistributionsCents), undefined, { source: "proven" })]),
+      // Only what the page draws: "other" when there is some, a tie-out's two sides when it fails (the page lists only those).
+      ...(f.otherDistributionsCents ? [add("other", "distributions beyond the notices", c(f.otherDistributionsCents), [ln("Distributions the capital statement reports beyond the notices", c(f.otherDistributionsCents), undefined, { source: "proven" })])] : []),
       add("wired", "bank wires on file", c(f.wiredCents), f.events.filter((e) => e.wire).map((e, i) => ln(`${e.wire!.date}, ${e.wire!.accountName}`, c(e.wire!.amountCents), i ? "+" : undefined, { source: "proven" }))),
       add(
         "unfunded-share",
@@ -36,7 +37,7 @@ export function fundsDerived(funds: LpFund[]): DerivedFigure[] {
       ),
       ...statementRow(f),
       ...f.events.flatMap((e) => eventFigures(f, e)),
-      ...f.checks.flatMap((x) => [
+      ...f.checks.filter((x) => !x.ok).flatMap((x) => [
         { figure: "check-printed", key: `${key}|${x.label}`, describes: `${f.fund}: ${x.label}, as the manager printed it`, value: c(x.expectedCents), lines: [ln(`${x.label}, printed`, c(x.expectedCents), undefined, { source: "proven" })] },
         { figure: "check-notices", key: `${key}|${x.label}`, describes: `${f.fund}: ${x.label}, from the notices on file`, value: c(x.actualCents), lines: [ln(`${x.label}, added up from the notices`, c(x.actualCents), undefined, { source: "proven" })] },
       ]),
@@ -54,8 +55,9 @@ function statementRow(f: LpFund): DerivedFigure[] {
     row("st-distributed", "distributions through the statement", s.distributedCents),
     row("st-gain", "gain", s.gainCents, [ln("NAV", c(s.navCents), undefined, { source: "proven" }), ln("+ distributions", c(s.distributedCents), "+", { source: "proven" }), ln("− paid in", c(s.paidInCents), "−", { source: "proven" }), ln("Gain", c(s.gainCents), "=")]),
     row("st-income", "income to date", s.incomeCents),
-    row("st-fees", "management fees", s.managementFeeCents),
-    row("st-carry", "carried interest", s.carryCents),
+    // The page draws a dash for none.
+    ...(s.managementFeeCents ? [row("st-fees", "management fees", s.managementFeeCents)] : []),
+    ...(s.carryCents ? [row("st-carry", "carried interest", s.carryCents)] : []),
   ];
 }
 
