@@ -19,6 +19,7 @@ export const JUMPS: Record<string, string> = {
   f: "/forecast",
   e: "/fire",
   o: "/goals",
+  w: "/scenarios",
   b: "/home-budget",
   l: "/tax-accounts",
   d: "/calendar",

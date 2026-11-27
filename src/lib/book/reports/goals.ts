@@ -8,6 +8,7 @@ import { household } from "../householdView.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import { SPENDABLE_GROUPS } from "../definitions.ts";
+import { forecastFiller, type FillTrace, type GoalForecast } from "../../goals/fill.ts";
 import type { FinancialProfileSettings } from "../../profile/settings.ts";
 import { typicalMonthlyLiving } from "./living.ts";
 
@@ -25,8 +26,7 @@ import { typicalMonthlyLiving } from "./living.ts";
  * Without a forecast, the last year's pace stands in.
  */
 
-/** The forecast's liquid and illiquid balances by month (cents), from the start. */
-export type GoalForecast = { startKey: string; start: { liquid: number; illiquid: number }; months: { key: string; liquid: number; illiquid: number }[] };
+export type { GoalForecast } from "../../goals/fill.ts";
 
 /** The shared forecast as goals read it (what /api/goals passes buildGoals). */
 export const goalForecastOf = (f: Pick<Forecast, "startKey" | "plan" | "months">): GoalForecast => ({
@@ -319,34 +319,4 @@ const endOfMonthIso = (key: string) => {
   return `${key}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
 };
 
-/**
- * New money from the forecast filling unfinished goals in priority order: call it once per
- * goal, in order, with what's still needed and which kinds of account fund it; it returns
- * the month (YYYY-MM) the goal is reached, or null. A goal on one kind of account waits
- * behind earlier goals on the same kind; a goal on both kinds waits behind all of them.
- * A tracking goal (a milestone) waits behind nobody and holds nobody up: it's reached when
- * the new money alone covers what it still needs.
- */
-export function forecastFiller(f: GoalForecast): (remaining: number, liquid: boolean, illiquid: boolean, track?: boolean, trace?: (t: FillTrace) => void) => string | null {
-  const filled = { liquid: 0, illiquid: 0 };
-  const added = (m: GoalForecast["months"][number], s: "liquid" | "illiquid") => m[s] - f.start[s];
-  return (remaining, liquid, illiquid, track = false, trace) => {
-    const sides: FillTrace["sides"] = [...(liquid ? (["liquid"] as const) : []), ...(illiquid ? (["illiquid"] as const) : [])];
-    const fill = (need: number, over: FillTrace["sides"]) => {
-      trace?.({ need, own: remaining, sides: over });
-      return f.months.find((m) => over.reduce((t, s) => t + added(m, s), 0) >= need)?.key ?? null;
-    };
-    if (track) return fill(remaining, sides);
-    if (liquid && illiquid) {
-      const need = filled.liquid + filled.illiquid + remaining;
-      filled.liquid += remaining;
-      return fill(need, sides);
-    }
-    const s = liquid ? "liquid" : "illiquid";
-    filled[s] += remaining;
-    return fill(filled[s], [s]);
-  };
-}
-
-/** What a goal's turn asked of the forecast: `need` (its own `own` plus earlier goals' on the same kinds) from the money added to `sides` since the start. */
-export type FillTrace = { need: number; own: number; sides: ("liquid" | "illiquid")[] };
+export { forecastFiller, type FillTrace } from "../../goals/fill.ts";

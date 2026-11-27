@@ -163,7 +163,8 @@ export type PayTax = { federal: number; ct: number; socialSecurity: number; medi
 
 const ZERO_TAX: PayTax = { federal: 0, ct: 0, socialSecurity: 0, medicare: 0, pfml: 0, total: 0 };
 
-function income(p: PayForTax, params: TaxYearParams): PersonIncome {
+/** One earner's base pay as the tax engine reads it (a single W-2, nothing else). */
+export function payIncome(p: PayForTax, params: TaxYearParams): PersonIncome {
   const gross = p.salary + p.bonus;
   const box5 = Math.max(0, gross - p.section125 - p.hsa);
   const box1 = Math.max(0, box5 - p.k401Pretax);
@@ -223,7 +224,7 @@ function income(p: PayForTax, params: TaxYearParams): PersonIncome {
 export function taxOnPay(params: TaxYearParams, people: PayForTax[], dependents: Dependent[], longTermGain = 0): PayTax {
   const paid = people.filter((p) => p.salary + p.bonus > 0);
   if (!paid.length) return { ...ZERO_TAX };
-  const incomes = paid.map((p) => income(p, params));
+  const incomes = paid.map((p) => payIncome(p, params));
   if (longTermGain > 0) incomes[0] = { ...incomes[0]!, longTermGain };
   // The better of itemizing and the standard deduction, as the Taxes page files it (computeReturn's AUTO).
   const r = computeReturn({ params, filingStatus: "MFJ", people: incomes, dependents, itemizeMode: "AUTO" });

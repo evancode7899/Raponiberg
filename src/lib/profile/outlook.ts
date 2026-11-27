@@ -25,6 +25,9 @@ import type { PlannedExpense } from "./settings.ts";
 /** One bonus payment in the plan: its gross, paid in month `key` (YYYY-MM). */
 export type BonusPayment = { key: string; gross: number };
 
+/** A scenario's change to one month's lines (cents, signed): base pay, its take-home and retirement parts, living cost and one-offs. */
+export type MonthAdjust = { salary?: number; takeHome?: number; deferrals?: number; employerMatch?: number; living?: number; planned?: number };
+
 export type OutlookPlan = {
   /** The projection starts the month after `month` of `year`, from these balances. */
   start: { year: number; month: number; liquid: number; illiquid: number };
@@ -54,6 +57,12 @@ export type OutlookPlan = {
    * start.year); years past the end of the list use `returnRate`.
    */
   returns?: number[];
+  /**
+   * Scenarios only (lib/scenarios): money a scenario adds to (or takes from) a month's
+   * lines, by YYYY-MM, on top of what the plan works out. Absent everywhere else, so the
+   * forecast itself never changes.
+   */
+  adjust?: Record<string, MonthAdjust>;
   /** Married-filing-jointly standard deduction and bracket tops for `tax.year`. */
   tax: { year: number; standardDeduction: number; brackets: number[]; ct?: CtParams };
   birthYear: number | null;
@@ -145,7 +154,7 @@ export function retirementTax(plan: Pick<OutlookPlan, "tax" | "inflation" | "sta
 }
 
 /** Splits an annual amount into twelve whole-cent months that add back up exactly. */
-const monthly = (annual: number, m: number) => Math.round((annual * m) / 12) - Math.round((annual * (m - 1)) / 12);
+export const monthly =(annual: number, m: number) => Math.round((annual * m) / 12) - Math.round((annual * (m - 1)) / 12);
 
 export function projectOutlook(plan: OutlookPlan): Outlook {
   const months: OutlookMonth[] = [];
@@ -199,18 +208,20 @@ export function projectOutlook(plan: OutlookPlan): Outlook {
       changePct: null,
     };
     for (let m = first; m <= 12; m++) {
-      const planned = plan.plannedExpenses.filter((e) => e.year === year && (e.month ?? 6) === m).reduce((s, e) => s + e.amount, 0);
+      const key = `${year}-${pad(m)}`;
+      const adj = plan.adjust?.[key];
+      const planned = plan.plannedExpenses.filter((e) => e.year === year && (e.month ?? 6) === m).reduce((s, e) => s + e.amount, 0) + (adj?.planned ?? 0);
       const row: OutlookMonth = {
         year,
         month: m,
-        key: `${year}-${pad(m)}`,
+        key,
         working,
         nearTerm,
         salary: 0,
         takeHome: 0,
         employerMatch: 0,
         deferrals: 0,
-        livingCost: monthly(livingY, m),
+        livingCost: monthly(livingY, m) + (adj?.living ?? 0),
         planned,
         bonusGross: 0,
         bonusKept: 0,
@@ -227,10 +238,10 @@ export function projectOutlook(plan: OutlookPlan): Outlook {
       let liquidFlow: number;
       let illiquidFlow: number;
       if (working) {
-        row.salary = monthly(salaryY, m);
-        row.takeHome = monthly(salaryY * plan.takeHomeRate, m);
-        row.employerMatch = monthly(plan.employerMatch * scale, m);
-        row.deferrals = Math.min(row.takeHome, monthly(plan.deferrals * scale, m));
+        row.salary = monthly(salaryY, m) + (adj?.salary ?? 0);
+        row.takeHome = monthly(salaryY * plan.takeHomeRate, m) + (adj?.takeHome ?? 0);
+        row.employerMatch = monthly(plan.employerMatch * scale, m) + (adj?.employerMatch ?? 0);
+        row.deferrals = adj ? Math.max(0, Math.min(row.takeHome, monthly(plan.deferrals * scale, m) + (adj.deferrals ?? 0))) : Math.min(row.takeHome, monthly(plan.deferrals * scale, m));
         row.baseSaved = row.takeHome + row.employerMatch - row.livingCost - planned;
         if (plan.bonus) {
           row.bonusGross = bonusIn.get(row.key) ?? 0;

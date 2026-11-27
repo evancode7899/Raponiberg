@@ -14,9 +14,11 @@ import { medicalDocsFile } from "../medical/store.ts";
 import { insuranceDocsFile } from "../insurance/store.ts";
 import { commitDocument } from "../ingest/commitDocument.ts";
 import { refreshDerived } from "../ledger/maintenance.ts";
+import { writeScenarios } from "../scenarios/store.ts";
 import { saveJsonSetting } from "../settingsStore.ts";
 import { saveTaxProfile } from "../tax/profile.ts";
 import { generateDemoData, type DemoOptions } from "./generate.ts";
+import { demoScenarios } from "./scenarios.ts";
 
 /**
  * Fills an empty database with the demo household (generate.ts) through the same path a
@@ -25,7 +27,8 @@ import { generateDemoData, type DemoOptions } from "./generate.ts";
  * transfers and links the pay stubs to their deposits. The bonus letters go where the
  * Bonuses page reads them (data/demo/bonus-awards.json for the demo), the HSA receipts log
  * where the HSA page does (data/demo/hsa-expenses.json), the health plan and EOBs where
- * the Book reads them (data/demo/medical-plans.json, medical-documents.json).
+ * the Book reads them (data/demo/medical-plans.json, medical-documents.json), and a few saved
+ * scenarios where the Scenarios page reads them (data/demo/scenarios.json).
  */
 export async function seedDemo(db: PrismaClient, opts: DemoOptions = {}): Promise<{ documents: number; transactions: number }> {
   const data = generateDemoData(opts);
@@ -41,6 +44,7 @@ export async function seedDemo(db: PrismaClient, opts: DemoOptions = {}): Promis
   writeFileSync(insuranceDocsFile(), JSON.stringify(data.insurance, null, 1) + "\n");
   writeFileSync(forecastSnapshotsFile(), JSON.stringify({ version: 1, snapshots: data.forecastSnapshots }, null, 2) + "\n");
   writeFileSync(priceIndexFile(), JSON.stringify(demoPriceIndex(), null, 1) + "\n");
+  writeScenarios(demoScenarios());
   for (const doc of data.documents) {
     const text = JSON.stringify(doc);
     const r = await commitDocument(db, {
