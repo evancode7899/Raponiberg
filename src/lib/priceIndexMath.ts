@@ -1,7 +1,7 @@
 /**
- * The price-index file's shape and its arithmetic, apart from reading it (lib/priceIndex.ts)
- * so pages can use it in the browser. A series is month → level (the month's published
- * value: a monthly average for CPI, a month-end close for a market index).
+ * A monthly index series and its arithmetic: the benchmark fund's level month by month, read off
+ * the household's own statements (book/reports/fundBenchmark.ts). Plain math, so pages can use it
+ * in the browser.
  */
 export type IndexSeries = {
   name: string;
@@ -14,10 +14,6 @@ export type IndexSeries = {
   kind: "price" | "total-return";
   months: Record<string, number>;
 };
-export type PriceIndexFile = { version: 1; series: Record<string, IndexSeries> };
-
-/** The consumer price index's id in the file. */
-export const CPI = "cpi-u";
 
 /** A month key `n` months from `key` (YYYY-MM). */
 export function addMonths(key: string, n: number): string {
@@ -41,17 +37,4 @@ export function indexChange(s: IndexSeries | undefined, from: string, to: string
   const b = s?.months[to];
   if (!a || !b) return null;
   return { from, to, fromLevel: a, toLevel: b, change: b / a - 1 };
-}
-
-/** The twelve months to the series' latest month on or before `key`: CPI over a year, as published. */
-export function yearChange(s: IndexSeries | undefined, key: string) {
-  const to = s ? latestAtOrBefore(s, key) : null;
-  return to ? indexChange(s, addMonths(to, -12), to) : null;
-}
-
-/** A calendar year's average level, from all twelve months (null when any is missing). */
-export function yearAverage(s: IndexSeries | undefined, year: number): number | null {
-  if (!s) return null;
-  const xs = Array.from({ length: 12 }, (_, i) => s.months[`${year}-${String(i + 1).padStart(2, "0")}`]);
-  return xs.every((x) => x) ? xs.reduce((t, x) => t + x!, 0) / 12 : null;
 }

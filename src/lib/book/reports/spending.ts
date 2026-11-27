@@ -129,12 +129,9 @@ export type SpendingReport = {
   /** Rent paid for the window's months (and the current one), each in the month it covers, oldest first. */
   rent: RentPayment[];
   oneOffs: OneOffExpense[];
-  /** The consumer price index as published (data/price-index.json, lib/priceIndex.ts), or null without one on file. */
-  cpi: IndexSeries | null;
 };
 
 import { ONE_OFF_MIN_CENTS } from "../definitions.ts";
-import { CPI, type IndexSeries } from "../../priceIndexMath.ts";
 export { ONE_OFF_MIN_CENTS };
 
 /** "WWW SWEETGREEN COM" → "Sweetgreen". */
@@ -506,7 +503,6 @@ export function buildSpendingReport(book: Book, settings: Pick<FinancialProfileS
     recurring,
     rent: from && to ? rentPayments(book.rows, book.accounts, book.household.merchantRules).filter((p) => p.covers >= from && p.covers <= to && (!accountFilter || accountFilter.has(book.rowById.get(p.rowId)!.accountId))) : [],
     oneOffs,
-    cpi: book.prices?.series[CPI] ?? null,
   };
 }
 
