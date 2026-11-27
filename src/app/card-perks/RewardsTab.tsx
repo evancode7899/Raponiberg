@@ -186,7 +186,7 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
                 </thead>
                 <tbody>
                   {stretches.map((s) => (
-                    <StretchRow key={`${s.from}|${s.to}`} s={s} kind={kind} fig={(col) => cf.pool(p.key, `${s.from}|${s.to}`, col)} />
+                    <StretchRow key={`${s.from}|${s.to}`} s={s} kind={kind} fig={(col) => cf.pool(p.key, `${s.from}|${s.to}`, col)} closing={cf.pool(p.key, `printed:${s.closingStatementId}`, "balance")} />
                   ))}
                 </tbody>
               </table>
@@ -204,7 +204,7 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
   );
 }
 
-function StretchRow({ s, kind, fig }: { s: Reconciliation; kind: "POINTS" | "CASH" | "NONE"; fig: (col: string) => ProofRef }) {
+function StretchRow({ s, kind, fig, closing }: { s: Reconciliation; kind: "POINTS" | "CASH" | "NONE"; fig: (col: string) => ProofRef; closing: ProofRef }) {
   const b = BASIS[s.basis];
   const whole = kind !== "CASH";
   /** Cash back opens its figure (derived/cardPerks.ts); points aren't money. */
@@ -225,7 +225,7 @@ function StretchRow({ s, kind, fig }: { s: Reconciliation; kind: "POINTS" | "CAS
       </td>
       <td className={`${table.tdR} text-muted`}>{s.redeemed ? amt("redeemed", s.redeemed) : "—"}</td>
       <td className={table.tdR}>
-        <ProofValue proof={{ descriptor: { report: "statement", statementId: s.closingStatementId }, shownCents: null }}>{fmtRewards(kind, s.closing, whole)}</ProofValue>
+        <ProofValue proof={closing}>{fmtRewards(kind, s.closing, whole)}</ProofValue>
       </td>
     </tr>
   );

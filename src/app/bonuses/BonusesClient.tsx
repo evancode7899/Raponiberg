@@ -4,7 +4,7 @@ import { compositeOf, sumOf } from "@/components/ui/proof/context";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
-import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Loading, PageBody, StatCell, StatGrid, table, Tabs, useTabParam, type Tone } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, EmptyState, ErrorNote, Loading, NotFigure, PageBody, StatCell, StatGrid, table, Tabs, useTabParam, type Tone } from "@/components/ui/kit";
 import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
 import type { ProofTarget } from "@/components/ui/proof/context";
 import type { PaymentKind } from "@/lib/bonuses/awardStore";
@@ -51,6 +51,9 @@ const yearPay = (asOf: string, personId: string, year: number, lines: PayLine[],
 
 /** A Bonuses figure's proof (lib/book/proof/bonusesProof.ts), re-derived through the same report. */
 type Fig = BonusesDescriptor extends infer D ? (D extends { report: "bonuses" } ? Omit<D, "report"> : never) : never;
+/** The letter's terms and the notes kept with it in the award letters file: words as written there, not figures the page works out. */
+const LETTER_TERMS = "the award letter's terms, as the letters file words them";
+const LETTER_NOTE = "a note kept with the award letter, as written in the letters file";
 const bon = (d: Fig, cents: number): ProofTarget => ({ descriptor: { report: "bonuses", ...d } as BonusesDescriptor, shownCents: cents });
 
 /** The report the figures below are read from: what a pay finding withholds (figureReads, the rule their proofs use). */
@@ -278,13 +281,13 @@ function Overview({ r, fdata }: { r: BonusesReport; fdata: ForecastData | null }
           label="Deferred paid out"
           {...total("deferredPaid", t.deferredPaidCents)}
           tone={t.deferredPaidCents ? "pos" : "neutral"}
-          sub={`${ratio(t.deferredPaidCents, t.deferredCents)} of deferred`}
+          sub={<><ProofValue proof={compositeOf("share", [total("deferredPaid", t.deferredPaidCents).proof, total("deferred", t.deferredCents).proof], { ratio: t.deferredCents ? t.deferredPaidCents / t.deferredCents : 0 })}>{ratio(t.deferredPaidCents, t.deferredCents)}</ProofValue> of deferred</>}
         />
         <StatCell
           label="Forfeited"
           {...total("forfeited", t.forfeitedCents)}
           tone={t.forfeitedCents ? "neg" : "neutral"}
-          sub={`${ratio(t.forfeitedCents, t.deferredCents)} of deferred`}
+          sub={<><ProofValue proof={compositeOf("share", [total("forfeited", t.forfeitedCents).proof, total("deferred", t.deferredCents).proof], { ratio: t.deferredCents ? t.forfeitedCents / t.deferredCents : 0 })}>{ratio(t.forfeitedCents, t.deferredCents)}</ProofValue> of deferred</>}
         />
         <StatCell
           label="Still to vest"
@@ -650,7 +653,9 @@ function Schedule({ r }: { r: BonusesReport }) {
                     {forfeited.length > 0 && l.employment && (
                       <>
                         {" "}
-                        <span className="num font-medium text-neg">{usd0(l.windowTotals.forfeitedCents)}</span> due {forfeited.map((w) => w.label).join(", ")} was forfeited. The last{" "}
+                        <span className="num font-medium text-neg">
+                          <ProofValue proof={compositeOf("sum", forfeited.map((w) => bon({ figure: "window", window: w.key, measure: "scheduled" }, w.scheduledCents)), { cents: l.windowTotals.forfeitedCents })}>{usd0(l.windowTotals.forfeitedCents)}</ProofValue>
+                        </span> due {forfeited.map((w) => w.label).join(", ")} was forfeited. The last{" "}
                         {l.employer} paycheck was {formatDisplayDateFromYmd(l.employment.last)} and pay moved to {l.employment.nextEmployer} before any of it vested. Under the letter&apos;s
                         terms, leaving forfeits every unvested deferral. Only a termination without cause would have vested it, and no such payout is on the stubs.
                       </>
@@ -669,11 +674,17 @@ function Schedule({ r }: { r: BonusesReport }) {
 
             {(l.terms || l.notes.length > 0) && (
               <Card title="Terms and notes">
-                {l.terms && <p className="text-sm leading-relaxed text-fg-2">{l.terms}</p>}
+                {l.terms && (
+                  <p className="text-sm leading-relaxed text-fg-2">
+                    <NotFigure why={LETTER_TERMS}>{l.terms}</NotFigure>
+                  </p>
+                )}
                 {l.notes.length > 0 && (
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-fg-2">
                     {l.notes.map((n) => (
-                      <li key={n}>{n}</li>
+                      <li key={n}>
+                        <NotFigure why={LETTER_NOTE}>{n}</NotFigure>
+                      </li>
                     ))}
                   </ul>
                 )}

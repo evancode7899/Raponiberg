@@ -534,7 +534,9 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
         ) : (
           fmtV(x.v, l.fmt)
         ),
-        proof: x.proof ?? unswept(`${l.label}: no recipe for this line`),
+        // A plain count (an age, from the household file's birth date) isn't money; change mode doesn't compare it either.
+        proof: x.proof ?? (l.fmt === "plain" ? noFigure(`${l.label}: a count, not money`) : unswept(`${l.label}: no recipe for this line`)),
+        plain: !x.proof && l.fmt === "plain",
         title: x.title,
         quality: x.quality,
       };

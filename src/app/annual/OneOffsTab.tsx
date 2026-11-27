@@ -117,16 +117,18 @@ export function OneOffsTab({
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           {r.years.map((x) => {
             const tagged = x.cash?.waterfall.nonRecurring ?? 0;
+            // The year's one-offs open their proof beside the chip (a figure is a button of its own, so it can't sit inside the chip's).
             return (
-              <button
-                key={x.year}
-                type="button"
-                onClick={() => setYear(x.year)}
-                className={`rounded-md px-2.5 py-1 text-xs ${x.year === year ? "bg-accent text-accent-fg" : "border border-line-strong text-fg-2 hover:bg-surface-2"}`}
-              >
-                {x.label}
-                {tagged > 0 && <span className="ml-1 opacity-80">· {usd(tagged)}</span>}
-              </button>
+              <span key={x.year} className={`inline-flex items-center rounded-md text-xs ${x.year === year ? "bg-accent text-accent-fg" : "border border-line-strong text-fg-2"}`}>
+                <button type="button" onClick={() => setYear(x.year)} className={`rounded-md py-1 ${tagged > 0 ? "pl-2.5 pr-1" : "px-2.5"} ${x.year === year ? "" : "hover:bg-surface-2"}`}>
+                  {x.label}
+                </button>
+                {tagged > 0 && x.cash && (
+                  <span className="pr-2.5 opacity-80">
+                    · <ProofValue proof={cashP(x.year, "one-offs", tagged)}>{usd(tagged)}</ProofValue>
+                  </span>
+                )}
+              </span>
             );
           })}
         </div>

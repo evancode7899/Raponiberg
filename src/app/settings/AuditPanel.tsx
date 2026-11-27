@@ -2,7 +2,7 @@
 
 import type { Api } from "@/components/ledger/useApi";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { btn, Callout, Card, downloadResponse, Drawer, ErrorNote, inputCls, Loading, table } from "@/components/ui/kit";
+import { btn, Callout, Card, downloadResponse, Drawer, ErrorNote, inputCls, Loading, NotFigure, table } from "@/components/ui/kit";
 import type { ChainCheck } from "@/lib/audit/chain";
 import { beforeAfterOf, type Change } from "@/lib/audit/changes";
 import { formatDisplayDateTime } from "@/lib/displayTime";
@@ -16,7 +16,13 @@ type Filters = { action: string; actor: string; from: string; to: string };
 
 const NO_FILTERS: Filters = { action: "", actor: "", from: "", to: "" };
 const when = (iso: string) => formatDisplayDateTime(new Date(iso));
+/** What the log wrote, word for word: a record of a change, not a figure the app works out. */
+const LOGGED = "the audit log's record of a change, as it was written";
 const shown = (v: unknown) => (v === null || v === undefined ? NA : typeof v === "string" ? v : JSON.stringify(v));
+const changedText = (payload: unknown) => {
+  const ch = beforeAfterOf(payload);
+  return ch.length ? `${ch[0]!.path}: ${shown(ch[0]!.before)} → ${shown(ch[0]!.after)}${ch.length > 1 ? ` (+${ch.length - 1})` : ""}` : "";
+};
 
 /** The chain's state in a sentence: holds, or what broke and where. */
 function ChainNote({ c }: { c: ChainCheck }) {
@@ -94,13 +100,11 @@ export function AuditPanel({ api }: { api: Api }) {
         id: "changes",
         label: "Changed",
         help: "What the change replaced and what it saved (open the event for all of it)",
-        text: (e) => {
-          const ch = beforeAfterOf(e.payload);
-          return ch.length ? `${ch[0]!.path}: ${shown(ch[0]!.before)} → ${shown(ch[0]!.after)}${ch.length > 1 ? ` (+${ch.length - 1})` : ""}` : "";
-        },
+        text: (e) => changedText(e.payload),
+        cell: (e) => <NotFigure why={LOGGED}>{changedText(e.payload)}</NotFigure>,
         className: `${table.td} max-w-[24rem] truncate font-mono text-[11px] text-fg-2`,
       },
-      { id: "details", label: "Details", text: (e) => (e.payload == null ? "" : JSON.stringify(e.payload)), className: `${table.td} w-full max-w-0 truncate font-mono text-[11px] text-muted` },
+      { id: "details", label: "Details", text: (e) => (e.payload == null ? "" : JSON.stringify(e.payload)), cell: (e) => <NotFigure why={LOGGED}>{e.payload == null ? "" : JSON.stringify(e.payload)}</NotFigure>, className: `${table.td} w-full max-w-0 truncate font-mono text-[11px] text-muted` },
       { id: "seq", label: "Link", help: "The event's place in the hash chain (blank: written before the chain began)", optional: true, align: "right", text: (e) => (e.seq == null ? "" : String(e.seq)), sort: (e) => e.seq ?? -1 },
     ],
     [],
@@ -192,7 +196,7 @@ export function AuditPanel({ api }: { api: Api }) {
             )}
             <section>
               <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-accent">Everything it recorded</h3>
-              <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-fg-2">{open.payload == null ? NA : JSON.stringify(open.payload, null, 2)}</pre>
+              <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-fg-2"><NotFigure why={LOGGED}>{open.payload == null ? NA : JSON.stringify(open.payload, null, 2)}</NotFigure></pre>
             </section>
           </div>
         )}

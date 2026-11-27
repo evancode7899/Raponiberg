@@ -111,7 +111,7 @@ function K1Card({ p, index, cell }: { p: PersonReport; index: number; cell: Cell
   const kind = [k.form.limitedPartner ? "limited partner" : k.form.generalPartner ? "general partner" : null, k.form.final ? "final K-1" : null, k.form.k3Attached ? "Schedule K-3 attached" : null].filter(Boolean).join(" · ");
   return (
     <Card title={`${p.name} — K-1 from ${k.partnership}`} subtitle={`${K1_BASIS[k.basis]}${kind ? ` · ${kind}` : ""}`}>
-      <NumberTable columns={["Amount", "On the return"]} rows={rows.map((row) => ({ label: row.label, values: [cell(k1Row(p, index, row.id), "amount", row.cents), row.where] }))} />
+      <NumberTable columns={["Amount", "On the return"]} rows={rows.map((row) => ({ label: <NotFigure why="the K-1 code's wording, as the form names it (a share like 60% or the 2% floor is part of its name)">{row.label}</NotFigure>, values: [cell(k1Row(p, index, row.id), "amount", row.cents), row.where] }))} />
       {k.gaps.length > 0 && (
         <p className="mt-2 text-xs text-warn" title={k.gaps.map((g) => g.why).join(" ")}>
           Not read in full yet: {k.gaps.length === 1 ? "one lettered box" : "some lettered boxes"} on this K-1 {k.gaps.length === 1 ? "is" : "are"} missing from the K-1 details file, so the return leaves {k.gaps.length === 1 ? "it" : "them"} out.

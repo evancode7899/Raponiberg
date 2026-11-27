@@ -23,6 +23,7 @@ import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/t
 
 /** Your target allocation, as you typed it on the Overview: an input, not a figure. */
 const TYPED_TARGET = "your target allocation, as you typed it";
+const SECURITY_NAME = "the security's name, as the statement prints it";
 
 const TABS = ["overview", "holdings", "fees", "gains", "growth", "funds"] as const;
 type Data = {
@@ -414,8 +415,15 @@ function Holdings({ data, save, saving }: { data: Data; save: (s: InvestmentSett
                   {rows.map((p, i) => (
                     <tr key={i} className={table.trHover}>
                       <td className={table.td}>
-                        <span className="font-medium">{p.symbol ?? p.name}</span>
-                        {p.symbol && <div className="max-w-[22rem] truncate text-[11px] text-muted">{p.name}</div>}
+                        {/* An option's name prints its strike and size ("CALL … $90 (100 SHS)"): the statement's name for the security, not a figure. */}
+                        <span className="font-medium">
+                          <NotFigure why={SECURITY_NAME}>{p.symbol ?? p.name}</NotFigure>
+                        </span>
+                        {p.symbol && (
+                          <div className="max-w-[22rem] truncate text-[11px] text-muted">
+                            <NotFigure why={SECURITY_NAME}>{p.name}</NotFigure>
+                          </div>
+                        )}
                       </td>
                       <td className={`${table.td} text-xs`}>
                         {p.weights ? (

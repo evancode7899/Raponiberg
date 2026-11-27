@@ -157,7 +157,7 @@ export function InputsPanel({
             </p>
           </div>
         ) : (
-          S("annualHouseholdSalary", funds.buy.salary != null ? { extra: <button type="button" className="text-accent hover:underline" onClick={() => funds.setConfig({ ...funds.config, salary: "forecast" })}>use the Forecast ({formatUsd(funds.buy.salary)} in {funds.buy.year})</button> } : {})
+          S("annualHouseholdSalary", funds.buy.salary != null ? { extra: <button type="button" className="text-accent hover:underline" onClick={() => funds.setConfig({ ...funds.config, salary: "forecast" })}>use the Forecast&apos;s {funds.buy.year} salary</button> } : {})
         )}
         {S("housingCostMaxOfGross")}
         {funds.tax.income.linked ? (
