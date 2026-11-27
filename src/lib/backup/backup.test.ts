@@ -8,6 +8,9 @@ let tmp: string;
 let dataDir: string;
 let root: string;
 let dbBytes: string;
+/** The file the fake database says it has open, and the app tables it holds. */
+let openFile: string;
+let tables: string[];
 
 /** Stands in for Prisma: VACUUM INTO writes the "database" to the given path. */
 const fakeDb: BackupDb = {
@@ -17,7 +20,9 @@ const fakeDb: BackupDb = {
     writeFileSync(m[1]!.replace(/''/g, "'"), dbBytes);
     return 0;
   },
-  async $queryRawUnsafe() {
+  async $queryRawUnsafe(q: string) {
+    if (q === "PRAGMA database_list") return [{ seq: 0, name: "main", file: openFile }];
+    if (q.includes("sqlite_master")) return tables.map((name) => ({ name }));
     return [{ migration_name: "20261009120000_init" }];
   },
 };
@@ -29,6 +34,8 @@ beforeEach(() => {
   mkdirSync(path.join(dataDir, "statements"), { recursive: true });
   mkdirSync(path.dirname(root), { recursive: true });
   dbBytes = "ledger v1";
+  openFile = path.join(dataDir, "finance.db");
+  tables = ["Account", "Transaction"];
   writeFileSync(path.join(dataDir, "finance.db"), "live");
   writeFileSync(path.join(dataDir, "finance.db-wal"), "wal");
   writeFileSync(path.join(dataDir, "merchant-rules.json"), '{"rules":[]}');
@@ -67,6 +74,50 @@ describe("createBackup", () => {
   it("ignores a snapshot folder without a manifest", async () => {
     mkdirSync(path.join(root, "snapshots", "2026-10-10_00-00-00"), { recursive: true });
     expect(listSnapshots(root)).toEqual([]);
+  });
+});
+
+describe("a database that isn't the ledger", () => {
+  /** Eleven same-day snapshots: one more and an older one would be pruned. */
+  async function fillSnapshots() {
+    for (let i = 0; i < 11; i++) {
+      dbBytes = `ledger v${i}`;
+      await createBackup(fakeDb, { root, dataDir, lockDir: tmp, now: new Date(2026, 9, 9, 10, i, 0) });
+    }
+    return readdirSync(path.join(root, "snapshots")).sort();
+  }
+  const later = () => createBackup(fakeDb, { root, dataDir, lockDir: tmp, now: new Date(2026, 9, 9, 11, 0, 0) });
+
+  it("is refused when it has no app tables: nothing written, nothing pruned", async () => {
+    const before = await fillSnapshots();
+    dbBytes = "empty";
+    tables = [];
+    await expect(later()).rejects.toThrow(/none of the app's tables/);
+    expect(readdirSync(path.join(root, "snapshots")).sort()).toEqual(before);
+  });
+
+  it("is refused when it's another file, such as a worktree's", async () => {
+    const before = await fillSnapshots();
+    dbBytes = "other checkout";
+    openFile = path.join(tmp, "worktree", "data", "finance.db");
+    mkdirSync(path.dirname(openFile), { recursive: true });
+    writeFileSync(openFile, "other");
+    await expect(later()).rejects.toThrow(/open, not/);
+    expect(readdirSync(path.join(root, "snapshots")).sort()).toEqual(before);
+  });
+
+  it("leaves a backup folder with no snapshots yet untouched", async () => {
+    tables = [];
+    await expect(later()).rejects.toThrow(/Not backed up/);
+    expect(existsSync(root)).toBe(false);
+  });
+
+  it("is refused when the database has no file, or data/finance.db is missing", async () => {
+    openFile = "";
+    await expect(later()).rejects.toThrow(/no database file open/);
+    openFile = path.join(dataDir, "finance.db");
+    rmSync(openFile);
+    await expect(later()).rejects.toThrow(/Not backed up/);
   });
 });
 

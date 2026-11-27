@@ -438,6 +438,34 @@ function Remove-Folder([string]$Dir) {
   return -not (Test-Path $Dir)
 }
 
+# The generated Prisma client records where prisma\ is, relative to itself, and resolves the
+# relative DATABASE_URL from there. Generated from another checkout that shares this
+# node_modules (a git worktree), it points at that checkout, and the app would start on an
+# empty database there and back it up. So it's checked before the backup and the server
+# open the database, and regenerated here when wrong.
+function Test-PrismaClient {
+  $index = Join-Path $ProjectRoot "node_modules\.prisma\client\index.js"
+  if (-not (Test-Path -LiteralPath $index)) { return $false }
+  $found = Select-String -LiteralPath $index -Pattern '"relativePath":\s*"([^"]*)"' | Select-Object -First 1
+  return [bool]($found -and $found.Matches[0].Groups[1].Value -eq "../../../prisma")
+}
+function Confirm-PrismaClient {
+  if (Test-PrismaClient) { return }
+  Write-Log "The Prisma client is missing or points at another folder's prisma; regenerating it"
+  Set-SplashDetail $script:Splash "Repairing the database connection"
+  # Never through a node_modules that only links to another folder's packages: generating
+  # that way is what points the client at the wrong place.
+  $modules = Get-Item -LiteralPath (Join-Path $ProjectRoot "node_modules") -Force -ErrorAction SilentlyContinue
+  if ($modules -and -not $modules.LinkType) {
+    Invoke-Npm "generate" @("run", "db:generate") "Regenerating the database client failed." -AllowFailure | Out-Null
+  }
+  if (-not (Test-PrismaClient)) {
+    Show-Message "The app's database client points at the wrong folder and couldn't be repaired, so the app was not started.`n`nClose any dev server or other copy of the app, then run 'npm run db:generate' in:`n$ProjectRoot`n`nFull logs: $LogDir"
+    exit 1
+  }
+  Write-Log "The Prisma client is repaired"
+}
+
 # Fingerprint (file count + newest write time) of a set of files and folders. Files are
 # read directly: `Get-ChildItem -Path package.json -Recurse` would treat the name as a
 # filter and crawl all of node_modules, which made every launch take minutes.
@@ -509,6 +537,7 @@ if ($needInstall) {
   Invoke-Npm "install" @("install") "Installing dependencies (npm install) failed." | Out-Null
   Save-Stamp "deps" $depsStamp
 }
+Confirm-PrismaClient
 # A new or wiped computer: create .env, and bring the data back from the OneDrive backup
 # before the first migration would create an empty database. No backup folder or no
 # snapshot is not an error (a brand-new install starts empty); a broken one stops here.
@@ -529,9 +558,10 @@ if ($script:Updated -and (Test-Path (Join-Path $ProjectRoot "data\finance.db")))
   Write-Log "Backing up before the update"
   Enter-Stage "backup" "Backing up your data" "Saving a copy before the new version touches the database"
   try {
-    Start-Process -FilePath (Get-Command node).Source -WorkingDirectory $ProjectRoot -WindowStyle Hidden -Wait `
+    $backup = Start-Process -FilePath (Get-Command node).Source -WorkingDirectory $ProjectRoot -WindowStyle Hidden -Wait -PassThru `
       -ArgumentList @("--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts\backup.ts", "--reason", "before-update") `
       -RedirectStandardOutput (Join-Path $LogDir "backup.log") -RedirectStandardError (Join-Path $LogDir "backup.err.log")
+    if ($backup.ExitCode -ne 0) { Write-Log "Backup before the update failed (exit $($backup.ExitCode)); see backup.err.log" }
   } catch {
     Write-Log "Backup before the update could not run: $_"
   }
@@ -653,6 +683,8 @@ if ($needBuild) {
   }
 }
 
+# Again: another checkout may have regenerated the client during the build.
+Confirm-PrismaClient
 Write-Log "Starting server"
 Enter-Stage "server" "Starting the server" "Waiting for the app to answer at $Url"
 Start-Process -FilePath $npmCommand.Source -ArgumentList "run", "start" `

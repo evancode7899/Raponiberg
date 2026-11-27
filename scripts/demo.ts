@@ -17,7 +17,9 @@
  *                                  headless browser and hold what it draws to the sweep (CI, SSOT F6;
  *                                  scripts/render-audit.ts): exits 1 on any problem. Takes --sweep too.
  *                                  Refuses a build older than the code it would audit; add --build to
- *                                  build first (into .next, never the launcher's .next-app).
+ *                                  build first (into .next, never the launcher's .next-app). In a
+ *                                  worktree sharing another checkout's node_modules, it builds with the
+ *                                  Prisma client already there instead of regenerating it.
  *   npm run demo -- --render-audit --reuse-data   on the data/demo already there (CI's shards share
  *                                  one: each seed mints its own record ids, which proof keys carry)
  *   npm run demo -- --render-audit --timings   times every warmed report first (scripts/endpoint-timings.ts)
@@ -42,6 +44,7 @@ import { fileURLToPath } from "node:url";
 import { REAL_DATA_ENV } from "../src/lib/dataEnv.ts";
 import { latestBuildDir, staleBuild } from "./build-freshness.ts";
 import { filesUnder, hashFiles, importGraph } from "../src/lib/importGraph.ts";
+import { prismaClientIsShared } from "../src/lib/sharedModules.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEMO_DIR = path.join(ROOT, "data", "demo");
@@ -139,13 +142,14 @@ function freshBuildDir(): string {
   const dir = buildDir();
   const why = staleBuild(ROOT, dir);
   if (!why) return dir;
-  if (!process.argv.includes("--build")) throw new Error(`${why}: run npm run build first, or add --build.`);
+  if (!process.argv.includes("--build")) throw new Error(`${why}: add --build, or run npm run build first (never in a worktree sharing node_modules).`);
   const target = process.env.NEXT_BUILD_DIR || ".next";
   console.log(`${why}: building into ${target}.`);
-  for (const [args, what] of [
-    [[path.join(ROOT, "node_modules", "prisma", "build", "index.js"), "generate"], "prisma generate"],
-    [[path.join(ROOT, "node_modules", "next", "dist", "bin", "next"), "build"], "next build"],
-  ] as [string[], string][]) {
+  const steps: [string[], string][] = [[[path.join(ROOT, "node_modules", "next", "dist", "bin", "next"), "build"], "next build"]];
+  // Regenerating a shared client would point the running app at this checkout's database (lib/sharedModules.ts).
+  if (prismaClientIsShared(ROOT)) console.log("The Prisma client is shared with another checkout: building with it as it is, without prisma generate.");
+  else steps.unshift([[path.join(ROOT, "node_modules", "prisma", "build", "index.js"), "generate"], "prisma generate"]);
+  for (const [args, what] of steps) {
     const r = spawnSync(process.execPath, args, { cwd: ROOT, env: { ...process.env, NEXT_BUILD_DIR: target }, stdio: "inherit" });
     if (r.status !== 0) throw new Error(`${what} failed.`);
   }

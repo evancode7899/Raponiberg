@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { dataDir as defaultDataDir, isDemo } from "../dataDir.ts";
@@ -20,6 +20,8 @@ import { dataDir as defaultDataDir, isDemo } from "../dataDir.ts";
  *
  * A snapshot whose content matches the newest one is not written again, so backing up
  * often costs nothing while nothing changes. Older snapshots thin out (see pruneSnapshots).
+ * A database that isn't data/finance.db, or holds none of the app's tables, is refused
+ * before anything is written or pruned (see assertBackupSource).
  */
 
 export const BACKUP_FOLDER_NAME = "Backup";
@@ -297,6 +299,45 @@ async function latestMigration(db: BackupDb): Promise<string | null> {
   }
 }
 
+/** Tables every version of the ledger has had: a database with none of them isn't one. */
+const APP_TABLES = ["Account", "StatementImport", "Transaction"];
+
+/** The path with links followed, comparable on Windows (which ignores case); null when there's no such file. */
+function trueFile(file: string): string | null {
+  try {
+    const real = realpathSync.native(file);
+    return process.platform === "win32" ? real.toLowerCase() : real;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Throws unless the open database is this install's data/finance.db and holds the app's
+ * tables. A Prisma client generated from another checkout resolves the relative
+ * DATABASE_URL there and creates an empty database; backing that up would make it the
+ * newest snapshot and push a good one out. SQLite is asked which file it has open, so the
+ * answer doesn't depend on how DATABASE_URL was resolved.
+ */
+export async function assertBackupSource(db: BackupDb, dataDir: string): Promise<void> {
+  const expected = path.join(dataDir, "finance.db");
+  const databases = (await db.$queryRawUnsafe("PRAGMA database_list")) as { name: string; file: string }[];
+  const open = databases.find((d) => d.name === "main")?.file;
+  const want = trueFile(expected);
+  if (!open || !want || trueFile(open) !== want) {
+    throw new Error(
+      `Not backed up: the app has ${open || "no database file"} open, not ${expected}. No snapshot was written or removed. ` +
+        "Check that DATABASE_URL in .env points there; if it does, close the app and run npm run db:generate in the app's own folder.",
+    );
+  }
+  const tables = (await db.$queryRawUnsafe(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${APP_TABLES.map((t) => `'${t}'`).join(", ")})`,
+  )) as unknown[];
+  if (!tables.length) {
+    throw new Error(`Not backed up: ${expected} has none of the app's tables (it's empty). No snapshot was written or removed. Restore the data with npm run restore.`);
+  }
+}
+
 /** lockDir: where the one-at-a-time lock lives (the machine's temp folder; a test uses its own). */
 export type BackupOptions = { reason?: string; root?: string; dataDir?: string; now?: Date; lockDir?: string };
 
@@ -308,6 +349,7 @@ export async function createBackup(db: BackupDb, opts: BackupOptions = {}): Prom
   if (!existsSync(path.dirname(root))) throw new Error(`The backup folder's parent doesn't exist: ${path.dirname(root)}`);
   const dataDir = opts.dataDir ?? defaultDataDir();
   const now = opts.now ?? new Date();
+  await assertBackupSource(db, dataDir);
 
   const unlock = lock(opts.lockDir);
   const work = mkdtempSync(path.join(os.tmpdir(), "pf-backup-"));
