@@ -285,7 +285,7 @@ export function MoversPanel({ cf, trends }: { cf: Summary["cashFlow"]; trends: B
 // ------------------------------------------------------------------ cash flow
 
 export function CashPanel({ cf }: { cf: Summary["cashFlow"] }) {
-  const months = cf.months.map((m) => ({ label: m.label, income: m.incomeCents == null ? null : m.incomeCents / 100, spending: m.spendingCents == null ? null : m.spendingCents / 100 }));
+  const months = cf.months.map((m) => ({ label: m.label, start: m.start, end: m.end, income: m.incomeCents == null ? null : m.incomeCents / 100, spending: m.spendingCents == null ? null : m.spendingCents / 100 }));
   const cap = cashCap(months);
   const over = pastScale(cf.months, cap);
   return (

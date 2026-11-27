@@ -3,6 +3,13 @@
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { axisUsd, formatUsd, NA } from "@/lib/formatMoney";
+import { averageOf, type ProofRef } from "@/components/ui/proof/context";
+import { noFigure } from "@/lib/book/proof/clearance";
+
+/** A month-end's net worth as Net worth proves it (its How it was built balances). */
+const monthEnd = (end: string, cents: number): ProofRef => ({ descriptor: { report: "net-worth", metric: "balance", date: end }, shownCents: cents });
+/** A month's income or spending as Cash flow proves it. */
+const cashMonth = (metric: "income" | "spending", start: string, end: string, cents: number): ProofRef => ({ descriptor: { report: "cash-flow", metric, granularity: "month", start, end }, shownCents: cents });
 import { Area, Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceDot, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 
 /** The desk's charts share one crosshair: pointing at a month in one marks it in the others. */
@@ -13,22 +20,29 @@ const SHOWN: Record<Range, number> = { "6m": 6, "12m": 12, all: Infinity };
 const shortMonth = (l: string) => l.replace(/ 20(\d\d)$/, " ’$1");
 
 /** Month-end net worth, straight between month-ends (nothing is known in between), with its high marked and a flag on months something happened in (its words in the tooltip). */
-export function NetWorthLine({ series, events, range, average }: { series: { label: string; cents: number | null }[]; events: { label: string; text: string }[]; range: Range; average: boolean }) {
+export function NetWorthLine({ series, events, range, average }: { series: { end: string; label: string; cents: number | null }[]; events: { label: string; text: string }[]; range: Range; average: boolean }) {
   const p = useChartPalette();
   const ui = chartChrome(p);
   const from = Number.isFinite(SHOWN[range]) ? Math.max(0, series.length - SHOWN[range]) : 0;
   const rows = series.slice(from).map((x, i) => {
     const last = series.slice(Math.max(0, from + i - 2), from + i + 1).map((y) => y.cents);
     const avg = last.length === 3 && last.every((v) => v != null) ? (last[0]! + last[1]! + last[2]!) / 300 : null;
-    return { label: x.label, value: x.cents == null ? null : x.cents / 100, avg };
+    return { at: from + i, label: x.label, value: x.cents == null ? null : x.cents / 100, avg };
   });
+  // A point's proof: its month-end, or the three month-ends averaged.
+  const pointProof = (r: Record<string, unknown>, key: string): ProofRef => {
+    const at = r.at as number;
+    const ends = key === "avg" ? series.slice(at - 2, at + 1) : [series[at]!];
+    if (ends.some((x) => x.cents == null)) return noFigure("a month-end that can't be proven");
+    return averageOf(ends.map((x) => monthEnd(x.end, x.cents!)), ends.reduce((t, x) => t + x.cents!, 0));
+  };
   const said = new Map<string, string[]>();
   for (const e of events) said.set(e.label, [...(said.get(e.label) ?? []), e.text]);
   const flags = rows.filter((r) => r.value != null && said.has(r.label));
   const high = rows.filter((r) => r.value != null).sort((a, b) => b.value! - a.value!)[0];
   return (
     <div className="absolute inset-0 p-1">
-      <RechartsResponsive>
+      <RechartsResponsive tableTitle="Net worth by month-end" cellProof={pointProof}>
         <ComposedChart data={rows} {...SYNC} margin={{ top: 14, right: 14, left: 0, bottom: 0 }}>
           <CartesianGrid {...ui.grid} />
           <XAxis dataKey="label" {...ui.xAxis} minTickGap={36} height={20} />
@@ -46,7 +60,7 @@ export function NetWorthLine({ series, events, range, average }: { series: { lab
   );
 }
 
-export type CashMonth = { label: string; income: number | null; spending: number | null };
+export type CashMonth = { label: string; start?: string; end?: string; income: number | null; spending: number | null };
 
 /** Where the scale stops: past the third-largest bar, so a bonus month or two doesn't flatten the rest. Null when none stands out. */
 export function cashCap(months: CashMonth[]): number | null {
@@ -86,7 +100,15 @@ export function CashBars({ months, cap }: { months: CashMonth[]; cap: number | n
   const past = (v: number | null) => cap != null && v != null && v > cap;
   const rows = months.map((m) => ({ label: m.label, income: past(m.income) ? cap : m.income, spending: past(m.spending) ? cap : m.spending, raw: m }));
   return (
-    <RechartsResponsive>
+    <RechartsResponsive
+      tableTitle="Income and spending by month"
+      cellValue={(r, key) => (r as (typeof rows)[number]).raw[key === "income" ? "income" : "spending"]}
+      cellProof={(r, key) => {
+        const m = (r as (typeof rows)[number]).raw;
+        const v = key === "income" ? m.income : m.spending;
+        return v == null || !m.start || !m.end ? noFigure("a month that can't be proven") : cashMonth(key === "income" ? "income" : "spending", m.start, m.end, Math.round(v * 100));
+      }}
+    >
       <ComposedChart data={rows} {...SYNC} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={1}>
         <defs>
           <OverPattern id="deskOver" color={p.income} bg={p.tooltipBg} />

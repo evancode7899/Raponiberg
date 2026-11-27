@@ -218,3 +218,17 @@ describe("what-if regions: a calculator's scenarios, kept free of real data", ()
     expect(auditRender([other, grid], s, {}, { partial: true }).problems).toMatchObject([{ kind: "RENDER_WHAT_IF" }]);
   });
 });
+
+describe("chart tables waiting on the owner (CHART_TABLE_PENDING)", () => {
+  const na = fig({ key: "unswept", shown: "", shownKind: "", clearance: "withheld:unswept", text: "n.a." });
+  const waits = { "Example pace, day by day": "the owner's choice (2031-01-01)" };
+  it("lists a listed table's n.a. cells instead of failing them", () => {
+    const a = auditRender([view(), view({ view: "/example ▤ Example pace, day by day", figures: [na] })], sweep, {}, { tablePending: waits });
+    expect(a.problems).toEqual([]);
+    expect(a.pending).toMatchObject([{ kind: "RENDER_WITHHELD" }]);
+  });
+  it("fails an n.a. in a table it doesn't list, and a listed table with none", () => {
+    expect(auditRender([view(), view({ view: "/example ▤ Another chart", figures: [na] })], sweep, {}, { tablePending: waits }).problems).toMatchObject([{ kind: "RENDER_WITHHELD" }]);
+    expect(auditRender([view(), view({ view: "/example ▤ Example pace, day by day", figures: [] })], sweep, {}, { tablePending: waits }).problems).toMatchObject([{ kind: "RENDER_WITHHELD", view: "Example pace, day by day" }]);
+  });
+});

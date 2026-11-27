@@ -81,8 +81,8 @@ export function SensitivityTab({ ins, proof, salaryLinked }: { ins: HomeBudgetIn
             </>
           }
         >
-          <div className="h-[260px] w-full min-w-0">
-            <RechartsResponsive>
+          <WhatIf why="left to spend at each price" className="h-[260px] w-full min-w-0">
+            <RechartsResponsive tableTitle="Left to spend vs home price">
               <LineChart data={byPrice} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="price" {...ui.xAxis} tickFormatter={k} />
@@ -92,12 +92,12 @@ export function SensitivityTab({ ins, proof, salaryLinked }: { ins: HomeBudgetIn
                 <Line type="linear" dataKey="left" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 3, fill: chart.series[0] }} isAnimationActive={false} />
               </LineChart>
             </RechartsResponsive>
-          </div>
+          </WhatIf>
         </Card>
 
         <Card title="Most you can afford vs mortgage rate" subtitle={<NotFigure why="your inputs">{`Same cap (${formatPercentRatio(ins.housingCostMaxOfGross, 1)} of gross) and cash. Dot: today's ${formatPercentRatio(ins.annualMortgageRate, 3)}.`}</NotFigure>}>
-          <div className="h-[260px] w-full min-w-0">
-            <RechartsResponsive>
+          <WhatIf why="the most you could afford at each mortgage rate" className="h-[260px] w-full min-w-0">
+            <RechartsResponsive tableTitle="Most you can afford vs mortgage rate">
               <LineChart data={byRate} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="rate" type="number" domain={[RATES[0]!, RATES.at(-1)!]} ticks={RATES.filter((_, i) => i % 2 === 0)} {...ui.xAxis} tickFormatter={(v: number) => `${+(v * 100).toFixed(1)}%`} />
@@ -107,7 +107,7 @@ export function SensitivityTab({ ins, proof, salaryLinked }: { ins: HomeBudgetIn
                 <ReferenceDot x={ins.annualMortgageRate} y={curMax} r={5} fill={chart.series[1]} stroke={chart.tooltipBg} />
               </LineChart>
             </RechartsResponsive>
-          </div>
+          </WhatIf>
         </Card>
       </div>
     </>

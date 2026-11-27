@@ -49,9 +49,11 @@ export type DriveConfig = {
 };
 
 /** What a page draws now: every figure's data attributes and text, and money drawn outside any figure. Runs in the browser. */
-function collect() {
+function collect(scope?: string) {
   const visible = (el: Element) => (el as HTMLElement).checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? true;
-  const figures = [...document.querySelectorAll<HTMLElement>("[data-proof-key]")].filter(visible).map((el) => {
+  // A view that is a dialog (a chart's table) is that dialog alone: the page behind it is a view of its own.
+  const root: HTMLElement = (scope ? [...document.querySelectorAll<HTMLElement>(scope)].at(-1) : null) ?? document.body;
+  const figures = [...root.querySelectorAll<HTMLElement>("[data-proof-key]")].filter(visible).map((el) => {
     const c = el.cloneNode(true) as HTMLElement;
     c.querySelectorAll("[data-proof-mark]").forEach((m) => m.remove());
     const kind = el.dataset.shownKind ?? "";
@@ -73,9 +75,9 @@ function collect() {
   const re = /\$\s?\d|\d(?:[.,]\d+)*\s?%/;
   const tokenRe = /[+\-−]?\(?\$\s?\d[\d,]*(?:\.\d+)?[kMB]?\)?|[+\-−]?\(?\d[\d,]*(?:\.\d+)?\s?%\)?/g;
   // What-if regions (kit WhatIf): their bare numbers aren't strays, but renderAudit.ts holds them (and the figures inside) to the ledger.
-  const regions = [...document.querySelectorAll<HTMLElement>("[data-what-if]")].filter((r) => visible(r) && !r.closest('[role="dialog"]'));
+  const regions = [...root.querySelectorAll<HTMLElement>("[data-what-if]")].filter((r) => visible(r) && (scope ? true : !r.closest('[role="dialog"]')));
   const regionTokens = new Map<Element, string[]>(regions.map((r) => [r, []]));
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const t = n.textContent ?? "";
     if (!re.test(t)) continue;
@@ -285,9 +287,9 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
   const drawerFamilies = new Set<string>();
   const stats = { draws: 0, repeats: 0, drawers: 0 };
 
-  const draw = async (name: string): Promise<RawView & { repeat: boolean }> => {
+  const draw = async (name: string, scope?: string): Promise<RawView & { repeat: boolean }> => {
     const unsettled = await settle(w, cfg);
-    const s = await page.evaluate(collect);
+    const s = await page.evaluate(collect, scope);
     const v: RawView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, ...(s.whatIf.length ? { whatIf: s.whatIf } : {}), errors: [...w.errors.splice(0), ...(unsettled ? [unsettled] : [])] };
     const sig = JSON.stringify([s.figures.map((f) => [f.key, f.clearance, f.text]), s.strays, s.whatIf]);
     const repeat = seen.has(sig) && !v.errors.length;
@@ -312,7 +314,9 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
     for (const f of picks.slice(0, cfg.drawersPerView)) {
       if (drawerFamilies.has(familyOf(f.key))) continue;
       drawerFamilies.add(familyOf(f.key));
-      const el = page.locator(`[data-clearance="cleared"][data-proof-key="${f.key.replace(/["\\]/g, "\\$&")}"]`).first();
+      // On a chart table's view, the table's own figure: the page's copy of it sits behind the dialog.
+      const within = (await page.locator("[data-chart-table-view]").count()) ? page.locator("[data-chart-table-view]").last() : page;
+      const el = within.locator(`[data-clearance="cleared"][data-proof-key="${f.key.replace(/["\\]/g, "\\$&")}"]`).first();
       if (!(await el.isVisible().catch(() => false))) continue;
       stats.drawers++;
       // Caught as it's made: a click that throws mustn't leave it to reject unheard.
@@ -369,6 +373,31 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
   };
 
   /**
+   * Each chart's table (RechartsResponsive: data-chart-table), opened as a view of its own:
+   * every value in it is a figure that opens its proof, or n.a. when its chart names none
+   * (owner's rule, 2026-11-26), and a what-if chart's table is marked as that what-if.
+   * `dealt`: each table is a slot of its own (the first view's tables, split between parts).
+   */
+  const tables = async (name: string, dealt = false) => {
+    const openers = page.locator('[data-chart-table]:not([role="dialog"] *)');
+    const n = await openers.count();
+    for (let i = 0; i < n; i++) {
+      if (dealt && !mine()) continue;
+      const o = openers.nth(i);
+      if (!(await o.count())) continue;
+      const label = ((await o.getAttribute("data-chart-table")) || `chart ${i + 1}`).replace(/\s+/g, " ").trim();
+      if (!(await o.isVisible().catch(() => false))) continue;
+      // The button sits over the chart and shows on hover or focus: a pointer click can land on the chart's own layer, so click it as a keyboard user would.
+      await o.evaluate((el) => (el as HTMLElement).click());
+      // The table opens in a drawer: read it once it's there.
+      await page.locator("[data-chart-table-view]").last().waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+      const v = await draw(`${name} ▤ ${label}`, "[data-chart-table-view]");
+      if (!v.repeat) await drawers(v);
+      await closeDialog();
+    }
+  };
+
+  /**
    * Clicks an option and waits for the control to show it picked. The control and the view
    * are drawn from the same state, so once it does, the new option's render has landed.
    * Without this, a slow runner can settle on the previous option's view, which then reads
@@ -406,9 +435,14 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
         if (v.repeat) return;
         await drawers(v);
         if (depth === 0) {
+          await tables(at);
           await drills(at);
           await explore(at, i + 1, 1);
-        } else if (depth === 1 && (await page.locator("[data-audit-nest]").count())) await explore(at, i + 1, 2);
+        } else if (depth === 1 && (await page.locator("[data-audit-nest]").count())) {
+          // A page whose views pair up (a coverage, then each year of it) draws each pair's own charts: their tables too.
+          await tables(at);
+          await explore(at, i + 1, 2);
+        }
       };
       if ((await c.evaluate((e) => e.tagName)) === "SELECT") {
         const was = await c.inputValue();
@@ -446,6 +480,7 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
     // Every part draws the first view (so a later view repeating it is known); its drawers are one slot.
     const v = await draw(name);
     if (mine()) await drawers(v);
+    await tables(name, true);
     await drills(name, true);
     await explore(name);
   };
@@ -458,7 +493,7 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
     // Settled first: a server redirect() lands in the browser after "load".
     await settle(w, cfg);
     // A page that draws nothing yet may only be between hydrating and asking for its data on a busy machine: one more look.
-    const first = await page.evaluate(collect);
+    const first = await page.evaluate(collect, undefined);
     if (!first.figures.length && !first.strays.length) {
       await page.waitForTimeout(1000);
       await settle(w, cfg);

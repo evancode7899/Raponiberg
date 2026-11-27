@@ -307,7 +307,7 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
         subtitle={`What the insurer may charge each year, by the insured's age. Inside the level term it's fixed; after it, the line is the guaranteed ceiling, not a quote, while the cover falls to ${firstRenewal ? usd0(firstRenewal.faceCents) : "the renewal amount"}.`}
       >
         <div className="h-64">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Maximum premium by age" cellProof={(row) => derivedTarget("insurance", figs, "max-premium", `${v.policy.policyNumber}|${row.year as number}`)}>
             <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={20} />

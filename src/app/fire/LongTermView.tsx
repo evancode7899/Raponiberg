@@ -14,6 +14,8 @@ import { Area, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, Refere
 import { axisUsd, YearTable, type TableRow } from "@/app/annual/profileUi";
 import { monthName, pct, usd } from "@/app/forecast/forecastUi";
 import type { FirePlanProof } from "./ui";
+import type { ProofRef } from "@/components/ui/proof/context";
+import { noFigure } from "@/lib/book/proof/clearance";
 
 // ---------------------------------------------------------------- year by year
 
@@ -59,10 +61,10 @@ export function LongTermView({
     const startNw = (s.start.liquid + s.start.illiquid) / 100;
     const existing = rows.find((x) => x.year === startLabel);
     const startRow = existing ?? { year: startLabel, actual: startNw };
-    Object.assign(startRow, { liquid: s.start.liquid / 100, illiquid: s.start.illiquid / 100, baseOnly: startNw });
+    Object.assign(startRow, { liquid: s.start.liquid / 100, illiquid: s.start.illiquid / 100, baseOnly: startNw, start: 1 });
     if (!existing) rows.push(startRow);
     // Each projected year at Dec 31.
-    full.years.forEach((y, i) => rows.push({ year: String(y.year), liquid: y.liquid / 100, illiquid: y.illiquid / 100, baseOnly: base.years[i]!.netWorth / 100 }));
+    full.years.forEach((y, i) => rows.push({ at: i, year: String(y.year), liquid: y.liquid / 100, illiquid: y.illiquid / 100, baseOnly: base.years[i]!.netWorth / 100 }));
     return rows;
   }, [r, s, full, base]);
 
@@ -82,6 +84,18 @@ export function LongTermView({
         },
   );
 
+  // A point's proof: the year-by-year table's own cell (the sweep proves each), or a proven year's net worth off the Annual statement.
+  const SERIES_ROW: Record<string, string> = { actual: "net-worth", liquid: "liquid", illiquid: "illiquid", baseOnly: hasBonus ? "net-worth-base" : "net-worth" };
+  const pointProof = (d: Record<string, unknown>, key: string): ProofRef => {
+    const ytd = t.projected[0]! > 0 && t.columns[t.projected[0]! - 1]!.label.startsWith("Jan–");
+    const j = typeof d.at === "number" ? t.projected[d.at]! : d.start && ytd ? t.projected[0]! - 1 : t.columns.findIndex((c) => c.label === d.year);
+    const rowId = key === "baseOnly" && d.start ? "net-worth" : SERIES_ROW[key]!;
+    const cell = j >= 0 ? t.rows.find((x): x is Extract<(typeof t.rows)[number], { kind: "row" }> => x.kind === "row" && x.id === rowId)?.cells[j] : null;
+    if (cell) return proof({ figure: "plan-cell", row: rowId, col: t.columns[j]!.id }, cell);
+    const y = provenActuals(r).find((x) => String(x.year) === d.year);
+    if (key === "actual" && y) return { descriptor: { report: "annual", figure: "net-worth", year: y.year, line: "net-worth" }, shownCents: y.netWorth.netWorth };
+    return noFigure("no cell of the plan for this point");
+  };
   const ntStart = data.findIndex((d) => d.baseOnly != null);
   const showNear = schedule.some((b) => !b.counted && b.why?.startsWith("near term"));
   return (
@@ -95,7 +109,7 @@ export function LongTermView({
         }
       >
         <div className="h-[340px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Net worth: proven and forecast, year by year" cellProof={pointProof}>
             <ComposedChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="year" {...ui.xAxis} interval="preserveStartEnd" minTickGap={14} />

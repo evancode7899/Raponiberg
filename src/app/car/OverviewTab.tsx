@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { monthKey } from "@/lib/book/derived/car";
 import { ShareBar } from "@/components/charts/ShareBar";
 import { chartChrome } from "@/components/shell/chartPalette";
 import { RowButton, Badge, btn, Card, NotFigure, Segmented, StatCell, StatGrid, table, type Tone } from "@/components/ui/kit";
@@ -37,7 +38,7 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
     () =>
       r.months.map((m) => {
         const b = byBucket(m.lines);
-        return { label: m.label, ...b, miles: m.miles, perMile: m.cumulativePerMile == null ? null : m.cumulativePerMile / 100, total: m.total / 100 };
+        return { month: m.month, lines: m.lines, label: m.label, ...b, miles: m.miles, perMile: m.cumulativePerMile == null ? null : m.cumulativePerMile / 100, total: m.total / 100 };
       }),
     [r.months],
   );
@@ -173,7 +174,16 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
 
       <Card title="Cost by month" subtitle="Accrued: a 6-month premium counts a sixth a month; depreciation follows the miles driven (or the market). The line is miles driven.">
         <div className="h-72">
-          <RechartsResponsive>
+          <RechartsResponsive
+            tableTitle="Cost by month"
+            plainSeries={{ miles: "miles: read between your odometer readings, not money" }}
+            cellProof={(row, key) => {
+              // A bucket's month: its lines that month (the car proof of each), added up.
+              const ls = (BUCKETS.find((b) => b.id === key)?.lines ?? []).filter((l) => ((row.lines as Partial<Record<CostLine, number>>)[l] ?? 0) !== 0);
+              const at = (l: CostLine) => (row.lines as Partial<Record<CostLine, number>>)[l] ?? 0;
+              return sumOf(ls.map((l) => carProof(r.carId, { span: row.month as string, line: l }, at(l))), ls.reduce((t, l) => t + Math.round(at(l)), 0));
+            }}
+          >
             <ComposedChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={16} />
@@ -195,11 +205,11 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
 
       <Card title="All-in cost per mile, so far" subtitle="Everything spent and lost to depreciation so far, divided by miles so far. Fixed costs make early miles expensive; it settles as miles add up.">
         <div className="h-56">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="All-in cost per mile, so far" cellProof={(row) => ctx.dp("per-mile-so-far", monthKey(r.carId, row.month as string))} cellDrawn={{ perMile: { per: 100 } }}>
             <ComposedChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={16} />
-              <YAxis {...ui.yAxis} tickFormatter={(v: number) => `$${v.toFixed(2)}`} domain={[0, "auto"]} />
+              <YAxis {...ui.yAxis} tickFormatter={(v: number) => `${v.toFixed(2)}`} domain={[0, "auto"]} />
               <Tooltip {...ui.tooltip} formatter={(v) => [`$${Number(v).toFixed(2)} a mile`, "All-in, cumulative"]} />
               <Line type="linear" dataKey="perMile" name="All-in per mile" stroke={chart.series[0]} strokeWidth={2} dot={{ r: 2 }} connectNulls isAnimationActive={false} />
             </ComposedChart>

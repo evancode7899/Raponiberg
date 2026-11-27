@@ -169,6 +169,8 @@ function lifeDerived(views: PolicyView[]): DerivedFigure[] {
       add("level-total", "total premiums over the level term", v.levelTotalCents == null ? null : c(v.levelTotalCents), v.levelTotalCents == null ? [] : [ln("Annual premium", c(p.annualPremiumCents), undefined, { source: "proven" }), ln("× level years", t(String(p.levelYears)), "×"), ln("Total premiums", c(v.levelTotalCents), "=")]),
       add("face", "coverage over the level term", c(p.faceCents), [ln("Face amount", c(p.faceCents), undefined, { source: "proven" })]),
       add("face-after", "coverage once it renews yearly", first ? c(first.faceCents) : null, first ? [ln(`Face amount from year ${first.year}`, c(first.faceCents), undefined, { source: "proven" })] : []),
+      // Maximum premium by age: each policy year's guaranteed maximum, as the schedule prints it (its chart's table).
+      ...v.years.map((y): DerivedFigure => ({ figure: "max-premium", key: `${key}|${y.year}`, describes: `Policy ${key}: maximum premium in policy year ${y.year}`, value: c(y.maxPremiumCents), lines: [ln(`Guaranteed maximum, year ${y.year}`, c(y.maxPremiumCents), undefined, { source: "proven" })] })),
       add("max-premium-last", "maximum premium in the schedule's last year", last ? c(last.maxPremiumCents) : null, last ? [ln(`Guaranteed maximum, year ${last.year}`, c(last.maxPremiumCents), undefined, { source: "proven" })] : []),
       add(
         "paid",

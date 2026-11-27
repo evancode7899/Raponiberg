@@ -18,8 +18,6 @@ export type PriceIndexFile = { version: 1; series: Record<string, IndexSeries> }
 
 /** The consumer price index's id in the file. */
 export const CPI = "cpi-u";
-/** The market benchmark's id in the file. */
-export const BENCHMARK = "benchmark";
 
 /** A month key `n` months from `key` (YYYY-MM). */
 export function addMonths(key: string, n: number): string {

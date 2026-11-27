@@ -189,7 +189,7 @@ function SavingsRateChart({ f, curve, d, pf }: { f: FireProps["f"]; curve: Retur
       }
     >
       <div className="h-[300px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle="Years to FI at each savings rate" plainSeries={{ years: "years to financial independence: a count of years, at each savings rate tried" }}>
           <LineChart data={data} margin={{ top: 12, right: 16, left: 0, bottom: 4 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="rate" type="number" domain={[5, 85]} ticks={[10, 20, 30, 40, 50, 60, 70, 80]} tickFormatter={(v: number) => `${v}%`} {...ui.xAxis} />

@@ -19,6 +19,12 @@ describe("against the benchmark", () => {
     expect(b.portfolio).toBeCloseTo(1.01 * 1.02 - 1, 12);
   });
 
+  it("names the fund's statement steps the change chains, and no others", () => {
+    const step = (month: string) => ({ month, asOf: `${month}-28`, documentId: `doc-${month}`, statementId: `stmt-${month}`, price: 1, prevPrice: 1, quantity: 1, dividendCents: 0, level: 1 });
+    const b = benchmarkOf({ ...rep({ "2025-12": 100, "2026-01": 101, "2026-02": 104 }), benchmarkFund: { key: "XTMKT", name: "Invented fund", candidates: [], steps: ["2025-12", "2026-01", "2026-02", "2026-03"].map(step) } })!;
+    expect(b.steps.map((x) => x.month)).toEqual(["2026-01", "2026-02"]);
+  });
+
   it("is nothing when the benchmark doesn't reach back to the start", () => {
     expect(benchmarkOf(rep({ "2026-01": 101, "2026-02": 104 }))).toBeNull();
     expect(benchmarkOf({ ...rep({}), benchmark: null })).toBeNull();

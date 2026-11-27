@@ -150,8 +150,8 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
 
         <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-14 lg:self-start">
           <Card title="Net worth if you sold that year" subtitle="After selling costs, mortgage payoff and capital-gains tax on both sides.">
-            <div className="h-[280px] w-full min-w-0">
-              <RechartsResponsive>
+            <WhatIf why="both households, year by year" className="h-[280px] w-full min-w-0">
+              <RechartsResponsive tableTitle="Net worth if you sold that year">
                 <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid {...ui.grid} />
                   <XAxis dataKey="year" {...ui.xAxis} tickFormatter={(v: number) => `Y${v}`} />
@@ -164,7 +164,7 @@ export function RentVsBuyTab({ ins, patch, goToBudget, funds }: { ins: HomeBudge
                   <Line type="linear" dataKey="Rent" stroke={chart.series[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
                 </LineChart>
               </RechartsResponsive>
-            </div>
+            </WhatIf>
           </Card>
 
           <Card title="Year one: the cost of owning vs rent" subtitle="Money that's gone each month, not equity: interest, tax, upkeep, insurance and what the cash in the home would otherwise earn.">

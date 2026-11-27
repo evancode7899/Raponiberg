@@ -1,7 +1,7 @@
 import { addDays } from "../../dates/isoDate.ts";
 import type { GarageReport } from "../../car/report.ts";
 import type { Forecast } from "../../forecast/forecast.ts";
-import { analyzeFire, firePlans, firstYearIncome, stressTest } from "../../fire/fire.ts";
+import { analyzeFire, FIRE_TARGET_SERIES, firePlans, fireTargets, firstYearIncome, stressTest } from "../../fire/fire.ts";
 import { accessFigures, longTermCells, longTermTable, planValue, STRESS_PATHS, stressFigures, type AccessFigure, type StressFigure } from "../../fire/longTerm.ts";
 import { projectOutlook } from "../../profile/outlook.ts";
 import { ledgerColumns, ledgerDraws, ledgerViews } from "../../forecast/ledger.ts";
@@ -69,7 +69,7 @@ const cents = (c: number | null | undefined): ProofValue | null => (c == null ? 
 
 // ------------------------------------------------------------------ Cash flow
 
-/** Each proven month's income, spending and saved, each category of its spending, and (from the spending report) each band of spending. */
+/** Each proven month's income, spending and saved, each category of its income and its spending (Cash flow's charts and their tables), and (from the spending report) each band of spending. */
 export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKinds })[], accountIds?: string[]): PageFigure[] {
   const out: PageFigure[] = [];
   const scope = accountIds?.length ? { accountIds } : {};
@@ -82,6 +82,7 @@ export function cashFlowFigures(periods: (CashFlowPeriod & { kinds?: SpendingKin
       { page: "Cash flow", descriptor: d("net"), shown: cents(p.netCents) },
     );
     for (const c of p.spendingByCategory) out.push({ page: "Cash flow", descriptor: d("spending", c.category), shown: cents(c.cents) });
+    for (const c of p.incomeByCategory) out.push({ page: "Cash flow", descriptor: d("income", c.category), shown: cents(c.cents) });
     if (p.kinds)
       for (const [spendingKind, shown] of [["bill", p.kinds.billCents], ["big", p.kinds.bigCents], ["everyday", p.kinds.everydayCents]] as const)
         out.push({ page: "Cash flow", descriptor: { ...(d("spending") as CashFlowDescriptor), spendingKind }, shown: cents(shown) });
@@ -522,6 +523,8 @@ export function carFigures(g: GarageReport): PageFigure[] {
       for (const line of used) add({ span, line }, cents(y.lines[line]));
     }
     for (const line of used) add({ line }, cents(r.accrued[line]));
+    // Overview › Cost by month: each month's lines (its chart's table adds them into its buckets).
+    for (const m of r.months) for (const line of COST_LINES) if (m.lines[line] !== 0) add({ span: m.month, line }, cents(m.lines[line]));
     // Costs › Paid vs used: each kind paid, what of it was used, and financing interest.
     for (const k of CAR_KINDS.filter((k) => r.cash[k] !== 0)) {
       add({ basis: "cash", line: k }, cents(r.cash[k]));
@@ -674,6 +677,8 @@ export function fireFigures(f: Forecast, r: AnnualProfileReport): PageFigure[] {
   const plans = firePlans(f);
   const fa = analyzeFire(plans.full, plans.base, { asOf: r.seeds.start.asOf, retirementAge: a.retirementAge });
   const out: PageFigure[] = fireFigureList(fa).map((x) => ({ page: "FIRE", descriptor: { report: "planning", page: "fire", figure: x.figure, fire, ...(x.milestone ? { milestone: x.milestone } : {}) }, shown: cents(x.cents) }));
+  // FIRE › Overview's chart: each year's plan net worth and FIRE numbers, nominal (its table opens them).
+  for (const t of fireTargets(fa)) for (const series of FIRE_TARGET_SERIES) if (t[series] != null && Number.isFinite(t[series])) out.push({ page: "FIRE", descriptor: { report: "planning", page: "fire", figure: "target", fire, year: t.year, series }, shown: cents(t[series]) });
   // FIRE › Plan: the long-term table, cell by cell, and the bridge to 59½; FIRE › Stress test on the saved yearly swings (all as the page builds them).
   const full = projectOutlook(plans.full);
   const base = plans.base === plans.full ? full : projectOutlook(plans.base);
