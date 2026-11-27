@@ -10,6 +10,7 @@ import type { Book, BookHoldings } from "../load.ts";
 import { household } from "../householdView.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import { buildNetWorth } from "./netWorth.ts";
+import { buildPortfolioReturns, type PortfolioReturns } from "./portfolioReturns.ts";
 
 /**
  * Holdings, allocation, fees, unrealized gains and money-in-versus-growth for every
@@ -127,6 +128,8 @@ export type InvestmentsReport = {
   /** Securities across accounts, largest first (cash and whole-account lines excluded). */
   concentration: { key: string; symbol: string | null; name: string; cents: number; share: number; accounts: string[] }[];
   growth: GrowthSeries[];
+  /** Returns: the whole portfolio quarter by quarter against the S&P 500 (portfolioReturns.ts). */
+  returns: PortfolioReturns;
   /** Securities without a classification, for the owner to classify. */
   unclassified: { key: string; name: string; symbol: string | null; cents: number }[];
   blockers: BlockerRef[];
@@ -317,6 +320,7 @@ export function buildInvestments(book: Book, settings: InvestmentSettings): Inve
       .sort((x, y) => y.cents - x.cents)
       .slice(0, 12)
       .map((s) => ({ key: s.key, symbol: s.symbol, name: s.name, cents: s.cents, share: share(s.cents, totalCents), accounts: [...s.accounts] })),
+    returns: buildPortfolioReturns(book),
     growth: buildGrowth(book, included.filter((a) => a.isInvestment && (!a.closed || accounts.some((x) => x.accountId === a.id))).map((a) => a.id)),
     unclassified: [...unclassified.values()].sort((x, y) => y.cents - x.cents),
     blockers: [...new Map(accounts.flatMap((a) => a.blockers).map((b) => [b.id, b])).values()],
