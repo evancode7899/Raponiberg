@@ -1,9 +1,10 @@
 import type { ParsedDocument, ParsedTransaction } from "../types.ts";
+import { extractEmpowerHoldings } from "../holdings/empower.ts";
 import { collapseSpaces, lines, parseMoney, parseSlashDate, trailingAmounts } from "../text.ts";
 
 export const EMPOWER_PARSER_ID = "empower-401k";
 /** Bump when a change would read already-imported documents differently: they are read again on the next folder scan or launch. */
-export const VERSION = 3;
+export const VERSION = 4;
 
 /** Employer money the sponsor deposits outside payroll (no pay stub line); the integrity checks key on this label. */
 export const QNEC_LABEL = "Qualified Non-Elective contribution";
@@ -137,6 +138,7 @@ export function parseEmpower(text: string): ParsedDocument {
         checks,
       },
     ],
+    holdings: [extractEmpowerHoldings(text, plan, periodEnd)].filter((h) => h != null),
     warnings,
   };
 }

@@ -27,6 +27,7 @@ const investments = {
   ],
   drift: [{ cls: "US_STOCK", currentShare: 7 / 9, targetShare: 0.7, deltaCents: -70_000 }],
   growth: [],
+  returns: { quarters: [], window: null },
   unclassified: [],
   blockers: [],
 };

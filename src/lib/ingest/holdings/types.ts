@@ -23,7 +23,16 @@ export type Holding = {
   costBasisCents: number | null;
   /** Annual expense ratio when the statement prints one (0.0003 = 0.03%). */
   expenseRatio: number | null;
+  /**
+   * The index the fund tracks, its returns as the statement prints them at its period end
+   * (ratios: 0.0756 = 7.56%), when it prints one beside the fund (an Empower plan's
+   * performance table). Null where the statement prints none.
+   */
+  printedIndex?: PrintedIndex | null;
 };
+
+/** An index's returns to the statement's period end, as printed (each null when shown as N/A). */
+export type PrintedIndex = { name: string; threeMonth: number | null; yearToDate: number | null; oneYear: number | null };
 
 export type HoldingsFacts = {
   /** The same account number the statement's ledger section uses. */

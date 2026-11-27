@@ -9,7 +9,6 @@ import { useEffect, useMemo, useState } from "react";
 import { notify } from "@/components/ui/Feedback";
 import type { Mark } from "@/lib/marks";
 import { personalInflation } from "@/lib/book/reports/personalInflation";
-import { cpiYearOf } from "@/lib/book/derived/cashFlow";
 import { formatPercentRatio } from "@/lib/formatMoney";
 import type { Ctx } from "./CashFlowClient";
 import { sum } from "./model";
@@ -166,8 +165,6 @@ function BillTable({ ctx, list }: { ctx: Ctx; list: RecurringCharge[] }) {
  */
 function Prices({ ctx }: { ctx: Ctx }) {
   const p = useMemo(() => personalInflation(ctx.report.recurring), [ctx.report.recurring]);
-  // CPI as published (data/price-index.json), for the same twelve months as far as it reaches.
-  const cpi = cpiYearOf(ctx.report);
   if (!p.all) return null;
   const pct = (x: number) => `${x > 0 ? "+" : ""}${formatPercentRatio(x, 1)}`;
   const row = (x: { rowId: string; cents: number }) => ({ descriptor: { report: "row" as const, rowId: x.rowId }, shownCents: -x.cents });
@@ -176,11 +173,6 @@ function Prices({ ctx }: { ctx: Ctx }) {
       title={
         <>
           Your prices, a year on: <ProofValue proof={ctx.dp("price-all")}>{pct(p.all.change)}</ProofValue>
-          {cpi && (
-            <span className="ml-2 text-sm font-normal text-muted">
-              · consumer prices <ProofValue proof={ctx.dp("cpi-year", cpi.to)}>{pct(cpi.change)}</ProofValue> over the twelve months to {cpi.to}
-            </span>
-          )}
         </>
       }
       subtitle="Each bill for a set amount (subscriptions, rent, premiums, tuition) against the same bill a year before, weighted by what the bills cost: a price change, never a change in how much you used or bought. Metered bills and tax payments aren't prices. Spending that varies (groceries, dining) has no like-for-like price; Year over year shows how its dollars moved."
