@@ -315,60 +315,13 @@ html[data-theme="terminal"] [data-panel-head] h2 {
   color: var(--accent);
   font-weight: 600;
 }
-/*
- * A long explanation is one line; pointing at the panel's head lays the rest over what's below.
- * It never takes room of its own, so nothing on the page moves under the pointer.
- */
+/* A card's explanation is always shown in full: never cut short, never laid over the page on hover. */
 html[data-theme="terminal"] [data-panel-sub] {
-  position: relative;
   max-width: none;
-  height: 1.35em;
   line-height: 1.35;
-}
-html[data-theme="terminal"] [data-panel-words] {
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-}
-html[data-theme="terminal"] [data-panel-head]:hover [data-panel-words],
-html[data-theme="terminal"] [data-panel-head]:focus-within [data-panel-words] {
-  position: absolute;
-  inset: -1px auto auto -5px;
-  z-index: 30;
-  width: max-content;
-  max-width: min(100%, 60rem);
-  padding: 1px 5px 3px;
-  -webkit-line-clamp: unset;
-  background: var(--surface-2);
-  outline: 1px solid var(--line-strong);
 }
 html[data-theme="terminal"] [data-panel-body] {
   padding: 7px 8px 8px;
-}
-/* In light and dark a long explanation is two lines; the head's hover or focus lays the rest over what's below, the same way. */
-html:not([data-theme="terminal"]) [data-panel-sub] {
-  position: relative;
-}
-html:not([data-theme="terminal"]) [data-panel-words] {
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-html:not([data-theme="terminal"]) [data-panel-head]:hover [data-panel-words][data-clamped],
-html:not([data-theme="terminal"]) [data-panel-head]:focus-within [data-panel-words][data-clamped] {
-  position: absolute;
-  inset: -3px auto auto -6px;
-  z-index: 30;
-  width: max-content;
-  max-width: min(100% + 12px, 48rem);
-  padding: 2px 6px 4px;
-  -webkit-line-clamp: unset;
-  background: var(--surface-2);
-  border-radius: 4px;
-  outline: 1px solid var(--line-strong);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
 }
 /* The Dashboard narrowed by a linked category or month, or by a panel's own command line (components/ui/Panel.tsx). */
 [data-desk-row][data-link-hidden],
