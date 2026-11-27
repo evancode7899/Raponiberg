@@ -23,7 +23,6 @@
  * scripts/render-audit-real.ts (npm run audit:real), which sets RENDER_AUDIT_UNLOCK and
  * RENDER_AUDIT_REDACT.
  */
-import { availableParallelism } from "node:os";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,10 +45,10 @@ if (!base && !MERGE?.length) {
 /** How many problems of each kind to list; the counts are always whole. */
 const LISTED = Number(process.env.RENDER_AUDIT_LIST ?? 40);
 /**
- * Pages audited at once. The browser's drawing is the work, so past the cores the server and
- * Chrome leave free, more workers only slow each other (8 cores: 6 and 8 take the same time, 4 half again as long).
+ * Pages audited at once. On an 8-core desktop 6 and 8 take the same time (4 takes half again
+ * as long); CI's 4-core runners spend part of each look waiting, and there 8 beat 4 by a third.
  */
-const WORKERS = Math.max(1, Number(process.env.RENDER_AUDIT_WORKERS ?? Math.min(8, Math.max(4, availableParallelism() - 2))));
+const WORKERS = Math.max(1, Number(process.env.RENDER_AUDIT_WORKERS ?? 8));
 /** RENDER_AUDIT_ONLY=/cash-flow,/taxes: just those pages (a partial run: it can't tell what no page draws). */
 const ONLY = process.env.RENDER_AUDIT_ONLY?.split(",").map((s) => s.trim()).filter(Boolean);
 const CONFIG: DriveConfig = {
