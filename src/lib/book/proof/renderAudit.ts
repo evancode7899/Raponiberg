@@ -212,15 +212,12 @@ export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {};
 
 /**
  * Chart tables (RechartsResponsive pendingProof) whose values draw n.a. while the owner
- * chooses how to prove them, by the table's title: per-day series, which no proof covers
- * day by day. Their withheld cells are listed on every run, not failed; a table listed here
- * that draws no withheld cell fails, so the list only shrinks.
+ * chooses how to prove them, by the table's title. Their withheld cells are listed on every
+ * run, not failed; a table listed here that draws no withheld cell fails, so the list only
+ * shrinks. Empty since the owner chose (2026-11-27) to sweep each day's running total and
+ * average day as figures of their own (derived/cashFlow.ts).
  */
-export const CHART_TABLE_PENDING: Readonly<Record<string, string>> = {
-  "Spending pace, day by day": "the owner's choice of how to prove a day of the month (2026-11-26)",
-  "Spending by day of the month": "the owner's choice of how to prove a day of the month (2026-11-26)",
-  "Spending so far by day of the month": "the owner's choice of how to prove a day of the month (2026-11-26)",
-};
+export const CHART_TABLE_PENDING: Readonly<Record<string, string>> = {};
 
 /** The chart table a view is: "/cash-flow › Budget ▤ Spending pace, day by day" → its title, or null for any other view. */
 export const chartTableOf = (view: string): string | null => view.split(" ▤ ")[1]?.trim() ?? null;

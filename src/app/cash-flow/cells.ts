@@ -62,9 +62,3 @@ export function savingsRateOf(proof: ProofOf, months: readonly SpendingMonth[]):
   const saved = compositeOf("diff", [runSum(proof, months, { metric: "income" }), runSum(proof, months, { metric: "spending" })], { cents: inc - sp });
   return compositeOf("share", [saved, runSum(proof, months, { metric: "income" })], { ratio: (inc - sp) / inc });
 }
-
-/**
- * Why a per-day chart's table draws n.a. for now: no proof covers one day of a month, and the
- * owner is choosing how to prove one (renderAudit.ts CHART_TABLE_PENDING lists these tables).
- */
-export const DAY_PENDING = "A day of the month has no proof of its own yet: the month it falls in has one, and how to prove a single day is the owner's open choice.";

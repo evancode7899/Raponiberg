@@ -284,6 +284,9 @@ describe("swept = rendered: Cash flow", () => {
         }
         const hist = ms.slice(Math.max(0, i - 12), i).map((x) => cumulative(days(x)));
         if (hist.length) expect(value("pace-typical", paceKey(m, basis))).toBe(median(hist.map((c) => c[Math.min(30, c.length - 1)]!)));
+        // The chart's table: every day before the one on file, and the typical month by every day.
+        for (let d = 1; d < throughDay; d++) expect(value("pace-spent", paceKey(m, basis, d))).toBe(cur[d - 1]);
+        if (hist.length) for (let d = 0; d < 31; d++) expect(value("pace-typical-at", paceKey(m, basis, d + 1))).toBe(median(hist.map((c) => c[Math.min(d, c.length - 1)]!)));
         checked++;
       }
     expect(checked).toBe(4);

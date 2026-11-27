@@ -253,6 +253,8 @@ export function rederiveCashFlow(book: Book, settings: Pick<FinancialProfileSett
       case "weekday-avg":
       case "charge-size-count":
       case "charge-size-dollars":
+      case "day-bills":
+      case "day-everyday":
       case "small-charges-count":
       case "small-charges-dollars":
       case "bills-first-week":
