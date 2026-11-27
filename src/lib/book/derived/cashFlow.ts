@@ -85,13 +85,27 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
       add("weekend-share", "Weekends' share of everyday spending", r(wk.weekend), [ln("Everyday spending on Saturdays and Sundays", c(wk.total * wk.weekend)), ln("÷ all everyday spending", c(wk.total), "÷"), ln("Share", r(wk.weekend), "=")]);
       add("weekday-top", `The priciest weekday (${wk.top.name}): an average one`, c(wk.top.avgCents), [ln(`Everyday spending on ${wk.top.name}s ÷ how many there were`, c(wk.top.avgCents))]);
       add("weekday-low", `The cheapest weekday (${wk.low.name}): an average one`, c(wk.low.avgCents), [ln(`Everyday spending on ${wk.low.name}s ÷ how many there were`, c(wk.low.avgCents))]);
+      // Patterns › By weekday draws each weekday's average day (its chart's table opens them).
+      wk.rows.forEach((w, i) => add("weekday-avg", `An average ${w.name}: everyday spending`, c(w.avgCents), [ln(`Everyday spending on ${w.name}s ÷ how many there were`, c(w.avgCents))], weekdayKey(months, i)));
     }
     const cs = chargeSplit(months);
     if (cs.n) {
       add("small-charges-count", "Charges under $50: share of the count", r(cs.smallCount), [ln("Charges under $50 ÷ all charges", r(cs.smallCount))]);
       add("small-charges-dollars", "Charges under $50: share of the dollars", r(cs.smallUsd), [ln("Their dollars ÷ all charge dollars", r(cs.smallUsd))]);
+      // Patterns › Charge sizes draws each size's share of the count and of the dollars.
+      cs.buckets.forEach((b, i) => {
+        add("charge-size-count", `Charges of size ${i + 1} of ${cs.buckets.length}: share of the count`, r(b.count / cs.n), [ln("Charges of this size", t(String(b.count))), ln("÷ all charges", t(String(cs.n)), "÷"), ln("Share", r(b.count / cs.n), "=")], bucketKey(months, i));
+        add("charge-size-dollars", `Charges of size ${i + 1} of ${cs.buckets.length}: share of the dollars`, cs.cents ? r(b.cents / cs.cents) : null, [ln("Their dollars", c(b.cents)), ln("÷ all charge dollars", c(cs.cents), "÷"), ln("Share", cs.cents ? r(b.cents / cs.cents) : t("—"), "=")], bucketKey(months, i));
+      });
     }
     const bd = billDays(months);
+    // Patterns › By day of the month draws each calendar day's average bills and everyday spending.
+    bd.rows.forEach((row) => {
+      const n = months.filter((m) => row.day <= m.daily.allCents.length).length;
+      const avg = (what: string, cents: number) => [ln(`${what} on day ${row.day} of the ${n} months that have one`, c(cents * n), undefined, { source: "proven" }), ln(`÷ ${n} months`, t(String(n)), "÷"), ln("An average month", c(cents), "=")];
+      add("day-bills", `Day ${row.day} of the month: bills and subscriptions, an average month`, c(row.bills), avg("Bills", row.bills), dayKey(months, row.day));
+      add("day-everyday", `Day ${row.day} of the month: everyday spending, an average month`, c(row.everyday), avg("Everyday spending", row.everyday), dayKey(months, row.day));
+    });
     if (bd.firstWeek != null) add("bills-first-week", "Bill money that leaves in the first week of the month", r(bd.firstWeek), [ln("An average month's bills on days 1–7 ÷ all its bills", r(bd.firstWeek))]);
     add("charges-per-month", "Charges a month", r(visits / Math.max(1, n)), [ln("Charges", t(String(visits))), ln("÷ months", t(String(n)), "÷"), ln("A month", r(visits / Math.max(1, n)), "=")]);
     // Budget › the latest month against the saved targets.
@@ -315,20 +329,23 @@ function budgetPaceDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<Sp
   const at = budgetPaceMonth(rep);
   const cats = Object.keys(targets);
   if (!at || !cats.length) return [];
-  const { m, day, days } = at;
+  const { m, day: last, days } = at;
+  const running = budgetRunning(m, targets);
+  const budgeted = sum(Object.values(targets), (v) => v);
+  // Every day the pace chart draws: spending through each day on file, the even pace through every day of the month.
+  return Array.from({ length: days }, (_, d) => d + 1).flatMap((day): DerivedFigure[] => {
   const key = budgetPaceKey(m.start, day);
   const through = (cat: string) => (m.dailyByCategory?.[cat] ?? []).slice(0, day).reduce((s, v) => s + v, 0);
-  const spent = budgetRunning(m, targets)[day - 1] ?? 0;
-  const budgeted = sum(Object.values(targets), (v) => v);
+  const spent = running[day - 1] ?? 0;
   const plan = Math.round((budgeted * day) / days);
   return [
-    {
+    ...(day > last ? [] : [{
       figure: "budget-pace",
       key,
       describes: `${m.label}: spending in budgeted categories through day ${day}`,
       value: c(spent),
       lines: [...cats.map((cat, i) => ln(cat, c(through(cat)), i ? "+" : undefined, { source: "proven" })), ln(`Through day ${day}`, c(spent), "=")],
-    },
+    } satisfies DerivedFigure]),
     {
       figure: "budget-pace-plan",
       key,
@@ -337,6 +354,7 @@ function budgetPaceDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<Sp
       lines: [ln("Monthly budget", c(budgeted), undefined, { source: "assumption" }), ln(`× ${day} of ${days} days`, r(day / days), "×"), ln(`Budget through day ${day}`, c(plan), "=")],
     },
   ];
+  });
 }
 
 // ------------------------------------------------------------------ Patterns › pace
@@ -348,6 +366,12 @@ const cumulative = (xs: number[]) => {
 };
 const paceDays = (m: SpendingMonth, basis: PaceBasis) => (basis === "all" ? m.daily.allCents : m.daily.everydayCents);
 const basisWords = (basis: PaceBasis) => (basis === "all" ? "all spending" : "everyday spending (no bills, nothing over $1,500)");
+/** A weekday's figure over a run of months (Monday = 0). */
+export const weekdayKey = (months: SpendingMonth[], weekday: number) => `${windowKey(months)}|${weekday}`;
+/** A day of the month's figure over a run of months (1 = the 1st). */
+export const dayKey = (months: SpendingMonth[], day: number) => `${windowKey(months)}|${day}`;
+/** A charge-size bucket's figure over a run of months (CHARGE_BUCKETS order). */
+export const bucketKey = (months: SpendingMonth[], bucket: number) => `${windowKey(months)}|${bucket}`;
 /** A pace figure's key: the month, which spending, and (a running total) through which day. */
 export const paceKey = (m: Pick<SpendingMonth, "start">, basis: PaceBasis, day?: number) => `${m.start}|${basis}${day != null ? `|${day}` : ""}`;
 
@@ -407,14 +431,17 @@ function paceDerived(rep: Pick<SpendingReport, "months"> & Partial<Pick<Spending
     for (const basis of ["all", "everyday"] as const) {
       const len = paceDays(m, basis).length;
       const day = partial && m.through ? Number(m.through.slice(8, 10)) : len;
-      spent(m, basis, day);
+      // The chart draws the month day by day through the day on file, and the month before through its last day.
+      for (let d = 1; d <= Math.min(day, len); d++) spent(m, basis, d);
       const prev = rep.months[i - 1];
-      if (prev) spent(prev, basis, partial ? day : paceDays(prev, basis).length);
+      if (prev) for (let d = 1; d <= paceDays(prev, basis).length; d++) spent(prev, basis, d);
       const typ = typicalMonth(rep.months, i, basis);
       if (typ.cents == null) continue;
-      // The typical month by the same day, and how much of it is gone by the 15th.
-      const at = typicalAt(rep.months, i, basis, day);
-      if (partial && at != null) out.set(`pace-typical-at ${paceKey(m, basis, day)}`, { figure: "pace-typical-at", key: paceKey(m, basis, day), describes: `A typical month by day ${day}: ${basisWords(basis)}`, value: c(at), lines: [ln(`Median of the ${typ.from.length} months before, each through day ${day}`, c(at))] });
+      // The typical month by each day of the chart (the stat reads the day on file), and how much of it is gone by the 15th.
+      for (let d = 1; d <= 31; d++) {
+        const at = typicalAt(rep.months, i, basis, d);
+        if (at != null) out.set(`pace-typical-at ${paceKey(m, basis, d)}`, { figure: "pace-typical-at", key: paceKey(m, basis, d), describes: `A typical month by day ${d}: ${basisWords(basis)}`, value: c(at), lines: [ln(`Median of the ${typ.from.length} months before, each through day ${d}`, c(at))] });
+      }
       const mid = typicalAt(rep.months, i, basis, Math.min(15, paceDays(m, basis).length));
       if (mid != null && typ.cents) out.set(`pace-first-half ${paceKey(m, basis)}`, { figure: "pace-first-half", key: paceKey(m, basis), describes: `How much of a typical month is gone by the 15th: ${basisWords(basis)}`, value: r(mid / typ.cents), lines: [ln("A typical month by the 15th", c(mid)), ln("÷ a typical month", c(typ.cents), "÷"), ln("Share", r(mid / typ.cents), "=")] });
       out.set(`pace-typical ${paceKey(m, basis)}`, {

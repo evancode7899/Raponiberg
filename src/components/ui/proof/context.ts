@@ -11,7 +11,7 @@ export { unswept, type Unswept } from "@/lib/book/proof/clearance";
 
 /** Pins changed somewhere (the command line's SAVE, the proof drawer's Pin): the command line reads them again. */
 export const PINS_CHANGED_EVENT = "pf:pins-changed";
-export { compositeOf, sumOf, targetOf, type ProofRef, type ProofTarget } from "@/lib/book/proof/compose";
+export { averageOf, compositeOf, medianOf, sumOf, targetOf, type ProofRef, type ProofTarget } from "@/lib/book/proof/compose";
 
 /**
  * Opens the proof drawer: on a figure's proof, or (a figure with no proof) only on why it's

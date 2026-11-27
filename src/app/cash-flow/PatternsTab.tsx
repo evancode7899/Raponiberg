@@ -12,7 +12,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, 
 import type { Ctx } from "./CashFlowClient";
 import { median, sliceStart } from "./model";
 import { Delta } from "./parts";
-import { billDays, chargeSplit, paceKey, weekdayStats, windowKey } from "@/lib/book/derived/cashFlow";
+import { billDays, bucketKey, chargeSplit, dayKey, paceKey, weekdayKey, weekdayStats, windowKey } from "@/lib/book/derived/cashFlow";
 
 const pctAxis = (v: number) => `${Math.round(v * 100)}%`;
 const bucketLabel = (i: number) => {
@@ -85,6 +85,14 @@ function Pace({ ctx }: { ctx: Ctx }) {
   // no quarter-total line spread across months (those count whole on the day here).
   // Otherwise it's the running total the Patterns list states (derived/cashFlow.ts paceDerived), proven day by day.
   const whole = (m: SpendingMonth, cents: number, day: number) => (basis === "all" && cents === m.spendingCents ? ctx.proof("spending", [m], { shownCents: cents }) : ctx.dp("pace-spent", paceKey(m, basis, day)));
+  // The chart's table: a running total through a day (a whole month's last day may be the month's spending), the typical month by that day.
+  const dayProof = (m: SpendingMonth, c: number[], day: number) => (day === c.length ? whole(m, c[day - 1]!, day) : ctx.dp("pace-spent", paceKey(m, basis, day)));
+  const pointProof = (r: Record<string, unknown>, s: string) => {
+    const day = r.day as number;
+    if (s === "now") return dayProof(month, cur, day);
+    if (s === "prev") return prev ? dayProof(prev, prevCum, day) : null;
+    return ctx.dp("pace-typical-at", paceKey(month, basis, day));
+  };
 
   return (
     <Card
@@ -152,7 +160,7 @@ function Pace({ ctx }: { ctx: Ctx }) {
           {typEnd != null && <Stat label="A typical month" value={usd0(typEnd)} proof={ctx.dp("pace-typical", paceKey(month, basis))} sub={firstHalf != null ? <><ProofValue proof={ctx.dp("pace-first-half", paceKey(month, basis))}>{formatPercentRatio(firstHalf, 0)}</ProofValue> of it gone by the 15th</> : undefined} />}
         </div>
         <div className="h-[280px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Spending so far by day of the month" cellProof={pointProof}>
             <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="day" {...ui.xAxis} ticks={[1, 5, 10, 15, 20, 25, 31]} />
@@ -187,7 +195,7 @@ function Weekdays({ ctx }: { ctx: Ctx }) {
   const { slice, chart } = ctx;
   const ui = chartChrome(chart);
   const wk = weekdayStats(slice.months);
-  const rows = wk.rows.map((r) => ({ name: r.name, avg: r.avgCents / 100 }));
+  const rows = wk.rows.map((r, i) => ({ i, name: r.name, avg: r.avgCents / 100 }));
   const { weekend, top, low } = wk;
   const key = windowKey(slice.months);
   return (
@@ -205,7 +213,7 @@ function Weekdays({ ctx }: { ctx: Ctx }) {
       }
     >
       <div className="h-[240px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle="Everyday spending by weekday" cellProof={(r) => ctx.dp("weekday-avg", weekdayKey(slice.months, r.i as number))}>
           <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} />
@@ -224,7 +232,7 @@ function ChargeSizes({ ctx, months }: { ctx: Ctx; months: SpendingMonth[] }) {
   const { chart } = ctx;
   const ui = chartChrome(chart);
   const { buckets: b, n, cents: c, smallCount, smallUsd } = chargeSplit(months);
-  const rows = b.map((x, i) => ({ name: bucketLabel(i), charges: n ? x.count / n : 0, dollars: c ? x.cents / c : 0, count: x.count, cents: x.cents }));
+  const rows = b.map((x, i) => ({ i, name: bucketLabel(i), charges: n ? x.count / n : 0, dollars: c ? x.cents / c : 0, count: x.count, cents: x.cents }));
   const key = windowKey(months);
   return (
     <Card
@@ -241,7 +249,12 @@ function ChargeSizes({ ctx, months }: { ctx: Ctx; months: SpendingMonth[] }) {
       }
     >
       <div className="h-[240px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive
+          tableTitle="Charge sizes: share of the count and of the dollars"
+          cellProof={(r, k) => ctx.dp(k === "charges" ? "charge-size-count" : "charge-size-dollars", bucketKey(months, r.i as number))}
+          cellText={(v) => formatPercentRatio(v, 0)}
+          plainX="a size range the chart groups charges by"
+        >
           <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} interval={0} tick={{ ...ui.xAxis.tick, fontSize: 10 }} />
@@ -288,7 +301,7 @@ function MonthDays({ ctx }: { ctx: Ctx }) {
       }
     >
       <div className="h-[260px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle="Spending by day of the month" cellProof={(r, s) => ctx.dp(s === "bills" ? "day-bills" : "day-everyday", dayKey(slice.months, r.day as number))}>
           <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="day" {...ui.xAxis} interval={1} />

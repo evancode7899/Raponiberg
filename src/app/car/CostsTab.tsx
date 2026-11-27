@@ -56,7 +56,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
   const kinds = (Object.keys(KIND_INFO) as CarKind[]).filter((k) => r.cash[k] !== 0);
   const p = s.purchase;
   const a = r.acquisition;
-  const premiumChart = r.insurance.premiums.map((x) => ({ label: fmtDate(x.date, "short"), monthly: x.monthlyCents }));
+  const premiumChart = r.insurance.premiums.map((x, i) => ({ k: `${s.id}|${i}`, label: fmtDate(x.date, "short"), monthly: x.monthlyCents }));
 
   return (
     <>
@@ -222,7 +222,7 @@ export function CostsTab({ ctx }: { ctx: CarCtx }) {
               </table>
             </div>
             <div className="h-48">
-              <RechartsResponsive>
+              <RechartsResponsive tableTitle="Insurance premium a month, premium by premium" cellProof={(row) => ctx.dp("premium-monthly", row.k as string)}>
                 <BarChart data={premiumChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid {...ui.grid} />
                   <XAxis dataKey="label" {...ui.xAxis} />

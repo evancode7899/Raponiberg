@@ -117,8 +117,8 @@ function Crossover({ f, rows, dollars, setDollars }: Omit<FireProps, "d"> & { ro
       subtitle="Monthly after-tax income your money could pay if you stopped on Jan 1 of each year, against monthly living cost. Where income crosses living cost you're financially independent."
       actions={<DollarsToggle value={dollars} onChange={setDollars} />}
     >
-      <div className="h-[320px] w-full min-w-0">
-        <RechartsResponsive>
+      <WhatIf why="walking away on Jan 1 of each future year, on the plan's projection" className="h-[320px] w-full min-w-0">
+        <RechartsResponsive tableTitle="The crossover point, year by year">
           <ComposedChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="year" {...ui.xAxis} minTickGap={16} />
@@ -130,7 +130,7 @@ function Crossover({ f, rows, dollars, setDollars }: Omit<FireProps, "d"> & { ro
             {f.fi && <ReferenceLine x={String(f.fi.year)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: `FI ${f.fi.year}`, fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />}
           </ComposedChart>
         </RechartsResponsive>
-      </div>
+      </WhatIf>
     </Card>
   );
 }

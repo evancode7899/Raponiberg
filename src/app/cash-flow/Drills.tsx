@@ -31,11 +31,11 @@ const metricOf: Record<string, CashFlowMetric> = { EXPENSE: "spending", INCOME: 
 function MonthBars({ ctx, values, color, name, proofAt }: { ctx: Ctx; values: number[]; color: string; name: string; proofAt: (m: SpendingMonth, cents: number) => ProofRef }) {
   const ui = chartChrome(ctx.chart);
   const openProof = useProof();
-  const data = ctx.slice.months.map((m, i) => ({ label: m.label, v: values[i]! / 100 }));
+  const data = ctx.slice.months.map((m, i) => ({ m, cents: values[i]!, label: m.label, v: values[i]! / 100 }));
   const avg = sum(values, (v) => v) / Math.max(1, values.length) / 100;
   return (
     <div className="h-[200px] w-full min-w-0">
-      <RechartsResponsive>
+      <RechartsResponsive tableTitle={`${name}, month by month`} cellProof={(r) => proofAt(r.m as SpendingMonth, r.cents as number)}>
         <BarChart
           data={data}
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -157,7 +157,7 @@ function RentTiming({ ctx }: { ctx: Ctx }) {
 /** A bill's price history: each charge as its statement prints it, a step when the price moved; the steps are listed with their rows. */
 function PriceHistory({ ctx, history, color }: { ctx: Ctx; history: { rowId: string; date: string; cents: number }[]; color: string }) {
   const ui = chartChrome(ctx.chart);
-  const data = history.map((h) => ({ date: h.date, v: h.cents / 100 }));
+  const data = history.map((h) => ({ h, date: h.date, v: h.cents / 100 }));
   // The charges where the price moved, against the one before.
   const steps = history.flatMap((h, i) => (i > 0 && h.cents !== history[i - 1]!.cents ? [{ before: history[i - 1]!, after: h }] : []));
   const row = (h: { rowId: string; cents: number }): ProofRef => ({ descriptor: { report: "row", rowId: h.rowId }, shownCents: -h.cents });
@@ -165,7 +165,7 @@ function PriceHistory({ ctx, history, color }: { ctx: Ctx; history: { rowId: str
     <div>
       <Eyebrow>Price history</Eyebrow>
       <div className="h-[140px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle="Price history, charge by charge" cellProof={(r) => row(r.h as (typeof history)[number])}>
           <LineChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="date" {...ui.xAxis} minTickGap={40} />

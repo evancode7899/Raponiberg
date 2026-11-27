@@ -47,6 +47,13 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
     row.Other = other;
     return row;
   });
+  /** A point's proof: its month's spending in that category, or the categories grouped as Other, summed. */
+  const stackProof = (r: Record<string, unknown>, key: string): ProofRef => {
+    const m = slice.months.find((x) => x.label === r.label)!;
+    if (key !== "Other") return ctx.proof("spending", [m], { category: key, shownCents: m.spendingByCategory.find((c) => c.category === key)?.cents ?? 0 });
+    const rest = m.spendingByCategory.filter((c) => categorySlot(c.category) == null);
+    return sumOf(rest.map((c) => ctx.proof("spending", [m], { category: c.category, shownCents: c.cents })), rest.reduce((s, c) => s + c.cents, 0));
+  };
 
   return (
     <>
@@ -134,7 +141,7 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
         subtitle="Taxes & fees, untracked card payments and other spending are grouped as Other. A category that took in more than it spent (a big refund) shows below zero. Click a month to audit it."
       >
         <div className="h-[320px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Spending by category, month by month" cellProof={stackProof}>
             <BarChart data={stack} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} stackOffset="sign" className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />

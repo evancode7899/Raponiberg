@@ -17,8 +17,8 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
   const fillSort = useSort();
   const ui = chartChrome(chart);
   const fills = useMemo(
-    () => f.fills.map((x) => ({ label: fmtDate(x.date), mpg: +x.mpg.toFixed(1), price: x.pricePerGallon == null ? null : +(x.pricePerGallon / 100).toFixed(3), cpm: x.costPerMile == null ? null : +(x.costPerMile / 100).toFixed(3) })),
-    [f.fills],
+    () => f.fills.map((x) => ({ k: `${r.carId}|${x.date}|${x.odometer}`, label: fmtDate(x.date), mpg: +x.mpg.toFixed(1), price: x.pricePerGallon == null ? null : +(x.pricePerGallon / 100).toFixed(3), cpm: x.costPerMile == null ? null : +(x.costPerMile / 100).toFixed(3) })),
+    [f.fills, r.carId],
   );
   const driving = r.months.map((m) => ({ label: m.label, miles: m.miles }));
   const avgMonth = driving.length > 1 ? driving.slice(0, -1).reduce((s, m) => s + m.miles, 0) / (driving.length - 1) : null;
@@ -42,7 +42,7 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
         <div className="grid gap-4 xl:grid-cols-2">
           <Card title="Fuel economy by fill-up" subtitle="Miles since the last full fill over gallons bought (partial fills roll into the next full one).">
             <div className="h-64">
-              <RechartsResponsive>
+              <RechartsResponsive tableTitle="Fuel economy by fill-up" plainSeries={{ mpg: "miles per gallon: your odometer and gallons, not money" }}>
                 <ComposedChart data={fills} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid {...ui.grid} />
                   <XAxis dataKey="label" {...ui.xAxis} minTickGap={24} />
@@ -56,7 +56,11 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
           </Card>
           <Card title="Price per gallon and fuel cost per mile" subtitle="What you paid at each fill, and what that fill's miles cost.">
             <div className="h-64">
-              <RechartsResponsive>
+              <RechartsResponsive
+                tableTitle="Price per gallon and fuel cost per mile, by fill-up"
+                cellProof={(row, key) => ctx.dp(key === "price" ? "fill-price" : "fill-per-mile", row.k as string)}
+                cellDrawn={{ cpm: { per: 100 } }}
+              >
                 <ComposedChart data={fills} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid {...ui.grid} />
                   <XAxis dataKey="label" {...ui.xAxis} minTickGap={24} />
@@ -75,7 +79,7 @@ export function FuelTab({ ctx }: { ctx: CarCtx }) {
 
       <Card title="Miles driven by month" subtitle={avgMonth ? `About ${miles(avgMonth)} miles in a full month. Read between odometer readings (the current month is partial).` : "Read between odometer readings."}>
         <div className="h-56">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Miles driven by month" plainSeries={{ miles: "miles: read between your odometer readings, not money" }}>
             <BarChart data={driving} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={16} />

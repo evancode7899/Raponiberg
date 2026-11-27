@@ -65,7 +65,15 @@ export function ValueTab({ ctx }: { ctx: CarCtx }) {
         }
       >
         <div className="h-72">
-          <RechartsResponsive>
+          <RechartsResponsive
+            tableTitle="What the car is worth"
+            plainSeries={{
+              private: "your value check",
+              tradeIn: "your value check",
+              planned: "your plan: a straight line from the all-in price to the resale you expect",
+              trend: "the trend through your value checks, carried forward",
+            }}
+          >
             <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={20} />

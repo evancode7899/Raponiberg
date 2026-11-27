@@ -1,4 +1,5 @@
 import type { AccessFigure, StressFigure } from "../../fire/longTerm.ts";
+import { FIRE_TARGET_SERIES, type FireTargetSeries } from "../../fire/fire.ts";
 import { loadForecastData } from "../../forecast/load.ts";
 import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "../../home-budget/homeBudgetModel.ts";
 import type { FundsConfig } from "../../home-budget/homeLinked.ts";
@@ -65,7 +66,9 @@ export type FireFigure =
   /** FIRE › Plan's "Bridging to 59½" tiles (`metric`). */
   | "access"
   /** FIRE › Stress test's tiles (`metric`), at the yearly swings typed (`volatility`). */
-  | "stress";
+  | "stress"
+  /** FIRE › Overview's chart: one year's (`year`) plan net worth or FIRE, Lean, Fat or Coast number (`series`), nominal (lib/fire/fire.ts fireTargets). */
+  | "target";
 /** FIRE's own settings as the page has them (edited there, maybe unsaved). */
 export type FireSettings = Pick<OutlookAssumptions, "walkAwayYear" | "withdrawalRate" | "stateTaxRate" | "retirementAge">;
 export type GoalFigure = "current" | "target" | "to-go" | "lands" | "needed" | "spending";
@@ -75,7 +78,7 @@ export type TaxFigure = "bonus-expected" | "projected-gross";
 
 export type PlanningDescriptor =
   /** `milestone`: a FIRE milestone's id ("nw-100000000", "fi-0.5"). */
-  | { report: "planning"; page: "fire"; figure: FireFigure; fire?: FireSettings; milestone?: string; row?: string; col?: string; metric?: AccessFigure | StressFigure; volatility?: number }
+  | { report: "planning"; page: "fire"; figure: FireFigure; fire?: FireSettings; milestone?: string; row?: string; col?: string; metric?: AccessFigure | StressFigure; volatility?: number; year?: number; series?: FireTargetSeries }
   /** `goalId`: every figure but "spending" (the emergency fund's typical month). */
   | { report: "planning"; page: "goals"; figure: GoalFigure; goalId?: string }
   /** The page's typed inputs and funds choices. */
@@ -86,7 +89,7 @@ export type PlanningDescriptor =
   /** The annual statement's whole-year estimate for the year in progress: one line (estimateFigures' id). */
   | { report: "planning"; page: "annual-estimate"; line: string };
 
-const FIRE_FIGURES: FireFigure[] = ["fire-number", "lean-number", "fat-number", "coast-number", "fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "income", "years-saved", "liquid-share", "runway", "progress", "milestone", "plan-cell", "access", "stress"];
+const FIRE_FIGURES: FireFigure[] = ["fire-number", "lean-number", "fat-number", "coast-number", "fi-year", "fi-year-base", "lean-year", "fat-year", "coast-year", "savings-rate", "income", "years-saved", "liquid-share", "runway", "progress", "milestone", "plan-cell", "access", "stress", "target"];
 const ACCESS_FIGURES: AccessFigure[] = ["liquid", "illiquid", "liquid-out", "access-year"];
 const STRESS_FIGURES: StressFigure[] = ["p50", "p10", "p90", "by-fi"];
 const GOAL_FIGURES: GoalFigure[] = ["current", "target", "to-go", "lands", "needed", "spending"];
@@ -115,6 +118,7 @@ export function parsePlanningDescriptor(d: Record<string, unknown>): PlanningDes
       const id = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 80;
       if (d.figure === "plan-cell" && (!id(d.row) || !id(d.col))) return { error: "row and col must name a cell of the long-term table." };
       if (d.figure === "access" && !ACCESS_FIGURES.includes(d.metric as AccessFigure)) return { error: `metric must be one of: ${ACCESS_FIGURES.join(", ")}.` };
+      if (d.figure === "target" && (!isNum(d.year) || !Number.isInteger(d.year) || !FIRE_TARGET_SERIES.includes(d.series as FireTargetSeries))) return { error: `year must be a year, and series one of: ${FIRE_TARGET_SERIES.join(", ")}.` };
       if (d.figure === "stress" && (!STRESS_FIGURES.includes(d.metric as StressFigure) || !isNum(d.volatility) || d.volatility < 0 || d.volatility > 1)) return { error: `metric must be one of: ${STRESS_FIGURES.join(", ")}, and volatility a rate.` };
       return {
         report: "planning",
@@ -125,6 +129,7 @@ export function parsePlanningDescriptor(d: Record<string, unknown>): PlanningDes
         ...(d.figure === "plan-cell" ? { row: d.row as string, col: d.col as string } : {}),
         ...(d.figure === "access" ? { metric: d.metric as AccessFigure } : {}),
         ...(d.figure === "stress" ? { metric: d.metric as StressFigure, volatility: d.volatility as number } : {}),
+        ...(d.figure === "target" ? { year: d.year as number, series: d.series as FireTargetSeries } : {}),
       };
     }
     case "goals":

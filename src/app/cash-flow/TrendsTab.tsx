@@ -16,6 +16,7 @@ import type { Ctx } from "./CashFlowClient";
 import { categoryGroup, KINDS, sliceStart, sum, trailing } from "./model";
 import { categoryColor, Delta, DivergingBar, Dot, openMonthOnClick } from "./parts";
 import { noFigure } from "@/lib/book/proof/clearance";
+import { monthProof, runAverage, runsSum, runSum, savingsRateOf, shareOf, type MonthPick } from "./cells";
 
 type Metric = "all" | "everyday";
 const GROUPS = ["Essentials", "Lifestyle", "Financial"] as const;
@@ -40,6 +41,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
   const t3 = trailing(all, 3, pick);
   const t12 = trailing(all, 12, pick);
   const smooth = slice.months.map((m, i) => ({
+    at: lo + i,
     label: m.label,
     month: pick(m) / 100,
     avg3: t3[lo + i] == null ? null : t3[lo + i]! / 300,
@@ -69,7 +71,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
   const kinds = slice.months.map((m) => {
     const total = Math.max(1, m.spendingCents);
     const v = (c: number) => (kindView === "usd" ? c / 100 : c / total);
-    return { label: m.label, billCents: v(m.kinds.billCents), everydayCents: v(m.kinds.everydayCents), bigCents: v(m.kinds.bigCents) };
+    return { m, label: m.label, billCents: v(m.kinds.billCents), everydayCents: v(m.kinds.everydayCents), bigCents: v(m.kinds.bigCents) };
   });
   const kindTotals = KINDS.map((k) => ({ ...k, cents: sum(slice.months, (m) => m.kinds[k.id]) }));
   const spent = sum(slice.months, (m) => m.spendingCents);
@@ -81,7 +83,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       ? []
       : slice.months.slice(base).map((m, j) => {
           const i = lo + base + j;
-          return { label: m.label, income: (inc12[i]! / inc12[lo + base]!) * 100, spending: (spend12[i]! / spend12[lo + base]!) * 100, rate: rate(inc12[i]!, spend12[i]!) };
+          return { at: i, label: m.label, income: (inc12[i]! / inc12[lo + base]!) * 100, spending: (spend12[i]! / spend12[lo + base]!) * 100, rate: rate(inc12[i]!, spend12[i]!) };
         });
 
   // Group mix over three-month runs, so one big month doesn't swing the share.
@@ -89,8 +91,41 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
     const run = all.slice(Math.max(0, lo + i - 2), lo + i + 1);
     const by = Object.fromEntries(GROUPS.map((g) => [g, sum(run, (x) => sum(x.spendingByCategory.filter((c) => categoryGroup(c.category) === g), (c) => c.cents))]));
     const total = Math.max(1, sum([...GROUPS], (g) => Math.max(0, by[g]!)));
-    return { label: m.label, ...Object.fromEntries(GROUPS.map((g) => [g, Math.max(0, by[g]!) / total])) };
+    return { run, by, label: m.label, ...Object.fromEntries(GROUPS.map((g) => [g, Math.max(0, by[g]!) / total])) };
   });
+
+  // Each chart point's proof (cells.ts): the months the sweep proves, added up, averaged or divided.
+  const pickOf: MonthPick = metric === "all" ? { metric: "spending" } : { metric: "spending", spendingKind: "everyday" };
+  const runTo = (i: number, n: number) => (i - n + 1 >= 0 ? all.slice(i - n + 1, i + 1) : []);
+  const smoothProof = (r: Record<string, unknown>, key: string): ProofRef => {
+    const at = r.at as number;
+    if (key === "month") return monthProof(ctx.proof, all[at]!, pickOf);
+    const run = key === "avg3" ? runTo(at, 3) : key === "avg12" ? runTo(at, 12) : runTo(at - 12, 12);
+    return runAverage(ctx.proof, run, pickOf);
+  };
+  const KIND_OF = Object.fromEntries(KINDS.map((k) => [k.id, k.kind])) as Record<string, MonthPick["spendingKind"]>;
+  const kindProof = (r: Record<string, unknown>, key: string): ProofRef => {
+    const m = r.m as SpendingMonth;
+    const part = monthProof(ctx.proof, m, { metric: "spending", spendingKind: KIND_OF[key] });
+    if (kindView === "usd") return part;
+    return shareOf(part, monthProof(ctx.proof, m, { metric: "spending" }), m.kinds[key as keyof SpendingMonth["kinds"]], m.spendingCents);
+  };
+  // An index of 100 at the first month: each trailing twelve months' total as a share of that first one.
+  const growthProof = (r: Record<string, unknown>, key: string): ProofRef => {
+    const at = r.at as number;
+    if (key === "rate") return savingsRateOf(ctx.proof, runTo(at, 12));
+    const p: MonthPick = { metric: key === "income" ? "income" : "spending" };
+    const xs = key === "income" ? inc12 : spend12;
+    return shareOf(runSum(ctx.proof, runTo(at, 12), p), runSum(ctx.proof, runTo(lo + base, 12), p), xs[at]!, xs[lo + base]!);
+  };
+  const groupProof = (r: Record<string, unknown>, key: string): ProofRef => {
+    const run = r.run as SpendingMonth[];
+    const by = r.by as Record<string, number>;
+    if (by[key]! <= 0) return noFigure("the group took in as much as it spent", true);
+    const picks = (g: string) => [...new Set(run.flatMap((x) => x.spendingByCategory.filter((c) => categoryGroup(c.category) === g).map((c) => c.category)))].map((c): MonthPick => ({ metric: "spending", category: c }));
+    const whole = runsSum(ctx.proof, run, GROUPS.filter((g) => by[g]! > 0).flatMap(picks));
+    return shareOf(runsSum(ctx.proof, run, picks(key)), whole, by[key]!, GROUPS.reduce((t, g) => t + Math.max(0, by[g]!), 0));
+  };
 
   const smoothLit = useLegendHighlight();
   const growthZoom = useZoom(growth.length, chart);
@@ -186,7 +221,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         }
       >
         <div className="h-[300px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Spending, smoothed, month by month" cellProof={smoothProof}>
             <ComposedChart data={smooth} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
@@ -242,7 +277,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         }
       >
         <div className="h-[280px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Bills, everyday and one-off spending, month by month" cellProof={kindProof}>
             <BarChart data={kinds} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} stackOffset="sign" className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
@@ -278,7 +313,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
           }
         >
           <div className="h-[260px] w-full min-w-0">
-            <RechartsResponsive>
+            <RechartsResponsive tableTitle="Income vs spending growth, indexed to 100" cellProof={growthProof} cellDrawn={{ income: { per: 0.01 }, spending: { per: 0.01 } }}>
               <LineChart data={growth} margin={{ top: 8, right: 64, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
@@ -296,7 +331,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
         </Card>
         <Card title="Savings rate, trailing 12 months" subtitle="Income minus spending over the twelve months ending each month — steadier than any single month, which a bonus or a tax payment can swing.">
           <div className="h-[260px] w-full min-w-0">
-            <RechartsResponsive>
+            <RechartsResponsive tableTitle="Savings rate, trailing 12 months" cellProof={growthProof}>
               <AreaChart data={growth} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />
@@ -319,7 +354,7 @@ export function TrendsTab({ ctx }: { ctx: Ctx }) {
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Essentials, lifestyle and financial" subtitle="Each group's share of spending over the three months ending each month. Financial = taxes & fees, untracked card payments and other.">
           <div className="h-[260px] w-full min-w-0">
-            <RechartsResponsive>
+            <RechartsResponsive tableTitle="Essentials, lifestyle and financial, share by month" cellProof={groupProof}>
               <AreaChart data={groupMix} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={12} />

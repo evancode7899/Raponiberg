@@ -152,6 +152,11 @@ function poolFigures(y: number, p: RewardsPool): DerivedFigure[] {
   const { posted, expected, redeemed } = p.year;
   const last = poolLast(p, y);
   if (last && p.program.kind === "POINTS") add("balance", "value", `the points balance on ${last.date} in dollars`, c(Math.round(last.balance * p.centsPerPoint)), [ln("Points printed", t(String(last.balance))), ln("× your point value (¢)", r(p.centsPerPoint), "×", { source: "assumption" }), ln("In dollars", c(Math.round(last.balance * p.centsPerPoint)), "=")]);
+  // Each balance a statement prints (the Rewards chart's points, and the latest beside it): cash back in dollars, points as printed.
+  for (const b of p.balances)
+    add(`printed:${b.statementId}`, "balance", `the balance printed on ${b.date}`, cash ? c(b.balance) : t(`${b.balance.toLocaleString("en-US")} pts`), [
+      ln(`Printed on ${b.date}`, cash ? c(b.balance) : t(`${b.balance.toLocaleString("en-US")} pts`), undefined, { source: "proven", link: { label: "The statement", descriptor: { report: "statement", statementId: b.statementId } } }),
+    ]);
   if (expected > 0) add("year", "vs-expected", "posted against expected", r((posted - expected) / expected), [ln("Posted", t(String(posted))), ln("Expected", t(String(expected))), ln("Posted ÷ expected − 1", r((posted - expected) / expected), "=")]);
   if (!cash) return out;
   add("year", "posted", "cash back posted", c(posted), [ln("Posted in the year's stretches", c(posted))]);

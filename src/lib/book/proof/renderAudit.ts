@@ -210,6 +210,18 @@ export function figureFamily(key: string): string {
  */
 export const UNDRAWN_PENDING: Readonly<Record<string, string>> = {};
 
+/**
+ * Chart tables (RechartsResponsive pendingProof) whose values draw n.a. while the owner
+ * chooses how to prove them, by the table's title. Their withheld cells are listed on every
+ * run, not failed; a table listed here that draws no withheld cell fails, so the list only
+ * shrinks. Empty since the owner chose (2026-11-27) to sweep each day's running total and
+ * average day as figures of their own (derived/cashFlow.ts).
+ */
+export const CHART_TABLE_PENDING: Readonly<Record<string, string>> = {};
+
+/** The chart table a view is: "/cash-flow › Budget ▤ Spending pace, day by day" → its title, or null for any other view. */
+export const chartTableOf = (view: string): string | null => view.split(" ▤ ")[1]?.trim() ?? null;
+
 /** A composite figure's parts, nested ones too, by key ([] for any other figure). */
 export function compositeParts(key: string): string[] {
   const out: string[] = [];
@@ -269,8 +281,9 @@ export function chartStrays(v: Pick<DrawnView, "chart">, figures: readonly Drawn
 }
 
 /** Every problem in what the pages drew, held to the sweep; and how many cleared figures were drawn. */
-export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPages: Readonly<Record<string, string>> = BYPASS_PENDING, opts: { partial?: boolean; undrawnPending?: Readonly<Record<string, string>> } = {}): RenderAudit {
+export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPages: Readonly<Record<string, string>> = BYPASS_PENDING, opts: { partial?: boolean; undrawnPending?: Readonly<Record<string, string>>; tablePending?: Readonly<Record<string, string>> } = {}): RenderAudit {
   const undrawnPending = opts.undrawnPending ?? UNDRAWN_PENDING;
+  const tablePending = opts.tablePending ?? CHART_TABLE_PENDING;
   const all: RenderProblem[] = [];
   const problems: RenderProblem[] = [];
   const drawn = new Set<string>();
@@ -309,8 +322,13 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
     }
   }
   const pending: RenderProblem[] = [];
-  for (const p of all) (p.kind === "RENDER_BYPASS" && pendingPages[pageOf(p.view)] ? pending : problems).push(p);
+  const tableWaits = (p: RenderProblem) => p.kind === "RENDER_WITHHELD" && p.detail.startsWith("Drawn withheld:unswept") && !!tablePending[chartTableOf(p.view) ?? ""];
+  for (const p of all) ((p.kind === "RENDER_BYPASS" && pendingPages[pageOf(p.view)]) || tableWaits(p) ? pending : problems).push(p);
   const audited = new Set(views.map((v) => pageOf(v.view)));
+  const tables = new Set(views.map((v) => chartTableOf(v.view)).filter((t): t is string => !!t));
+  for (const [title, stage] of Object.entries(tablePending))
+    if (tables.has(title) && !pending.some((p) => chartTableOf(p.view) === title))
+      problems.push({ kind: "RENDER_WITHHELD", view: title, detail: `Every value of this chart's table is proven now: take it off CHART_TABLE_PENDING (it waited for ${stage}), so a new n.a. fails.` });
   // A partial run (some pages) can't tell a pending page is clean, nor which cleared figures no page draws.
   for (const [page, stage] of opts.partial ? [] : Object.entries(pendingPages))
     if (audited.has(page) && !pending.some((p) => pageOf(p.view) === page))

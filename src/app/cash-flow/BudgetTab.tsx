@@ -262,7 +262,7 @@ function PaceCard({ ctx, targets, dp }: { ctx: Ctx; targets: Record<string, numb
         .
       </p>
       <div className="h-[200px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle="Spending pace, day by day" cellProof={(r, s) => dp(s === "spent" ? "budget-pace" : "budget-pace-plan", budgetPaceKey(m.start, r.day as number))}>
           <LineChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="day" {...ui.xAxis} />
