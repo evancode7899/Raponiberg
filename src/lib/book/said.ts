@@ -127,7 +127,8 @@ export function noteBook(scope: string) {
         },
       };
       const text = write(s);
-      for (const a of pending) amounts.push({ ...a, field: text });
+      // A sentence written again (a check run twice over the same data) keeps its first amounts: one figure each.
+      if (!amounts.some((x) => x.field === text)) for (const a of pending) amounts.push({ ...a, field: text });
       return text;
     },
   };

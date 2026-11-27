@@ -17,6 +17,9 @@ import { taxYearParams } from "../../tax/params.ts";
  * the Worksheet's own lines (proven as tax estimates): Joint vs separate, cell by cell, and
  * what filing separately saves; the dependent's effect. The page draws each from this list.
  */
+/** The comparison's cells the Overview draws (federal of AGI, the federal bracket), in the joint column. */
+const OVERVIEW_COMPARE = new Set(["effective-federal", "bracket"]);
+
 export function taxesDerived(report: TaxReport): DerivedFigure[] {
   const y = report.year;
   const cmp = taxComparison(report);
@@ -25,11 +28,14 @@ export function taxesDerived(report: TaxReport): DerivedFigure[] {
     row.values.map((v, j) => ({ row: row.id, col: cmp.cols[j]!.id, describes: `${y} ${row.label}, ${cmp.cols[j]!.name}`, value: v == null ? null : money(row.kind) ? c(v) : r(v) })),
   );
   const deps: TableCell[] = cmp.dependents.flatMap((row) => row.values.map((v, j) => ({ row: row.id, col: cmp.dependentCols[j]!, describes: `${y} the dependent's effect, ${row.label}: ${cmp.dependentCols[j]}`, value: c(v!) })));
+  // A Single year has no Joint vs separate tab (taxes/TaxClient.tsx): only the cells its Overview draws are figures.
+  const single = report.filingStatus === "SINGLE";
+  const onOverview = (x: TableCell) => x.col === "joint" && OVERVIEW_COMPARE.has(x.row);
   return [
-    ...tableFigures("compare", y, cells),
-    ...tableFigures("dependents", y, deps),
+    ...tableFigures("compare", y, single ? cells.filter(onOverview) : cells),
+    ...(single ? [] : tableFigures("dependents", y, deps)),
     // Joint vs separate says what one saves only once it's $100 or more ("about the same" under that).
-    ...(Math.abs(cmp.diff) >= 100 ? [{ figure: "compare-diff", key: String(y), describes: `${y}: separate returns' tax less the joint return's`, value: c(cmp.diff), lines: [] }] : []),
+    ...(!single && Math.abs(cmp.diff) >= 100 ? [{ figure: "compare-diff", key: String(y), describes: `${y}: separate returns' tax less the joint return's`, value: c(cmp.diff), lines: [] }] : []),
     ...tableFigures("overview", y, overviewCells(report).map((x) => ({ ...x, describes: `${y} ${x.describes}` }))),
     ...W4_REACHES.flatMap((reach) => tableFigures("w4", `${y}:${reach}`, w4Cells(report, reach).map((x) => ({ ...x, describes: `${y} ${x.describes}, the new W-4 reaching paycheck ${Number(reach) + 1} from now` })))),
     ...bracketDerived(report),

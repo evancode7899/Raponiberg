@@ -48,3 +48,12 @@ describe("said: amounts written into sentences", () => {
     ]);
   });
 });
+
+describe("said: a notebook writing a sentence twice", () => {
+  it("keeps the first copy's amounts only", () => {
+    const nb = noteBook("t");
+    nb.say((x) => `A ${x.usd(100, "a")}`);
+    nb.say((x) => `A ${x.usd(100, "a")}`);
+    expect(nb.amounts.map((a) => a.key)).toEqual(["t|0"]);
+  });
+});

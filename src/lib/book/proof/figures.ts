@@ -307,7 +307,8 @@ export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardRe
       add("Annual", { report: "annual", figure: "net-worth", year, line: "in-transit" }, n.inTransit);
     }
     if (y.change) {
-      add("Annual", { report: "annual", figure: "net-worth", year, line: "change" }, y.change.cents);
+      // The page draws the change in dollars for the current year only (its stat); every year's table row is the percent.
+      if (y.isCurrent) add("Annual", { report: "annual", figure: "net-worth", year, line: "change" }, y.change.cents);
       add("Annual", { report: "annual", figure: "net-worth", year, line: "change-pct" }, null);
     }
     if (y.bridge)
@@ -365,7 +366,8 @@ export function bonusesFigures(r: BonusesReport, forecast?: Forecast | null): Pa
   }
   for (const w of r.windows) {
     out.push([bon({ figure: "window", window: w.key, measure: "scheduled" }), w.scheduledCents]);
-    out.push([bon({ figure: "window", window: w.key, measure: "paid" }), w.paidCents]);
+    // What was paid shows only for a window something paid (Bonuses draws a dash, or nothing, for the rest).
+    if (w.paidCents || w.payments.length) out.push([bon({ figure: "window", window: w.key, measure: "paid" }), w.paidCents]);
   }
   for (const l of r.letters) {
     out.push([bon({ figure: "letter", letterId: l.id, measure: "scheduled" }), l.windowTotals.scheduledCents]);
@@ -616,7 +618,8 @@ export function taxFiledFigures(report: TaxReport): PageFigure[] {
 export function goalsFigures(r: GoalsReport): PageFigure[] {
   const page = "Goals";
   const out: PageFigure[] = [];
-  if (r.monthlySpending) out.push({ page, descriptor: { report: "planning", page: "goals", figure: "spending" }, shown: cents(r.monthlySpending.cents) });
+  // The typical month shows on an emergency fund's card only.
+  if (r.monthlySpending && r.goals.some((g) => g.goal.kind === "EMERGENCY_FUND")) out.push({ page, descriptor: { report: "planning", page: "goals", figure: "spending" }, shown: cents(r.monthlySpending.cents) });
   for (const g of r.goals) {
     if (g.blockers.length) continue;
     const d = (figure: "current" | "target" | "needed" | "to-go" | "lands"): ProofDescriptor => ({ report: "planning", page: "goals", figure, goalId: g.goal.id });

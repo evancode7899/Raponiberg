@@ -366,7 +366,7 @@ function FindingGroup({ fix, findings, onAccept }: { fix: string; findings: Find
         ))}
       </ul>
       {findings.length > 3 && (
-        <button type="button" className={`${btn.link} mt-1.5 text-xs`} onClick={() => setAll(!all)}>
+        <button type="button" className={`${btn.link} mt-1.5 text-xs`} onClick={() => setAll(!all)} {...(all ? {} : { "data-audit-drill": "Show all" })}>
           {all ? "Show fewer" : `Show all ${findings.length}`}
         </button>
       )}
