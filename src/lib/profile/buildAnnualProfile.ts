@@ -1,3 +1,4 @@
+import type { Amount } from "../book/said.ts";
 import { blockersFor, netWorthAtBlockers } from "../book/blockers.ts";
 import { investmentIncomeByAccount } from "../book/investments.ts";
 import { household, payJoins } from "../book/householdView.ts";
@@ -79,6 +80,8 @@ export type PersonYear = {
   hasPay: boolean;
   /** Why this year's pay is partial (taken from year-to-date totals only), if it is. */
   partial: string[];
+  /** The amounts those partial notes print (their inferences' title amounts, lib/book/said.ts). */
+  partialAmounts: Amount[];
 };
 
 export type CategoryCents = { category: string; cents: number };
@@ -273,6 +276,7 @@ export function buildAnnualProfile(book: Book, settings: FinancialProfileSetting
         lastPayDate: pay.through,
         hasPay: pay.employers.length > 0,
         partial: pay.partial.map((i) => i.title),
+        partialAmounts: pay.partial.flatMap((i) => (i.amounts ?? []).filter((a) => a.field === "title")),
       };
     });
 

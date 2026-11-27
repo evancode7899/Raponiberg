@@ -1,16 +1,22 @@
 "use client";
 
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
-import { fundsDerived } from "@/lib/book/derived/funds";
+import { eventKey, fundsDerived } from "@/lib/book/derived/funds";
 import { derivedTarget } from "@/lib/book/derived/types";
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { Badge, Callout, Card, StatCell, StatGrid, table } from "@/components/ui/kit";
+import { ProofValue } from "@/components/ui/proof/ProofValue";
+import type { DerivedFigure } from "@/lib/book/derived/types";
+import type { ReactNode } from "react";
 import type { LpEvent, LpFund } from "@/lib/funds/report";
 import type { FundsPage } from "@/lib/funds/page";
 import { formatPercentRatio, NA, usd0, usdDelta } from "@/lib/formatMoney";
 
 const multiple = (x: number | null) => (x == null ? NA : `${x.toFixed(2)}x`);
-const cell = (cents: number) => (cents ? usd0(cents) : "—");
+/** A fund figure drawn inline (lib/book/derived/funds.ts): the manager's notices and statements, as printed. */
+function Fig({ figs, figure, k, children }: { figs: readonly DerivedFigure[]; figure: string; k: string; children: ReactNode }) {
+  return <ProofValue proof={derivedTarget("lp-funds", figs, figure, k)}>{children}</ProofValue>;
+}
 
 /** Every private fund's LP view, grouped by manager (Investments › Private funds). */
 export function PrivateFunds({ page }: { page: FundsPage }) {
@@ -45,14 +51,16 @@ export function LpPanel({ fund: f }: { fund: LpFund }) {
   const p = useChartPalette();
   const failed = f.checks.filter((c) => !c.ok);
   const s = f.statement;
+  const figs = fundsDerived([f]);
   const drawdown: ShareSegment[] =
     f.commitmentCents == null
       ? []
       : [
-          { id: "net", label: "Contributed (net of returns)", cents: f.netContributedCents, color: p.principal },
-          { id: "unfunded", label: "Unfunded commitment", cents: Math.max(0, f.unfundedCents ?? 0), color: p.neutral },
+          { id: "net", label: "Contributed (net of returns)", cents: f.netContributedCents, color: p.principal, proof: derivedTarget("lp-funds", figs, "net-contributed", f.key) },
+          { id: "unfunded", label: "Unfunded commitment", cents: Math.max(0, f.unfundedCents ?? 0), color: p.neutral, ...((f.unfundedCents ?? 0) >= 0 ? { proof: derivedTarget("lp-funds", figs, "unfunded", f.key) } : {}) },
         ];
   const wires = f.events.filter((e) => e.wire).length;
+  const F = (figure: string, children: ReactNode, k = f.key) => <Fig figs={figs} figure={figure} k={k}>{children}</Fig>;
   return (
     <div className="space-y-4">
       <Card
@@ -77,26 +85,37 @@ export function LpPanel({ fund: f }: { fund: LpFund }) {
       </Card>
       {failed.length > 0 && (
         <Callout tone="warn" title={`${failed.length} figure${failed.length === 1 ? "" : "s"} don't tie to what the manager printed`}>
-          {failed.map((c) => `${c.label}: printed ${usd0(c.expectedCents)}, notices on file give ${usd0(c.actualCents)}`).join("; ")}. A notice may be missing from the statements folder.
+          {failed.map((c, i) => (
+            <span key={c.label}>
+              {i ? "; " : ""}
+              {c.label}: printed {F("check-printed", usd0(c.expectedCents), `${f.key}|${c.label}`)}, notices on file give {F("check-notices", usd0(c.actualCents), `${f.key}|${c.label}`)}
+            </span>
+          ))}
+          . A notice may be missing from the statements folder.
         </Callout>
       )}
       <StatGrid cols={4}>
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "commitment", f.key)} label="Commitment" value={usd0(f.commitmentCents)} sub="total capital committed" />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "called", f.key)} label="Contributions (gross)" value={usd0(f.calledCents)} sub="every call, before anything handed back" />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "distributed", f.key)}
+        <StatCell proof={derivedTarget("lp-funds", figs, "commitment", f.key)} label="Commitment" value={usd0(f.commitmentCents)} sub="total capital committed" />
+        <StatCell proof={derivedTarget("lp-funds", figs, "called", f.key)} label="Contributions (gross)" value={usd0(f.calledCents)} sub="every call, before anything handed back" />
+        <StatCell proof={derivedTarget("lp-funds", figs, "distributed", f.key)}
           label="Distributions to date"
           value={usd0(f.distributedCents)}
-          sub={`${usd0(f.returnedCents)} returned at later closes (recallable) + ${usd0(f.interestCents)} interest${f.otherDistributionsCents ? ` + ${usd0(f.otherDistributionsCents)} other` : ""}`}
+          sub={
+            <>
+              {F("returned", usd0(f.returnedCents))} returned at later closes (recallable) + {F("interest", usd0(f.interestCents))} interest
+              {f.otherDistributionsCents ? <> + {F("other", usd0(f.otherDistributionsCents))} other</> : null}
+            </>
+          }
         />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "net-contributed", f.key)} label="Contributions (net)" value={usd0(f.netContributedCents)} sub="gross less returned: the manager's contributions to date" />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "interest", f.key)} label="Interest received" value={usd0(f.interestCents)} tone={f.interestCents > 0 ? "pos" : "neutral"} sub="paid by later investors on returned contributions" />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "unfunded", f.key)}
+        <StatCell proof={derivedTarget("lp-funds", figs, "net-contributed", f.key)} label="Contributions (net)" value={usd0(f.netContributedCents)} sub="gross less returned: the manager's contributions to date" />
+        <StatCell proof={derivedTarget("lp-funds", figs, "interest", f.key)} label="Interest received" value={usd0(f.interestCents)} tone={f.interestCents > 0 ? "pos" : "neutral"} sub="paid by later investors on returned contributions" />
+        <StatCell proof={derivedTarget("lp-funds", figs, "unfunded", f.key)}
           label="Unfunded commitment"
           value={usd0(f.unfundedCents)}
-          sub={f.commitmentCents ? `${formatPercentRatio((f.unfundedCents ?? 0) / f.commitmentCents, 0)} of the commitment still to be called` : "no commitment printed yet"}
+          sub={f.commitmentCents && f.unfundedCents != null ? <>{F("unfunded-share", formatPercentRatio(f.unfundedCents / f.commitmentCents, 0))} of the commitment still to be called</> : "no commitment printed yet"}
         />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "net-cash", f.key)} label="Net cash wired" value={usd0(f.netCashCents)} sub={`amounts due on the notices; ${wires} bank wire${wires === 1 ? "" : "s"} on file total ${usd0(f.wiredCents)}`} />
-        <StatCell proof={derivedTarget("lp-funds", fundsDerived([f]), "nav", f.key)} label="Value (NAV)" value={s ? usd0(s.navCents) : NA} sub={s ? `capital account at the ${s.asOf} statement` : "no capital statement yet"} />
+        <StatCell proof={derivedTarget("lp-funds", figs, "net-cash", f.key)} label="Net cash wired" value={usd0(f.netCashCents)} sub={<>amounts due on the notices; {wires} bank wire{wires === 1 ? "" : "s"} on file total {F("wired", usd0(f.wiredCents))}</>} />
+        <StatCell proof={derivedTarget("lp-funds", figs, "nav", f.key)} label="Value (NAV)" value={s ? usd0(s.navCents) : NA} sub={s ? `capital account at the ${s.asOf} statement` : "no capital statement yet"} />
       </StatGrid>
       {s && (
         <Card
@@ -121,13 +140,13 @@ export function LpPanel({ fund: f }: { fund: LpFund }) {
               </thead>
               <tbody>
                 <tr className={table.tr}>
-                  <td className={table.tdR}>{usd0(s.paidInCents)}</td>
-                  <td className={table.tdR}>{usd0(s.distributedCents)}</td>
-                  <td className={table.tdR}>{usd0(s.navCents)}</td>
-                  <td className={`${table.tdR} ${s.gainCents < 0 ? "text-neg" : "text-pos"}`}>{usdDelta(s.gainCents)}</td>
-                  <td className={table.tdR}>{usd0(s.incomeCents)}</td>
-                  <td className={table.tdR}>{cell(s.managementFeeCents)}</td>
-                  <td className={table.tdR}>{cell(s.carryCents)}</td>
+                  <td className={table.tdR}>{F("st-paid-in", usd0(s.paidInCents))}</td>
+                  <td className={table.tdR}>{F("st-distributed", usd0(s.distributedCents))}</td>
+                  <td className={table.tdR}>{F("nav", usd0(s.navCents))}</td>
+                  <td className={`${table.tdR} ${s.gainCents < 0 ? "text-neg" : "text-pos"}`}>{F("st-gain", usdDelta(s.gainCents))}</td>
+                  <td className={table.tdR}>{F("st-income", usd0(s.incomeCents))}</td>
+                  <td className={table.tdR}>{s.managementFeeCents ? F("st-fees", usd0(s.managementFeeCents)) : "—"}</td>
+                  <td className={table.tdR}>{s.carryCents ? F("st-carry", usd0(s.carryCents)) : "—"}</td>
                   <td className={table.tdR}>{multiple(s.dpi)}</td>
                   <td className={table.tdR}>{multiple(s.rvpi)}</td>
                   <td className={table.tdR}>{multiple(s.tvpi)}</td>
@@ -153,7 +172,7 @@ export function LpPanel({ fund: f }: { fund: LpFund }) {
                 <th className={table.thR}>NAV</th>
               </tr>
             </thead>
-            <tbody>{f.events.map((e) => <EventRow key={`${e.kind}${e.date}`} e={e} />)}</tbody>
+            <tbody>{f.events.map((e) => <EventRow key={`${e.kind}${e.date}`} e={e} F={(figure, children) => F(figure, children, eventKey(f, e))} />)}</tbody>
           </table>
         </div>
       </Card>
@@ -161,7 +180,7 @@ export function LpPanel({ fund: f }: { fund: LpFund }) {
   );
 }
 
-function EventRow({ e }: { e: LpEvent }) {
+function EventRow({ e, F }: { e: LpEvent; F: (figure: string, children: ReactNode) => ReactNode }) {
   const statement = e.kind === "STATEMENT";
   const mismatch = e.printedUnfundedCents != null && e.unfundedCents != null && Math.abs(e.printedUnfundedCents - e.unfundedCents) > 100;
   return (
@@ -171,14 +190,14 @@ function EventRow({ e }: { e: LpEvent }) {
         {e.label} {e.kind === "EQUALISATION" && <Badge tone="info">equalisation</Badge>}
         {e.sources.length > 1 && <span className="text-xs text-muted"> · {e.sources.length} copies</span>}
       </td>
-      <td className={table.tdR}>{statement ? "" : cell(e.calledCents)}</td>
-      <td className={table.tdR}>{statement ? "" : e.returnedCents ? `(${usd0(e.returnedCents)})` : "—"}</td>
-      <td className={table.tdR}>{statement ? "" : e.interestCents ? `(${usd0(e.interestCents)})` : "—"}</td>
-      <td className={table.tdR}>{statement ? "" : usd0(e.netDueCents)}</td>
+      <td className={table.tdR}>{statement ? "" : e.calledCents ? F("ev-called", usd0(e.calledCents)) : "—"}</td>
+      <td className={table.tdR}>{statement ? "" : e.returnedCents ? <>({F("ev-returned", usd0(e.returnedCents))})</> : "—"}</td>
+      <td className={table.tdR}>{statement ? "" : e.interestCents ? <>({F("ev-interest", usd0(e.interestCents))})</> : "—"}</td>
+      <td className={table.tdR}>{statement ? "" : F("ev-net", usd0(e.netDueCents))}</td>
       <td className={`${table.td} whitespace-nowrap text-xs`}>
         {e.wire ? (
           <span title={e.wire.accountName}>
-            {usd0(e.wire.amountCents)} on {e.wire.date}
+            {F("ev-wire", usd0(e.wire.amountCents))} on {e.wire.date}
           </span>
         ) : !statement && e.netDueCents > 0 ? (
           <Badge tone="warn">no wire on file</Badge>
@@ -187,9 +206,9 @@ function EventRow({ e }: { e: LpEvent }) {
         )}
       </td>
       <td className={`${table.tdR} ${mismatch ? "text-warn" : ""}`} title={e.printedUnfundedCents != null ? `Printed by the manager: ${usd0(e.printedUnfundedCents)}` : undefined}>
-        {usd0(e.unfundedCents)}
+        {e.unfundedCents != null ? F("ev-unfunded", usd0(e.unfundedCents)) : usd0(e.unfundedCents)}
       </td>
-      <td className={table.tdR}>{e.navCents != null ? usd0(e.navCents) : ""}</td>
+      <td className={table.tdR}>{e.navCents != null ? F("ev-nav", usd0(e.navCents)) : ""}</td>
     </tr>
   );
 }

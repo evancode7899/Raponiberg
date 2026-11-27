@@ -1,4 +1,5 @@
 import { minIso } from "../dates/isoDate.ts";
+import type { Sayer } from "./said.ts";
 import { valueAt } from "../ledger/timeline.ts";
 import { taxYearThrough } from "./blockers.ts";
 import type { FederalParams } from "../tax/params.ts";
@@ -152,8 +153,10 @@ export function excessDeferral(book: Book, personId: string, year: number, exces
  * follows its opening sentence with no amount in it (the withdrawal's amount is left out),
  * for a page that draws the deferrals, excess, limit and withdrawal as figures of their own.
  */
-export function excessDeferralMessage(name: string, year: number, limit: number, deferred: number, e: ExcessDeferral): { ok: boolean; text: string; tail: string } {
-  const head = `${name}'s ${year} 401(k) deferrals (${dollars(deferred)}) were ${dollars(e.excess)} over the ${dollars(limit)} limit.`;
+export function excessDeferralMessage(name: string, year: number, limit: number, deferred: number, e: ExcessDeferral, say?: Sayer): { ok: boolean; text: string; tail: string } {
+  // With a sayer (lib/book/said.ts), each amount is recorded where it's written, to be drawn as a figure.
+  const amt = (cents: number, describes: string) => (say ? say.usd(cents, describes, undefined, dollars) : dollars(cents));
+  const head = `${name}'s ${year} 401(k) deferrals (${amt(deferred, `${name}'s ${year} 401(k) deferrals`)}) were ${amt(e.excess, "the excess over the limit")} over the ${amt(limit, `the ${year} 401(k) deferral limit, set by law`)} limit.`;
   const taxed = `The excess counts as ${year} income, in other income on the Taxes page.`;
   const r = e.returned;
   const proofOf = (amount: string) =>
@@ -170,7 +173,7 @@ export function excessDeferralMessage(name: string, year: number, limit: number,
         return { ok: false, tail: `The plan statements through ${e.deadline} show no corrective withdrawal, so it's taxed again when it's eventually withdrawn. ${taxed}` };
     }
   };
-  const full = rest(proofOf(r ? `${dollars(r.cents)} ` : ""));
+  const full = rest(proofOf(r ? `${amt(r.cents, "the corrective withdrawal, as the plan statement prints it")} ` : ""));
   return { ok: full.ok, text: `${head} ${full.tail}`, tail: rest(proofOf("")).tail };
 }
 

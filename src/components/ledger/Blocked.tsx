@@ -1,6 +1,7 @@
 "use client";
 
 import { Callout } from "@/components/ui/kit";
+import { Said } from "@/components/ui/proof/Said";
 import { NA } from "@/lib/formatMoney";
 import type { BlockerRef } from "@/lib/book/reports/blockerRef";
 import Link from "next/link";
@@ -45,8 +46,8 @@ export function BlockedNote({ blockers, what, limit = 6, title, withheld = false
       <ul className="mt-1 flex flex-col gap-1 text-xs">
         {failing.slice(0, limit).map((b) => (
           <li key={b.id}>
-            <span className="font-medium text-neg">{b.title}</span>
-            <span className="text-muted"> — {b.fix}</span>
+            <span className="font-medium text-neg"><Said text={b.title} amounts={b.amounts} field="title" page="integrity" /></span>
+            <span className="text-muted"> — <Said text={b.fix} amounts={b.amounts} field="fix" page="integrity" /></span>
           </li>
         ))}
         {failing.length > limit && <li className="text-muted">…and {failing.length - limit} more on Statements → Issues.</li>}

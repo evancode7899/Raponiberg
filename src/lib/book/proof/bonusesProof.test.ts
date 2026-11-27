@@ -176,7 +176,8 @@ describe("the bonuses proof kind", () => {
   it("re-derives every figure the page shows, each re-adding on its own", async () => {
     const book = makeBook();
     const figures = pageFigures(report(book));
-    expect(figures.length).toBe(32);
+    // Two windows nothing paid list no "paid" figure (the page draws none for them).
+    expect(figures.length).toBe(30);
     for (const [d, shown] of figures) {
       const parsed = parseDescriptor(JSON.parse(JSON.stringify(d)));
       expect(parsed, JSON.stringify(d)).not.toHaveProperty("error");

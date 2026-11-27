@@ -425,6 +425,19 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
    * Options the control names in data-audit-view are left alone (it says why in
    * data-audit-skip-why). At the top (depth 0) each option is a slot, dealt between parts.
    */
+  /** "Show more" (data-audit-more) until there is no more: every row the view can list is drawn (each page by part 0; every part clicks through to the whole list). */
+  const showMore = async (name: string) => {
+    const more = page.locator('[data-audit-more]:not([role="dialog"] *)').first();
+    // Settled first: right after a picker changes, the list (and its button) is still being redrawn.
+    await settle(w, cfg);
+    for (let k = 1; k <= 100 && (await more.isVisible().catch(() => false)); k++) {
+      if (part.i === 0) await draw(`${name} (page ${k})`);
+      // A button the page swapped out mid-click is the end of what it can list, not a page the audit can't finish.
+      if (!(await more.click().then(() => true, () => false))) break;
+      await settle(w, cfg);
+    }
+  };
+
   const explore = async (name: string, from = 0, depth = 0) => {
     const controls = page.locator('[data-audit-view]:not([role="dialog"] *)');
     const count = await controls.count();
@@ -436,6 +449,8 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
       const skip = new Set(((await c.getAttribute("data-audit-view")) ?? "").split(",").filter(Boolean));
       const show = async (opt: string) => {
         const at = `${name} · ${label}=${opt}`;
+        // A picker can shorten the list again (a window, a category): every row of each view is drawn.
+        await showMore(at);
         const v = await draw(at);
         if (v.repeat) return;
         await drawers(v);
@@ -476,12 +491,7 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
   };
 
   const visit = async (name: string) => {
-    // "Show more" (data-audit-more) until there is no more: every row the page can list is drawn (each page by part 0; every part clicks through to the whole list).
-    const more = page.locator('[data-audit-more]:not([role="dialog"] *)').first();
-    for (let k = 1; k <= 10 && (await more.isVisible().catch(() => false)); k++) {
-      if (part.i === 0) await draw(`${name} (page ${k})`);
-      await more.click();
-    }
+    await showMore(name);
     // Every part draws the first view (so a later view repeating it is known); its drawers are one slot.
     const v = await draw(name);
     if (mine()) await drawers(v);

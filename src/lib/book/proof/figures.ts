@@ -307,7 +307,8 @@ export function annualFigures(profile: AnnualProfileReport, rolls: RollforwardRe
       add("Annual", { report: "annual", figure: "net-worth", year, line: "in-transit" }, n.inTransit);
     }
     if (y.change) {
-      add("Annual", { report: "annual", figure: "net-worth", year, line: "change" }, y.change.cents);
+      // The page draws the change in dollars for the current year only (its stat); every year's table row is the percent.
+      if (y.isCurrent) add("Annual", { report: "annual", figure: "net-worth", year, line: "change" }, y.change.cents);
       add("Annual", { report: "annual", figure: "net-worth", year, line: "change-pct" }, null);
     }
     if (y.bridge)
@@ -365,7 +366,8 @@ export function bonusesFigures(r: BonusesReport, forecast?: Forecast | null): Pa
   }
   for (const w of r.windows) {
     out.push([bon({ figure: "window", window: w.key, measure: "scheduled" }), w.scheduledCents]);
-    out.push([bon({ figure: "window", window: w.key, measure: "paid" }), w.paidCents]);
+    // What was paid shows only for a window something paid (Bonuses draws a dash, or nothing, for the rest).
+    if (w.paidCents || w.payments.length) out.push([bon({ figure: "window", window: w.key, measure: "paid" }), w.paidCents]);
   }
   for (const l of r.letters) {
     out.push([bon({ figure: "letter", letterId: l.id, measure: "scheduled" }), l.windowTotals.scheduledCents]);
@@ -590,13 +592,34 @@ export function taxEstimateFigures(report: TaxReport, inProgress = false): PageF
   return out;
 }
 
+/**
+ * Taxes › Filed return: every line of each filed return the tab compares, as filed (its
+ * filed-return proof) and as this app has it (the tax estimate, basis "filed"). Only years
+ * with a return in the tax documents folder have any.
+ */
+export function taxFiledFigures(report: TaxReport): PageFigure[] {
+  const check = report.documents?.check;
+  if (!check) return [];
+  const page = `Taxes ${report.year} › Filed return`;
+  const prefix = { FEDERAL: "fed", CT: "ct", NY: "ny" } as const;
+  const out: PageFigure[] = [];
+  for (const [jurisdiction, lines] of [["FEDERAL", check.federal], ["CT", check.ct], ["NY", check.ny]] as const)
+    for (const l of lines) {
+      const v = (n: number): ProofValue => (l.percent ? { ratio: n / 10_000 } : { cents: n });
+      out.push({ page, descriptor: { report: "filed-return", year: report.year, jurisdiction, key: l.key }, shown: l.filed == null ? null : v(l.filed) });
+      if (l.model != null) out.push({ page, descriptor: { report: "tax-estimate", year: report.year, basis: "filed", key: `${prefix[jurisdiction]}.${l.key}` as EstimateKey }, shown: v(l.model) });
+    }
+  return out;
+}
+
 // ------------------------------------------------------------------ Goals
 
 /** Each goal's saved-so-far, target, what's left and monthly need (as its card draws them), and the emergency fund's typical month. */
 export function goalsFigures(r: GoalsReport): PageFigure[] {
   const page = "Goals";
   const out: PageFigure[] = [];
-  if (r.monthlySpending) out.push({ page, descriptor: { report: "planning", page: "goals", figure: "spending" }, shown: cents(r.monthlySpending.cents) });
+  // The typical month shows on an emergency fund's card only.
+  if (r.monthlySpending && r.goals.some((g) => g.goal.kind === "EMERGENCY_FUND")) out.push({ page, descriptor: { report: "planning", page: "goals", figure: "spending" }, shown: cents(r.monthlySpending.cents) });
   for (const g of r.goals) {
     if (g.blockers.length) continue;
     const d = (figure: "current" | "target" | "needed" | "to-go" | "lands"): ProofDescriptor => ({ report: "planning", page: "goals", figure, goalId: g.goal.id });
@@ -773,7 +796,8 @@ export function sourceFigures(book: Book): PageFigure[] {
   }
   const printed = new Map(book.rows.map((r) => [r.id, r.amountCents]));
   for (const r of book.rows) if (r.partOf) printed.set(r.partOf, (printed.get(r.partOf) ?? 0) + r.amountCents);
-  for (const r of book.rows) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });
+  // A bill correction (load.ts) is the Book's own row, printed on no statement: the lists show the rows the statements print, and the totals it's part of open it.
+  for (const r of book.rows) if (!r.id.endsWith(":correction")) out.push({ page: "Transactions", descriptor: { report: "row", rowId: r.id }, shown: { cents: printed.get(r.id)! }, asPrinted: true });
   // A pay stub is no page's figure: the pay figures' proofs link to it, and the sweep holds every linked proof (judgeFigures).
   return out;
 }

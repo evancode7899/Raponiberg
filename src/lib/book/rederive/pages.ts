@@ -201,7 +201,8 @@ export function rederiveInsurance(book: Book, page: InsuranceInput, figures: rea
       const v = cover.get(f.key ?? "");
       return v ? [centsRoute("the Book's rows, re-added", f.value, rowsCents(v.payments.filter((x) => x.term === v.policy.periodStart).map((x) => x.rowId)), ROWS)] : null;
     }
-    if (["home-premium", "auto-premium", "limit", "coverage-premium", "discount", "discount-total", "term-premium", "max-premium"].includes(f.figure)) return { none: PRINTED };
+    if (["home-premium", "auto-premium", "limit", "coverage-premium", "discount", "discount-total", "term-premium", "max-premium", "year-face", "bill", "receipt", "mode-each", "policy-fee"].includes(f.figure)) return { none: PRINTED };
+    if (["year-per1000", "per1000", "mode-year", "mode-extra", "mode-extra-share"].includes(f.figure)) return { none: `${PRINTED} Scaled per $1,000, to a year, or set against the annual premium, in the chain.` };
     const v = byKey.get(f.key ?? "");
     if (!v) return null;
     if (f.figure === "paid") return [centsRoute("the Book's rows, re-added", f.value, v.payments.reduce((s, x) => s - (book.rowById.get(x.rowId)?.amountCents ?? 0), 0), "each premium row's amount as its statement prints it")];
@@ -258,6 +259,7 @@ export function rederiveMedical(claims: readonly ClaimView[], figures: readonly 
 /** Figures with no second route, each with its reason. */
 export const declared = (why: string) => (figures: readonly DerivedFigure[]) => rederiveList(figures, () => ({ none: why }));
 
+export const SAID_WHY = "An amount a check or the tax engine wrote into its sentence, as it worked it out: the lines name the rows, stubs and statements it comes from, each with its own proof.";
 export const INTEGRITY_WHY = "A count over the integrity report's own lists (the proof lists every one it counts): the checks behind it are the independent source.";
 export const LIMITS_WHY = "The tax plan's verdict per yearly limit, or wages as the year's pay stubs print them: the limit's own proof and the pay proof re-add those from the Book.";
 export const CALENDAR_WHY = "The tax plan's amount (W-4 extra per paycheck, a Q4 safe-harbor shortfall): Taxes › W-4 and the estimate's own proofs re-derive the plan.";

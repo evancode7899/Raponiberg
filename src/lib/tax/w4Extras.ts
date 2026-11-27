@@ -39,7 +39,8 @@ export function w4Cells(r: TaxReport, reach: W4Reach): W4Cell[] {
   const tooSoon = plan.people.flatMap((p) => p.tooSoon).length;
   for (const [col, b] of [["federal", plan.federal], ["ct", plan.ct]] as const) {
     for (const k of W4_WALK) if (walkShown(k, plan.federal, plan.ct, tooSoon)) out.push({ row: `walk:${k}`, col, describes: `W-4 plan (${col}): ${k}`, value: { cents: b[k] } });
-    out.push({ row: "unreachable", col, describes: `W-4 plan (${col}): what no paycheck left can take`, value: { cents: plan.unreachable[col] } });
+    // The W-4 tab says what no paycheck can take only when some is left and a paycheck is reached (taxes/TaxW4.tsx).
+    if (plan.unreachable[col] > 0 && plan.reachedPaychecks > 0) out.push({ row: "unreachable", col, describes: `W-4 plan (${col}): what no paycheck left can take`, value: { cents: plan.unreachable[col] } });
   }
   for (const p of plan.people) {
     const line = (row: (typeof W4_LINES)[number], cents: number) => out.push({ row: `line:${row}`, col: p.personId, describes: `${p.name}'s W-4 plan: ${row}`, value: { cents } });

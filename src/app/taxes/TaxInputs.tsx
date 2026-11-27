@@ -1,6 +1,7 @@
 "use client";
 
 import { NotFigure } from "@/components/ui/kit";
+import { Said } from "@/components/ui/proof/Said";
 import { NA } from "@/lib/formatMoney";
 import { buttonPrimary, buttonSecondary, Card } from "@/components/ledger/LedgerBits";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
@@ -327,7 +328,9 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
             </li>
           ))}
           {(r.blocked ? [] : r.assumptions).map((a, i) => (
-            <li key={i}>{a}</li>
+            <li key={i}>
+              <Said text={a} amounts={r.blocked ? undefined : r.said} field={a} page="taxes" />
+            </li>
           ))}
         </ul>
       </Card>
@@ -523,7 +526,7 @@ function ResidencyCard({
       title={`Connecticut residency (${year})`}
       subtitle={
         effective
-          ? `In use: ${RESIDENCY_LABEL[effective.ct]}${effective.movedIn ? ` from ${effective.movedIn}` : ""}${effective.ct === "PART_YEAR" ? `, ${Math.round((effective.investmentShare ?? 0) * 1000) / 10}% of investment income` : ""} — ${effective.source === "FILED_RETURN" ? "from the filed return" : effective.source === "INPUTS" ? "as entered here" : "the default"}.`
+          ? `In use: ${RESIDENCY_LABEL[effective.ct]}${effective.movedIn ? ` from ${effective.movedIn}` : ""}${effective.ct === "PART_YEAR" ? " (its share of investment income is in the notes below)" : ""} — ${effective.source === "FILED_RETURN" ? "from the filed return" : effective.source === "INPUTS" ? "as entered here" : "the default"}.`
           : "A part-year resident is taxed only on income earned while living in Connecticut."
       }
     >

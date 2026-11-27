@@ -328,7 +328,8 @@ const cellProof = (p: Period, line: LedgerLine): ForecastDescriptor => {
 
 /** A bonus payment's label, the share of its award it is (from the latest letter's split) drawn as its figure. */
 function BonusLabel({ b, share }: { b: ScheduledBonus; share: ProofRef | null }) {
-  const m = share && b.share != null ? /(\d+)% as/.exec(b.label) : null;
+  // The part's share as bonusSchedule words it: "60% as cash", "40% deferred comp plan".
+  const m = share && b.share != null ? /(\d+)% (?:as|deferred)/.exec(b.label) : null;
   if (!m || !share) return <>{b.label}</>;
   return (
     <>

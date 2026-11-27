@@ -1,4 +1,5 @@
 import { addDays } from "../../dates/isoDate.ts";
+import { rowLine, sentences, type Sayer } from "../said.ts";
 import { BILL_PAYMENTS } from "../../ingest/billContinuation.ts";
 import { LP_CAPITAL_PARSER_ID } from "../../ingest/parsers/lpCapitalStatement.ts";
 import { accountsByLast4, money, uncovered } from "../coverage.ts";
@@ -46,6 +47,9 @@ export function checkTransfers(book: Book, c: Collector) {
     const direction = r.amountCents < 0 ? "to" : "from";
     const scope = { accountId: r.accountId, from, to, affects: ["CASH_FLOW" as const, "NET_WORTH" as const] };
     const isCard = !isBill && book.accounts.find((a) => a.id === r.accountId)?.group === "Credit cards";
+    const w = sentences(`transfer.unmatched:${refs.get(r.id)}`);
+    /** The row's amount, as the statement prints it. */
+    const amt = (x: Sayer) => x.usd(r.amountCents, `the ${r.date} row's amount`, [rowLine(`${r.date} ${r.payee}`, r.amountCents, r.id)]);
     if (notCovered.length === 0 && isCard && r.amountCents > 0 && !r.counterpartyInstitution && untracked.length > 0) {
       // A card payment no tracked bank account made: paid from an account not on file.
       const unavailable = new Map((book.taxProfile.unavailableAccounts ?? []).map((a) => [a.last4, a.note]));
@@ -56,9 +60,10 @@ export function checkTransfers(book: Book, c: Collector) {
           check: "transfer.unmatched",
           rowIds: [r.id],
           partial: true,
-          title: `${r.date} ${money(r.amountCents)} payment to ${nameOf(r.accountId)} came from ${untracked.map((l) => `••${l}`).join(" / ")} (no statements available)`,
+          title: `${r.date} ${amt(w.title)} payment to ${nameOf(r.accountId)} came from ${untracked.map((l) => `••${l}`).join(" / ")} (no statements available)`,
           detail: `${untracked.map((l) => `••${l}: ${unavailable.get(l) || "statements unavailable"}`).join("; ")}. Counted as money from outside the tracked accounts.`,
           scope: { from, to },
+          amounts: w.amounts,
         });
         continue;
       }
@@ -67,11 +72,12 @@ export function checkTransfers(book: Book, c: Collector) {
         accounts: accountRef(book, r.accountId).accounts,
         check: "transfer.unmatched",
         status: "MISSING",
-        title: `${r.date} ${money(r.amountCents)} payment to ${nameOf(r.accountId)} came from an account not on file`,
+        title: `${r.date} ${amt(w.title)} payment to ${nameOf(r.accountId)} came from an account not on file`,
         detail: `"${r.payee}" isn't on any tracked bank statement. Accounts known from pay stubs but not on file: ${untracked.map((l) => `••${l}`).join(", ")}.`,
         fix: `Add statements for ${untracked.map((l) => `••${l}`).join(" / ")} (or whichever account paid the card).`,
         scope,
         date: r.date,
+        amounts: w.amounts,
       });
       continue;
     }
@@ -82,13 +88,14 @@ export function checkTransfers(book: Book, c: Collector) {
         accounts: accountRef(book, r.accountId).accounts,
         check: "transfer.unmatched",
         status: "MISSING",
-        title: `${r.date} ${money(r.amountCents)} ${direction} ${notCovered.map((a) => a.name).join(" / ")} isn't on that account's statements`,
+        title: `${r.date} ${amt(w.title)} ${direction} ${notCovered.map((a) => a.name).join(" / ")} isn't on that account's statements`,
         detail: fundOnly
           ? `${nameOf(r.accountId)} shows "${r.payee}", but ${notCovered[0]!.name} has no statement covering ${from} – ${to} yet. The bank's side is on its statement, so cash flow and taxes count it; net worth waits for the fund's statement.`
           : `${nameOf(r.accountId)} shows "${r.payee}", but no statement for ${notCovered.map((a) => a.name).join(" or ")} covers ${from} – ${to}, so where the money went (or came from) can't be seen.`,
         fix: `Download the ${notCovered[0]!.institution ?? ""} statement covering ${r.date} into the statements folder and scan it.`,
         scope: fundOnly ? { ...scope, affects: ["NET_WORTH"] } : scope,
         date: r.date,
+        amounts: w.amounts,
         needs: { accountIds: notCovered.map((a) => a.id), from: r.date, to: r.date },
       });
     } else if (isBill) {
@@ -99,17 +106,18 @@ export function checkTransfers(book: Book, c: Collector) {
         status: "FAIL",
         ...(overCycle
           ? {
-              title: `${nameOf(r.accountId)}: ${money(r.amountCents)} paid ${from} – ${to} doesn't match the bank's rent payments`,
-              detail: `The bill says ${money(r.amountCents)} was paid or credited over its cycle, but no set of rent payments from your bank accounts in those days adds up to it. Usually the landlord changed the bill without printing the change (dropped a charge billed twice, waived a fee), or the rent was paid from an account that isn't on file.`,
+              title: `${nameOf(r.accountId)}: ${amt(w.title)} paid ${from} – ${to} doesn't match the bank's rent payments`,
+              detail: `The bill says ${amt(w.detail)} was paid or credited over its cycle, but no set of rent payments from your bank accounts in those days adds up to it. Usually the landlord changed the bill without printing the change (dropped a charge billed twice, waived a fee), or the rent was paid from an account that isn't on file.`,
               fix: "On Review → Transfers, confirm the suggested pairing if the landlord changed the bill (the difference counts as housing), or add the statement of the account that paid it.",
             }
           : {
-              title: `${nameOf(r.accountId)}: the ${r.date} payment of ${money(r.amountCents)} isn't on a bank statement`,
+              title: `${nameOf(r.accountId)}: the ${r.date} payment of ${amt(w.title)} isn't on a bank statement`,
               detail: `The bill prints "${r.payee}", but no bank rent payment of that amount is within a few days of it. A credit from money paid before the bills on file (a move-in payment, already counted as housing) looks like this.`,
               fix: "If it came out of money already counted, reclassify it as Housing on Statements › Categorize; otherwise add the statement of the account that paid it.",
             }),
         scope,
         date: r.date,
+        amounts: w.amounts,
       });
     } else {
       c.add({
@@ -117,7 +125,7 @@ export function checkTransfers(book: Book, c: Collector) {
         accounts: accountRef(book, r.accountId).accounts,
         check: "transfer.unmatched",
         status: "FAIL",
-        title: `${r.date} ${money(r.amountCents)} transfer in ${nameOf(r.accountId)} has no other leg`,
+        title: `${r.date} ${amt(w.title)} transfer in ${nameOf(r.accountId)} has no other leg`,
         detail:
           candidates.length === 0
             ? `"${r.payee}" is filed as a transfer between your own accounts, but no tracked account it could be from or to exists.`
@@ -128,6 +136,7 @@ export function checkTransfers(book: Book, c: Collector) {
             : "Pair it by hand on Statements › Transfers, or reclassify it if it isn't a transfer between your own accounts (e.g. a payment to a card that isn't tracked is spending).",
         scope,
         date: r.date,
+        amounts: w.amounts,
       });
     }
   }

@@ -155,7 +155,7 @@ export function DocumentsPanel({ api, version, onChanged }: { api: Api; version:
                     {d._count.payStubs > 0 && ` · ${d._count.payStubs} pay stubs`}
                   </div>
                   {d.warningsJson?.map((w, i) => (
-                    <div key={i} className="mt-0.5 text-xs text-warn">
+                    <div key={i} className="mt-0.5 text-xs text-warn" data-not-figure="the statement reader's warning, as it logged the line it couldn't read">
                       {w}
                     </div>
                   ))}

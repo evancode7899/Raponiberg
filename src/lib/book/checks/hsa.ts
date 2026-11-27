@@ -1,7 +1,7 @@
 import { addDays } from "../../dates/isoDate.ts";
+import { sentences } from "../said.ts";
 import { contributionKind } from "../../hsa/report.ts";
 import { amountsFromLines } from "../../ingest/payroll/index.ts";
-import { money } from "../coverage.ts";
 import { accountRef } from "../findingKeys.ts";
 import type { Book } from "../load.ts";
 import { accountOwner } from "../taxAdvantaged.ts";
@@ -56,15 +56,18 @@ export function checkHsaContributions(book: Book, c: Collector) {
         c.pass("contributions.hsa", { subject: `${subject} ties to the stubs`, ...scope });
         continue;
       }
+      const w = sentences(`contributions.hsa:${ref}:${st.periodStart}:${st.periodEnd}`);
+      const arrived = (x: typeof w.title) => x.usd(onStatement, "payroll HSA money on the statement");
       c.add({
         id: `contributions.hsa:${ref}:${st.periodStart}:${st.periodEnd}`,
         accounts,
         check: "contributions.hsa",
         status: "FAIL",
-        title: `${subject}: ${money(onStatement)} arrived, the stubs took ${money(inPeriod.reduce((t, a) => t + a.v, 0))}`,
-        detail: `No run of paychecks around the period (allowing ${LAG_DAYS} days for payroll to post) adds up to the ${money(onStatement)} the HSA statement shows from payroll.`,
+        title: `${subject}: ${arrived(w.title)} arrived, the stubs took ${w.title.usd(inPeriod.reduce((t, a) => t + a.v, 0), "HSA money the period's stubs took")}`,
+        detail: `No run of paychecks around the period (allowing ${LAG_DAYS} days for payroll to post) adds up to the ${arrived(w.detail)} the HSA statement shows from payroll.`,
         fix: "Compare the HSA statement's contributions with the HSA lines on the pay stubs around it. Employer money paid outside payroll (a yearly lump) or a contribution you made yourself belongs in an exception with a note.",
         scope,
+        amounts: w.amounts,
       });
     }
   }

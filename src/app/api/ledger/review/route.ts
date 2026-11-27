@@ -1,4 +1,5 @@
 import { checkApiAuth } from "@/lib/auth/checkApiSecret";
+import { dataStamp, stampTag } from "@/lib/book/cache";
 import { prisma } from "@/lib/db";
 import { computeMatches } from "@/lib/transfers/runMatching";
 import { NextRequest, NextResponse } from "next/server";
@@ -33,6 +34,8 @@ export async function GET(request: NextRequest) {
   if (!checkApiAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // The stamp of the data read, taken before reading it: the rows' amounts (row proofs) clear only against the sweep of this data.
+  const stamp = dataStamp();
   const [needsReview, unmatched, { result }] = await Promise.all([
     prisma.transaction.findMany({
       where: { needsReview: true, statementImport: { isSummary: false } },
@@ -62,5 +65,5 @@ export async function GET(request: NextRequest) {
         legs: s.legIds.map((id) => byId.get(id)).filter(Boolean),
       })),
     },
-  });
+  }, { headers: { "x-data-stamp": stampTag(stamp) } });
 }

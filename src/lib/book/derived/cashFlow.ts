@@ -1,5 +1,5 @@
 import { savingsRate } from "../definitions.ts";
-import { byYear, cashFlowWindows, last12At, median, mergeCategories, mergeMerchants, PRESET_RANGES, sliceRange, sum } from "../reports/cashFlowWindows.ts";
+import { byYear, cashFlowWindows, last12At, median, mergeCategories, mergeMerchants, PRESET_RANGES, sliceRange, sum, topPayers } from "../reports/cashFlowWindows.ts";
 import type { CategoryAmount } from "../reports/cashFlow.ts";
 import { CHARGE_BUCKETS, type MerchantMonth, type SpendingMonth, type SpendingReport } from "../reports/spending.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
@@ -130,7 +130,8 @@ export function cashFlowDerived(rep: Pick<SpendingReport, "months" | "recurring"
         else add("category-months", `${cat.category}: months with any`, t(String(values.filter(Boolean).length)), [ln("Months", t(`${values.filter(Boolean).length} of ${values.length}`))], k);
       }
     for (const lane of ["EXPENSE", "INCOME"] as const)
-      for (const x of mergeMerchants(months, merchantsOf(lane))) {
+      // Income & savings lists the top payers only (its drills are the only place these show), Merchants every merchant.
+      for (const x of lane === "INCOME" ? topPayers(months) : mergeMerchants(months, merchantsOf(lane))) {
         const k = merchantKeyOf(months, lane, x.key);
         const rec = rep.recurring.find((q) => q.key === x.key);
         add("merchant-count", `${x.name}: ${lane === "EXPENSE" ? "charges" : "deposits"}`, t(String(x.count)), [ln(lane === "EXPENSE" ? "Charges" : "Deposits", t(String(x.count)), undefined, { source: "proven" })], k);

@@ -1,6 +1,7 @@
 "use client";
 
 import { buttonSecondary, Card } from "@/components/ledger/LedgerBits";
+import { Said } from "@/components/ui/proof/Said";
 import { NA } from "@/lib/formatMoney";
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
 import type { SafeHarbor } from "@/lib/tax/computeReturn";
@@ -77,7 +78,9 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
         <Callout tone="warn" title={`${r.warnings.length} thing${r.warnings.length === 1 ? "" : "s"} to check`}>
           <ul className="list-disc space-y-1 pl-4">
             {r.warnings.map((w, i) => (
-              <li key={i}>{w}</li>
+              <li key={i}>
+                <Said text={w} amounts={r.said} field={w} page="taxes" />
+              </li>
             ))}
           </ul>
           <button type="button" className={`${buttonSecondary} mt-2`} onClick={() => onGo("inputs")}>

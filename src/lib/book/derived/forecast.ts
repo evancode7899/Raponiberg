@@ -79,7 +79,8 @@ export function forecastDerived(f: Forecast, s: Pick<OutlookSeeds, "currentYear"
   });
   if (!f.pay.bonus.keepTyped) out.push({ figure: "bonus-keep", describes: "Bonuses kept after tax", value: r(f.pay.bonus.keepRate), lines: [ln("Kept after the supplemental withholding and FICA", r(f.pay.bonus.keepRate))] });
   for (const p of s.people ?? [])
-    for (const h of p.bonusHistory) if (h.pct != null) out.push({ figure: "bonus-history", key: `${p.personId}|${h.year}`, describes: `${p.name}'s ${h.year} bonus as a share of base salary`, value: r(h.pct), lines: [ln("Bonus", c(h.bonus), undefined, { source: "proven" }), ln("÷ base salary", c(h.salary), "÷", { source: "proven" }), ln("Share", r(h.pct), "=")] });
+    // The Forecast's drivers show the last four years with a share (forecast/ForecastInputs.tsx).
+    for (const h of p.bonusHistory.filter((x): x is typeof x & { pct: number } => x.pct != null).slice(-4)) out.push({ figure: "bonus-history", key: `${p.personId}|${h.year}`, describes: `${p.name}'s ${h.year} bonus as a share of base salary`, value: r(h.pct), lines: [ln("Bonus", c(h.bonus), undefined, { source: "proven" }), ln("÷ base salary", c(h.salary), "÷", { source: "proven" }), ln("Share", r(h.pct), "=")] });
   const cy = s.currentYear;
   const { bonusToCome, liquidPerMonth } = forecastFeeds(f, cy);
   out.push(

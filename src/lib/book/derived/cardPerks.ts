@@ -153,7 +153,9 @@ function poolFigures(y: number, p: RewardsPool): DerivedFigure[] {
   const last = poolLast(p, y);
   if (last && p.program.kind === "POINTS") add("balance", "value", `the points balance on ${last.date} in dollars`, c(Math.round(last.balance * p.centsPerPoint)), [ln("Points printed", t(String(last.balance))), ln("× your point value (¢)", r(p.centsPerPoint), "×", { source: "assumption" }), ln("In dollars", c(Math.round(last.balance * p.centsPerPoint)), "=")]);
   // Each balance a statement prints (the Rewards chart's points, and the latest beside it): cash back in dollars, points as printed.
-  for (const b of p.balances)
+  // A points pool's chart table draws points plain (not dollars), so only the balances it shows as figures are listed: the latest, and each Reconciliation row's closing.
+  const shown = cash ? null : new Set([last?.statementId, ...poolStretches(p, y).map((x) => x.closingStatementId)]);
+  for (const b of p.balances.filter((x) => !shown || shown.has(x.statementId)))
     add(`printed:${b.statementId}`, "balance", `the balance printed on ${b.date}`, cash ? c(b.balance) : t(`${b.balance.toLocaleString("en-US")} pts`), [
       ln(`Printed on ${b.date}`, cash ? c(b.balance) : t(`${b.balance.toLocaleString("en-US")} pts`), undefined, { source: "proven", link: { label: "The statement", descriptor: { report: "statement", statementId: b.statementId } } }),
     ]);

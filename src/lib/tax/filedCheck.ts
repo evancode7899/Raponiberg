@@ -1,4 +1,5 @@
 import type { FederalKey, StateKey } from "../taxdocs/types.ts";
+import { noteBook, type NoteBook } from "../book/said.ts";
 import type { TaxReport } from "./buildTaxReport.ts";
 import { additionalIncome, computeReturn, type FederalResult, type CtResult, type NyResult, type PersonIncome, type ReturnResult } from "./computeReturn.ts";
 import { ownerOf, type DocRef, type YearDocs } from "./documents.ts";
@@ -57,6 +58,7 @@ export type FiledCheck = {
 };
 
 const dollars = (cents: number | null) => (cents == null ? null : Math.round(cents / 100));
+type Say = Parameters<Parameters<NoteBook["say"]>[0]>[0];
 const usd = (cents: number) => usdText(cents, { whole: true });
 
 const usdCents = (cents: number) => `${cents < 0 ? "−" : ""}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -135,7 +137,23 @@ const NY_ROWS: NyRow[] = [
   ["totalPayments", "76", "66", "Total payments and refundable credits", (n) => n.totalPayments],
 ];
 
-export function checkFiled(report: TaxReport, docs: YearDocs): FiledCheck {
+/**
+ * The notebook the notes of the check being run write their amounts through (lib/book/said.ts):
+ * the tax report's, while checkFiled runs, so the Filed return tab draws each as a figure.
+ */
+let notes: NoteBook = noteBook("tax-filed");
+
+export function checkFiled(report: TaxReport, docs: YearDocs, book: NoteBook = noteBook(`tax:${report.year}:filed`)): FiledCheck {
+  const prev = notes;
+  notes = book;
+  try {
+    return checkFiledWith(report, docs);
+  } finally {
+    notes = prev;
+  }
+}
+
+function checkFiledWith(report: TaxReport, docs: YearDocs): FiledCheck {
   const status = docs.federal?.filingStatus ?? "MFJ";
   // A separate return covers one spouse only; the joint model is what the household compares against.
   const { result: scenario, amendment } = asFiled(report, docs);
@@ -242,26 +260,27 @@ function explainFederal(lines: CheckLine[], report: TaxReport, docs: YearDocs, s
   if (other.status === "DIFFERENT" && other.filed != null && other.model != null) {
     const gap = other.filed - other.model;
     const items = docs.federal?.otherIncome ?? [];
-    const filedItems = `Schedule 1 reports ${usd(other.filed)}${items.length ? ` (${items.map((i) => `${i.label}: ${usd(i.amount)}`).join("; ")})` : ""}`;
+    const filedItems = (x: Say) => `Schedule 1 reports ${x.usd(other.filed!, "other income, as Schedule 1 reports it", undefined, usd)}${items.length ? ` (${items.map((i) => `${i.label}: ${x.usd(i.amount, `${i.label}, as Schedule 1 prints it`, undefined, usd)}`).join("; ")})` : ""}`;
+    const appHas = (x: Say) => x.usd(other.model!, "other income, this app", undefined, usd);
     // Typed-in other income goes first when the app has more than the return: what the
     // statements prove (an excess 401(k) deferral, K-1s) stays.
     const person = gap > 0 ? report.people[0]! : (report.people.find((p) => (report.inputs.people[p.id]?.extras.otherIncome ?? 0) > 0) ?? report.people[0]!);
     const current = report.inputs.people[person.id]?.extras.otherIncome ?? 0;
     if (gap > 0) {
-      other.note = `${filedItems}; the app has ${usd(other.model)}. Nothing in the statements records this income, so it has to be entered.`;
+      other.note = notes.say((x) => `${filedItems(x)}; the app has ${appHas(x)}. Nothing in the statements records this income, so it has to be entered.`);
       suggestions.push({
         id: "otherIncome",
-        text: `Add ${usd(gap)} of other income (Schedule 1${items[0] ? `: ${items[0].label.toLowerCase()}` : ""}) to ${person.name}'s ${report.year} inputs.`,
+        text: notes.say((x) => `Add ${x.usd(gap, "other income on the return beyond the app's", [{ label: "Other income, as filed", cents: other.filed! }, { label: "Other income, this app", cents: -other.model! }], usd)} of other income (Schedule 1${items[0] ? `: ${items[0].label.toLowerCase()}` : ""}) to ${person.name}'s ${report.year} inputs.`),
         set: [{ path: ["years", String(report.year), "people", person.id, "extras", "otherIncome"], value: current + gap }],
       });
     } else {
       const excess = report.people.reduce((s, p) => s + p.k401.excess.projected, 0);
-      other.note = `${filedItems}; the app has ${usd(other.model)}${excess ? `, including ${usd(excess)} of excess 401(k) deferrals it reads from the pay stubs and plan statements` : ""}.${current ? ` ${usd(current)} of it was typed under Inputs.` : ""}`;
+      other.note = notes.say((x) => `${filedItems(x)}; the app has ${appHas(x)}${excess ? `, including ${x.usd(excess, "excess 401(k) deferrals, from the pay stubs and plan statements", undefined, usd)} of excess 401(k) deferrals it reads from the pay stubs and plan statements` : ""}.${current ? ` ${x.usd(current, "other income typed under Inputs", undefined, usd)} of it was typed under Inputs.` : ""}`);
       if (current > 0) {
         const next = Math.max(0, current + gap);
         suggestions.push({
           id: "otherIncome",
-          text: `Lower ${person.name}'s typed-in ${report.year} other income from ${usd(current)} to ${usd(next)}: the app already counts ${usd(-gap)} of it from the documents, so it's counted twice.`,
+          text: notes.say((x) => `Lower ${person.name}'s typed-in ${report.year} other income from ${x.usd(current, "other income typed under Inputs", undefined, usd)} to ${x.usd(next, "what the typed-in figure should be", [{ label: "Typed under Inputs", cents: current }, { label: "Counted twice", cents: -Math.min(current, -gap) }], usd)}: the app already counts ${x.usd(-gap, "other income the app counts beyond the return", [{ label: "Other income, this app", cents: other.model! }, { label: "Other income, as filed", cents: -other.filed! }], usd)} of it from the documents, so it's counted twice.`),
           set: [{ path: ["years", String(report.year), "people", person.id, "extras", "otherIncome"], value: next }],
         });
       }
@@ -274,19 +293,20 @@ function explainFederal(lines: CheckLine[], report: TaxReport, docs: YearDocs, s
     const unread = docs.other.find((o) => o.warnings.some((w) => /1099-INT/.test(w)));
     const personId = (unread && ownerOf([unread.doc.file], report.profile.persons)) ?? report.people[0]!.id;
     const person = report.people.find((p) => p.id === personId)!;
+    const more = (x: Say) => x.usd(gap, "interest on the return beyond the app's", [{ label: "Taxable interest, as filed", cents: interest.filed! }, { label: "Taxable interest, this app", cents: -interest.model! }], usd);
     interest.note = unread
-      ? `The return has ${usd(gap)} more interest than the app. ${unread.doc.file} is a scanned 1099-INT the app can't read, and its account isn't in the statements for ${report.year}.`
-      : `The return has ${usd(gap)} more interest than the statements and 1099s show: an account the app doesn't track?`;
+      ? notes.say((x) => `The return has ${more(x)} more interest than the app. ${unread.doc.file} is a scanned 1099-INT the app can't read, and its account isn't in the statements for ${report.year}.`)
+      : notes.say((x) => `The return has ${more(x)} more interest than the statements and 1099s show: an account the app doesn't track?`);
     const current = report.inputs.people[person.id]?.extras.extraInterest ?? 0;
     suggestions.push({
       id: "extraInterest",
-      text: `Add ${usd(gap)} of interest not in the statements to ${person.name}'s ${report.year} inputs${unread ? " (the scanned 1099-INT)" : ""}.`,
+      text: notes.say((x) => `Add ${more(x)} of interest not in the statements to ${person.name}'s ${report.year} inputs${unread ? " (the scanned 1099-INT)" : ""}.`),
       set: [{ path: ["years", String(report.year), "people", person.id, "extras", "extraInterest"], value: current + gap }],
     });
   }
   const est = get("estimatedPayments");
   if (est.status === "DIFFERENT") {
-    est.note = `The return claims ${usd(est.filed ?? 0)} of estimated payments; the bank shows ${usd(est.model ?? 0)} attributed to ${report.year}. See the payments check below.`;
+    est.note = notes.say((x) => `The return claims ${x.usd(est.filed ?? 0, "estimated payments, as filed", undefined, usd)} of estimated payments; the bank shows ${x.usd(est.model ?? 0, `estimated payments the bank shows for ${report.year}`, undefined, usd)} attributed to ${report.year}. See the payments check below.`);
   }
   const q = get("qualifiedDividends");
   if (q.status === "DIFFERENT" && report.accounts.some((a) => a.source === "STATEMENTS" && a.kind === "TAXABLE")) {
@@ -299,7 +319,7 @@ function explainFederal(lines: CheckLine[], report: TaxReport, docs: YearDocs, s
   }
   const ira = get("iraTaxable");
   if (ira.status !== "MATCH" && (ira.model ?? 0) > (ira.filed ?? 0) && docs.rs.length) {
-    ira.note = `The 1099-R${docs.rs.length > 1 ? "s" : ""} on file (${docs.rs.map((r) => `${r.form.payer}: ${usd(r.form.taxable)} taxable, code ${r.form.codes || "?"}`).join("; ")}) ${ira.filed ? "come to more than" : "isn't on"} the filed return.`;
+    ira.note = notes.say((x) => `The 1099-R${docs.rs.length > 1 ? "s" : ""} on file (${docs.rs.map((r) => `${r.form.payer}: ${x.usd(r.form.taxable, `taxable amount, as ${r.form.payer}'s 1099-R prints it`, undefined, usd)} taxable, code ${r.form.codes || "?"}`).join("; ")}) ${ira.filed ? "come to more than" : "isn't on"} the filed return.`);
   }
   const qbi = get("qbiDeduction");
   if (qbi.status === "DIFFERENT") qbi.note = "The QBI deduction here is 20% of REIT (Section 199A) dividends from the 1099s.";
@@ -320,8 +340,10 @@ function explainCt(lines: CheckLine[], report: TaxReport, docs: YearDocs, federa
   }
   const src = get("sourceIncome");
   if (src && src.status === "DIFFERENT") {
-    const parts = report.people.filter((p) => p.ctSource).map((p) => `${p.name}: wages ${usd(p.ctSource!.wages)}, investment ${usd(p.ctSource!.investment)}, other ${usd(p.ctSource!.other)}`);
-    src.note = `Worked out as ${parts.join("; ")} (${Math.round((report.residency.investmentShare ?? 0) * 1000) / 10}% of investment income). Enter the residency details under Inputs if the move date or share is off.`;
+    src.note = notes.say((x) => {
+      const parts = report.people.filter((p) => p.ctSource).map((p) => `${p.name}: wages ${x.usd(p.ctSource!.wages, `${p.name}'s Connecticut-source wages`, undefined, usd)}, investment ${x.usd(p.ctSource!.investment, `${p.name}'s Connecticut-source investment income`, undefined, usd)}, other ${x.usd(p.ctSource!.other, `${p.name}'s other Connecticut-source income`, undefined, usd)}`);
+      return `Worked out as ${parts.join("; ")} (${x.pct(report.residency.investmentShare ?? 0, "the Connecticut-source share of investment income", 1)} of investment income). Enter the residency details under Inputs if the move date or share is off.`;
+    });
   }
   const w = get("withheld");
   if (w && w.status === "DIFFERENT") w.note = "Connecticut withholding is the W-2s' CT lines (box 17).";
@@ -343,10 +365,10 @@ function explainNy(lines: CheckLine[], report: TaxReport, federal: CheckLine[], 
   if (sub && sub.status === "DIFFERENT" && (sub.filed ?? 0) > (sub.model ?? 0)) {
     const gap = (sub.filed ?? 0) - (sub.model ?? 0);
     const person = report.people[0]!;
-    sub.note = `The return subtracts ${usd(sub.filed ?? 0)} of US government interest (Treasuries or a government money fund); the statements show ${usd(sub.model ?? 0)}.`;
+    sub.note = notes.say((x) => `The return subtracts ${x.usd(sub.filed ?? 0, "US government interest the return subtracts", undefined, usd)} of US government interest (Treasuries or a government money fund); the statements show ${x.usd(sub.model ?? 0, "US government interest the statements show", undefined, usd)}.`);
     suggestions.push({
       id: "usObligationIncome",
-      text: `Count ${usd(gap)} of ${report.year} income as state-exempt US government interest (it's already in income; New York and Connecticut don't tax it).`,
+      text: notes.say((x) => `Count ${x.usd(gap, "US government interest the statements can't see", [{ label: "Subtracted on the return", cents: sub.filed ?? 0 }, { label: "Shown by the statements", cents: -(sub.model ?? 0) }], usd)} of ${report.year} income as state-exempt US government interest (it's already in income; New York and Connecticut don't tax it).`),
       set: [{ path: ["years", String(report.year), "people", person.id, "extras", "usObligationIncome"], value: (report.inputs.people[person.id]?.extras.usObligationIncome ?? 0) + gap }],
     });
     for (const k of ["stateAgi", "taxableIncome", "taxBeforeAllocation", "incomeTax", "cityTax", "totalTax", "balance"]) {
@@ -358,7 +380,7 @@ function explainNy(lines: CheckLine[], report: TaxReport, federal: CheckLine[], 
   const ti = get("taxableIncome");
   if (ti && n && ti.filed != null && ti.model != null && n.dependentExemption > 0 && Math.abs(ti.filed - ti.model - n.dependentExemption) < 200) {
     const names = report.dependents.map((d) => d.name).join(", ");
-    ti.note = `The filed return claims no dependent exemption; the app counts ${names} (${usd(n.dependentExemption)}). If ${names} was your dependent in ${report.year}, the return left the exemption out (worth about ${usd(Math.round(n.dependentExemption * (n.incomePercentage ?? 1) * 0.0685 + (n.city ? n.dependentExemption * 0.03876 * (n.filing.cityMonths / 12) : 0)))}); if not, fix the birth year in Settings.`;
+    ti.note = notes.say((x) => `The filed return claims no dependent exemption; the app counts ${names} (${x.usd(n.dependentExemption, "New York's dependent exemption, set by law", undefined, usd)}). If ${names} was your dependent in ${report.year}, the return left the exemption out (worth about ${x.usd(Math.round(n.dependentExemption * (n.incomePercentage ?? 1) * 0.0685 + (n.city ? n.dependentExemption * 0.03876 * (n.filing.cityMonths / 12) : 0)), "roughly what the exemption is worth in New York tax", undefined, usd)}); if not, fix the birth year in Settings.`);
     for (const k of ["taxBeforeAllocation", "incomeTax", "cityTax", "totalTax", "totalPayments", "balance"]) {
       const l = get(k);
       if (l && l.status !== "MATCH" && !l.note) l.note = "Follows from the dependent exemption.";
@@ -373,8 +395,10 @@ function explainNy(lines: CheckLine[], report: TaxReport, federal: CheckLine[], 
   }
   const src = get("sourceIncome");
   if (src && src.status === "DIFFERENT") {
-    const parts = report.people.filter((p) => p.nySource).map((p) => `${p.name}: wages ${usd(p.nySource!.wages)}, investment ${usd(p.nySource!.investment)}, other ${usd(p.nySource!.other)}`);
-    src.note = `Worked out as ${parts.join("; ")}. Set the New York move date under Inputs if it's off.`;
+    src.note = notes.say((x) => {
+      const parts = report.people.filter((p) => p.nySource).map((p) => `${p.name}: wages ${x.usd(p.nySource!.wages, `${p.name}'s New York-source wages`, undefined, usd)}, investment ${x.usd(p.nySource!.investment, `${p.name}'s New York-source investment income`, undefined, usd)}, other ${x.usd(p.nySource!.other, `${p.name}'s other New York-source income`, undefined, usd)}`);
+      return `Worked out as ${parts.join("; ")}. Set the New York move date under Inputs if it's off.`;
+    });
     for (const k of ["incomePercentage", "incomeTax", "cityTax", "totalTax", "balance"]) {
       const l = get(k);
       if (l && l.status !== "MATCH" && !l.note) l.note = "Follows from the New York amount column.";
@@ -393,11 +417,12 @@ function explainNy(lines: CheckLine[], report: TaxReport, federal: CheckLine[], 
 /** Each W-2 against its pay stubs; each 1099 against its statements; each 1099-INT against the bank. */
 function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
   /** `explained`: a known difference in how the document and the statements count (added to the ledger side); a gap it fully closes is a match, with its note. */
-  const push = (label: string, document: string, documentValue: number, ledgerValue: number | null, note: string | null = null, explained?: { amount: number; note: string }) => {
+  const push = (label: string, document: string, documentValue: number, ledgerValue: number | null, note: string | null = null, explained?: { amount: number; note: () => string }) => {
     let status: SourceCheck["status"] = ledgerValue == null ? "LEDGER_MISSING" : Math.abs(documentValue - ledgerValue) <= 100 ? "MATCH" : "DIFFERENT";
     if (status === "DIFFERENT" && explained && explained.amount !== 0 && Math.abs(documentValue - (ledgerValue! + explained.amount)) <= 100) {
       status = "MATCH";
-      note = explained.note;
+      // Written only when it explains the gap, so its amounts are recorded only where they're drawn.
+      note = explained.note();
     }
     out.push({ label, document, documentValue, ledgerValue, status, note });
   };
@@ -431,7 +456,7 @@ function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
       a.ytd.ordinaryDividends + a.ytd.capGainDistShort,
       s ? s.ordinaryDividends + s.capGainDistShort : null,
       s ? null : "No statements for this account are on file.",
-      { amount: -priorYear, note: `The statements' January dividend of ${usdCents(priorYear)} isn't on this 1099: a fund dividend declared in December and paid in January is taxed in ${report.year - 1}.` },
+      { amount: -priorYear, note: () => notes.say((x) => `The statements' January dividend of ${x.usd(priorYear, `the January dividend declared in ${report.year - 1}`, undefined, usdCents)} isn't on this 1099: a fund dividend declared in December and paid in January is taxed in ${report.year - 1}.`) },
     );
     if (!s) continue;
     push(`${a.label} · qualified dividends`, a.doc!.file, a.ytd.qualifiedDividends, s.qualifiedDividends, "The statements can't tell qualified from not; the app's estimate is checked here.");
@@ -441,7 +466,7 @@ function sourceChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[]) {
     const fees = -(form?.proceedsInvestmentExpenses ?? 0);
     push(`${a.label} · realized gains`, a.doc!.file, a.ytd.shortTermGain + a.ytd.longTermGain + a.ytd.capGainDistLong, s.shortTermGain + s.longTermGain + s.capGainDistLong, null, {
       amount: fees,
-      note: `The statements net ${usdCents(fees)} of proceeds investment expenses (trust fees) into gains; the 1099 lists them as supplemental information, not in its gains.`,
+      note: () => notes.say((x) => `The statements net ${x.usd(fees, "proceeds investment expenses (trust fees) the statements net into gains", undefined, usdCents)} of proceeds investment expenses (trust fees) into gains; the 1099 lists them as supplemental information, not in its gains.`),
     });
   }
   for (const f of docs.ints) {
@@ -500,10 +525,11 @@ function paymentChecks(report: TaxReport, docs: YearDocs, out: SourceCheck[], su
     const gap = fedEst.documentValue - (fedEst.ledgerValue ?? 0);
     const candidate = report.payments.find((p) => p.authority === "FEDERAL" && p.amount === gap && p.date.startsWith(String(y)) && !(p.attribution.kind === "ESTIMATE" && p.attribution.taxYear === y));
     if (candidate) {
-      fedEst.note = `The ${usd(candidate.amount)} paid ${candidate.date} is filed as ${candidate.attribution.kind.toLowerCase().replace("_", " ")} for ${candidate.attribution.taxYear}; the return counts it as a ${y} estimate.`;
+      const paidAmt = (x: Say) => x.usd(candidate.amount, `the IRS payment of ${candidate.date}`, [{ label: `IRS payment, ${candidate.date}`, cents: candidate.amount, link: { label: "The row", descriptor: { report: "row", rowId: candidate.transactionId } } }], usd);
+      fedEst.note = notes.say((x) => `The ${paidAmt(x)} paid ${candidate.date} is filed as ${candidate.attribution.kind.toLowerCase().replace("_", " ")} for ${candidate.attribution.taxYear}; the return counts it as a ${y} estimate.`);
       suggestions.push({
         id: `payment:${candidate.transactionId}`,
-        text: `Count the ${usd(candidate.amount)} IRS payment of ${candidate.date} as a ${y} estimated payment.`,
+        text: notes.say((x) => `Count the ${paidAmt(x)} IRS payment of ${candidate.date} as a ${y} estimated payment.`),
         set: [{ path: ["years", String(y), "paymentOverrides", candidate.transactionId], value: { kind: "ESTIMATE", taxYear: y } }],
       });
     } else {

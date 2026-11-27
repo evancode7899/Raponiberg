@@ -399,7 +399,8 @@ export function cashFlowWindowDraws(r: Pick<SpendingReport, "months">, budgeted:
     const { up, down } = merchantMovers(y.now, y.then);
     const zeros = compareCategories(y.now, y.then).map((c) => c.category);
     add(y.now, { totals: TOTALS, kinds: ["everyday"], categories: "all", zeros, merchants: [...up, ...down].filter((x) => x.now).map((x) => x.key) });
-    add(y.then, { totals: TOTALS, kinds: ["everyday"], categories: "all", zeros, merchants: [...up, ...down].filter((x) => x.then).map((x) => x.key) });
+    // The twelve-month comparison draws no everyday spending for its earlier year (the later one is Trends').
+    add(y.then, { totals: TOTALS, ...(mode === "12m" ? {} : { kinds: ["everyday"] as SpendingKind[] }), categories: "all", zeros, merchants: [...up, ...down].filter((x) => x.then).map((x) => x.key) });
   }
   const m = momentumWindows(all, hi);
   add(last12At(all, hi), { totals: ["income", "spending"], kinds: ["everyday"] });

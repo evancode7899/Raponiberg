@@ -147,7 +147,8 @@ describe("swept = rendered: Cash flow", () => {
       const { up, down } = merchantMovers(y.now, y.then);
       for (const [ms, side] of [[y.now, "now"], [y.then, "then"]] as const) {
         for (const metric of ["income", "spending", "net"] as const) draw(metric, ms);
-        draw("spending", ms, { spendingKind: "everyday" });
+        // The comparison itself draws no everyday spending; the twelve-month one's earlier year is drawn nowhere else.
+        if (!(mode === "12m" && side === "then")) draw("spending", ms, { spendingKind: "everyday" });
         // A category spent in on either side is drawn on both.
         for (const c of new Set([...cats(y.now), ...cats(y.then)])) draw("spending", ms, { category: c });
         for (const x of [...up, ...down]) if (x[side]) draw("spending", ms, { merchantKey: x.key });

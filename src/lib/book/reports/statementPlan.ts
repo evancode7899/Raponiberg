@@ -1,4 +1,5 @@
 import { addBusinessDays, addDays, daysBetween, endOfMonth, maxIso, minIso, periodLabel, periodsBetween, startOfMonth } from "../../dates/isoDate.ts";
+import type { Amount } from "../said.ts";
 import { edgeStart } from "../blockers.ts";
 import { issuerOf, PAYMENT_GRACE_DAYS } from "../idleCards.ts";
 import type { Book } from "../load.ts";
@@ -23,7 +24,7 @@ export type PlanStatement = {
   /** Per figure, the first day it's needed for (absent: that figure doesn't wait on it). */
   neededFrom: Partial<Record<PlanLane, string>>;
   /** Open findings it would settle (for a transfer, any of the candidate accounts' statements does). */
-  settles: { id: string; title: string; anyOf: string[] }[];
+  settles: { id: string; title: string; anyOf: string[]; amounts?: Amount[] }[];
   /**
    * A card whose issuer sends no statement for a cycle without activity: if none comes,
    * the bank accounts that pay it prove the cycle idle once their statements run through
@@ -52,7 +53,7 @@ export type PlanEmployer = {
   last: { title: string; payDate: string };
   stubs: PlanStub[];
   /** Open findings the stubs settle. */
-  settles: { id: string; title: string }[];
+  settles: { id: string; title: string; amounts?: Amount[] }[];
 };
 
 type Cadence = "weekly" | "biweekly" | "semimonthly" | "monthly";
@@ -84,7 +85,7 @@ export type PlanTarget = {
 };
 
 /** An open finding no statement would settle (a clash, a pay stub): shown with its fix. */
-export type PlanOther = { id: string; title: string; fix: string; status: Finding["status"]; neededFrom: Partial<Record<PlanLane, string>> };
+export type PlanOther = { id: string; title: string; fix: string; status: Finding["status"]; neededFrom: Partial<Record<PlanLane, string>>; amounts?: Amount[] };
 
 export type StatementPlan = {
   today: string;
@@ -209,7 +210,7 @@ function stubPlan(book: Book, through: string): PlanEmployer[] {
       stubs: items,
       settles: book.integrity.findings
         .filter((f) => f.check === "pay.after-last-stub" && f.scope.employerKey === employerKey && (f.scope.personId ?? UNKNOWN_PERSON) === personId && f.scope.to.startsWith(yearStr))
-        .map((f) => ({ id: f.id, title: f.title })),
+        .map((f) => ({ id: f.id, title: f.title, amounts: f.amounts })),
     });
   }
   return out.sort((a, b) => a.stubs[0]!.date.localeCompare(b.stubs[0]!.date) || a.person.localeCompare(b.person));
@@ -328,7 +329,7 @@ export function buildStatementPlan(book: Book): StatementPlan {
     const lanes = neededFrom(f);
     if (!Object.keys(lanes).length || byStub.has(f.id)) continue;
     if (!f.needs) {
-      other.push({ id: f.id, title: f.title, fix: f.fix, status: f.status, neededFrom: lanes });
+      other.push({ id: f.id, title: f.title, fix: f.fix, status: f.status, neededFrom: lanes, amounts: f.amounts });
       continue;
     }
     const anyOf = f.needs.accountIds.map(nameOf);
@@ -358,7 +359,7 @@ export function buildStatementPlan(book: Book): StatementPlan {
         }
       }
       if (!s) continue;
-      s.settles.push({ id: f.id, title: f.title, anyOf });
+      s.settles.push({ id: f.id, title: f.title, anyOf, amounts: f.amounts });
       for (const [lane, from] of Object.entries(lanes) as [PlanLane, string][]) need(s, lane, from);
     }
   }

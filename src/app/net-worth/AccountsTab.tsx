@@ -51,7 +51,9 @@ export function AccountsTab({ r }: { r: RollforwardReport }) {
       ))}
       {closed.length > 0 && (
         <details className="rounded-lg border border-line bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-fg">Closed accounts ({closed.length})</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-fg" data-audit-drill="Closed accounts">
+            Closed accounts ({closed.length})
+          </summary>
           <div className="mt-3 flex flex-col gap-4">
             {closed.map((a) => (
               <AccountCard key={a.id} a={a} currentYear={r.currentYear} derived={derived} />

@@ -167,7 +167,8 @@ export function SpendingTab({ ctx }: { ctx: Ctx }) {
 function Heatmap({ ctx, categories }: { ctx: Ctx; categories: string[] }) {
   const { slice, chart } = ctx;
   const [scale, setScale] = useState<"row" | "all">("row");
-  const months = slice.months.slice(-18);
+  // Every month of the window (the grid scrolls sideways): each opens its month, as a click on the charts does.
+  const months = slice.months;
   const max = Math.max(1, ...categories.flatMap((c) => months.map((m) => categoryCents(m, c))));
   return (
     <Card

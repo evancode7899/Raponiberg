@@ -1,10 +1,10 @@
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
+import { sentences } from "../said.ts";
 import { yearDocs } from "../../tax/documents.ts";
 import { documentTies } from "../../tax/filedCheck.ts";
 import { k1Gaps } from "../../tax/k1.ts";
 import { k1DetailFor } from "../../tax/k1DetailStore.ts";
 import { TAX_YEARS } from "../../tax/params.ts";
-import { money } from "../coverage.ts";
 import type { Book } from "../load.ts";
 import type { FindingScope } from "../types.ts";
 import type { Collector } from "./collector.ts";
@@ -40,18 +40,21 @@ export function checkTaxDocuments(book: Book, c: Collector) {
         continue;
       }
       const missing = s.status === "LEDGER_MISSING";
+      const w = sentences(`tax.documents-tie:${year}:${s.label}`);
+      const printed = (x: typeof w.title) => x.usd(s.documentValue, `${s.label}, as ${s.document} prints it`);
       c.add({
         id: `tax.documents-tie:${year}:${s.label}`,
         check: "tax.documents-tie",
         status: missing ? "MISSING" : "FAIL",
-        title: missing ? `${year}: ${s.label} is on ${s.document} only` : `${year}: ${s.label} differs from the ledger by ${money(Math.abs(s.documentValue - (s.ledgerValue ?? 0)))}`,
+        title: missing ? `${year}: ${s.label} is on ${s.document} only` : `${year}: ${s.label} differs from the ledger by ${w.title.usd(Math.abs(s.documentValue - (s.ledgerValue ?? 0)), `how far ${s.document} and the ledger differ`)}`,
         detail: missing
-          ? `${s.document} prints ${money(s.documentValue)}, and nothing in the ledger can confirm it${s.note ? `: ${s.note}` : "."}`
-          : `${s.document} prints ${money(s.documentValue)}; the ledger shows ${money(s.ledgerValue ?? 0)}.${s.note ? ` ${s.note}` : ""}`,
+          ? `${s.document} prints ${printed(w.detail)}, and nothing in the ledger can confirm it${s.note ? `: ${s.note}` : "."}`
+          : `${s.document} prints ${printed(w.detail)}; the ledger shows ${w.detail.usd(s.ledgerValue ?? 0, `${s.label}, from the ledger`)}.${s.note ? ` ${s.note}` : ""}`,
         fix: missing
           ? "Add the pay stubs or statements this document covers, or accept it as an exception (Statements → Issues) with a note on why it can't be corroborated."
           : "One side was read wrong or is incomplete: check the document in the tax documents folder against the stubs or statements (Taxes → Filed return lists both). A payment from an account the app doesn't track belongs in an exception with a note.",
         scope,
+        amounts: w.amounts,
       });
     }
   }
