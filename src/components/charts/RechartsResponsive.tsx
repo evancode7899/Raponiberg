@@ -86,6 +86,7 @@ export function RechartsResponsive({
   cellProof,
   cellDrawn,
   cellText,
+  cellValue,
   plainSeries,
   pendingProof,
   ...rest
@@ -99,6 +100,8 @@ export function RechartsResponsive({
   cellDrawn?: CellDrawn;
   /** A cell's words when the tooltip's say more than its one figure (a share and the count behind it): the figure alone. */
   cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined;
+  /** A point's value when the series holds something else (a floating bar's [low, high]): the figure it stands for. */
+  cellValue?: (row: Record<string, unknown>, series: string) => number | null | undefined;
   /** Series that aren't money or a rate, by data key: why each is no figure. */
   plainSeries?: Readonly<Record<string, string>>;
   /**
@@ -127,20 +130,21 @@ export function RechartsResponsive({
           Table
         </button>
       )}
-      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} whatIf={open.whatIf} cellProof={pendingProof ? () => unswept(pendingProof) : cellProof} cellDrawn={cellDrawn} cellText={cellText} plainSeries={plainSeries} onClose={() => setOpen(false)} />}
+      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} whatIf={open.whatIf} cellProof={pendingProof ? () => unswept(pendingProof) : cellProof} cellDrawn={cellDrawn} cellText={cellText} cellValue={cellValue} plainSeries={plainSeries} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText, plainSeries, onClose }: { chart: ReactNode; title: string; whatIf: string | null; cellProof?: CellProof; cellDrawn?: CellDrawn; cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined; plainSeries?: Readonly<Record<string, string>>; onClose: () => void }) {
+function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText, cellValue, plainSeries, onClose }: { chart: ReactNode; title: string; whatIf: string | null; cellProof?: CellProof; cellDrawn?: CellDrawn; cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined; cellValue?: (row: Record<string, unknown>, series: string) => number | null | undefined; plainSeries?: Readonly<Record<string, string>>; onClose: () => void }) {
   const read = readChart(chart);
   if (!read) return null;
   const t = chartTable(read.rows, read.x, read.series, () => "");
   const body = read.rows.map((r, i) => [
     t.body[i]![0]!,
     ...read.series.map((s) => {
-      if (typeof r[s.key] !== "number") return "";
-      const text = cellText?.(r[s.key] as number, s.key, r) ?? read.format(r[s.key] as number, s.name, r);
+      const v = cellValue ? cellValue(r, s.key) : r[s.key];
+      if (typeof v !== "number") return "";
+      const text = cellText?.(v, s.key, r) ?? read.format(v, s.name, r);
       // A what-if's points are a scenario's: plain, inside the region the table is marked as.
       if (whatIf != null) return text;
       const plain = plainSeries?.[s.key];

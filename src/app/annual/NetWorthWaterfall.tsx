@@ -11,7 +11,9 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, Tooltip, 
 import type { Col } from "./AnnualStatement";
 import { axisUsd, usd } from "./profileUi";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { compositeOf, type ProofRef } from "@/components/ui/proof/context";
+import { compositeOf, sumOf, type ProofRef } from "@/components/ui/proof/context";
+import type { AnnualBridgeLine, AnnualCashLine } from "@/lib/book/proof/annualProof";
+import { estimateFigures } from "./estimate";
 import { noFigure } from "@/lib/book/proof/clearance";
 import type { ProofDescriptor } from "@/lib/book/proof";
 
@@ -32,12 +34,51 @@ const closeProof = (c: Col, cents: number): ProofRef => {
   return d ? { descriptor: d, shownCents: cents } : noFigure("no proven close");
 };
 
-type Step = { name: string; full: string; kind: "up" | "down" | "total"; delta: number; range: [number, number]; running: number; label: string };
-type Flow = { label: string; full: string; cents: number };
+/** The statement line a step is: a cash line, or one of the bridge to net worth. */
+type LineKey = { cash: AnnualCashLine } | { bridge: AnnualBridgeLine };
+type Step = { name: string; full: string; kind: "up" | "down" | "total"; delta: number; range: [number, number]; running: number; label: string; line: LineKey };
+type Flow = { label: string; full: string; cents: number; line: LineKey };
 /** A column's statement lines: pay down to what was saved, then everything else that moved net worth. */
 type Lines = { flows: Flow[]; saved: number; moved: Flow[]; total: number; open: number | null; close: number | null };
 
 const LTD = "ltd";
+
+/**
+ * A step's proof: its line of the statement (a year's, as AnnualStatement draws it), the
+ * estimate's line, or life to date's years of that line added up. The statement states the
+ * cash lines as amounts (spending positive); the step draws what they did to net worth.
+ */
+function stepProof(s: Step, col: Col | null, years: readonly Col[]): ProofRef {
+  const of = (c: Col): { proof: ProofRef; cents: number } | null => {
+    if (c.y) {
+      if ("bridge" in s.line) return !c.y.bridge ? null : { proof: { descriptor: { report: "annual", figure: "bridge", year: c.y.year, line: s.line.bridge }, shownCents: c.y.bridge[s.line.bridge] }, cents: c.y.bridge[s.line.bridge] };
+      const w = c.y.cash?.waterfall;
+      if (!w) return null;
+      const cents = CASH_CENTS[s.line.cash]!(w);
+      return { proof: { descriptor: { report: "annual", figure: "cash", year: c.y.year, line: s.line.cash }, shownCents: cents }, cents };
+    }
+    if (c.est) {
+      const line = "bridge" in s.line ? `bridge:${s.line.bridge}` : s.line.cash;
+      const v = estimateFigures(c.est)[line];
+      if (!v || !("cents" in v)) return null;
+      return { proof: { descriptor: { report: "planning", page: "annual-estimate", line }, shownCents: v.cents }, cents: v.cents };
+    }
+    return null;
+  };
+  if (col) return of(col)?.proof ?? noFigure("the column has no such line");
+  const parts = years.map(of);
+  if (parts.some((p) => !p)) return noFigure("a year has no such line");
+  return sumOf(parts.map((p) => p!.proof), parts.reduce((t, p) => t + p!.cents, 0));
+}
+/** A cash line's amount as the statement's proof states it. */
+const CASH_CENTS: Partial<Record<AnnualCashLine, (w: NonNullable<NonNullable<Col["y"]>["cash"]>["waterfall"]) => number>> = {
+  gross: (w) => w.grossCash,
+  "taxes-deductions": (w) => w.withholding + w.additionalTaxes - w.refunds + w.otherDeductions,
+  employer: (w) => w.employer,
+  "partner-kept": (w) => w.partnerKept,
+  living: (w) => w.living,
+  "one-offs": (w) => w.nonRecurring,
+};
 
 const compact = (dollars: number, signed: boolean) => `${signed ? (dollars < 0 ? "−" : "+") : dollars < 0 ? "−" : ""}${axisUsd(Math.abs(dollars))}`;
 
@@ -50,30 +91,30 @@ function lines(c: Col | null, r: AnnualProfileReport, partner: string | null): L
   let flows: Flow[];
   if (w) {
     flows = [
-      { label: "Income", full: "Gross income", cents: w.grossCash },
-      { label: "Taxes", full: "Taxes & deductions", cents: -(w.withholding + w.additionalTaxes - w.refunds + w.otherDeductions) },
-      { label: "Employer", full: "Employer retirement & HSA", cents: w.employer },
-      { label: `${partner ?? "Partner"} kept`, full: `${partner ?? "Partner"}'s pay kept in own accounts`, cents: -w.partnerKept },
-      { label: "Living", full: "Living expenses", cents: -w.living },
-      { label: "One-offs", full: "One-off expenses", cents: -w.nonRecurring },
+      { label: "Income", full: "Gross income", cents: w.grossCash, line: { cash: "gross" } },
+      { label: "Taxes", full: "Taxes & deductions", cents: -(w.withholding + w.additionalTaxes - w.refunds + w.otherDeductions), line: { cash: "taxes-deductions" } },
+      { label: "Employer", full: "Employer retirement & HSA", cents: w.employer, line: { cash: "employer" } },
+      { label: `${partner ?? "Partner"} kept`, full: `${partner ?? "Partner"}'s pay kept in own accounts`, cents: -w.partnerKept, line: { cash: "partner-kept" } },
+      { label: "Living", full: "Living expenses", cents: -w.living, line: { cash: "living" } },
+      { label: "One-offs", full: "One-off expenses", cents: -w.nonRecurring, line: { cash: "one-offs" } },
     ];
   } else if (c?.est) {
     const f = c.est.flows;
     flows = [
-      { label: "Income", full: "Gross income", cents: (f.salary ?? 0) + (f.bonus ?? 0) + (f.otherIncome ?? 0) },
-      { label: "Taxes", full: "Taxes & deductions", cents: -(f.taxes ?? 0) },
-      { label: "Employer", full: "Employer retirement & HSA", cents: f.employer ?? 0 },
-      { label: `${partner ?? "Partner"} kept`, full: `${partner ?? "Partner"}'s pay kept in own accounts`, cents: -c.est.partnerKept },
-      { label: "Living", full: "Living expenses", cents: -((f.living ?? 0) + (f.bonusSpent ?? 0)) },
-      { label: "One-offs", full: "One-off expenses", cents: -(f.oneOffs ?? 0) },
+      { label: "Income", full: "Gross income", cents: (f.salary ?? 0) + (f.bonus ?? 0) + (f.otherIncome ?? 0), line: { cash: "gross" } },
+      { label: "Taxes", full: "Taxes & deductions", cents: -(f.taxes ?? 0), line: { cash: "taxes-deductions" } },
+      { label: "Employer", full: "Employer retirement & HSA", cents: f.employer ?? 0, line: { cash: "employer" } },
+      { label: `${partner ?? "Partner"} kept`, full: `${partner ?? "Partner"}'s pay kept in own accounts`, cents: -c.est.partnerKept, line: { cash: "partner-kept" } },
+      { label: "Living", full: "Living expenses", cents: -((f.living ?? 0) + (f.bonusSpent ?? 0)), line: { cash: "living" } },
+      { label: "One-offs", full: "One-off expenses", cents: -(f.oneOffs ?? 0), line: { cash: "one-offs" } },
     ];
   } else return null;
-  const moved = [
-    { label: "Growth", full: "Investment growth, net of fees", cents: b.investmentGrowth },
-    { label: "Outside", full: "Outside money", cents: b.outsideMoney },
-    { label: "First on file", full: "Balances first on file", cents: b.newlyTracked },
-    { label: "In transit", full: "Transfers in transit", cents: b.inTransit },
-    { label: "Timing", full: "Timing: statements vs. paychecks", cents: b.unexplainedSavings },
+  const moved: Flow[] = [
+    { label: "Growth", full: "Investment growth, net of fees", cents: b.investmentGrowth, line: { bridge: "investmentGrowth" } },
+    { label: "Outside", full: "Outside money", cents: b.outsideMoney, line: { bridge: "outsideMoney" } },
+    { label: "First on file", full: "Balances first on file", cents: b.newlyTracked, line: { bridge: "newlyTracked" } },
+    { label: "In transit", full: "Transfers in transit", cents: b.inTransit, line: { bridge: "inTransit" } },
+    { label: "Timing", full: "Timing: statements vs. paychecks", cents: b.unexplainedSavings, line: { bridge: "unexplainedSavings" } },
   ];
   const close = ltd ? ltd.close : c?.y ? (c.y.netWorth?.netWorth ?? null) : (c?.est?.flows.close?.netWorth ?? null);
   return { flows, saved: b.cashSaved, moved, total: b.total, open: ltd ? ltd.open : close != null ? close - b.total : null, close };
@@ -88,16 +129,16 @@ function steps(l: Lines): Step[] {
     if (Math.abs(s.cents) < 50_00) return;
     const from = run;
     run += s.cents / 100;
-    out.push({ name: s.label, full: s.full, kind: s.cents >= 0 ? "up" : "down", delta: s.cents / 100, range: [Math.min(from, run), Math.max(from, run)], running: run, label: compact(s.cents / 100, true) });
+    out.push({ name: s.label, full: s.full, kind: s.cents >= 0 ? "up" : "down", delta: s.cents / 100, range: [Math.min(from, run), Math.max(from, run)], running: run, label: compact(s.cents / 100, true), line: s.line });
   };
-  const total = (name: string, full: string, cents: number) => {
+  const total = (name: string, full: string, cents: number, line: LineKey) => {
     run = cents / 100;
-    out.push({ name, full, kind: "total", delta: run, range: [Math.min(0, run), Math.max(0, run)], running: run, label: compact(run, false) });
+    out.push({ name, full, kind: "total", delta: run, range: [Math.min(0, run), Math.max(0, run)], running: run, label: compact(run, false), line });
   };
   l.flows.forEach(add);
-  total("Saved", "Saved incl. retirement", l.saved);
+  total("Saved", "Saved incl. retirement", l.saved, { bridge: "cashSaved" });
   l.moved.forEach(add);
-  total("Change", "Change in net worth", l.total);
+  total("Change", "Change in net worth", l.total, { bridge: "total" });
   return out;
 }
 
@@ -148,7 +189,7 @@ export function NetWorthWaterfall({ r, cols }: { r: AnnualProfileReport; cols: C
       }
     >
       <div className="h-[340px] w-full min-w-0" role="img" aria-label={`Waterfall of ${head}: ${s.map((x) => `${x.full} ${x.label}`).join(", ")}`}>
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle={`What moved net worth, ${head}`} cellValue={(row) => (row as Step).delta} cellProof={(row) => stepProof(row as Step, col, ltd?.cols ?? [])}>
           <BarChart data={s} margin={{ top: 20, right: 8, left: 8, bottom: 4 }} barCategoryGap="18%">
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="name" {...ui.xAxis} interval={0} tick={{ ...ui.xAxis.tick, fontSize: 10.5 }} />

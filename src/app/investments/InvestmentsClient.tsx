@@ -684,7 +684,7 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
   const s = found ?? r.growth[0]!;
   const last = s.points.at(-1);
   const blocked = s.points.filter((x) => x.blocked).length;
-  const rows = s.points.map((x) => ({ label: x.label, invested: x.investedCents / 100, value: x.valueCents / 100 }));
+  const rows = s.points.map((x) => ({ end: x.end, label: x.label, invested: x.investedCents / 100, value: x.valueCents / 100 }));
   return (
     <>
       {picker}
@@ -703,7 +703,10 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
       )}
       <Card title="Money in vs value" subtitle="Quarter-ends through the proven-through date. The gap between the lines is what the market added (or took away), after fees.">
         <div className="h-[300px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive
+            tableTitle="Money in vs value, quarter by quarter"
+            cellProof={(row, key) => derivedTarget("investments", d, "growth-point", cellKey(growthKey(s.accountId), row.end as string, key === "value" ? "value" : "money-in"))}
+          >
             <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={24} />
