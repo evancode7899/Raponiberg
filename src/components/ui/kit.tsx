@@ -852,7 +852,7 @@ export type TableRow =
       help?: string;
       /** Each figure's proof is required, as for any figure (ProofValue). */
       /** plain: a count that isn't money (an age), drawn as is; the render audit still fails on money or a rate in it. */
-      cells: ({ text: ReactNode; title?: string; dim?: boolean; proof: ProofRef; plain?: boolean; blockers?: BlockerRef[]; drawn?: FigureProps["drawn"]; quality?: FigureProps["quality"] } | null)[];
+      cells: ({ text: ReactNode; title?: string; dim?: boolean; proof: ProofRef; plain?: boolean; /** Drawn after the figure, outside it (a badge). */ after?: ReactNode; blockers?: BlockerRef[]; drawn?: FigureProps["drawn"]; quality?: FigureProps["quality"] } | null)[];
       strong?: boolean;
       /** A total that closes a section: double rule. */
       total?: boolean;
@@ -924,9 +924,12 @@ export function StatementTable({
                     {c?.plain ? (
                       c.text
                     ) : c ? (
-                      <ProofValue proof={c.proof} blockers={c.blockers} drawn={c.drawn} quality={c.quality}>
-                        {c.text}
-                      </ProofValue>
+                      <>
+                        <ProofValue proof={c.proof} blockers={c.blockers} drawn={c.drawn} quality={c.quality}>
+                          {c.text}
+                        </ProofValue>
+                        {c.after != null && <> {c.after}</>}
+                      </>
                     ) : (
                       ""
                     )}

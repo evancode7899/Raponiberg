@@ -530,13 +530,9 @@ function toRow(l: Line, cols: Col[], mode: "amounts" | "change"): TableRow {
     if ("blocked" in x) return blockedCell(x.blocked);
     if (mode === "amounts")
       return {
-        text: x.after ? (
-          <>
-            {fmtV(x.v, l.fmt)} {x.after}
-          </>
-        ) : (
-          fmtV(x.v, l.fmt)
-        ),
+        // A badge (partial) sits beside the figure, not inside it: the figure is its number alone.
+        text: fmtV(x.v, l.fmt),
+        after: x.after,
         // A plain count (an age, from the household file's birth date) isn't money; change mode doesn't compare it either.
         proof: x.proof ?? (l.fmt === "plain" ? noFigure(`${l.label}: a count, not money`) : unswept(`${l.label}: no recipe for this line`)),
         plain: !x.proof && l.fmt === "plain",

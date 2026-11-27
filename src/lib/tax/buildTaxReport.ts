@@ -1,4 +1,4 @@
-import type { Amount } from "../book/said.ts";
+import { noteBook, type Amount, type NoteBook } from "../book/said.ts";
 import { taxBlockers, taxYearThrough, yearProvenToEnd } from "../book/blockers.ts";
 import type { Book, BookBrokerage, BookStub } from "../book/load.ts";
 import { personPayYear } from "../book/pay.ts";
@@ -299,6 +299,8 @@ export type TaxReport = {
   };
   warnings: string[];
   assumptions: string[];
+  /** The amounts the notes print (warnings, assumptions, the filed check's notes), each filed under its sentence (lib/book/said.ts). */
+  said?: Amount[];
   /** The rules the estimate follows (tax law, and the choices under Inputs): words, never a figure read from the data. */
   rules: string[];
 };
@@ -341,6 +343,8 @@ export function buildTaxReport(
   const inputs = yearInputs(profile, year);
   const warnings: string[] = [];
   const assumptions: string[] = [];
+  // Notes that print amounts write them through this, so the page draws each as a figure.
+  const notes = noteBook(`tax:${year}`);
   const isCurrentYear = Number(today.slice(0, 4)) === year;
   // The current year runs through the data edge: stubs after it count once the bank
   // statements showing their deposits are on file.
@@ -424,7 +428,7 @@ export function buildTaxReport(
   // ---------------------------------------------------------------- investments
   const accounts = investmentAccounts(book.brokerage, year, profile, personFor, warnings);
   applyBrokerage1099s(accounts, useDocs ? docs : null, lastYearDocs, profile, warnings);
-  const children = childIncome(accounts, fp.kiddie, year, isForecast, warnings, assumptions);
+  const children = childIncome(accounts, fp.kiddie, year, isForecast, warnings, assumptions, notes);
 
   // Bank interest (1099-INT): an account named for one person is theirs, else joint. A
   // finished year's 1099-INT replaces the ledger's interest for its account.
@@ -561,7 +565,7 @@ export function buildTaxReport(
       : null;
     const pay = fromForecast ? { ...typedPay, paycheck: fromForecast.paycheck } : typedPay;
     if (!stubs.length && isForecast) warnings.push(`No ${year} pay stubs for ${person.name}, so the forecast counts no wages for them. Upload their latest stub.`);
-    const payroll: PayrollEntry[] = projectEmployers(stubs, params, extras.expectedBonus + (fromForecast?.bonus ?? 0), pay, isCurrentYear, through, warnings, person.name, !!fromForecast).map(
+    const payroll: PayrollEntry[] = projectEmployers(stubs, params, extras.expectedBonus + (fromForecast?.bonus ?? 0), pay, isCurrentYear, through, warnings, person.name, !!fromForecast, notes).map(
       (p) => ({ ...p, w2Doc: null, stubW2: null }),
     );
     // A finished year's W-2 forms replace what the stubs imply (each paired to its payroll by wages).
@@ -631,9 +635,10 @@ export function buildTaxReport(
     for (const k of k1s.filter((x) => x.passive && (x.passive.suspended || x.passive.carryIn))) {
       const o = k.passive!;
       const which = k.basis === "EXPECTED" ? " (its expected figures)" : k.estimate ? " (last year's, as an estimate)" : "";
+      const loss = (x: Parameters<Parameters<NoteBook["say"]>[0]>[0], cents: number, what: string) => x.usd(cents, `the passive loss ${what}, ${k.partnership}`, undefined, usd);
       if (o.suspended)
-        assumptions.push(`${person.name}'s K-1 from ${k.partnership}${which} leaves a ${usd(o.suspended)} passive loss the year can't use${o.carryIn ? ` (${usd(o.carryIn)} of it carried in from earlier years)` : ""}: there isn't enough passive income to absorb it, so it's carried forward (Form 8582), not deducted.`);
-      else assumptions.push(`${person.name}'s K-1 from ${k.partnership}${which} uses the ${usd(o.carryIn)} passive loss carried in from earlier years${k.form.final ? " (a final K-1 releases it in full)" : ""}.`);
+        assumptions.push(notes.say((x) => `${person.name}'s K-1 from ${k.partnership}${which} leaves a ${loss(x, o.suspended, "the year can't use")} passive loss the year can't use${o.carryIn ? ` (${loss(x, o.carryIn, "carried in from earlier years")} of it carried in from earlier years)` : ""}: there isn't enough passive income to absorb it, so it's carried forward (Form 8582), not deducted.`));
+      else assumptions.push(notes.say((x) => `${person.name}'s K-1 from ${k.partnership}${which} uses the ${loss(x, o.carryIn, "carried in from earlier years")} passive loss carried in from earlier years${k.form.final ? " (a final K-1 releases it in full)" : ""}.`));
     }
 
     const chetCents = mine.filter(({ a }) => a.isChet).reduce((s, { a, share }) => s + Math.round((chetByAccount.get(a.accountNumber) ?? 0) * share), 0);
@@ -649,8 +654,13 @@ export function buildTaxReport(
     const k401Excess = { ytd: pos(k401Deferred.ytd - k401Cap), projected: pos(k401Deferred.projected - k401Cap) };
     const k401: PersonReport["k401"] = { limit: k401Cap, deferred: k401Deferred, excess: k401Excess, excessDeferral: excessDeferral(book, person.id, year, k401Excess.projected) };
     if (k401.excessDeferral) {
-      const m = excessDeferralMessage(person.name, year, k401Cap, k401Deferred.projected, k401.excessDeferral);
-      (m.ok ? assumptions : warnings).push(m.text);
+      let ok = false;
+      const text = notes.say((x) => {
+        const m = excessDeferralMessage(person.name, year, k401Cap, k401Deferred.projected, k401.excessDeferral!, x);
+        ok = m.ok;
+        return m.text;
+      });
+      (ok ? assumptions : warnings).push(text);
     }
     const w2s: W2[] = payroll.map((p) => p.w2Projected);
     const half = (n: number) => Math.round(n / nPeople);
@@ -963,7 +973,10 @@ export function buildTaxReport(
   }
   if (residency.ct === "PART_YEAR") {
     assumptions.push(
-      `Connecticut part-year resident${residency.movedIn ? ` from ${residency.movedIn}` : ""} (CT-1040NR/PY): the tax on the whole year's income is cut to the Connecticut-source share — wages from the W-2s' Connecticut lines${useDocs ? "" : " (else stubs paid after the move)"} and ${Math.round((residency.investmentShare ?? 0) * 1000) / 10}% of investment income.`,
+      notes.say(
+        (x) =>
+          `Connecticut part-year resident${residency.movedIn ? ` from ${residency.movedIn}` : ""} (CT-1040NR/PY): the tax on the whole year's income is cut to the Connecticut-source share — wages from the W-2s' Connecticut lines${useDocs ? "" : " (else stubs paid after the move)"} and ${x.pct(residency.investmentShare ?? 0, "the Connecticut-source share of investment income", 1)} of investment income.`,
+      ),
     );
   } else if (residency.ct === "NONRESIDENT") {
     assumptions.push("Not a Connecticut resident this year: Connecticut taxes only Connecticut-source income (CT-1040NR/PY).");
@@ -973,8 +986,8 @@ export function buildTaxReport(
     const city = ny.city === "RESIDENT" ? " and New York City resident tax" : ny.city === "PART_YEAR" ? ` and part-year New York City tax (IT-360.1, ${ny.filing.cityMonths} months)` : "";
     assumptions.push(
       ny.state === "RESIDENT"
-        ? `New York: full-year resident (IT-201, per ${where}) — State tax${city} on all income, with the tax computation worksheets' recapture above $107,650 of AGI, the standard deduction and the NYC school tax credit.`
-        : `New York: ${ny.state === "PART_YEAR" ? `part-year resident${ny.movedOut ? ` until ${ny.movedOut}` : ""}` : "nonresident"} (IT-203, per ${where}) — the tax on all income is cut to the New York share: wages from the W-2s' New York lines and ${Math.round((people[0]?.nySource?.investmentShare ?? 0) * 1000) / 10}% of investment income${city}.`,
+        ? notes.say((x) => `New York: full-year resident (IT-201, per ${where}) — State tax${city} on all income, with the tax computation worksheets' recapture above ${x.usd(10_765_000, "New York's recapture threshold of AGI, set by law", undefined, usd)} of AGI, the standard deduction and the NYC school tax credit.`)
+        : notes.say((x) => `New York: ${ny.state === "PART_YEAR" ? `part-year resident${ny.movedOut ? ` until ${ny.movedOut}` : ""}` : "nonresident"} (IT-203, per ${where}) — the tax on all income is cut to the New York share: wages from the W-2s' New York lines and ${x.pct(people[0]?.nySource?.investmentShare ?? 0, "the New York share of investment income", 1)} of investment income${city}.`),
       "New York itemized deductions and credits other than the NYC school tax credit (household, child, college tuition) aren't modeled; they phase out well below this household's income.",
     );
   }
@@ -1016,6 +1029,7 @@ export function buildTaxReport(
     plan,
     warnings,
     assumptions,
+    said: notes.amounts,
     rules,
   };
   if (docs.all.length) {
@@ -1024,7 +1038,7 @@ export function buildTaxReport(
     report.documents = {
       files: docs.all.map((d) => ({ id: d.id, file: d.file, kind: d.kind, superseded: d.superseded, warnings: d.warnings, personId: ownerOfDoc.get(d.id) ?? null })),
       filed: { federal: docs.federal, ct: docs.ct, ny: docs.ny },
-      check: docs.federal || docs.ct ? checkFiled(report, docs) : null,
+      check: docs.federal || docs.ct ? checkFiled(report, docs, notes) : null,
     };
   }
   return report;
@@ -1248,6 +1262,7 @@ function projectEmployers(
   warnings: string[],
   name: string,
   basisFromForecast = false,
+  notes: NoteBook = noteBook("tax"),
 ): (PayrollProjection & { active: boolean })[] {
   const byEmployer = new Map<string, BookStub[]>();
   for (const s of stubs) byEmployer.set(s.employerKey, [...(byEmployer.get(s.employerKey) ?? []), s]);
@@ -1266,12 +1281,14 @@ function projectEmployers(
     const latest = p.latestRegular?.amounts.gross ?? 0;
     const typical = p.typicalRegular?.amounts.gross ?? 0;
     if (isCurrentYear && p.remainingPayDates.length && typical > 0 && Math.abs(latest - typical) / typical > 0.15) {
-      const change = `${name}'s latest regular ${p.employer} paycheck (${p.latestRegular!.payDate}, ${usd(latest)} gross) is ${Math.round((Math.abs(latest - typical) / typical) * 100)}% ${latest < typical ? "below" : "above"} the typical recent one (${usd(typical)})`;
       const where = basisFromForecast ? "on the Forecast page" : "under Inputs";
       warnings.push(
-        p.basis === "LATEST"
-          ? `${change}. The forecast repeats the latest; if it was a one-off, switch ${name}'s paycheck to "typical" ${where}.`
-          : `${change}. The forecast repeats the typical paycheck, as chosen ${where}.`,
+        notes.say((x) => {
+          const change = `${name}'s latest regular ${p.employer} paycheck (${p.latestRegular!.payDate}, ${x.usd(latest, `gross pay on the ${p.latestRegular!.payDate} stub`, undefined, usd)} gross) is ${x.pct(Math.abs(latest - typical) / typical, "how far it is from the typical recent paycheck")} ${latest < typical ? "below" : "above"} the typical recent one (${x.usd(typical, "the typical recent paycheck's gross pay", undefined, usd)})`;
+          return p.basis === "LATEST"
+            ? `${change}. The forecast repeats the latest; if it was a one-off, switch ${name}'s paycheck to "typical" ${where}.`
+            : `${change}. The forecast repeats the typical paycheck, as chosen ${where}.`;
+        }),
       );
     }
     return { ...p, active };
@@ -1398,6 +1415,7 @@ export function childIncome(
   isForecast: boolean,
   warnings: string[],
   assumptions: string[],
+  notes: NoteBook = noteBook("tax"),
 ): ChildIncome[] {
   const byChild = new Map<string, AccountIncome[]>();
   // A Trump Account's income is tax-deferred: it's no one's until withdrawn.
@@ -1408,18 +1426,22 @@ export function childIncome(
     // The rule is decided on the full-year figure; a finished year's projection is its total.
     const rule: ChildIncome["rule"] = projected <= limits.exempt ? "UNDER_EXEMPT" : projected <= limits.threshold ? "CHILD_RATE" : "KIDDIE_TAX";
     const parentElectionAllowed = projected < limits.parentElectionMax && as.every((a) => a.projected.shortTermGain === 0 && a.projected.longTermGain === 0);
-    const amount = `${usd(projected)}${isForecast ? " projected" : ""} for ${year}`;
-    const where = `${name}'s custodial account income (${as.map((a) => a.label).join(", ")}: ${amount})`;
+    type Say = Parameters<Parameters<NoteBook["say"]>[0]>[0];
+    const law = (x: Say, cents: number, what: string) => x.usd(cents, `the kiddie-tax ${what}, set by law`, undefined, usd);
+    const where = (x: Say) => `${name}'s custodial account income (${as.map((a) => a.label).join(", ")}: ${x.usd(projected, `${name}'s unearned income${isForecast ? ", projected" : ""}`, undefined, usd)}${isForecast ? " projected" : ""} for ${year})`;
     if (rule === "UNDER_EXEMPT") {
-      assumptions.push(`${where} is ${name}'s, not yours, so it's left off your return. It's under ${usd(limits.exempt)}: no tax and no return for ${name}.`);
+      assumptions.push(notes.say((x) => `${where(x)} is ${name}'s, not yours, so it's left off your return. It's under ${law(x, limits.exempt, "exempt amount")}: no tax and no return for ${name}.`));
     } else {
-      const election = parentElectionAllowed
-        ? ` Or you can report it on your own return with Form 8814 instead; this estimate leaves it off.`
-        : ` Form 8814 (reporting it on your return) isn't available: ${projected >= limits.parentElectionMax ? `it's ${usd(limits.parentElectionMax)} or more` : "it includes realized gains from sales"}.`;
+      const election = (x: Say) =>
+        parentElectionAllowed
+          ? ` Or you can report it on your own return with Form 8814 instead; this estimate leaves it off.`
+          : ` Form 8814 (reporting it on your return) isn't available: ${projected >= limits.parentElectionMax ? `it's ${law(x, limits.parentElectionMax, "Form 8814 ceiling")} or more` : "it includes realized gains from sales"}.`;
       warnings.push(
-        rule === "CHILD_RATE"
-          ? `${where} is over ${usd(limits.exempt)}, so a return must be filed for ${name}: the part over ${usd(limits.exempt)} is taxed at ${name}'s rate.${election}`
-          : `${where} is over ${usd(limits.threshold)}, so the kiddie tax applies: ${name}'s return (Form 8615) taxes the part over ${usd(limits.threshold)} at your rate.${election}`,
+        notes.say((x) =>
+          rule === "CHILD_RATE"
+            ? `${where(x)} is over ${law(x, limits.exempt, "exempt amount")}, so a return must be filed for ${name}: the part over ${law(x, limits.exempt, "exempt amount")} is taxed at ${name}'s rate.${election(x)}`
+            : `${where(x)} is over ${law(x, limits.threshold, "threshold")}, so the kiddie tax applies: ${name}'s return (Form 8615) taxes the part over ${law(x, limits.threshold, "threshold")} at your rate.${election(x)}`,
+        ),
       );
     }
     return { name, accounts: as.map((a) => a.label), ytd, projected, rule, parentElectionAllowed, limits };

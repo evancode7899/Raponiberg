@@ -97,3 +97,39 @@ export const statementLine = (label: string, cents: number, importId: string | n
 export const rowLine = (label: string, cents: number, rowId: string | null | undefined): SaidLine => ({ label, cents, ...(rowId ? { link: { label: "The row", descriptor: { report: "row", rowId } } } : {}) });
 /** A pay stub as a sentence's line. */
 export const stubLine = (label: string, cents: number, stubId: string | null | undefined): SaidLine => ({ label, cents, ...(stubId ? { link: { label: "The stub", descriptor: { report: "stub", stubId } } } : {}) });
+
+/**
+ * A report's notes (a tax year's assumptions, warnings and filed-return notes): each sentence
+ * written with `say`, its amounts keyed in the order the report writes them (`scope|n`, stable
+ * for the same data) and filed under the finished sentence, so a page draws any note with
+ * <Said field={note}> from the report's `amounts` alone.
+ */
+export function noteBook(scope: string) {
+  const amounts: Amount[] = [];
+  let n = 0;
+  return {
+    amounts,
+    say(write: (s: Sayer) => string): string {
+      const pending: Amount[] = [];
+      const s: Sayer = {
+        usd(cents, describes, lines, f = cents2) {
+          const text = f(cents);
+          pending.push({ key: `${scope}|${n++}`, field: "", text, value: { cents }, describes, ...(lines?.length ? { lines } : {}) });
+          return text;
+        },
+        pct(ratio, describes, digits = 0) {
+          const text = `${(Math.round(ratio * 100 * 10 ** digits) / 10 ** digits).toFixed(digits)}%`;
+          pending.push({ key: `${scope}|${n++}`, field: "", text, value: { ratio }, describes });
+          return text;
+        },
+        get amounts() {
+          return pending;
+        },
+      };
+      const text = write(s);
+      for (const a of pending) amounts.push({ ...a, field: text });
+      return text;
+    },
+  };
+}
+export type NoteBook = ReturnType<typeof noteBook>;

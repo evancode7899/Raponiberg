@@ -19,6 +19,7 @@ import { normalizeRetirementSettings, RETIREMENT_SETTINGS_KEY } from "../../taxA
 import { buildMoneyCalendar, calendarYears, type CalendarYear } from "../reports/moneyCalendar.ts";
 import { buildTaxAccounts } from "../reports/taxAccounts.ts";
 import { integrityDerived } from "./integrity.ts";
+import { amountFigures } from "./said.ts";
 import { marginalDerived, movedDerived, taxesDerived } from "./taxes.ts";
 import { taxMoved } from "../../tax/whyMoved.ts";
 import { forecastDerived, vsActualDerived } from "./forecast.ts";
@@ -129,9 +130,11 @@ const LOADERS: Record<DerivedPage, ((ctx: ProofContext) => Promise<DerivedList>)
       // Overview › why tax moved: against the year before, where it is proven too (the route builds it the same way).
       const prior = ys.find((p) => p.year === y.year - 1)?.tax;
       const moved = prior && !prior.blocked ? movedDerived(taxMoved(y.tax as TaxReport, prior as TaxReport)) : [];
-      return [...taxesDerived(y.tax as TaxReport), ...(y.year === year ? marginalDerived(y.tax as TaxReport) : []), ...moved];
+      // The amounts the year's notes print (lib/book/said.ts), each a figure where it's drawn.
+      return [...taxesDerived(y.tax as TaxReport), ...(y.year === year ? marginalDerived(y.tax as TaxReport) : []), ...moved, ...amountFigures((y.tax as TaxReport).said ?? [])];
     });
-    return { figures, rederived: declared(TAXES_WHY)(figures), scope: null, through: ctx.book.horizon.cashFlow };
+    const said = figures.filter((f) => f.figure === "amount");
+    return { figures, rederived: { ...declared(TAXES_WHY)(figures.filter((f) => f.figure !== "amount")), ...declared(SAID_WHY)(said) }, scope: null, through: ctx.book.horizon.cashFlow };
   },
   forecast: async ({ book, db }) => {
     const { forecast, data } = await loadForecast(db, book);

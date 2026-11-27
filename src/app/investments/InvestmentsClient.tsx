@@ -218,8 +218,14 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
               {r.concentration.map((c) => (
                 <tr key={c.key} className={table.trHover}>
                   <td className={table.td}>
-                    <span className="font-medium">{c.symbol ?? c.name}</span>
-                    {c.symbol && <span className="ml-2 text-xs text-muted">{c.name}</span>}
+                    <span className="font-medium">
+                      <NotFigure why={SECURITY_NAME}>{c.symbol ?? c.name}</NotFigure>
+                    </span>
+                    {c.symbol && (
+                      <span className="ml-2 text-xs text-muted">
+                        <NotFigure why={SECURITY_NAME}>{c.name}</NotFigure>
+                      </span>
+                    )}
                   </td>
                   <td className={`${table.td} text-xs text-muted`}>{c.accounts.join(", ")}</td>
                   <td className={table.tdR}><ProofValue proof={derivedTarget("investments", d, "concentration", c.key)}>{usd0(c.cents)}</ProofValue></td>
@@ -496,8 +502,14 @@ function Classify({ data, save, saving }: { data: Data; save: (s: InvestmentSett
               return (
                 <tr key={u.key} className={table.tr}>
                   <td className={table.td}>
-                    <span className="font-medium">{u.symbol ?? u.name}</span>
-                    {u.symbol && <span className="ml-2 text-xs text-muted">{u.name}</span>}
+                    <span className="font-medium">
+                      <NotFigure why={SECURITY_NAME}>{u.symbol ?? u.name}</NotFigure>
+                    </span>
+                    {u.symbol && (
+                      <span className="ml-2 text-xs text-muted">
+                        <NotFigure why={SECURITY_NAME}>{u.name}</NotFigure>
+                      </span>
+                    )}
                   </td>
                   <td className={table.tdR}>
                     <ProofValue proof={derivedTarget("investments", d, "unclassified", u.key)}>{usd0(u.cents)}</ProofValue>
@@ -556,7 +568,9 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
             <tbody>
               {funds.map((p, i) => (
                 <tr key={i} className={table.trHover}>
-                  <td className={`${table.td} font-medium`}>{p.symbol ?? p.name}</td>
+                  <td className={`${table.td} font-medium`}>
+                    <NotFigure why={SECURITY_NAME}>{p.symbol ?? p.name}</NotFigure>
+                  </td>
                   <td className={`${table.td} text-xs text-muted`}>{p.account}</td>
                   <td className={table.tdR}><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></td>
                   <td className={table.tdR}><ProofValue proof={posFig(d, p, "ratio")}>{ratio(p.expenseRatio)}</ProofValue></td>
@@ -575,7 +589,9 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
             {unknown.map((p, i) => (
               <li key={i} className="flex justify-between gap-4">
                 <span>
-                  <span className="font-medium">{p.symbol ?? p.name}</span> <span className="text-muted">· {p.account}</span>
+                  <span className="font-medium">
+                      <NotFigure why={SECURITY_NAME}>{p.symbol ?? p.name}</NotFigure>
+                    </span> <span className="text-muted">· {p.account}</span>
                 </span>
                 <span className="num"><ProofValue proof={positionTarget(p)}>{usd0(p.valueCents)}</ProofValue></span>
               </li>
@@ -642,7 +658,9 @@ function Gains({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) 
                 {r.gains.harvest.map((p, i) => (
                   <tr key={i} className={table.trHover}>
                     <td className={table.td}>
-                      <span className="font-medium">{p.symbol ?? p.name}</span>
+                      <span className="font-medium">
+                      <NotFigure why={SECURITY_NAME}>{p.symbol ?? p.name}</NotFigure>
+                    </span>
                       {p.kind === "OPTION" && <Badge tone="neutral">option</Badge>}
                     </td>
                     <td className={`${table.td} text-xs text-muted`}>{p.account}</td>
@@ -674,7 +692,9 @@ function Gains({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) 
                 .sort((a, b) => b.unrealizedCents! - a.unrealizedCents!)
                 .map((p, i) => (
                   <tr key={i} className={table.trHover}>
-                    <td className={`${table.td} font-medium`}>{p.symbol ?? p.name}</td>
+                    <td className={`${table.td} font-medium`}>
+                    <NotFigure why={SECURITY_NAME}>{p.symbol ?? p.name}</NotFigure>
+                  </td>
                     <td className={`${table.td} text-xs text-muted`}>
                       {p.account} · {p.treatment}
                     </td>

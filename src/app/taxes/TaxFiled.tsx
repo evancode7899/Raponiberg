@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { Amount } from "@/lib/book/said";
+import { Said } from "@/components/ui/proof/Said";
 import { NA } from "@/lib/formatMoney";
 import { Card } from "@/components/ledger/LedgerBits";
 import { Badge, btn, EmptyState, table } from "@/components/ui/kit";
@@ -93,7 +95,9 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
           <ul className="flex flex-col gap-2 text-sm">
             {check.suggestions.map((s) => (
               <li key={s.id} className="flex flex-wrap items-center gap-2">
-                <span className="min-w-0 flex-1 text-fg-2">{s.text}</span>
+                <span className="min-w-0 flex-1 text-fg-2">
+                  <Said text={s.text} amounts={r.said} field={s.text} page="taxes" />
+                </span>
                 <button type="button" className={btn.secondary} disabled={busy !== null} onClick={() => void apply([s], s.id)}>
                   {busy === s.id ? "Saving…" : "Apply"}
                 </button>
@@ -115,14 +119,15 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
         </Callout>
       )}
 
-      {check && check.federal.length > 0 && <LineTable year={r.year} jurisdiction="FEDERAL" title={`Federal ${docs.filed.federal?.form ?? "1040"}`} lines={check.federal} file={docs.filed.federal ? fileOf(docs, "RETURN_FEDERAL") : null} />}
-      {check && check.ct.length > 0 && <LineTable year={r.year} jurisdiction="CT" title={`Connecticut ${docs.filed.ct?.form}`} lines={check.ct} file={fileOf(docs, "RETURN_CT")} />}
+      {check && check.federal.length > 0 && <LineTable year={r.year} jurisdiction="FEDERAL" title={`Federal ${docs.filed.federal?.form ?? "1040"}`} said={r.said} lines={check.federal} file={docs.filed.federal ? fileOf(docs, "RETURN_FEDERAL") : null} />}
+      {check && check.ct.length > 0 && <LineTable year={r.year} jurisdiction="CT" title={`Connecticut ${docs.filed.ct?.form}`} said={r.said} lines={check.ct} file={fileOf(docs, "RETURN_CT")} />}
       {check && check.ny.length > 0 && (
         <LineTable
           year={r.year}
           jurisdiction="NY"
           title={`New York ${docs.filed.ny?.form}`}
           lines={check.ny}
+          said={r.said}
           file={fileOf(docs, "RETURN_NY")}
           subtitle={
             r.ny
@@ -131,7 +136,7 @@ export function TaxFiled({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfile
           }
         />
       )}
-      {check && check.sources.length > 0 && <SourceTable sources={check.sources} cell={cell} />}
+      {check && check.sources.length > 0 && <SourceTable sources={check.sources} cell={cell} said={r.said} />}
 
       <Card title={`Documents for ${r.year}`} subtitle="Everything in the year's folder, as read. Superseded copies (rejected e-files, previews) are listed but not used.">
         <div className={table.wrap}>
@@ -177,7 +182,7 @@ const ESTIMATE_PREFIX: Record<FiledJurisdiction, string> = { FEDERAL: "fed", CT:
  * Each filed amount opens its proof: the document, form, page and line it was read from, and
  * the app's figure against it; each "This app" figure opens the tax estimate's proof of it.
  */
-function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year: number; jurisdiction: FiledJurisdiction; title: string; lines: CheckLine[]; file: string | null; subtitle?: string }) {
+function LineTable({ year, jurisdiction, title, lines, file, subtitle, said }: { year: number; jurisdiction: FiledJurisdiction; title: string; lines: CheckLine[]; file: string | null; subtitle?: string; said?: Amount[] }) {
   return (
     <Card title={title} subtitle={[subtitle, file && `Filed copy: ${file}`].filter(Boolean).join(" ")}>
       <div className={table.wrap}>
@@ -197,7 +202,7 @@ function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year:
                 <td className={`${table.td} whitespace-nowrap text-xs text-muted`}>{l.where}</td>
                 <td className={table.td}>
                   <div>{l.label}</div>
-                  {l.note && <div className="mt-0.5 text-xs text-muted">{l.note}</div>}
+                  {l.note && <div className="mt-0.5 text-xs text-muted"><Said text={l.note} amounts={said} field={l.note} page="taxes" /></div>}
                 </td>
                 <td className={table.tdR}>
                   <ProofValue proof={{ descriptor: { report: "filed-return", year, jurisdiction, key: l.key }, shownCents: l.percent || l.filed == null ? null : l.filed }}>{show(l, l.filed)}</ProofValue>
@@ -221,7 +226,7 @@ function LineTable({ year, jurisdiction, title, lines, file, subtitle }: { year:
   );
 }
 
-function SourceTable({ sources, cell }: { sources: SourceCheck[]; cell: (row: string, col: string, text: ReactNode) => ReactNode }) {
+function SourceTable({ sources, cell, said }: { sources: SourceCheck[]; cell: (row: string, col: string, text: ReactNode) => ReactNode; said?: Amount[] }) {
   const tone = { MATCH: "pos", DIFFERENT: "neg", LEDGER_MISSING: "info" } as const;
   const label = { MATCH: "matches", DIFFERENT: "differs", LEDGER_MISSING: "form only" };
   return (
@@ -241,7 +246,7 @@ function SourceTable({ sources, cell }: { sources: SourceCheck[]; cell: (row: st
               <tr key={i} className={table.tr}>
                 <td className={table.td}>
                   <div>{s.label}</div>
-                  {s.note && <div className="mt-0.5 text-xs text-muted">{s.note}</div>}
+                  {s.note && <div className="mt-0.5 text-xs text-muted"><Said text={s.note} amounts={said} field={s.note} page="taxes" /></div>}
                 </td>
                 <td className={table.tdR}>{cell(`source:${i}`, "document", usd(s.documentValue))}</td>
                 <td className={table.tdR}>{s.ledgerValue == null ? usd(null) : cell(`source:${i}`, "ledger", usd(s.ledgerValue))}</td>
