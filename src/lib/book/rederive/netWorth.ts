@@ -8,8 +8,8 @@ import { centsRoute, invariant, ratioRoute, rederiveList, textRoute } from "../p
 import type { Rederivation, RederivedRoute } from "../proof/types.ts";
 import { markStep } from "../reports/records.ts";
 import { drawdown } from "../reports/drawdown.ts";
-import { readPriceIndex } from "../../priceIndex.ts";
-import { addMonths, BENCHMARK, indexChange } from "../../priceIndexMath.ts";
+import { addMonths, indexChange } from "../../priceIndexMath.ts";
+import { fundBenchmark } from "../reports/fundBenchmark.ts";
 import { cashFlowRows, dayOfFor } from "../reports/cashFlow.ts";
 import type { NetWorthChangesReport } from "../reports/netWorthChanges.ts";
 
@@ -193,10 +193,11 @@ export function rederiveNetWorth(book: Book, figures: readonly DerivedFigure[], 
         return [ratioRoute(`each month re-worked from ${of} (Modified Dietz), chained`, v, c.total, `${c.months} of ${periodsBetween(start, end, "month").length} months measured, chained`, 1e-9)];
       }
       case "benchmark-return": {
-        const s = readPriceIndex().series[BENCHMARK];
+        // The fund's statements re-read from the Book: its prices and the dividends its account's statements print.
+        const s = fundBenchmark(book.holdings, book.brokerage, book.benchmarkFund ?? null)?.series;
         const from = portfolioFrom;
         if (!from || !f.key) return null;
-        return [ratioRoute("the price-index file, read again", v, indexChange(s, addMonths(from.slice(0, 7), -1), f.key)?.change ?? null, "the level that month over the level before the stretch, less one", 1e-12)];
+        return [ratioRoute("the fund's statement prices and dividends, re-read from the Book", v, indexChange(s, addMonths(from.slice(0, 7), -1), f.key)?.change ?? null, "the level that month over the level before the stretch, less one", 1e-12)];
       }
       case "benchmark-portfolio": {
         const from = portfolioFrom;

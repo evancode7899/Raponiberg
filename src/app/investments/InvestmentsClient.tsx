@@ -25,7 +25,13 @@ import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/t
 const TYPED_TARGET = "your target allocation, as you typed it";
 
 const TABS = ["overview", "holdings", "fees", "gains", "growth", "funds"] as const;
-type Data = { report: InvestmentsReport; settings: InvestmentSettings; /** The forecast's return. */ returnRate: number };
+type Data = {
+  report: InvestmentsReport;
+  settings: InvestmentSettings;
+  /** The forecast's return. */ returnRate: number;
+  /** The broad US index funds held, most statement months first (Net worth › Investment returns' benchmark). */
+  benchmarkFunds?: { key: string; name: string; months: number }[];
+};
 
 /** Each asset class keeps one chart slot everywhere; unclassified is the neutral gray. */
 export function classColor(p: ChartPalette, c: ClassId) {
@@ -188,6 +194,7 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
       </Card>
       <IdleCash r={r} d={d} />
       <TargetCard data={data} save={save} saving={saving} cls={cls} />
+      <BenchmarkFundCard data={data} save={save} saving={saving} />
       <Card
         title="Largest positions"
         subtitle={
@@ -230,6 +237,38 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
         </div>
       </Card>
     </>
+  );
+}
+
+/**
+ * Which fund Net worth › Investment returns compares the portfolio with: a broad US index fund
+ * the household holds, its return read off its own statements (prices and dividends). Blank
+ * picks the one the statements price most often.
+ */
+function BenchmarkFundCard({ data, save, saving }: { data: Data; save: (s: InvestmentSettings) => void; saving: boolean }) {
+  const funds = data.benchmarkFunds ?? [];
+  const pick = data.settings.benchmarkFund && funds.some((f) => f.key === data.settings.benchmarkFund) ? data.settings.benchmarkFund : "";
+  return (
+    <Card
+      title="Benchmark fund"
+      subtitle="Investment returns sets your portfolio against a broad US index fund you already hold, its return read off your own statements: its price at each statement and the dividends they print. Nothing is downloaded."
+    >
+      {funds.length ? (
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted">Compare with</span>
+          <select className={selectCls} value={pick} disabled={saving} onChange={(e) => save({ ...data.settings, benchmarkFund: e.target.value || null })} aria-label="Benchmark fund">
+            <option value="">The one on the most statements ({funds[0]!.name})</option>
+            {funds.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.name} · {f.months} statement month{f.months === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className="text-xs text-muted">No broad US index fund (total market or S&amp;P 500) on your statements yet, so Investment returns has no benchmark.</p>
+      )}
+    </Card>
   );
 }
 
@@ -684,7 +723,7 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
   const s = found ?? r.growth[0]!;
   const last = s.points.at(-1);
   const blocked = s.points.filter((x) => x.blocked).length;
-  const rows = s.points.map((x) => ({ label: x.label, invested: x.investedCents / 100, value: x.valueCents / 100 }));
+  const rows = s.points.map((x) => ({ end: x.end, label: x.label, invested: x.investedCents / 100, value: x.valueCents / 100 }));
   return (
     <>
       {picker}
@@ -703,7 +742,10 @@ function Growth({ r, funds }: { r: InvestmentsReport; funds: FundsPage | null })
       )}
       <Card title="Money in vs value" subtitle="Quarter-ends through the proven-through date. The gap between the lines is what the market added (or took away), after fees.">
         <div className="h-[300px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive
+            tableTitle="Money in vs value, quarter by quarter"
+            cellProof={(row, key) => derivedTarget("investments", d, "growth-point", cellKey(growthKey(s.accountId), row.end as string, key === "value" ? "value" : "money-in"))}
+          >
             <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={24} />

@@ -13,7 +13,7 @@ import { axisUsd, formatPercentRatio, formatUsd, NA, usd0, usdDelta } from "@/li
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { unswept } from "@/lib/book/proof/clearance";
-import { monthStory } from "@/lib/book/reports/monthStory";
+import { monthStory, type MonthStory } from "@/lib/book/reports/monthStory";
 
 type Granularity = NetWorthChangesReport["granularity"];
 
@@ -108,7 +108,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
       : `the first proven ${unit}, so there's nothing before it to compare with`;
   return (
     <>
-      {granularity === "month" && <StoryCard p={p} />}
+      {granularity === "month" && <StoryCard p={p} typical={typical} />}
       <Card
         tone="overview"
         title={
@@ -146,7 +146,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
       <SplitCard p={p} granularity={granularity} steps={steps} />
 
       <Card title="From opening to closing" subtitle="Each bar starts where the one before it ends; the last is the whole change. Hover a step's name in the table below for what it holds.">
-        <Waterfall p={p} />
+        <Waterfall p={p} stepProof={(x) => (x.proof ? proofOf(x.proof, x.key === "spending" ? p.spendingCents : x.cents) : derivedTarget("net-worth", steps, "change-step", changeStepKey(granularity, p.start, x.key)))} />
       </Card>
 
       <Card title={t ? `Against your average ${unit}` : "Step by step"} subtitle="Click a figure for the rows behind it. The steps add up to the change to the cent; each one's part of it is beside it. Steps without their own proof are parts of the change's proof (click Change above).">
@@ -225,7 +225,7 @@ function Period({ p, granularity, compareWith, picker, steps }: { p: NetWorthCha
 }
 
 /** The month in five sentences and one picture (reports/monthStory.ts): its numbers are this tab's own figures. */
-function StoryCard({ p }: { p: NetWorthChange }) {
+function StoryCard({ p, typical }: { p: NetWorthChange; typical: (what: string) => ProofRef }) {
   const s = useMemo(() => monthStory(p), [p]);
   const chart = useChartPalette();
   const ui = chartChrome(chart);
@@ -248,7 +248,14 @@ function StoryCard({ p }: { p: NetWorthChange }) {
             <span><span aria-hidden className="mr-1 inline-block h-2 w-2" style={{ background: chart.neutral }} />average</span>
           </div>
           <div className="min-h-0 flex-1">
-          <RechartsResponsive>
+          <RechartsResponsive
+            tableTitle={`${p.label} against its average`}
+            cellProof={(r, key) => {
+              const k = r.key as MonthStory["bars"][number]["key"];
+              const cents = { income: p.incomeCents, spending: p.spendingCents, saved: p.savedCents, markets: p.marketsCents }[k];
+              return key === "now" ? proofOf(p.proofs[k], cents) : typical(k);
+            }}
+          >
             <BarChart data={s.bars} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={1}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} interval={0} />
@@ -306,21 +313,24 @@ function Movers({ title, empty, rows, typical, spending = false }: { title: stri
   );
 }
 
-function Waterfall({ p }: { p: NetWorthChange }) {
+function Waterfall({ p, stepProof }: { p: NetWorthChange; stepProof: (s: NetWorthChange["steps"][number]) => ProofRef }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   // Each bar floats from its step's start to its end: an invisible base, then the step's size.
   const rows = useMemo(
     () => [
-      ...p.steps.map((s) => ({ label: s.label, base: Math.min(s.fromCents, s.toCents) / 100, size: Math.abs(s.cents) / 100, cents: s.cents, kind: s.cents >= 0 ? "up" : "down" })),
-      { label: "Change", base: Math.min(0, p.changeCents) / 100, size: Math.abs(p.changeCents) / 100, cents: p.changeCents, kind: "total" },
+      ...p.steps.map((s) => ({ step: s, label: s.label, base: Math.min(s.fromCents, s.toCents) / 100, size: Math.abs(s.cents) / 100, cents: s.cents, kind: s.cents >= 0 ? "up" : "down" })),
+      { step: null, label: "Change", base: Math.min(0, p.changeCents) / 100, size: Math.abs(p.changeCents) / 100, cents: p.changeCents, kind: "total" },
     ],
     [p],
   );
   const fill = (kind: string) => (kind === "total" ? chart.lineBalance : kind === "up" ? chart.principal : chart.debt);
   return (
     <div className="h-[300px] w-full min-w-0">
-      <RechartsResponsive>
+      <RechartsResponsive
+        tableTitle="From opening to closing, step by step"
+        cellProof={(r) => ((r.step as NetWorthChange["steps"][number] | null) ? stepProof(r.step as NetWorthChange["steps"][number]) : proofOf(p.proofs.change, p.changeCents))}
+      >
         <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid {...ui.grid} />
           <XAxis dataKey="label" {...ui.xAxis} interval={0} />
@@ -330,7 +340,7 @@ function Waterfall({ p }: { p: NetWorthChange }) {
             {...ui.tooltip}
             formatter={(_v, name, item) => (name === "base" ? [null, null] : [formatUsd(Math.round(Number((item.payload as { cents: number }).cents) / 100)), "Change"])}
           />
-          <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
+          <Bar dataKey="base" stackId="w" fill="transparent" legendType="none" isAnimationActive={false} />
           <Bar dataKey="size" stackId="w" maxBarSize={56} isAnimationActive={false}>
             {rows.map((row) => (
               <Cell key={row.label} fill={fill(row.kind)} />

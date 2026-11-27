@@ -86,7 +86,7 @@ export function GrowthTab({ r }: { r: HsaReport }) {
           <p className="text-xs text-muted">Nothing unreimbursed to project.</p>
         ) : (
           <div className="h-64">
-            <RechartsResponsive>
+            <RechartsResponsive tableTitle={`Letting the receipts ride until ${g.planYear}, year by year`} cellProof={(row, key) => dp("path", cellKey("years", String(row.year), key))}>
               <LineChart data={g.path.map((x) => ({ year: x.year, hsa: x.hsaCents / 100, taxable: x.taxableCents / 100 }))} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid {...chrome.grid} />
                 <XAxis dataKey="year" {...chrome.xAxis} />

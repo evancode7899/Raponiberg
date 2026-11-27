@@ -483,3 +483,36 @@ export function stressTest(plan: OutlookPlan, opts: { volatility: number; paths?
     coveredThroughout: plan.walkAwayYear != null && planYears.some((y) => !y.working) ? covered / n : null,
   };
 }
+
+/** The series FIRE's Overview chart draws for a year (FireTarget), each a figure the sweep proves (planning "target"). */
+export const FIRE_TARGET_SERIES = ["plan", "fire", "lean", "fat", "coast"] as const;
+export type FireTargetSeries = (typeof FIRE_TARGET_SERIES)[number];
+/** One year of FIRE › Overview's chart, nominal cents on Jan 1: the plan's net worth, and the FIRE, Lean, Fat and Coast numbers. */
+export type FireTarget = { year: number } & Record<FireTargetSeries, number | null>;
+
+/**
+ * Net worth vs. the FIRE number, year by year from the plan's start to the year after its
+ * last: what FIRE › Overview charts (in today's dollars, divided by the deflator) and what the
+ * proof sweep holds each point to. One function, so the two can't differ.
+ */
+export function fireTargets(fa: Pick<FireAnalysis, "plan" | "rows" | "projection">): FireTarget[] {
+  const { plan } = fa;
+  const byYear = new Map(fa.rows.map((x) => [x.year, x]));
+  const last = fa.projection.at(-1);
+  if (!last) return [];
+  const out: FireTarget[] = [];
+  for (let year = plan.start.year; year <= last.year + 1; year++) {
+    const p = fa.projection.find((y) => y.year === year);
+    const row = byYear.get(year);
+    const living = livingIn(plan, year);
+    out.push({
+      year,
+      plan: p ? p.startNetWorth : last.netWorth,
+      fire: row?.fireNumber ?? fireNumber(plan, year, living),
+      lean: fireNumber(plan, year, Math.round(living * LEAN_SHARE)),
+      fat: fireNumber(plan, year, Math.round(living * FAT_SHARE)),
+      coast: row?.coastNumber ?? null,
+    });
+  }
+  return out;
+}

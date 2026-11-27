@@ -97,6 +97,7 @@ export function rederiveCar(g: GarageReport, figures: readonly DerivedFigure[]):
       case "per-day":
       case "fill-price":
       case "fill-per-mile":
+      case "per-mile-so-far":
       case "premium-monthly":
       case "premium-change":
       case "insurance-monthly":

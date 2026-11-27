@@ -4,8 +4,9 @@ import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { chartChrome, useChartPalette } from "@/components/shell/chartPalette";
 import { btn, Callout, Card, NotFigure, StatCell, StatGrid, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
-import { compositeOf, sumOf, unswept } from "@/components/ui/proof/context";
-import { FAT_SHARE, fireNumber, fiYear, LEAN_SHARE, livingIn, type FireRow } from "@/lib/fire/fire";
+import { compositeOf, sumOf, unswept, type ProofRef } from "@/components/ui/proof/context";
+import { noFigure } from "@/lib/book/proof/clearance";
+import { FAT_SHARE, fireNumber, fireTargets, fiYear, LEAN_SHARE, livingIn, type FireRow, type FireTargetSeries } from "@/lib/fire/fire";
 import type { FireFigure } from "@/lib/book/proof/planningProof";
 import { axisUsd, NA } from "@/lib/formatMoney";
 import type { OutlookSeeds } from "@/lib/profile/basePay";
@@ -87,7 +88,7 @@ export function OverviewTab({
         />
       </StatGrid>
       <Insights f={f} onGo={onGo} />
-      <TargetChart f={f} r={r} dollars={dollars} setDollars={setDollars} />
+      <TargetChart f={f} r={r} dollars={dollars} setDollars={setDollars} pf={pf} />
       <Flavors f={f} pf={pf} d={d} />
       <Milestones f={f} pf={pf} />
       <OneOffsNote f={f} r={r} s={s} d={d} livingLabel={livingLabel} livingTyped={livingTyped} />
@@ -249,37 +250,40 @@ function OneOffsNote({ f, r, s, d, livingLabel, livingTyped }: { f: FireProps["f
 }
 
 /** Net worth (actual dots, plan line) against the FIRE number it has to reach, on Jan 1 of each year. */
-function TargetChart({ f, r, dollars, setDollars }: Omit<FireProps, "d"> & { r: AnnualProfileReport }) {
+function TargetChart({ f, r, dollars, setDollars, pf }: Omit<FireProps, "d"> & { r: AnnualProfileReport; pf: FireProof }) {
   const chart = useChartPalette();
   const ui = chartChrome(chart);
   const { plan } = f;
   const data = useMemo(() => {
     const d = (x: number, v: number | null) => (v == null ? null : v / 100 / deflator(plan, dollars, x));
     const rows: Record<string, number | null>[] = [];
-    const byYear = new Map(f.rows.map((x) => [x.year, x]));
-    const last = f.projection.at(-1)!;
-    for (let year = plan.start.year; year <= last.year + 1; year++) {
-      const p = f.projection.find((y) => y.year === year);
-      const row = byYear.get(year);
-      const living = livingIn(plan, year);
-      rows.push({
-        x: year,
-        plan: d(year, p ? p.startNetWorth : last.netWorth),
-        fire: d(year, row?.fireNumber ?? fireNumber(plan, year, living)),
-        lean: d(year, fireNumber(plan, year, Math.round(living * LEAN_SHARE))),
-        fat: d(year, fireNumber(plan, year, Math.round(living * FAT_SHARE))),
-        coast: row?.coastNumber != null ? d(year, row.coastNumber) : null,
-        actual: null,
-      });
-    }
+    // The plan's points, nominal, as the proof sweep holds them (lib/fire/fire.ts fireTargets).
+    for (const t of fireTargets(f)) rows.push({ x: t.year, plan: d(t.year, t.plan), fire: d(t.year, t.fire), lean: d(t.year, t.lean), fat: d(t.year, t.fat), coast: d(t.year, t.coast), actual: null });
     // Proven year ends (Dec 31 = Jan 1 of the next year) and the latest proven net worth.
     for (const y of r.years) {
       if (!y.netWorth) continue;
       const x = y.isCurrent ? y.year + (Date.parse(y.netWorthAsOf) - Date.UTC(y.year, 0, 1)) / (365.25 * 86_400_000) : y.year + 1;
-      rows.push({ x, actual: d(x, y.netWorth.netWorth), plan: null, fire: null, lean: null, fat: null, coast: null });
+      rows.push({ x, provenYear: y.year, actual: d(x, y.netWorth.netWorth), plan: null, fire: null, lean: null, fat: null, coast: null });
     }
     return rows.sort((a, b) => a.x! - b.x!);
   }, [f, r, plan, dollars]);
+  // A point's proof: the plan's figure for its year, or a proven year's net worth (Annual), in today's dollars divided by the deflator.
+  const targets = useMemo(() => new Map(fireTargets(f).map((t) => [t.year, t])), [f]);
+  const pointProof = (row: Record<string, unknown>, key: string): ProofRef => {
+    const x = row.x as number;
+    const n = 1 / deflator(plan, dollars, x);
+    const shown = Math.round(Number(row[key]) * 100 * 1e6) / 1e6;
+    const asShown = (p: ProofRef, nominal: number) => (n === 1 ? p : compositeOf("times", [p], { cents: nominal * n }, undefined, n));
+    if (key === "actual") {
+      const y = r.years.find((v) => v.year === row.provenYear);
+      return y?.netWorth ? asShown({ descriptor: { report: "annual", figure: "net-worth", year: y.year, line: "net-worth" }, shownCents: y.netWorth.netWorth }, y.netWorth.netWorth) : noFigure("no proven net worth");
+    }
+    const t = targets.get(x);
+    const nominal = t?.[key as FireTargetSeries];
+    if (nominal == null || !Number.isFinite(shown)) return noFigure("nothing that year");
+    const base = pf("target", nominal);
+    return asShown("descriptor" in base ? ({ ...base, descriptor: { ...base.descriptor, year: x, series: key as FireTargetSeries } } as ProofRef) : base, nominal);
+  };
   const xs = data.map((d) => d.x!);
   // Scale to net worth and the FIRE number; Fat FIRE runs off the top rather than flattening everything else.
   const yMax = Math.ceil(Math.max(...data.flatMap((d) => [d.plan ?? 0, d.fire ?? 0, d.actual ?? 0, d.coast ?? 0])) * 1.08);
@@ -298,7 +302,7 @@ function TargetChart({ f, r, dollars, setDollars }: Omit<FireProps, "d"> & { r: 
       actions={<DollarsToggle value={dollars} onChange={setDollars} />}
     >
       <div className="h-[340px] w-full min-w-0">
-        <RechartsResponsive>
+        <RechartsResponsive tableTitle="Net worth vs. your FIRE number, year by year" cellProof={pointProof}>
           <ComposedChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="x" type="number" domain={["dataMin", "dataMax"]} ticks={ticks} tickFormatter={(v: number) => String(Math.round(v))} {...ui.xAxis} />

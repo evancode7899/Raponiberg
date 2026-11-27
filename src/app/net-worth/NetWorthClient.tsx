@@ -265,6 +265,15 @@ function Overview({ r, changes }: { r: NetWorthReport; changes: NetWorthChangesR
     }
     return row;
   });
+  // A point's proof: the month-end's net worth, or its group's accounts' balances added up.
+  const groupOf = new Map(r.accounts.map((a) => [a.id, a.group]));
+  const monthEndProof = (row: Record<string, unknown>, key: string): ProofRef => {
+    const p = periods.find((x) => x.label === row.label);
+    if (!p || p.blockers.length) return noFigure("a month-end that can't be proven");
+    if (key === "total") return balanceProof(p.end, p.household.closingCents);
+    const accounts = p.byAccount.filter((a) => groupOf.get(a.accountId) === key);
+    return sumOf(accounts.map((a) => balanceProof(p.end, a.closingCents, { accountIds: [a.accountId] })), accounts.reduce((t, a) => t + a.closingCents, 0));
+  };
   const cur = r.current.blockers;
   const flagged = periods.filter((p) => p.household.quality === "INTERPOLATED" || p.household.quality === "STALE");
   const minY = Math.min(0, ...periods.map((p) => p.byGroup.filter((g) => g.closingCents < 0).reduce((s, g) => s + g.closingCents, 0) / 100));
@@ -323,7 +332,7 @@ function Overview({ r, changes }: { r: NetWorthReport; changes: NetWorthChangesR
         }
       >
         <div className="h-[380px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Net worth by month-end, by account type" cellProof={monthEndProof}>
             <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={28} />
@@ -432,14 +441,14 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
     // Running totals carry every earlier period, so they start where the proven stretch
     // does, on top of the net worth already on hand then.
     const start = (run[0]?.household.openingCents ?? 0) / 100;
-    const rows: { label: string; start: number; principal: number; growth: number }[] = [];
+    const rows: { label: string; at: number; start: number; principal: number; growth: number }[] = [];
     let principal = 0;
     let growth = 0;
     for (const p of run) {
       const h = p.household;
       principal += h.principalCents + h.newlyTrackedCents + h.transferResidualCents + h.unexplainedCents;
       growth += h.growthNetOfFeesCents;
-      rows.push({ label: p.label, start, principal: principal / 100, growth: growth / 100 });
+      rows.push({ label: p.label, at: rows.length, start, principal: principal / 100, growth: growth / 100 });
     }
     return rows;
   }, [run]);
@@ -467,6 +476,18 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
     const step = Math.max(1, Math.ceil(cumulative.length / 8));
     return cumulative.filter((_, i) => (cumulative.length - 1 - i) % step === 0).map((row) => row.label);
   })();
+  // A point's proof: what was on hand at the start, or each period's own principal (and in transit) or growth since, added up.
+  const builtCell = (row: string) => derivedTarget("net-worth", built, "built", cellKey(r.granularity, row, "household"));
+  const sinceProof = (row: Record<string, unknown>, key: string): ProofRef => {
+    if (key === "start") return builtCell("since:start");
+    const upTo = run.slice(0, (row.at as number) + 1);
+    if (key === "growth") return sumOf(upTo.map((p) => builtCell(`${p.start}:growth`)), upTo.reduce((t, p) => t + p.household.growthNetOfFeesCents, 0));
+    const h = (p: NetWorthPeriod) => p.household;
+    return sumOf(
+      upTo.flatMap((p) => [builtCell(`${p.start}:principal`), builtCell(`${p.start}:transit`)]),
+      upTo.reduce((t, p) => t + h(p).principalCents + h(p).newlyTrackedCents + h(p).transferResidualCents + h(p).unexplainedCents, 0),
+    );
+  };
   const seriesName = (n: unknown) => (n === "start" ? `On hand at start of ${since}` : n === "principal" ? "Saved since" : "Growth since");
 
   return (
@@ -491,7 +512,7 @@ function Built({ r, granularity, setGranularity }: { r: NetWorthReport | null; g
           </div>
         )}
         <div className="h-[300px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Saved vs earned, period by period" cellProof={sinceProof}>
             {/* The latest label always sits on the right edge (ticks count back from it), so leave room for half of it. */}
             <ComposedChart data={cumulative} margin={{ top: 8, right: 28, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
@@ -643,7 +664,10 @@ function Returns({ r }: { r: NetWorthReport }) {
   // Chained returns compound every period, so they run over the latest unbroken proven stretch.
   const p = r.proven.returns.portfolio;
   const older = uniq(r.periods.filter((x) => !p || x.start < p.from).flatMap(blockersOf));
-  const bars = r.periods.filter((x) => x.household.portfolioReturn != null && !blockersOf(x).length).map((x) => ({ label: x.label, r: x.household.portfolioReturn! * 100 }));
+  const bars = r.periods.filter((x) => x.household.portfolioReturn != null && !blockersOf(x).length).map((x) => ({ start: x.start, label: x.label, r: x.household.portfolioReturn! * 100 }));
+  // Each bar is its period's own return (derived/netWorth.ts builtDerived), drawn as a percent.
+  const built = builtDerived(r);
+  const returnProof = (row: Record<string, unknown>) => derivedTarget("net-worth", built, "built", cellKey(r.granularity, `${row.start as string}:return`, "household"));
   const fromLabel = p && r.periods.find((x) => x.start === p.from)?.label;
   const derived = netWorthDerived(r);
   return (
@@ -664,7 +688,7 @@ function Returns({ r }: { r: NetWorthReport }) {
         }
       >
         <div className="h-[260px] w-full min-w-0">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Monthly portfolio return" cellProof={returnProof}>
             <BarChart data={bars} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={24} />
@@ -782,8 +806,9 @@ function StretchCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<ty
 
 /**
  * Investment returns › against the benchmark (derived/netWorth.ts benchmarkOf): the portfolio's
- * time-weighted return and the benchmark's change over the same months, and the gap. The
- * benchmark is the series Claude keeps in data/price-index.json; descriptive, not advice.
+ * time-weighted return and the benchmark's over the same months, and the gap. The benchmark is
+ * a broad index fund the household holds, its return off its own statements (fundBenchmark.ts);
+ * the owner picks which on Investments. Descriptive, not advice.
  */
 function BenchmarkCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<typeof netWorthDerived> }) {
   const b = useMemo(() => benchmarkOf(r), [r]);
@@ -792,10 +817,21 @@ function BenchmarkCard({ r, derived }: { r: NetWorthReport; derived: ReturnType<
   const theirs = derivedTarget("net-worth", derived, "benchmark-return", b.to);
   const gap = b.portfolio - b.benchmark;
   return (
-    <Card title={`Against ${b.name}`} subtitle={`From ${b.from} through ${b.to}, the months both cover: your portfolio's time-weighted return against the index's change${b.kind === "price" ? " (a price index: its dividends aren't in it, so it runs a little low)" : ", dividends in"}. Fetched ${b.fetchedOn}.`}>
+    <Card
+      title={`Against ${b.name}`}
+      subtitle={
+        <>
+          A fund you hold, its return read off your own statements: its price at each statement{b.kind === "price" ? " (some months print no dividends for it, so it runs a little low)" : " and the dividends they print"}. From {b.from} through {b.to}, the months both cover, against your portfolio&apos;s time-weighted return. Pick another fund on{" "}
+          <Link href="/investments" className={btn.link}>
+            Investments
+          </Link>
+          .
+        </>
+      }
+    >
       <StatGrid cols={3}>
         <StatCell proof={mine} label="Your portfolio" value={formatPercentRatio(b.portfolio, 1)} sub={`${b.months} months chained`} tone={b.portfolio < 0 ? "neg" : "neutral"} />
-        <StatCell proof={theirs} label="The benchmark" value={formatPercentRatio(b.benchmark, 1)} sub={b.source} />
+        <StatCell proof={theirs} label="The fund" value={formatPercentRatio(b.benchmark, 1)} sub={b.kind === "price" ? "price only" : "dividends in"} />
         <StatCell proof={compositeOf("diff", gap >= 0 ? [mine, theirs] : [theirs, mine], { ratio: Math.abs(gap) })} label={gap >= 0 ? "Ahead by" : "Behind by"} value={formatPercentRatio(Math.abs(gap), 1)} sub="percentage points" tone={gap >= 0 ? "pos" : "neg"} />
       </StatGrid>
     </Card>

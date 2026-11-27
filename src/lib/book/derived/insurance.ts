@@ -169,6 +169,8 @@ function lifeDerived(views: PolicyView[]): DerivedFigure[] {
       add("level-total", "total premiums over the level term", v.levelTotalCents == null ? null : c(v.levelTotalCents), v.levelTotalCents == null ? [] : [ln("Annual premium", c(p.annualPremiumCents), undefined, { source: "proven" }), ln("× level years", t(String(p.levelYears)), "×"), ln("Total premiums", c(v.levelTotalCents), "=")]),
       add("face", "coverage over the level term", c(p.faceCents), [ln("Face amount", c(p.faceCents), undefined, { source: "proven" })]),
       add("face-after", "coverage once it renews yearly", first ? c(first.faceCents) : null, first ? [ln(`Face amount from year ${first.year}`, c(first.faceCents), undefined, { source: "proven" })] : []),
+      // Maximum premium by age: each policy year's guaranteed maximum, as the schedule prints it (its chart's table).
+      ...v.years.map((y): DerivedFigure => ({ figure: "max-premium", key: `${key}|${y.year}`, describes: `Policy ${key}: maximum premium in policy year ${y.year}`, value: c(y.maxPremiumCents), lines: [ln(`Guaranteed maximum, year ${y.year}`, c(y.maxPremiumCents), undefined, { source: "proven" })] })),
       add("max-premium-last", "maximum premium in the schedule's last year", last ? c(last.maxPremiumCents) : null, last ? [ln(`Guaranteed maximum, year ${last.year}`, c(last.maxPremiumCents), undefined, { source: "proven" })] : []),
       add(
         "paid",
@@ -195,7 +197,6 @@ function lifeTables(v: PolicyView): DerivedFigure[] {
     ...v.years.flatMap((y) => {
       const per = Math.round((y.maxPremiumCents * 100_000) / y.faceCents);
       return [
-        row("year-premium", String(y.year), `${y.level ? "premium" : "maximum premium"}, policy year ${y.year}`, c(y.maxPremiumCents), printed(`Year ${y.year}, as the table of premiums prints it`, y.maxPremiumCents)),
         row("year-face", String(y.year), `face amount, policy year ${y.year}`, c(y.faceCents), printed(`Year ${y.year}, as the schedule prints it`, y.faceCents)),
         row("year-per1000", String(y.year), `premium per $1,000 of cover, policy year ${y.year}`, c(per), [
           ln(`Year ${y.year} premium`, c(y.maxPremiumCents), undefined, { source: "proven" }),

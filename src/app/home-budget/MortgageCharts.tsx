@@ -1,6 +1,7 @@
 "use client";
 
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
+import { WhatIf } from "@/components/ui/kit";
 import { chartChrome, type ChartPalette } from "@/components/shell/chartPalette";
 import { axisUsd, formatPercentRatio, formatUsd } from "@/lib/formatMoney";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
@@ -28,9 +29,12 @@ const signed = (v: number) => (v > 0 ? `+${formatUsd(v)}` : formatUsd(v));
 
 function Frame({ children, h = 280 }: { children: React.ReactElement; h?: number }) {
   return (
-    <div className="w-full min-w-0" style={{ height: h }}>
-      <RechartsResponsive>{children}</RechartsResponsive>
-    </div>
+    // Both strategies played out on the inputs you typed: a scenario, as the comparison beside it is.
+    <WhatIf why="paying the mortgage down vs investing, on the inputs you typed" className="w-full min-w-0">
+      <div style={{ height: h }}>
+        <RechartsResponsive tableTitle="Prepay vs invest, as charted">{children}</RechartsResponsive>
+      </div>
+    </WhatIf>
   );
 }
 

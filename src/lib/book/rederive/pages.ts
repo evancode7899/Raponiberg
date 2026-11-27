@@ -171,6 +171,7 @@ export function rederiveHsa(r: Pick<HsaReport, "growth"> & Partial<Pick<HsaRepor
       case "expense-growth":
       case "growth-rate":
       case "strategy":
+      case "path":
         return { none: "The HSA growth model on your settings and the rate it states: the growth total and the edge are re-derived in closed form; these are its per-bill and per-$1,000 parts." };
       case "default":
         return { none: "What a blank setting falls back to, as the page it comes from works it out (the HSA's measured return, the forecast's return, the Taxes page's marginal rate, the taxable statements' dividend yield, the tax engine's gain rate): each is proven there." };
@@ -200,7 +201,7 @@ export function rederiveInsurance(book: Book, page: InsuranceInput, figures: rea
       const v = cover.get(f.key ?? "");
       return v ? [centsRoute("the Book's rows, re-added", f.value, rowsCents(v.payments.filter((x) => x.term === v.policy.periodStart).map((x) => x.rowId)), ROWS)] : null;
     }
-    if (["home-premium", "auto-premium", "limit", "coverage-premium", "discount", "discount-total", "term-premium", "year-premium", "year-face", "bill", "receipt", "mode-each", "policy-fee"].includes(f.figure)) return { none: PRINTED };
+    if (["home-premium", "auto-premium", "limit", "coverage-premium", "discount", "discount-total", "term-premium", "max-premium", "year-face", "bill", "receipt", "mode-each", "policy-fee"].includes(f.figure)) return { none: PRINTED };
     if (["year-per1000", "per1000", "mode-year", "mode-extra", "mode-extra-share"].includes(f.figure)) return { none: `${PRINTED} Scaled per $1,000, to a year, or set against the annual premium, in the chain.` };
     const v = byKey.get(f.key ?? "");
     if (!v) return null;
@@ -235,6 +236,7 @@ export function rederiveMedical(claims: readonly ClaimView[], figures: readonly 
       person: (x) => x.patient === name,
       provider: (x) => (x.provider || "Provider not printed") === name,
       kind: (x) => x.kind === name,
+      month: (x) => x.firstDate.slice(0, 7) === name,
     };
     const scope = f.figure.split("-")[0]!;
     if (col && (of[scope] || f.figure === "you-owe" || f.figure === "plan-paid" || f.figure === "billed")) {

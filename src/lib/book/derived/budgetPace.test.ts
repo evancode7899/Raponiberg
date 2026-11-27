@@ -27,8 +27,15 @@ describe("budget pace by day", () => {
     const cur = month("2026-06-06");
     expect(budgetPaceMonth({ months: [], current: cur })).toMatchObject({ day: 6, days: 30 });
     const d = cashFlowDerived({ months: [], recurring: [], current: cur }, targets);
-    expect(d.find((x) => x.figure === "budget-pace")).toMatchObject({ key: "2026-06-01|6", value: { cents: 125_00 } });
-    expect(d.find((x) => x.figure === "budget-pace-plan")).toMatchObject({ key: "2026-06-01|6", value: { cents: 180_00 } });
+    expect(d.find((x) => x.figure === "budget-pace" && x.key === "2026-06-01|6")).toMatchObject({ value: { cents: 125_00 } });
+    expect(d.find((x) => x.figure === "budget-pace-plan" && x.key === "2026-06-01|6")).toMatchObject({ value: { cents: 180_00 } });
+  });
+
+  it("proves every day the chart draws: spending through each day on file, the even pace through every day of the month", () => {
+    const d = cashFlowDerived({ months: [], recurring: [], current: month("2026-06-06") }, targets);
+    expect(d.filter((x) => x.figure === "budget-pace").map((x) => x.key)).toEqual([1, 2, 3, 4, 5, 6].map((n) => `2026-06-01|${n}`));
+    expect(d.filter((x) => x.figure === "budget-pace-plan")).toHaveLength(30);
+    expect(d.find((x) => x.figure === "budget-pace" && x.key === "2026-06-01|1")).toMatchObject({ value: { cents: 80_00 } });
   });
 
   it("has nothing without targets or without the month's category days", () => {

@@ -94,7 +94,7 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
   const last = poolLast(p, r.year);
   const { posted, expected, redeemed } = p.year;
   const valueOf = (n: number) => (kind === "CASH" ? n : n * p.centsPerPoint);
-  const data = p.balances.map((b) => ({ date: b.date, label: fmtMonth(b.date), balance: kind === "CASH" ? b.balance / 100 : b.balance }));
+  const data = p.balances.map((b) => ({ statementId: b.statementId, date: b.date, label: fmtMonth(b.date), balance: kind === "CASH" ? b.balance / 100 : b.balance }));
   const fmtAxis = (v: number) => (kind === "CASH" ? `$${v}` : v >= 1000 ? `${Math.round(v / 1000)}k` : String(v));
   return (
     <Card
@@ -113,7 +113,7 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
               <dt className="text-muted">Balance {last ? `on ${fmtDate(last.date)}` : ""}</dt>
               <dd className="num text-lg font-semibold">
                 {last ? (
-                  <ProofValue proof={{ descriptor: { report: "statement", statementId: last.statementId }, shownCents: null }}>{fmtRewards(kind, last.balance, kind !== "CASH")}</ProofValue>
+                  <ProofValue proof={cf.pool(p.key, `printed:${last.statementId}`, "balance")}>{fmtRewards(kind, last.balance, kind !== "CASH")}</ProofValue>
                 ) : (
                   NA
                 )}
@@ -151,7 +151,12 @@ function PoolCard({ p, r, cf, ui, color }: { p: RewardsPool; r: CardPerksPage; c
             </div>
           </dl>
           <div className="h-44 w-full min-w-0">
-            <RechartsResponsive>
+            <RechartsResponsive
+              tableTitle="Rewards balance, statement by statement"
+              {...(kind === "CASH"
+                ? { cellProof: (row: Record<string, unknown>) => cf.pool(p.key, `printed:${row.statementId as string}`, "balance") }
+                : { plainSeries: { balance: "points, as each statement prints the balance: not dollars" } })}
+            >
               <AreaChart data={data} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
                 <CartesianGrid {...ui.grid} />
                 <XAxis dataKey="label" {...ui.xAxis} minTickGap={24} />

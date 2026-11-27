@@ -1,8 +1,10 @@
 "use client";
 
-import { Drawer, table as tableCls } from "@/components/ui/kit";
+import { Drawer, NotFigure, table as tableCls } from "@/components/ui/kit";
+import { ProofValue, type FigureProps } from "@/components/ui/proof/ProofValue";
+import { unswept, type ProofRef } from "@/components/ui/proof/context";
 import { chartTable } from "@/lib/chartSeries";
-import { Children, Fragment, isValidElement, useState, type ReactElement, type ReactNode } from "react";
+import { Children, Fragment, isValidElement, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Area, Bar, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, type ResponsiveContainerProps } from "recharts";
 
 /**
@@ -61,47 +63,106 @@ export function readChart(chart: ReactNode): { rows: Record<string, unknown>[]; 
  * small Table button (by pointer or Tab) opens the same points, each value in the chart's own
  * tooltip words, for a screen reader or anyone who'd rather read numbers. The table is drawn
  * only when asked for, as the tooltip is.
+ *
+ * Each value in the table is a figure (owner's rule, 2026-11-26): it opens its proof like any
+ * other, through `cellProof`, which names the proof of one point of one series. A point with
+ * no proof named draws n.a. (withheld, saying why), so a chart can't show a number in its table
+ * that nothing proves. A series that isn't money or a rate (miles, a count, miles per gallon)
+ * isn't a figure: `plainSeries` names it with why, and its values draw plain (kit NotFigure). A chart inside a what-if region (kit WhatIf) draws its points plain:
+ * they are a scenario's, and the table is marked as part of that what-if. The render audit
+ * opens every chart's table (data-chart-table) and holds what it draws like any view.
  */
+/** The proof a chart names for one point of one series: the figure the page shows for it. */
+export type CellProof = (row: Record<string, unknown>, series: string) => ProofRef | null | undefined;
+/** What a table cell says when its chart names no proof for that point. */
+export const NO_CELL_PROOF = unswept("This chart doesn't name a proof for this point: the figure on the page beside it has one.");
+/** How a series draws its values when not as the number itself (an index of 100 drawn for a ratio of 1): ProofValue's drawn. */
+export type CellDrawn = Readonly<Record<string, FigureProps["drawn"]>>;
+
 export function RechartsResponsive({
   debounce = DEFAULT_DEBOUNCE_MS,
   children,
   tableTitle = "The chart as a table",
+  cellProof,
+  cellDrawn,
+  cellText,
+  cellValue,
+  plainSeries,
+  plainX,
+  pendingProof,
   ...rest
 }: Omit<ResponsiveContainerProps, "width" | "height"> & {
   debounce?: number;
   /** What the chart shows, as the table's title. */
   tableTitle?: string;
+  /** The proof of each point, for the table (above). */
+  cellProof?: CellProof;
+  /** How a series draws its values, by data key, when not as the number itself. */
+  cellDrawn?: CellDrawn;
+  /** A cell's words when the tooltip's say more than its one figure (a share and the count behind it): the figure alone. */
+  cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined;
+  /** A point's value when the series holds something else (a floating bar's [low, high]): the figure it stands for. */
+  cellValue?: (row: Record<string, unknown>, series: string) => number | null | undefined;
+  /** Series that aren't money or a rate, by data key: why each is no figure. */
+  plainSeries?: Readonly<Record<string, string>>;
+  /** Why the x axis's labels hold no figure when they name money (a size range: "$10–$25"). */
+  plainX?: string;
+  /**
+   * A chart whose points have no proof yet and wait on the owner's choice of how to prove
+   * them (per-day series): each value draws n.a. saying this, and the render audit lists
+   * the table under CHART_TABLE_PENDING instead of failing it (renderAudit.ts).
+   */
+  pendingProof?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<false | { whatIf: string | null }>(false);
+  const box = useRef<HTMLDivElement>(null);
   const readable = readChart(children as ReactNode) != null;
   return (
-    <div className="group/chart relative h-full w-full">
+    <div ref={box} className="group/chart relative h-full w-full">
       <ResponsiveContainer width="100%" height="100%" debounce={debounce} initialDimension={INITIAL_DIMENSION} {...rest}>
         {children}
       </ResponsiveContainer>
       {readable && (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          data-chart-table={tableTitle}
+          onClick={() => setOpen({ whatIf: box.current?.closest<HTMLElement>("[data-what-if]")?.dataset.whatIf ?? null })}
           title="Show the chart's points as a table"
           className="absolute right-0 top-0 z-[2] rounded border border-line bg-surface px-1.5 py-0.5 text-2xs text-muted opacity-0 outline-none hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-focus group-hover/chart:opacity-100"
         >
           Table
         </button>
       )}
-      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} onClose={() => setOpen(false)} />}
+      {open && <ChartTableDrawer chart={children as ReactNode} title={tableTitle} whatIf={open.whatIf} cellProof={pendingProof ? () => unswept(pendingProof) : cellProof} cellDrawn={cellDrawn} cellText={cellText} cellValue={cellValue} plainSeries={plainSeries} plainX={plainX} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function ChartTableDrawer({ chart, title, onClose }: { chart: ReactNode; title: string; onClose: () => void }) {
+function ChartTableDrawer({ chart, title, whatIf, cellProof, cellDrawn, cellText, cellValue, plainSeries, plainX, onClose }: { chart: ReactNode; title: string; whatIf: string | null; cellProof?: CellProof; cellDrawn?: CellDrawn; cellText?: (value: number, series: string, row: Record<string, unknown>) => string | null | undefined; cellValue?: (row: Record<string, unknown>, series: string) => number | null | undefined; plainSeries?: Readonly<Record<string, string>>; plainX?: string; onClose: () => void }) {
   const read = readChart(chart);
   if (!read) return null;
   const t = chartTable(read.rows, read.x, read.series, () => "");
-  const body = read.rows.map((r, i) => [t.body[i]![0]!, ...read.series.map((s) => (typeof r[s.key] === "number" ? read.format(r[s.key] as number, s.name, r) : ""))]);
+  const body = read.rows.map((r, i) => [
+    plainX ? <NotFigure key="x" why={plainX}>{t.body[i]![0]!}</NotFigure> : t.body[i]![0]!,
+    ...read.series.map((s) => {
+      const v = cellValue ? cellValue(r, s.key) : r[s.key];
+      if (typeof v !== "number") return "";
+      const text = cellText?.(v, s.key, r) ?? read.format(v, s.name, r);
+      // A what-if's points are a scenario's: plain, inside the region the table is marked as.
+      if (whatIf != null) return text;
+      const plain = plainSeries?.[s.key];
+      if (plain) return <NotFigure key={s.key} why={plain}>{text}</NotFigure>;
+      return (
+        <ProofValue key={s.key} proof={cellProof?.(r, s.key) ?? NO_CELL_PROOF} drawn={cellDrawn?.[s.key]}>
+          {text}
+        </ProofValue>
+      );
+    }),
+  ]);
   return (
-    <Drawer open onClose={onClose} title={title} subtitle="Each value as the chart's tooltip says it." width="40rem">
-      <div className={tableCls.wrap}>
+    <Drawer open onClose={onClose} title={title} subtitle={whatIf != null ? "Each value as the chart's tooltip says it: a what-if's, not a proven figure." : "Each value as the chart's tooltip says it; each opens its proof."} width="40rem">
+      {/* data-chart-table-view: what the render audit reads as this table's view (scripts/render-audit.ts). */}
+      <div data-chart-table-view="" className={tableCls.wrap} {...(whatIf != null ? { "data-what-if": whatIf || "a what-if chart" } : {})}>
         <table className={tableCls.table}>
           <caption className="sr-only">{title}</caption>
           <thead className={tableCls.head}>

@@ -51,7 +51,7 @@ function claimFigures(x: ClaimView): DerivedFigure[] {
   ];
 }
 
-function sliceFigures(y: YearView, s: Slice, kind: "person" | "provider" | "kind", claims: readonly ClaimView[], of: (x: ClaimView) => string): DerivedFigure[] {
+function sliceFigures(y: YearView, s: Pick<Slice, "key" | "yourShareCents" | "planCents" | "billedCents">, kind: "person" | "provider" | "kind" | "month", claims: readonly ClaimView[], of: (x: ClaimView) => string): DerivedFigure[] {
   const key = sliceKey(y, s.key);
   const xs = claims.filter((x) => x.coverage === y.coverage && x.year === y.year && of(x) === s.key);
   const add = (figure: string, describes: string, cents: number, pick: (x: ClaimView) => number): DerivedFigure => ({ figure, key, describes: `${y.year} ${s.key}: ${describes}`, value: c(cents), lines: claimChain(xs, pick, cents, describes[0]!.toUpperCase() + describes.slice(1)) });
@@ -113,6 +113,8 @@ function yearFigures(y: YearView, claims: readonly ClaimView[]): DerivedFigure[]
     ...y.people.flatMap((s) => sliceFigures(y, s, "person", claims, (x) => x.patient)),
     ...y.providers.flatMap((s) => sliceFigures(y, s, "provider", claims, (x) => x.provider || "Provider not printed")),
     ...y.kinds.flatMap((s) => sliceFigures(y, s, "kind", claims, (x) => x.kind)),
+    // By month: what each month's care came to, by the first day of each claim (its chart's table).
+    ...y.months.flatMap((m) => sliceFigures(y, { key: m.month, yourShareCents: m.yourShareCents, planCents: m.planCents, billedCents: 0 }, "month", claims, (x) => x.firstDate.slice(0, 7))),
   ];
 }
 

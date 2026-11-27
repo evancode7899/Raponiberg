@@ -72,6 +72,12 @@ export function hsaPageDerived(rep: HsaReport): DerivedFigure[] {
     const open = rep.totals.unreimbursedCents;
     if (open > 0) for (const s of g.strategy) cells.push({ row: s.key, col: "aheadOnYours", describes: `${s.label}: ahead on your receipts`, value: c(Math.round((s.aheadCents * open) / 100_000)) });
     out.push(...tableFigures("strategy", "per-1000", cells));
+    // Growth › Letting the receipts ride: each year of the path, in the HSA and in a taxable account (its chart's table).
+    const path: TableCell[] = g.path.flatMap((x) => [
+      { row: String(x.year), col: "hsa", describes: `Today's receipts left in the HSA, worth in ${x.year} after tax`, value: c(x.hsaCents) },
+      { row: String(x.year), col: "taxable", describes: `Today's receipts reimbursed now and invested in a taxable account, worth in ${x.year} after tax`, value: c(x.taxableCents) },
+    ]);
+    out.push(...tableFigures("path", "years", path));
   }
   const yearCells: TableCell[] = rep.years.flatMap((y) => HSA_YEAR_COLUMNS.map((col) => ({ row: String(y.year), col, describes: `Medical bills ${y.year}: ${col.replace(/Cents$/, "")}`, value: c(y[col]) })));
   out.push(...tableFigures("year", "years", yearCells));

@@ -335,7 +335,7 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
         }
       >
         <div className="h-64">
-          <RechartsResponsive>
+          <RechartsResponsive tableTitle="Maximum premium by age" cellProof={(row) => derivedTarget("insurance", figs, "max-premium", `${v.policy.policyNumber}|${row.year as number}`)}>
             <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...ui.grid} />
               <XAxis dataKey="label" {...ui.xAxis} minTickGap={20} />
@@ -388,7 +388,7 @@ function Premiums({ v, today, figs }: { v: PolicyView; today: string; figs: read
                     <td className={table.td}>{shortDate(y.start)}</td>
                     <td className={table.tdR}>{y.age ?? NA}</td>
                     <td className={table.tdR}>
-                      <Fig figs={figs} figure="year-premium" k={`${p.policyNumber}|${y.year}`}>{formatUsdFromCents(y.maxPremiumCents)}</Fig>
+                      <Fig figs={figs} figure="max-premium" k={`${p.policyNumber}|${y.year}`}>{formatUsdFromCents(y.maxPremiumCents)}</Fig>
                       {!y.level && <span className="ml-1 text-faint" title="Guaranteed maximum: the insurer may charge less.">max</span>}
                     </td>
                     <td className={table.tdR}>
