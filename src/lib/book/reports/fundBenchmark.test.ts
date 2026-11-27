@@ -42,6 +42,14 @@ describe("fundBenchmark", () => {
     expect(b.steps.map((s) => s.dividendCents)).toEqual([0, 4_000]);
   });
 
+  it("adds up a fund printed on several lines, so the dividends are spread over every share", () => {
+    // The statement splits the 20 shares into 19.99 and a 0.01 sliver, sliver first.
+    const split = snaps.map((s) => ({ ...s, positions: s.positions.flatMap((p) => (p.symbol === "XTMKT" ? [{ ...p, quantity: 0.01 }, { ...p, quantity: p.quantity! - 0.01 }] : [p])) }));
+    const b = fundBenchmark(split, [income("2031-02-01", "2031-02-28"), income("2031-03-01", "2031-03-31", [{ date: "2031-03-28", amount: 4_000 }])], null)!;
+    expect(b.steps[1]!.quantity).toBeCloseTo(20, 10);
+    expect(b.series.months["2031-03"]).toBeCloseTo(102 * ((99 + 2) / 102), 10);
+  });
+
   it("is the price alone, and says so, when a step's dividends aren't on file", () => {
     const b = fundBenchmark(snaps, [income("2031-02-01", "2031-02-28")], null)!;
     expect(b.series.kind).toBe("price");

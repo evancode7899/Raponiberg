@@ -75,7 +75,9 @@ export function sp500Quarters(snapshots: readonly Sp500Snapshot[], income: reado
         // One account's run of the same trust: its readings by quarter.
         const key = `${s.accountId ?? s.institution}|${securityKey(p)}`;
         const m = units.get(key) ?? new Map();
-        m.set(q, { fund: p.name, asOf: s.asOf, documentId: s.documentId, valueCents: p.valueCents, units: p.quantity });
+        // A statement can print one trust on several lines: add them up.
+        const same = m.get(q)?.documentId === s.documentId ? m.get(q) : undefined;
+        m.set(q, { fund: p.name, asOf: s.asOf, documentId: s.documentId, valueCents: p.valueCents + (same?.valueCents ?? 0), units: p.quantity + (same?.units ?? 0) });
         units.set(key, m);
       }
     }

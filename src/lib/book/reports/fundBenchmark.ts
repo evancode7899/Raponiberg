@@ -79,7 +79,12 @@ export function fundBenchmark(snapshots: readonly FundSnapshot[], income: readon
   const run = [...byAccount.values()].sort((a, b) => b.length - a.length)[0]!.sort((a, b) => a.asOf.localeCompare(b.asOf));
   // One statement a month: the latest that month.
   const monthly = [...new Map(run.map((s) => [s.asOf.slice(0, 7), s])).values()];
-  const at = (s: FundSnapshot) => s.positions.find((p) => securityKey(p) === chosen.key)!;
+  // The fund as the statement holds it: a statement can print one fund on several lines (Fidelity
+  // splits a cash-account lot from a margin-account sliver), and the dividends are for every share.
+  const at = (s: FundSnapshot) => {
+    const lines = s.positions.filter((p) => securityKey(p) === chosen.key && p.price && p.quantity);
+    return { ...lines[0]!, quantity: lines.reduce((n, p) => n + p.quantity!, 0) };
+  };
   // Dividends the account's own statements print for the fund.
   const { institution, accountNumber } = monthly[0]!;
   const mine = income.filter((i) => i.institution === institution && i.accountNumber === accountNumber).sort((a, b) => a.periodStart.localeCompare(b.periodStart));
