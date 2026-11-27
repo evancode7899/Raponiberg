@@ -363,7 +363,10 @@ function Rederived({ r, figure, onFollow }: { r: Rederivation; figure: ProofValu
               <FollowLink link={x.link} onFollow={onFollow} className="font-medium">
                 {x.route}
               </FollowLink>
-              : {valueText(x.value)}
+              :{" "}
+              <FollowLink link={x.link} onFollow={onFollow}>
+                {valueText(x.value)}
+              </FollowLink>
               {x.ok ? "" : `, not ${valueText(figure)}`} <span className="text-muted">({x.explain})</span>
             </li>
           ))}
@@ -414,7 +417,11 @@ function BlockView({ b, self, onFollow }: { b: ProofBlock; self: Self; onFollow:
                 </FollowLink>
                 {x.sub ? ` (${x.sub})` : ""}
               </span>
-              <span className="num shrink-0">{valueText(x.value, true)}</span>
+              <span className="num shrink-0">
+                <FollowLink link={x.link} onFollow={onFollow}>
+                  {valueText(x.value, true)}
+                </FollowLink>
+              </span>
             </li>
           ))}
         </ul>
@@ -467,7 +474,11 @@ function ChainRow({ l, onFollow }: { l: ChainLine; onFollow: (d: ProofDescriptor
         <Badge tone={s.tone}>{s.label}</Badge>
         {l.note && <div className="text-[11px] font-normal leading-snug text-muted">{l.note}</div>}
       </span>
-      <span className="num text-right">{valueText(l.value)}</span>
+      <span className="num text-right">
+        <FollowLink link={l.link} onFollow={onFollow}>
+          {valueText(l.value)}
+        </FollowLink>
+      </span>
     </li>
   );
 }
@@ -507,21 +518,28 @@ function GroupView({ g, self, onFollow }: { g: ProofGroup; self: Self; onFollow:
         <div className={`${table.wrap} border-t border-line`}>
           <table className={table.table}>
             <tbody>
-              {g.rows.map((r) => (
-                <tr key={r.id} className={table.tr}>
-                  <td className={`${table.td} whitespace-nowrap text-muted`}>{date(r.date)}</td>
-                  <td className={table.td}>
-                    <div className="text-fg">
-                      <FollowLink link={r.rowId && r.rowId !== self.rowId ? { label: r.payee || "this row", descriptor: { report: "row", rowId: r.rowId } } : undefined} onFollow={onFollow}>
-                        {r.payee || NA}
+              {g.rows.map((r) => {
+                const rowLink: ProofLink | undefined = r.rowId && r.rowId !== self.rowId ? { label: r.payee || "this row", descriptor: { report: "row", rowId: r.rowId } } : undefined;
+                return (
+                  <tr key={r.id} className={table.tr}>
+                    <td className={`${table.td} whitespace-nowrap text-muted`}>{date(r.date)}</td>
+                    <td className={table.td}>
+                      <div className="text-fg">
+                        <FollowLink link={rowLink} onFollow={onFollow}>
+                          {r.payee || NA}
+                        </FollowLink>
+                      </div>
+                      <RowNotes r={r} />
+                    </td>
+                    {showCategory && <td className={`${table.td} text-xs text-muted`}>{r.category}</td>}
+                    <td className={table.tdR}>
+                      <FollowLink link={rowLink} onFollow={onFollow}>
+                        {cents(r.countedCents)}
                       </FollowLink>
-                    </div>
-                    <RowNotes r={r} />
-                  </td>
-                  {showCategory && <td className={`${table.td} text-xs text-muted`}>{r.category}</td>}
-                  <td className={table.tdR}>{cents(r.countedCents)}</td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
