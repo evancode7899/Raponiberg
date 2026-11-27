@@ -74,8 +74,8 @@ function Fan({ f, s, dollars, setDollars }: Omit<FireProps, "d"> & { s: ReturnTy
       subtitle={<NotFigure why="what the chart bands mean">Jan 1 of each year, the plan as set (walk-away year included). The wide band holds 80% of paths, the narrow band the middle half; the line is the steady-return plan.</NotFigure>}
       actions={<DollarsToggle value={dollars} onChange={setDollars} />}
     >
-      <div className="h-[340px] w-full min-w-0">
-        <RechartsResponsive>
+      <WhatIf why="the stress test's simulated markets" className="h-[340px] w-full min-w-0">
+        <RechartsResponsive tableTitle="Net worth across 1,000 market paths, year by year">
           <ComposedChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="year" {...ui.xAxis} minTickGap={16} />
@@ -93,7 +93,7 @@ function Fan({ f, s, dollars, setDollars }: Omit<FireProps, "d"> & { s: ReturnTy
             {plan.walkAwayYear && <ReferenceLine x={String(plan.walkAwayYear)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: "Walk away", fill: chart.legend, fontSize: 11, position: "insideTopLeft" }} />}
           </ComposedChart>
         </RechartsResponsive>
-      </div>
+      </WhatIf>
     </Card>
   );
 }
@@ -105,8 +105,8 @@ function Odds({ s, f }: { s: ReturnType<typeof stressTest>; f: FireProps["f"] })
   const data = s.fiByYear.slice(0, last >= 0 ? Math.min(s.fiByYear.length, last + 3) : s.fiByYear.length).map((x) => ({ year: String(x.year), share: Math.round(x.share * 1000) / 10 }));
   return (
     <Card title="Chance you're financially independent by each year" subtitle="Share of market paths whose walk-away income covers living cost by Jan 1 of that year (keep working until then).">
-      <div className="h-[260px] w-full min-w-0">
-        <RechartsResponsive>
+      <WhatIf why="the stress test's simulated markets" className="h-[260px] w-full min-w-0">
+        <RechartsResponsive tableTitle="Chance you're financially independent by each year">
           <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
             <CartesianGrid {...ui.grid} />
             <XAxis dataKey="year" {...ui.xAxis} minTickGap={16} />
@@ -117,7 +117,7 @@ function Odds({ s, f }: { s: ReturnType<typeof stressTest>; f: FireProps["f"] })
             {f.fi && <ReferenceLine x={String(f.fi.year)} stroke={chart.axisLine} strokeDasharray="4 3" label={{ value: `plan FI ${yearAge(f.fi.year, f.plan)}`, fill: chart.legend, fontSize: 11, position: "insideBottomRight" }} />}
           </AreaChart>
         </RechartsResponsive>
-      </div>
+      </WhatIf>
     </Card>
   );
 }

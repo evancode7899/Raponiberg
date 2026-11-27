@@ -1,4 +1,4 @@
-import { analyzeFire, drawFor, extended, FAT_SHARE, type FireAnalysis, fireNumber, firePlans, firstYearIncome, LEAN_SHARE, livingIn, stressTest, type StressTest } from "../../../fire/fire.ts";
+import { analyzeFire, drawFor, extended, FAT_SHARE, type FireAnalysis, fireNumber, fireTargets, type FireTargetSeries, firePlans, firstYearIncome, LEAN_SHARE, livingIn, stressTest, type StressTest } from "../../../fire/fire.ts";
 import { type AccessFigure, accessFigures, longTermCells, longTermTable, type LongTermTable, planValue, STRESS_PATHS, type StressFigure, stressFigures } from "../../../fire/longTerm.ts";
 import { milestones as netWorthMilestones } from "../../../forecast/forecast.ts";
 import type { ForecastData } from "../../../forecast/load.ts";
@@ -424,6 +424,41 @@ function fireStress(c: FireCtx, volatility: number): StressTest {
   return byVol.get(volatility)!;
 }
 
+const TARGET_WORDS: Record<FireTargetSeries, string> = { plan: "Net worth on the plan", fire: "FIRE number", lean: "Lean FIRE number", fat: "Fat FIRE number", coast: "Coast FIRE number" };
+
+/** FIRE › Overview's chart, one point: the plan's net worth on Jan 1 of a year, or that year's FIRE, Lean, Fat or Coast number (fireTargets). */
+function targetProof(c: FireCtx, year: number, series: FireTargetSeries): Built {
+  const point = fireTargets(c.fa).find((x) => x.year === year);
+  const cents = point?.[series];
+  if (cents == null || !Number.isFinite(cents)) return notFound(`The chart has no ${TARGET_WORDS[series]} for ${year}.`);
+  const plan = c.fa.plan;
+  const living = livingIn(plan, year);
+  const share = series === "lean" ? LEAN_SHARE : series === "fat" ? FAT_SHARE : 1;
+  const lines: ChainLine[] =
+    series === "plan"
+      ? [{ label: `Net worth on Jan 1, ${year}, on the plan`, value: { cents }, source: "estimate", note: "The forecast's net worth at the end of the year before (the plan's last year carried on past its end)." }]
+      : series === "coast"
+        ? [{ label: `Coast FIRE number, ${year}`, value: { cents }, source: "estimate", note: "What, left to grow at the plan's return with nothing more saved, reaches the FIRE number at the retirement age." }]
+        : [
+            { label: `Living cost in ${year}`, value: { cents: living }, source: "estimate", note: "The plan's living cost, grown a year at a time from the start." },
+            ...(share !== 1 ? [{ op: "×" as const, label: "Its share", value: { ratio: share }, source: "derived" as const, note: "The page's definition." }] : []),
+            { op: "÷" as const, label: "Withdrawal rate, after tax on the draw", value: { ratio: plan.withdrawalRate }, source: "assumption" as const },
+            { op: "=" as const, label: TARGET_WORDS[series], value: { cents }, source: "derived" as const },
+          ];
+  const { checks, withheld } = forecastChecks(c);
+  return {
+    describes: `${TARGET_WORDS[series]}, ${year} (FIRE › Overview's chart, before today's dollars)`,
+    figure: { cents },
+    selfCheck: null,
+    blocks: [{ kind: "chain", title: `${TARGET_WORDS[series]}, ${year}`, lines }, fireSettingsBlock(c)],
+    checks,
+    withheld,
+    estimates: [projectionEstimate(c)],
+    through: c.seeds.start.asOf,
+    rederived: { none: "A point of the plan's own projection (its net worth, or the FIRE formula on that year's living cost): the FIRE number tile and FIRE › Plan's table re-derive the same plan." },
+  };
+}
+
 function planCellProof(c: FireCtx, row: string, col: string): Built {
   const { table: t, full } = fireTableOf(c);
   const cell = longTermCells(t).find((x) => x.row === row && x.col === col);
@@ -573,6 +608,8 @@ export function buildFire(c: FireCtx, d: Extract<PlanningDescriptor, { page: "fi
       return accessProof(c, d.metric as AccessFigure);
     case "stress":
       return stressProof(c, d.metric as StressFigure, d.volatility!);
+    case "target":
+      return targetProof(c, d.year!, d.series!);
   }
 }
 
