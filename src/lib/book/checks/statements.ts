@@ -194,7 +194,8 @@ export function checkStatements(book: Book, c: Collector) {
       const last = segs.filter((s) => !s.idle).at(-1)!;
       const lastDay = fromDayNumber(last.end);
       const payoff = book.idle.proven.find((w) => w.accountId === a.id && w.trailing);
-      const owner = `the owner marked the account closed${a.closedByOwner ? ` (${a.closedByOwner})` : ""}`;
+      // The owner's own note (closed-accounts.json) isn't quoted: it's their words, and may print an amount no proof holds.
+      const owner = "the owner marked the account closed";
       const closed = sentences(`statement.closed:${ref}:${lastDay}`);
       const beyond = `A payment to ${institutionOf(a.id)} after that statement that no other card received${payoff ? " and that the payoff doesn't account for" : ""} is counted as spending on a closing statement that isn't on file.`;
       c.infer({
