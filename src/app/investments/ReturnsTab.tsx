@@ -169,13 +169,15 @@ export function ReturnsTab({ r, d }: { r: InvestmentsReport; d: DerivedFigure[] 
 
       <Card title="Every quarter" subtitle="Hover an S&P 500 figure for where it was read; click any figure for its proof.">
         <div className={table.wrap}>
-          <table className={`${table.table} min-w-[46rem]`}>
+          <table className={`${table.table} min-w-[58rem]`}>
             <thead className={table.head}>
               <tr>
                 <th className={table.th}>Quarter</th>
                 <th className={table.thR}>Yours</th>
                 <th className={table.thR}>S&amp;P 500</th>
                 <th className={table.thR}>Difference</th>
+                <th className={table.thR} title={w ? `Chained from the start of ${w.fromLabel}` : undefined}>Yours, since start</th>
+                <th className={table.thR} title={w ? `Chained from the start of ${w.fromLabel}` : undefined}>S&amp;P 500, since start</th>
                 <th className={table.thR}>Your portfolio</th>
                 <th className={table.thR}>All in the S&amp;P 500</th>
               </tr>
@@ -197,6 +199,8 @@ export function ReturnsTab({ r, d }: { r: InvestmentsReport; d: DerivedFigure[] 
                     <td className={`${table.tdR} ${both ? (x.portfolio! >= x.sp500!.ratio ? "text-pos" : "text-neg") : ""}`}>
                       {both ? <ProofValue proof={compositeOf("diff", [q(x.quarter, "portfolio"), q(x.quarter, "sp500")], { ratio: x.portfolio! - x.sp500!.ratio })}>{`${x.portfolio! > x.sp500!.ratio ? "+" : ""}${pct(x.portfolio! - x.sp500!.ratio)}`}</ProofValue> : NA}
                     </td>
+                    <td className={table.tdR}>{pt ? <ProofValue proof={fig("ret-cum", returnsKey(x.quarter, "portfolio"))}>{pct(pt.portfolioCum)}</ProofValue> : NA}</td>
+                    <td className={table.tdR}>{pt ? <ProofValue proof={fig("ret-cum", returnsKey(x.quarter, "sp500"))}>{pct(pt.sp500Cum)}</ProofValue> : NA}</td>
                     <td className={table.tdR}>{pt ? <ProofValue proof={fig("ret-value", returnsKey(x.quarter, "actual"))}>{usd0(pt.actualCents)}</ProofValue> : NA}</td>
                     <td className={table.tdR}>{pt ? <ProofValue proof={fig("ret-value", returnsKey(x.quarter, "sp500"))}>{usd0(pt.sp500Cents)}</ProofValue> : NA}</td>
                   </tr>
