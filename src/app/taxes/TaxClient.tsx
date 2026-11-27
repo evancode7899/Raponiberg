@@ -103,7 +103,7 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
         {!api.ready ? null : !data ? (
           loading && <Loading label="Reading pay stubs and statements…" />
         ) : data.blocked ? (
-          <div className={`flex flex-col gap-4 ${loading ? "pointer-events-none opacity-60 transition-opacity" : ""}`}>
+          <div className={`flex flex-col gap-4 ${loading ? "pointer-events-none opacity-60 transition-opacity" : ""}`} {...(loading ? { "data-skeleton": "", "aria-busy": true } : {})}>
             <BlockedNote what={`${data.year} taxes`} blockers={data.blockers} limit={12} withheld />
             {tab === "inputs" ? (
               <TaxInputs r={data} onSave={saveProfile} />
@@ -118,7 +118,7 @@ export function TaxClient({ requiresApiSecret }: { requiresApiSecret: boolean })
             )}
           </div>
         ) : (
-          <div className={`flex flex-col gap-4 ${loading ? "pointer-events-none opacity-60 transition-opacity" : ""}`}>
+          <div className={`flex flex-col gap-4 ${loading ? "pointer-events-none opacity-60 transition-opacity" : ""}`} {...(loading ? { "data-skeleton": "", "aria-busy": true } : {})}>
             <BlockedNote
               what={`${data.year} taxes`}
               title={data.isCurrentYear || data.year > Number(data.today.slice(0, 4)) ? `Forecast — some ${data.year} documents aren't cross-checked yet` : `Open ledger findings for ${data.year} — the year's filed return and forms are used instead`}

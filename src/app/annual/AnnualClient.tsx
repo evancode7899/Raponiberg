@@ -75,7 +75,7 @@ export function AnnualClient({ requiresApiSecret }: { requiresApiSecret: boolean
         {!api.ready ? null : !data ? (
           loading && <Loading label="Running every check…" />
         ) : tab === "statement" ? (
-          <div className={loading ? "pointer-events-none opacity-60 transition-opacity" : ""}>
+          <div className={loading ? "pointer-events-none opacity-60 transition-opacity" : ""} {...(loading ? { "data-skeleton": "", "aria-busy": true } : {})}>
             <AnnualStatement r={data.profile} est={est} />
           </div>
         ) : (
