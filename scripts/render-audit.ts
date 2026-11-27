@@ -346,6 +346,28 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
   };
 
   /**
+   * Each chart's table (RechartsResponsive: data-chart-table), opened as a view of its own:
+   * every value in it is a figure that opens its proof, or n.a. when its chart names none
+   * (owner's rule, 2026-11-26), and a what-if chart's table is marked as that what-if.
+   */
+  const tables = async (name: string) => {
+    const openers = page.locator('[data-chart-table]:not([role="dialog"] *)');
+    const n = await openers.count();
+    for (let i = 0; i < n; i++) {
+      const o = openers.nth(i);
+      // The button shows on hover or focus: focus it, so a chart the page draws is opened whether or not the mouse is there.
+      if (!(await o.count())) continue;
+      const label = ((await o.getAttribute("data-chart-table")) || `chart ${i + 1}`).replace(/s+/g, " ").trim();
+      await o.focus().catch(() => {});
+      if (!(await o.isVisible().catch(() => false))) continue;
+      await o.click();
+      const v = await draw(`${name} ▤ ${label}`);
+      if (!v.repeat) await drawers(v);
+      await closeDialog();
+    }
+  };
+
+  /**
    * Every option of each control the page marks as a view (data-audit-view), and with each
    * one, every option of the controls after it (a year, then its basis): every pair, so a
    * column only a year and a basis together show is drawn too. Drill-downs open on each
@@ -383,6 +405,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
         if (v.repeat) return;
         await drawers(v);
         if (depth === 0) {
+          await tables(at);
           await drills(at);
           await explore(at, i + 1, 1);
         } else if (depth === 1 && (await page.locator("[data-audit-nest]").count())) await explore(at, i + 1, 2);
@@ -420,6 +443,7 @@ async function auditUnit(browser: Browser, unit: Unit, all: readonly string[], f
     }
     const v = await draw(name);
     await drawers(v);
+    await tables(name);
     await drills(name);
     await explore(name);
   };

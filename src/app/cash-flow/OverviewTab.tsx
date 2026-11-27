@@ -36,7 +36,7 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
   // A bonus or a one-off month past the scale is cut there and hatched, so the other months stay readable; it's listed under the chart.
   const cap = useMemo(() => cashCap(slice.months.map((m) => ({ label: m.label, income: m.incomeCents / 100, spending: m.spendingCents / 100 }))), [slice]);
   const cut = (v: number) => (cap == null ? v : Math.max(-cap, Math.min(cap, v)));
-  const rows = slice.months.map((m) => ({ label: m.label, income: cut(m.incomeCents / 100), spending: cut(m.spendingCents / 100), net: cut(m.netCents / 100), raw: { Income: m.incomeCents / 100, Spending: m.spendingCents / 100, Net: m.netCents / 100 } }));
+  const rows = slice.months.map((m) => ({ label: m.label, income: cut(m.incomeCents / 100), spending: cut(m.spendingCents / 100), net: cut(m.netCents / 100), raw: { Income: m.incomeCents / 100, Spending: m.spendingCents / 100, Net: m.netCents / 100 }, month: m }));
   const over = pastScale(slice.months, cap);
   // With a cut, the axis ends there: a nicer round number above it would leave the top empty.
   const low = Math.floor(Math.min(0, ...rows.map((r) => r.net)) / 5000) * 5000;
@@ -99,7 +99,14 @@ export function OverviewTab({ ctx }: { ctx: Ctx }) {
           {/* Fills the height beside Insights: the chart is laid over its box, so it never sets it. */}
           <div className="relative min-h-[320px] w-full min-w-0 flex-1">
             <div className="absolute inset-0">
-            <RechartsResponsive>
+            <RechartsResponsive
+              tableTitle="Income vs spending, month by month"
+              cellProof={(r, key) => {
+                const m = (r as (typeof rows)[number]).month;
+                const metric = key === "income" ? "income" : key === "spending" ? "spending" : "net";
+                return ctx.proof(metric, [m], { shownCents: metric === "income" ? m.incomeCents : metric === "spending" ? m.spendingCents : m.netCents });
+              }}
+            >
               <ComposedChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2} className="cursor-pointer" onClick={openMonthOnClick(ctx, slice.months)}>
                 <defs>
                   <OverPattern id="cfOver" color={chart.income} bg={chart.tooltipBg} />
