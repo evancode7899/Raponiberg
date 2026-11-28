@@ -21,6 +21,18 @@ try {
   console.log(r.status === "created" ? `Backed up to ${r.snapshot.dir}` : `Nothing changed since ${r.snapshot.name}; no new snapshot.`);
   if (r.statementsCopied) console.log(`Copied ${r.statementsCopied} statement PDF(s) to ${r.root}\\statements`);
   if (r.pruned) console.log(`Removed ${r.pruned} older snapshot(s).`);
+  // The phone digest follows every backup (src/lib/digest/write.ts); a digest failure never fails the backup.
+  const { digestDir, writeDigest } = await import("../src/lib/digest/write.ts");
+  const dir = digestDir(process.cwd());
+  if (dir) {
+    try {
+      const { loadBook } = await import("../src/lib/book/load.ts");
+      const d = await writeDigest(prisma, await loadBook(prisma), dir);
+      console.log(`Phone digest written: ${d.file}`);
+    } catch (e) {
+      console.error(`Phone digest not written: ${e instanceof Error ? e.message : e}`);
+    }
+  }
 } catch (e) {
   console.error(`Backup failed: ${e instanceof Error ? e.message : e}`);
   process.exitCode = 1;

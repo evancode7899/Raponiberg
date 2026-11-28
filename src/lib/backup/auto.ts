@@ -1,10 +1,14 @@
 import { existsSync } from "node:fs";
+import path from "node:path";
+import type { PrismaClient } from "@prisma/client";
 import { backupRoot, createBackup, listSnapshots, type BackupDb, type BackupResult } from "./backup.ts";
 
 /**
  * The server's side of the backups: one backup at a time, the outcome of the last one for
  * Settings › Data, and a timer that backs up shortly after the server starts and then every
- * 15 minutes (a backup with nothing new writes nothing).
+ * 15 minutes (a backup with nothing new writes nothing). Each backup then refreshes the phone
+ * digest (lib/digest/write.ts) when it saved something new or the digest is from an earlier day,
+ * so closing the app leaves the phone with the latest figures.
  */
 
 export const AUTO_BACKUP_EVERY_MS = 15 * 60_000;
@@ -22,8 +26,9 @@ export function runBackup(db: BackupDb, reason: string): Promise<BackupResult> {
   if (s.running) return s.running;
   const at = new Date().toISOString();
   const run = createBackup(db, { reason })
-    .then((result) => {
+    .then(async (result) => {
       s.last = { at, reason, ok: true, result };
+      await refreshDigest(db, result.status === "created");
       return result;
     })
     .catch((e: unknown) => {
@@ -35,6 +40,25 @@ export function runBackup(db: BackupDb, reason: string): Promise<BackupResult> {
     });
   s.running = run;
   return run;
+}
+
+/**
+ * Rewrites the phone digest after a backup, from the server's Book (book/cache.ts), when
+ * DIGEST_DIR is set. Loaded on demand: the backup itself needs none of the reports. A digest
+ * that fails is logged, never the backup's failure.
+ */
+async function refreshDigest(db: BackupDb, created: boolean): Promise<void> {
+  try {
+    const { digestDir, digestStale, writeDigest, DIGEST_FILE_NAME } = await import("../digest/write.ts");
+    const dir = digestDir(process.cwd());
+    if (!dir || !digestStale(path.join(dir, DIGEST_FILE_NAME), created)) return;
+    const { getBook } = await import("../book/cache.ts");
+    // The backups' callers pass the app's PrismaClient; the backup only needs its raw queries.
+    const prisma = db as unknown as PrismaClient;
+    await writeDigest(prisma, await getBook(prisma), dir);
+  } catch (e) {
+    console.error("[digest]", e instanceof Error ? e.message : e);
+  }
 }
 
 /** Starts the timer (once per process). Failures are kept for Settings and logged, never thrown. */
