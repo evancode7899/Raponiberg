@@ -110,7 +110,7 @@ export function parseElanCard(text: string): ParsedDocument {
     const amountCell = cells.at(-1);
     const amount = amountCell ? AMOUNT_CELL.exec(amountCell.text) : null;
 
-    // "TOTAL THIS PERIOD $442.13" / "TOTAL FEES THIS PERIOD $0.00" closes the block.
+    // "TOTAL THIS PERIOD $123.45" / "TOTAL FEES THIS PERIOD $0.00" closes the block.
     if (/^TOTAL (FEES |INTEREST )?THIS PERIOD$/.test(cells.find((c) => /^TOTAL /.test(c.text))?.text ?? "")) {
       if (amount) blockTotals.push({ label: `${section} rows = the block's "TOTAL THIS PERIOD"`, expectedCents: parseMoney(amount[1]!)!, actualCents: blockSum });
       section = null;

@@ -9,9 +9,13 @@ import { axisUsd, EM_DASH, NA, pct, usd0, usdCompact } from "../formatMoney.ts";
  *
  * What Quick Look can do without JavaScript (tested on the owner's iPhone): radio-button
  * tabs (CSS :checked) and <details> expanders work, but #anchor links don't. So the page
- * is five tabs, each with tap-to-expand breakdowns, and has no links. Every SVG has a
- * fixed width and height: a chart Quick Look had to size from its container drew as a
- * black screen until the page was zoomed.
+ * is five tabs, each with tap-to-expand breakdowns, and has no links. A black screen until
+ * the page is zoomed (worst when reopened) is Quick Look failing to paint, so the page
+ * avoids what makes it size or layer things itself: every SVG has a fixed width and height
+ * that no CSS overrides (width:100% undid it), and no card has a shadow. Nothing can be
+ * frozen on scroll: Quick Look makes its view as tall as the whole page and scrolls that, so
+ * position:sticky and a one-screen page with its own scrolling area both scroll away
+ * (tested on the owner's iPhone).
  *
  * Pure: scripts/digest.ts gathers the data and writes the file.
  */
@@ -134,7 +138,8 @@ export function ticks(lo: number, hi: number, n = 4): number[] {
   return out;
 }
 
-const W = 340;
+/** Chart width: fits the narrowest iPhone's card (375 pt screen less page and card padding). CSS never resizes a chart. */
+export const W = 320;
 const L = 46; // room for the y labels
 const svgOpen = (h: number, label: string) => `<svg viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" class="chart" role="img" aria-label="${esc(label)}">`;
 
@@ -473,7 +478,7 @@ main{max-width:34rem;margin:0 auto;padding:10px 10px 36px}
 .top{margin:6px 4px 12px}
 h1{font-size:14px;margin:0;color:var(--accent);letter-spacing:.14em;font-weight:800}
 .top .small{color:var(--muted)}
-section{background:var(--card);border:1.5px solid var(--edge);border-radius:14px;padding:0 14px 12px;margin-bottom:18px;box-shadow:0 1px 0 var(--edge)}
+section{background:var(--card);border:1.5px solid var(--edge);border-radius:14px;padding:0 14px 12px;margin-bottom:18px}
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg);margin:0 -14px 10px;padding:11px 14px 9px;font-weight:800;border-bottom:1.5px solid var(--line);border-left:4px solid var(--accent);border-radius:12px 12px 0 0}
 h2 .sub{float:right;text-transform:none;letter-spacing:0;font-weight:500;color:var(--muted)}
 .big{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.01em;margin:2px 0 4px}
@@ -523,14 +528,14 @@ details[open]>summary{border-bottom:1px dashed var(--line)}
 .key{font-size:13px;color:var(--muted);margin:4px 0 6px}.key span{margin-right:14px;white-space:nowrap}
 .key i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .key i.fa{background:var(--accent)}.key i.fb{background:var(--b2)}
-.chart{display:block;width:100%;height:auto;margin:8px 0 4px}
+.chart{display:block;margin:8px auto 4px}
 .line{stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
 .area{fill:var(--accent);fill-opacity:.12}.dot{fill:var(--accent);stroke:var(--card);stroke-width:2}
 .axis{fill:var(--muted);font-size:11px;font-family:-apple-system,system-ui,sans-serif}
 .gl{stroke:var(--line);stroke-width:1}.zero{stroke:var(--edge);stroke-width:1.5}
 .fa{fill:var(--accent)}.fb{fill:var(--b2)}.fpos{fill:var(--pos)}.fneg{fill:var(--neg)}
 .tabr{position:absolute;opacity:0;pointer-events:none}
-.tabs{display:table;width:100%;table-layout:fixed;background:var(--tab);border:1.5px solid var(--edge);border-radius:12px;padding:3px;margin-bottom:16px;position:-webkit-sticky;position:sticky;top:6px;z-index:2}
+.tabs{display:table;width:100%;table-layout:fixed;background:var(--tab);border:1.5px solid var(--edge);border-radius:12px;padding:3px;margin-bottom:16px}
 .tabs label{display:table-cell;text-align:center;padding:10px 1px;font-size:13px;font-weight:700;color:var(--muted);border-radius:9px;cursor:pointer;white-space:nowrap;letter-spacing:-.01em}
 .panel{display:none}
 footer{font-size:12px;color:var(--muted);text-align:center;margin-top:16px}

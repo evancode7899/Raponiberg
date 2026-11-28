@@ -94,6 +94,15 @@ describe("renderDigest", () => {
     expect(svgs.length).toBeGreaterThanOrEqual(4);
     for (const svg of svgs) expect(svg).toMatch(/width="\d+" height="\d+"/);
   });
+  it("lets no CSS resize a chart (that left Quick Look a black screen)", () => {
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)![1]!;
+    expect(css).not.toMatch(/\.chart\{[^}]*(width|height)/);
+  });
+  it("scrolls as one page (Quick Look can't freeze a header, so nothing tries)", () => {
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)![1]!;
+    expect(css).not.toMatch(/position:sticky|position:fixed|overflow-y:auto/);
+    expect(css).toMatch(/html,body\{background:var\(--bg\)\}/);
+  });
 });
 
 describe("charts", () => {
