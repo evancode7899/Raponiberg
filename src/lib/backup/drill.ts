@@ -104,7 +104,13 @@ export async function runRestoreDrill(opts: DrillOptions): Promise<DrillResult> 
     return result;
   } finally {
     await opened?.$disconnect().catch(() => {});
-    rmSync(work, { recursive: true, force: true });
+    // Windows can hold the copy's file a moment past $disconnect (EPERM/EBUSY): retried, and a
+    // scratch folder left in the temp dir never fails the drill.
+    try {
+      rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch {
+      /* the system temp folder's own cleanup takes it */
+    }
   }
 
   for (const f of snap.manifest.files) {

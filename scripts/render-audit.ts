@@ -27,15 +27,22 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser } from "playwright-core";
-import { auditRender, BYPASS_PENDING, CHART_TABLE_PENDING, chartTableOf, drawerStrays, figureFamily, pageOf, UNDRAWN_PENDING, type DrawnView, type RenderProblem, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
+import { auditRender, BYPASS_PENDING, CHART_TABLE_PENDING, chartTableOf, drawerStrays, figureFamily, heldDrawn, pageOf, UNDRAWN_PENDING, type DrawnView, type RenderProblem, type SweepVerdicts } from "../src/lib/book/proof/renderAudit.ts";
 import { dropEntry, loadEntries, Replayer, saveEntry, type Entry } from "./render-audit-cache.ts";
 import { auditUnit, openWorker, tabKey, unitName, type DriveConfig, type RawView, type Unit, type UnitRun, type Worker } from "./render-audit-drive.ts";
 import { byCost, clean, deal, firstDiff, mergeParts, withParts, type Cost } from "./render-audit-plan.ts";
 import { hashFiles } from "../src/lib/importGraph.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-/** --merge <shard files…>: no browser, just the whole run's audit from what each shard drew. */
-const MERGE = process.argv[2] === "--merge" ? process.argv.slice(3) : null;
+/**
+ * --merge <shard files…>: no browser, just the whole run's audit from what each shard drew.
+ * --merge <files…> --also <files…>: a second look (CI's render-audit-again) held whole, with the
+ * cleared figures the first look's shards drew right counted as drawn too (renderAudit.ts
+ * heldDrawn): only a figure neither look drew is undrawn. Everything else is the second look's alone.
+ */
+const ALSO_AT = process.argv.indexOf("--also");
+const MERGE = process.argv[2] === "--merge" ? process.argv.slice(3, ALSO_AT > 0 ? ALSO_AT : undefined) : null;
+const ALSO = MERGE && ALSO_AT > 0 ? process.argv.slice(ALSO_AT + 1) : [];
 const base = MERGE ? "" : (process.argv[2] ?? "").replace(/\/$/, "");
 if (!base && !MERGE?.length) {
   console.error("Usage: node scripts/render-audit.ts <base-url>\n       node scripts/render-audit.ts --merge <shard.json>…");
@@ -65,6 +72,12 @@ const CONFIG: DriveConfig = {
 };
 /** The audit's time budget (F6e), a shard's own when sharded: the owner wants proof checks in minutes, so a slower run fails. RENDER_AUDIT_BUDGET_MS overrides (0: none). */
 const BUDGET_MS = Number(process.env.RENDER_AUDIT_BUDGET_MS ?? 240_000);
+/**
+ * RENDER_AUDIT_TARGET_MS: the time a run should take, said (a GitHub warning on CI) but not
+ * failed when a run takes longer within its budget. CI's shared runners vary by half from run
+ * to run on the same code, so the budget fails only a run no slow runner explains.
+ */
+const TARGET_MS = Number(process.env.RENDER_AUDIT_TARGET_MS ?? 0);
 /** RENDER_AUDIT_REDACT=1: real data, so the console says problem kinds, pages and counts, never a drawn value, key or name. */
 const REDACT = process.env.RENDER_AUDIT_REDACT === "1";
 /** RENDER_AUDIT_CACHE=<folder>: draw again only the tabs whose inputs changed (render-audit-cache.ts). Not with shards: each must deal the same plan. */
@@ -316,6 +329,31 @@ async function run(): Promise<Drawn> {
   return { shard: SHARD ? `${SHARD.i}/${SHARD.n}` : null, only: ONLY ?? null, report, runs: runs.map((r) => ({ ...r, asked: undefined })), ms: Date.now() - started, notes };
 }
 
+const sweepOf = (p: Drawn) => JSON.stringify([p.report.figures, p.report.cleared, p.only]);
+
+/**
+ * The first look's cleared figures drawn right (--also), for a second look held to the same
+ * sweep: a shard file that's missing, unreadable or held to another sweep adds nothing.
+ */
+function alsoDrawn(files: string[], second: Drawn): Set<string> {
+  const out = new Set<string>();
+  for (const f of files) {
+    let p: Drawn;
+    try {
+      p = JSON.parse(readFileSync(f, "utf8")) as Drawn;
+    } catch {
+      console.log(`--also ${f}: not there or not readable, so it adds nothing.`);
+      continue;
+    }
+    if (sweepOf(p) !== sweepOf(second)) {
+      console.log(`--also ${f}: held to another sweep than the second look, so it adds nothing.`);
+      continue;
+    }
+    for (const k of heldDrawn(mergeParts(p.runs).flatMap((r) => r.views.map(held)), p.report)) out.add(k);
+  }
+  return out;
+}
+
 /** The shards' files, checked to be one whole run: every shard of the same N once, all held to the same sweep. */
 function readShards(files: string[]): Drawn[] {
   const parts = files.map((f) => JSON.parse(readFileSync(f, "utf8")) as Drawn);
@@ -327,8 +365,7 @@ function readShards(files: string[]): Drawn[] {
   const got = parts.map((p) => p.shard ?? "1/1").sort();
   const want = Array.from({ length: n }, (_, i) => `${i + 1}/${n}`).sort();
   if (JSON.stringify(got) !== JSON.stringify(want)) fail(`expected shards ${want.join(", ")}, got ${got.join(", ")}.`);
-  const sweep = (p: Drawn) => JSON.stringify([p.report.figures, p.report.cleared, p.only]);
-  if (parts.some((p) => sweep(p) !== sweep(parts[0]!))) fail("they were held to different sweeps (or different pages), so they rendered different data.");
+  if (parts.some((p) => sweepOf(p) !== sweepOf(parts[0]!))) fail("they were held to different sweeps (or different pages), so they rendered different data.");
   return parts;
 }
 
@@ -343,8 +380,8 @@ const held = (v: RawView): DrawnView => ({
   ...(v.rawDrawers ? { drawers: v.rawDrawers.map((d) => ({ key: d.key, strays: "none" in d ? [d.none] : drawerStrays(d.tokens, d.proof, d.perMonths) })) } : {}),
 });
 
-/** The audit of everything drawn (a whole run's, or one shard's on its own), printed; exits 1 on any problem. */
-function finish(parts: Drawn[]) {
+/** The audit of everything drawn (a whole run's, or one shard's on its own), printed; exits 1 on any problem. `elsewhere`: cleared figures a first look drew right (--also). */
+function finish(parts: Drawn[], elsewhere?: ReadonlySet<string>) {
   const { report, only } = parts[0]!;
   const shard = parts.length === 1 ? parts[0]!.shard : null;
   // A shard, or some pages only, can't tell a pending page is clean, nor which cleared figures no page draws.
@@ -363,7 +400,11 @@ function finish(parts: Drawn[]) {
     .sort((a, b) => pages.indexOf(a.route) - pages.indexOf(b.route) || (a.tab ? 1 : 0) - (b.tab ? 1 : 0) || unitName(a).localeCompare(unitName(b)) || (a.part?.i ?? 0) - (b.part?.i ?? 0))
     .flatMap((r) => r.views.map(held));
 
-  const audit = auditRender(views, report, BYPASS_PENDING, { partial });
+  const audit = auditRender(views, report, BYPASS_PENDING, { partial, drawnElsewhere: elsewhere });
+  if (elsewhere) {
+    const drawnHere = auditRender(views, report, BYPASS_PENDING, { partial }).missing.length - audit.missing.length;
+    console.log(`\nSecond look: ${drawnHere} cleared figure(s) this run missed were drawn right by the first look's shards (--also), so count as drawn.`);
+  }
   audit.problems.push(...parts.flatMap((p) => p.notes ?? []));
   // Every tab a page lists is audited somewhere (a whole run only: a shard sees its own units).
   if (!shard) {
@@ -427,6 +468,9 @@ function finish(parts: Drawn[]) {
     const p: RenderProblem = { kind: "RENDER_ERROR", view: shard ? `(shard ${shard})` : "(the whole audit)", detail: `Took ${Math.round(took / 1000)} s, over its ${Math.round(BUDGET_MS / 1000)} s budget: find the slow view (RENDER_AUDIT_JSON) before raising it.` };
     audit.problems.push(p);
     console.log(`\n[RENDER_ERROR] ${p.detail}`);
+  } else if (!MERGE && TARGET_MS && took > TARGET_MS) {
+    const why = `${shard ? `Shard ${shard}` : "The render audit"} took ${Math.round(took / 1000)} s, over its ${Math.round(TARGET_MS / 1000)} s target (within its ${Math.round(BUDGET_MS / 1000)} s budget): a slow runner, or a slower page (RENDER_AUDIT_JSON).`;
+    console.log(`\n${process.env.GITHUB_ACTIONS ? "::warning::" : "[SLOW] "}${why}`);
   }
   const bad = audit.problems.length;
   const whole = shard ? ` (shard ${shard}; the merge holds the whole run)` : "";
@@ -434,7 +478,10 @@ function finish(parts: Drawn[]) {
   process.exit(bad ? 1 : 0);
 }
 
-if (MERGE) finish(readShards(MERGE));
+if (MERGE) {
+  const parts = readShards(MERGE);
+  finish(parts, ALSO.length ? alsoDrawn(ALSO, parts[0]!) : undefined);
+}
 else {
   const drawn = await run();
   if (OUT) writeFileSync(OUT, JSON.stringify(drawn));

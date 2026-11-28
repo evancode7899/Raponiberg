@@ -302,7 +302,13 @@ export function chartStrays(v: Pick<DrawnView, "chart">, figures: readonly Drawn
 }
 
 /** Every problem in what the pages drew, held to the sweep; and how many cleared figures were drawn. */
-export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPages: Readonly<Record<string, string>> = BYPASS_PENDING, opts: { partial?: boolean; undrawnPending?: Readonly<Record<string, string>>; tablePending?: Readonly<Record<string, string>> } = {}): RenderAudit {
+/**
+ * `drawnElsewhere`: cleared figures another whole run of the same build and data drew, each
+ * at its cleared value (heldDrawn): drawn, for F6d, though no view of this run drew them. The
+ * code draws the same data the same way every time, so a page that drew a figure once can
+ * draw it; a run that missed it lost a race on a busy machine, not a recipe.
+ */
+export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPages: Readonly<Record<string, string>> = BYPASS_PENDING, opts: { partial?: boolean; undrawnPending?: Readonly<Record<string, string>>; tablePending?: Readonly<Record<string, string>>; drawnElsewhere?: ReadonlySet<string> } = {}): RenderAudit {
   const undrawnPending = opts.undrawnPending ?? UNDRAWN_PENDING;
   const tablePending = opts.tablePending ?? CHART_TABLE_PENDING;
   const all: RenderProblem[] = [];
@@ -354,7 +360,7 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
   for (const [page, stage] of opts.partial ? [] : Object.entries(pendingPages))
     if (audited.has(page) && !pending.some((p) => pageOf(p.view) === page))
       problems.push({ kind: "RENDER_BYPASS", view: page, detail: `Draws nothing outside its figures now: take it off BYPASS_PENDING (it waited for ${stage}), so a new bypass fails.` });
-  const missing = opts.partial ? [] : Object.keys(sweep.cleared).filter((k) => !drawn.has(k));
+  const missing = opts.partial ? [] : Object.keys(sweep.cleared).filter((k) => !drawn.has(k) && !opts.drawnElsewhere?.has(k));
   // F6d: a cleared figure no view draws fails, unless its family is still listed as pending.
   const byFamily = new Map<string, string[]>();
   for (const k of missing) byFamily.set(figureFamily(k), [...(byFamily.get(figureFamily(k)) ?? []), k]);
@@ -364,6 +370,24 @@ export function auditRender(views: DrawnView[], sweep: SweepVerdicts, pendingPag
     for (const [family, stage] of Object.entries(undrawnPending))
       if (!byFamily.has(family)) problems.push({ kind: "RENDER_UNDRAWN", view: family, detail: `Every cleared figure of it is drawn now: take it off UNDRAWN_PENDING (it waited for ${stage}), so a new undrawn one fails.` });
   return { problems, pending, drawn: Object.keys(sweep.cleared).length - missing.length, cleared: Object.keys(sweep.cleared).length, missing, whatIf };
+}
+
+/**
+ * The cleared figures a run drew and drew right: each drawn cleared, with no problem held
+ * against its key in any view (a value other than the sweep's, text that says another
+ * number). What a second look at the same data may count as drawn (auditRender drawnElsewhere).
+ */
+export function heldDrawn(views: DrawnView[], sweep: SweepVerdicts): Set<string> {
+  const { problems, pending } = auditRender(views, sweep, BYPASS_PENDING, { partial: true });
+  const wrong = new Set([...problems, ...pending].map((p) => p.key).filter((k): k is string => !!k));
+  const out = new Set<string>();
+  for (const v of views)
+    for (const f of v.figures)
+      if (f.clearance === "cleared" && !wrong.has(f.key) && clearedValue(f.key, sweep.cleared)) {
+        out.add(f.key);
+        for (const k of compositeParts(f.key)) out.add(k);
+      }
+  return out;
 }
 
 /** Money and rates in drawn text, one by one: "$1,234", "(6.5%)", "−$4.1k". */

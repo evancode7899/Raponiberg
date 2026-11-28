@@ -139,6 +139,22 @@ export const CHECKS: Check[] = [
   },
 ];
 
+/**
+ * A picture of the page once it has stopped changing: its fonts loaded, then two pictures in
+ * a row the same. A fixed wait alone took /help mid-draw on a slow runner (5% off, CI 2026-11-26).
+ */
+async function steadyShot(page: Page): Promise<Buffer> {
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  let last = await page.screenshot();
+  for (let k = 0; k < 20; k++) {
+    await page.waitForTimeout(250);
+    const now = await page.screenshot();
+    if (now.equals(last)) return now;
+    last = now;
+  }
+  return last;
+}
+
 /** The share of pixels that differ between two pictures of the same size, compared in the page (no image library needed). */
 async function differs(page: Page, a: Buffer, b: Buffer): Promise<number> {
   return page.evaluate(
@@ -202,7 +218,7 @@ export async function uiChecks(base: string, opts: { update?: boolean } = {}): P
       await page.goto(v.at);
       if (v.at !== "/help" && !v.at.startsWith("/settings")) await settle(page);
       await page.waitForTimeout(800);
-      const shot = await page.screenshot();
+      const shot = await steadyShot(page);
       const file = path.join(BASELINES, `${v.name}.png`);
       if (opts.update || !existsSync(file)) {
         writeFileSync(file, shot);

@@ -34,7 +34,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const c of opened.splice(0)) await c.$disconnect();
-  rmSync(tmp, { recursive: true, force: true });
+  rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 // Its own lock folder: backup.test.ts backs up at the same time.
