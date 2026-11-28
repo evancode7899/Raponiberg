@@ -25,6 +25,16 @@ export const until = (from: string, to: string) => {
 export const rowProof = (rowId: string, cents: number) => ({ descriptor: { report: "row" as const, rowId }, shownCents: -cents });
 
 /** A derived figure of the page, drawn as its own text (money as dollars and cents, words as printed). */
+/**
+ * A home policy's main coverages, by the first letter its declarations use: State Farm's
+ * renters print personal property as B and liability as L; the standard (ISO) forms ASI
+ * prints use C and E, with A the dwelling. -1 when the policy prints none.
+ */
+export function mainCoverages(p: { property: { code: string | null }[]; liability: { code: string | null }[] }): { personal: number; liability: number } {
+  const first = (list: { code: string | null }[], codes: string[]) => codes.map((code) => list.findIndex((c) => c.code === code)).find((i) => i >= 0) ?? -1;
+  return { personal: first(p.property, ["B", "C", "A"]), liability: first(p.liability, ["L", "E"]) };
+}
+
 export function Fig({ figs, figure, k, money = "cents" }: { figs: readonly DerivedFigure[]; figure: string; k?: string; money?: "cents" | "dollars" }) {
   const f = figs.find((x) => x.figure === figure && (x.key ?? null) === (k ?? null));
   const v = f?.value;

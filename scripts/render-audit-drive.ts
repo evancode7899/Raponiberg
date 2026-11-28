@@ -26,7 +26,7 @@ export type RawView = {
 /** A request a unit's page made, as needed to ask it again: path and query, method, the headers the answer can turn on, and a POST's body. */
 export type Asked = { method: string; url: string; headers: Record<string, string>; body?: string };
 /** What a unit drew; a page's own unit (part 0) also lists the page's tabs. `draws` counts every look, `repeats` those that drew nothing new. */
-export type UnitRun = Unit & { views: RawView[]; ms: number; skipped?: string; tabs?: Unit[]; draws: number; repeats: number; drawers: number; settleMs?: number; collectMs?: number; asked?: Asked[] };
+export type UnitRun = Unit & { views: RawView[]; ms: number; skipped?: string; tabs?: Unit[]; draws: number; repeats: number; drawers: number; settleMs?: number; collectMs?: number; rereads?: number; rereadMs?: number; drillWaits?: number; drillWaitMs?: number; asked?: Asked[] };
 
 export const unitName = (u: Unit) => `${u.tab ? `${u.route} › ${u.tab.label}` : u.route}${u.part && u.part.n > 1 ? ` [${u.part.i + 1}/${u.part.n}]` : ""}`;
 /** A tab's identity across runs and shards: its page, tab id and the tab's label (parts share it). */
@@ -308,7 +308,7 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
   // drawer's drawing. Per unit, not per run, so which drawers open never depends on which worker or shard got there first.
   const drawerFamilies = new Set<string>();
   // settleMs/collectMs: where a unit's looks spend their time (waiting for the page, reading it), in RENDER_AUDIT_JSON.
-  const stats = { draws: 0, repeats: 0, drawers: 0, settleMs: 0, collectMs: 0 };
+  const stats = { draws: 0, repeats: 0, drawers: 0, settleMs: 0, collectMs: 0, rereads: 0, rereadMs: 0, drillWaits: 0, drillWaitMs: 0 };
 
   const draw = async (name: string, scope?: string): Promise<RawView & { repeat: boolean }> => {
     const t0 = Date.now();
@@ -320,7 +320,10 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
       const before = await page.evaluate(changedAt);
       s = await page.evaluate(collect, scope);
       if (k === 2 || (await page.evaluate(changedAt)) === before) break;
+      const r0 = Date.now();
       await settle(w, cfg);
+      stats.rereads++;
+      stats.rereadMs += Date.now() - r0;
     }
     stats.settleMs += t1 - t0;
     stats.collectMs += Date.now() - t1;
@@ -392,7 +395,11 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
       // The drill must take effect before the view is read: a slow page can look quiet before it reacts.
       const t = await page.evaluate(() => performance.now());
       await o.click();
-      await page.waitForFunction(changedSince, t, { polling: 20, timeout: 3000 }).catch(() => {});
+      const w0 = Date.now();
+      await page.waitForFunction(changedSince, t, { polling: 20, timeout: 3000 }).catch(() => {
+        stats.drillWaits++;
+      });
+      stats.drillWaitMs += Date.now() - w0;
       const back = page.locator("[data-audit-back]").first();
       // A drawer, a view in place with a way back, or a row that opens where it is: whichever came, once it settles.
       await draw(`${name} ▸ ${label}`);

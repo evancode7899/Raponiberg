@@ -1,4 +1,4 @@
-import { minIso, periodsBetween } from "../../dates/isoDate.ts";
+import { dayNumber, minIso, periodsBetween } from "../../dates/isoDate.ts";
 import { isSp500Fund } from "../../investments/sp500.ts";
 import { decompose, dietzParts, MIN_RETURN_CAPITAL_CENTS, valueAt } from "../../ledger/timeline.ts";
 import type { DerivedFigure } from "../derived/types.ts";
@@ -104,11 +104,16 @@ export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "as
       case "cost-known":
         return [centsRoute(POS, v, sum(withCost, (p) => p.valueCents), "taxable positions with a printed cost")];
       case "account-fee-lifetime": {
+        // Statement by statement: each statement period's fees, the share of it inside the
+        // window (all of it but at the edges), rounded once at the end like the page's figure.
         const a = rep.accounts.find((x) => x.accountId === f.key);
         if (!a) return null;
         const t = timeline.get(a.accountId)!;
-        const months = periodsBetween(t.firstDay!, rep.asOf, "month");
-        return [centsRoute("the account's timeline fees, month by month since its first statement, re-added", v, months.reduce((s, m) => s + decompose(t, m.start < t.firstDay! ? t.firstDay! : m.start, m.end > rep.asOf ? rep.asOf : m.end).feesCents, 0), "each month's fees", 1)];
+        const lo = dayNumber(t.firstDay!);
+        const hi = dayNumber(rep.asOf);
+        const inWindow = t.segments.filter((s) => s.fees !== 0 && s.start <= hi && s.end >= lo);
+        const fees = Math.round(inWindow.reduce((sum, s) => sum + (s.fees * (Math.min(hi, s.end) - Math.max(lo, s.start) + 1)) / s.days, 0));
+        return [centsRoute("each statement period's fees since the first statement, re-added", v, fees, "statement by statement", inWindow.length)];
       }
       case "account-fees-lifetime":
         return [centsRoute("each account's timeline fees since its first statement", v, rep.accounts.reduce((s, a) => (investment.has(a.accountId) ? s + decompose(timeline.get(a.accountId)!, timeline.get(a.accountId)!.firstDay!, rep.asOf).feesCents : s), 0), "account by account", rep.accounts.length)];

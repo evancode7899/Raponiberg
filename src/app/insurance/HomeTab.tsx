@@ -1,6 +1,7 @@
 "use client";
 
 import { derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
+import { noFigure } from "@/lib/book/proof/clearance";
 import { Badge, Card, EmptyState, StatCell, StatGrid, table } from "@/components/ui/kit";
 import { NA, usd0 } from "@/lib/formatMoney";
 import { limitKey } from "@/lib/book/derived/insurance";
@@ -8,7 +9,7 @@ import type { HomeView } from "@/lib/insurance/cover";
 import type { InsurancePage } from "@/lib/insurance/page";
 import type { Coverage } from "@/lib/insurance/types";
 import { useState } from "react";
-import { CoverPayments, CoverStatusBadge, Facts, Fig, longDate, PolicyPicker, shortDate, SubTabs, termText, TermsOnFile, until, useViewParam } from "./parts";
+import { CoverPayments, CoverStatusBadge, Facts, Fig, longDate, mainCoverages, PolicyPicker, shortDate, SubTabs, termText, TermsOnFile, until, useViewParam } from "./parts";
 
 /** Insurance › Home: renters, homeowners or condo policies, from each term's declarations page. */
 
@@ -31,9 +32,8 @@ export function HomeTab({ data, figs }: { data: InsurancePage; figs: readonly De
   }
   const p = v.policy;
   const pn = p.policyNumber;
-  const main = (list: Coverage[], code: string) => list.findIndex((c) => c.code === code);
-  const personal = main(p.property, "B") >= 0 ? main(p.property, "B") : main(p.property, "A");
-  const liability = main(p.liability, "L");
+  const { personal, liability } = mainCoverages(p);
+  const limitProof = (group: "P" | "L" | "D", i: number, what: string) => (i >= 0 ? derivedTarget("insurance", figs, "limit", limitKey(pn, group, i)) : noFigure(`the declarations print no ${what}`));
   return (
     <>
       <PolicyPicker options={data.homes.map((h) => ({ value: h.policy.policyNumber, label: `${LINE_LABEL[h.policy.line]} ••${h.policy.policyNumber.slice(-4)}` }))} value={pn} onChange={setPicked} />
@@ -48,9 +48,9 @@ export function HomeTab({ data, figs }: { data: InsurancePage; figs: readonly De
 
       <StatGrid cols={4}>
         <StatCell proof={derivedTarget("insurance", figs, "home-premium", pn)} label="Premium" value={usd0(p.totalPremiumCents)} sub={p.termMonths ? `For the ${p.termMonths}-month term` : "For the term"} />
-        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "P", personal))} label={personal >= 0 ? p.property[personal]!.name : "Property"} value={personal >= 0 ? p.property[personal]!.limit : NA} sub={p.lossSettlement[0] ?? undefined} />
-        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "L", liability))} label="Personal liability" value={liability >= 0 ? p.liability[liability]!.limit : NA} sub={liability >= 0 && p.liability[liability]!.per ? p.liability[liability]!.per! : undefined} />
-        <StatCell proof={derivedTarget("insurance", figs, "limit", limitKey(pn, "D", 0))} label="Deductible" value={p.deductibles[0]?.text ?? NA} sub={p.deductibles[0] ? p.deductibles[0].name : undefined} />
+        <StatCell proof={limitProof("P", personal, "personal property limit")} label={personal >= 0 ? p.property[personal]!.name : "Property"} value={personal >= 0 ? p.property[personal]!.limit : NA} sub={p.lossSettlement[0] ?? undefined} />
+        <StatCell proof={limitProof("L", liability, "personal liability limit")} label="Personal liability" value={liability >= 0 ? p.liability[liability]!.limit : NA} sub={liability >= 0 && p.liability[liability]!.per ? p.liability[liability]!.per! : undefined} />
+        <StatCell proof={limitProof("D", p.deductibles.length ? 0 : -1, "deductible")} label="Deductible" value={p.deductibles[0]?.text ?? NA} sub={p.deductibles[0] ? p.deductibles[0].name : undefined} />
       </StatGrid>
 
       <SubTabs

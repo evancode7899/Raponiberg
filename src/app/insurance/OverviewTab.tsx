@@ -8,7 +8,7 @@ import { NA, usd0 } from "@/lib/formatMoney";
 import { overviewPolicies, upcomingDates, type CoverLine, type OverviewPolicy } from "@/lib/insurance/cover";
 import type { InsurancePage } from "@/lib/insurance/page";
 import { useMemo, useState } from "react";
-import { CoverStatusBadge, Fig, shortDate, until } from "./parts";
+import { CoverStatusBadge, Fig, mainCoverages, shortDate, until } from "./parts";
 
 /** Insurance › Overview: every policy across life, home and auto, what each costs a year and what's coming up. */
 
@@ -94,9 +94,7 @@ export function OverviewTab({ data, figs, open, saveYears }: { data: InsurancePa
             ))}
             {data.homes.map((v) => {
               const pn = v.policy.policyNumber;
-              const at = (code: string) => v.policy.property.findIndex((c) => c.code === code);
-              const own = at("B") >= 0 ? at("B") : at("A");
-              const liab = v.policy.liability.findIndex((c) => c.code === "L");
+              const { personal: own, liability: liab } = mainCoverages(v.policy);
               return (
                 <CoverItem
                   key={`H${pn}`}
