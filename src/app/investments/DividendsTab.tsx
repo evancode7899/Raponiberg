@@ -17,7 +17,7 @@ export function DividendsTab({ r, d }: { r: InvestmentsReport; d: DerivedFigure[
   const cal = r.dividends;
   if (!cal.securities.length) return <EmptyState title="No dividends on your brokerage statements in the last twelve months" />;
   const fig = (row: string, month: string) => derivedTarget("investments", d, "div", divKey(row, month));
-  const best = cal.months.reduce((m, x) => (x.cents > m.cents ? x : m), cal.months[0]!);
+  const best = [...cal.months].sort((a, b) => b.cents - a.cents)[0]!;
   const upcoming = cal.securities.filter((s) => s.next).sort((a, b) => a.next!.localeCompare(b.next!));
   return (
     <>

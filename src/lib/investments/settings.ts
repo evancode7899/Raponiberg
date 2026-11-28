@@ -14,8 +14,6 @@ export type InvestmentSettings = {
   target: Weights | null;
   /** Count bank cash (checking, savings) in the household allocation. */
   includeBankCash: boolean;
-  /** The broad index fund Investment returns compares with (its securityKey), or null: the one the statements price most often. */
-  benchmarkFund: string | null;
 };
 
 export const INVESTMENT_SETTINGS_KEY = "investments.v1";
@@ -38,5 +36,5 @@ export function normalizeInvestmentSettings(raw: unknown): InvestmentSettings {
     const expenseRatio = isNum(o.expenseRatio) && o.expenseRatio >= 0 && o.expenseRatio < 0.1 ? o.expenseRatio : null;
     if (weights || expenseRatio != null) securities[k.slice(0, 120)] = { weights, expenseRatio };
   }
-  return { version: 1, securities, target: normalizeWeights(r.target), includeBankCash: r.includeBankCash === true, benchmarkFund: typeof r.benchmarkFund === "string" && r.benchmarkFund.trim() ? r.benchmarkFund.trim().slice(0, 120) : null };
+  return { version: 1, securities, target: normalizeWeights(r.target), includeBankCash: r.includeBankCash === true };
 }
