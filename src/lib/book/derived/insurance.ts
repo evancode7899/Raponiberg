@@ -227,7 +227,7 @@ function lifeTables(v: PolicyView): DerivedFigure[] {
  * less what the accounts hold, against the life cover in force. Each part links the page that
  * proves it (Net worth's balances); the years are the owner's.
  */
-function needDerived(page: InsuranceInput): DerivedFigure[] {
+export function needDerived(page: InsuranceInput): DerivedFigure[] {
   const need = page.need;
   if (!need || !page.policies.length) return [];
   const cover = page.policies.filter((v) => v.status === "IN_FORCE").reduce((s, v) => s + (v.faceNowCents ?? v.policy.faceCents), 0);
@@ -244,7 +244,13 @@ function needDerived(page: InsuranceInput): DerivedFigure[] {
       figure: "need-gap",
       describes: g && g.gapCents > 0 ? "Short: cover needed beyond the life cover in force" : "Covered: life cover in force beyond what's needed",
       value: g ? c(Math.abs(g.gapCents)) : null,
-      lines: g ? [ln("Cover needed", c(g.neededCents)), ln("Life cover in force", c(cover), "−", { source: "proven" }), ln(g.gapCents > 0 ? "Short by" : "Covered beyond the need by", c(Math.abs(g.gapCents)), "=")] : [],
+      // The chain subtracts the smaller side from the larger, so its parts add up to the
+      // (always positive) figure: short = needed − cover, covered = cover − needed.
+      lines: !g
+        ? []
+        : g.gapCents > 0
+          ? [ln("Cover needed", c(g.neededCents)), ln("Life cover in force", c(cover), "−", { source: "proven" }), ln("Short by", c(g.gapCents), "=")]
+          : [ln("Life cover in force", c(cover), undefined, { source: "proven" }), ln("Cover needed", c(g.neededCents), "−"), ln("Covered beyond the need by", c(-g.gapCents), "=")],
     },
   ];
 }

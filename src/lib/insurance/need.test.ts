@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { chainReAdds } from "../book/proof/common";
+import { needDerived, type InsuranceInput } from "../book/derived/insurance";
 import { normalizeInsuranceNotes } from "./notes";
 import { coverGap, DEFAULT_NEED_YEARS, type CoverNeed } from "./needMath";
 
@@ -26,5 +28,17 @@ describe("the coverage gap", () => {
     expect(normalizeInsuranceNotes({}).needYears).toBe(DEFAULT_NEED_YEARS);
     expect(normalizeInsuranceNotes({ needYears: 400 }).needYears).toBe(40);
     expect(normalizeInsuranceNotes({ needYears: 7.4 }).needYears).toBe(7);
+  });
+
+  it("draws a gap whose chain re-adds to it, short or covered", () => {
+    // Only what the gap reads of a life policy: its status and death benefit.
+    const life = (faceCents: number) => ({ status: "IN_FORCE", faceNowCents: faceCents, policy: { faceCents } }) as unknown as InsuranceInput["policies"][number];
+    const gap = (faceCents: number) => needDerived({ policies: [life(faceCents)], homes: [], autos: [], through: "2025-12-31", need: need() }).find((f) => f.figure === "need-gap")!;
+    // $450,000 needed: $300,000 in force is $150,000 short; $500,000 is $50,000 beyond the need.
+    for (const [face, cents] of [[30_000_000, 15_000_000], [50_000_000, 5_000_000]] as const) {
+      const f = gap(face);
+      expect(f.value).toEqual({ cents });
+      expect(chainReAdds(f.lines)).toEqual([]);
+    }
   });
 });
