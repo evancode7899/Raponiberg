@@ -124,7 +124,8 @@ export function CashFlowClient({ requiresApiSecret, first = null }: { requiresAp
   // The accounts the report was asked for (none: every account), so a proof covers the same ones.
   const accountIds = excluded.size && allAccounts.length ? allAccounts.filter((a) => !excluded.has(a.id)).map((a) => a.id) : undefined;
   const monthOptions = data?.months.map((m) => ({ value: monthKey(m.start), label: m.label })) ?? [];
-  const drillMonth = drill?.kind === "month" ? [...(data?.months ?? []), ...(data?.current ? [data.current] : [])].find((m) => m.start === drill.start) : undefined;
+  // From the report with its merchant lists: the month drill lists the month's biggest merchants.
+  const drillMonth = drill?.kind === "month" ? [...(full?.months ?? []), ...(full?.current ? [full.current] : [])].find((m) => m.start === drill.start) : undefined;
   const derived = useMemo(() => (full ? cashFlowDerived(full) : []), [full]);
   const ctx: Ctx | null =
     full && slice && slice.months.length
