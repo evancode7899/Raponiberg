@@ -10,7 +10,9 @@ import type { MedicalPage } from "@/lib/medical/page";
 import type { Coverage } from "@/lib/medical/types";
 import { Fragment, useEffect, useState } from "react";
 
-import { URL, TABS, COVERAGE_LABEL, plural, useFigures } from "./parts";
+import { URL, COVERAGE_LABEL, plural, useFigures } from "./parts";
+
+const TABS = ["overview", "claims", "providers", "plan", "documents"] as const;
 import { Overview } from "./OverviewTab";
 import { Claims } from "./ClaimsTab";
 import { Providers } from "./ProvidersTab";

@@ -15,7 +15,6 @@ import { dateLabel, monthName } from "@/lib/dates/display";
 
 /** The Medical page's shared pieces: labels, money, and each figure's proof from the page's list. */
 export const URL = "/api/medical";
-export const TABS = ["overview", "claims", "providers", "plan", "documents"] as const;
 export const COVERAGE_LABEL: Record<Coverage, string> = { MEDICAL: "Medical", DENTAL: "Dental", VISION: "Vision" };
 
 export const money = (cents: number) => (cents === 0 ? "$0.00" : formatUsdFromCents(cents));
