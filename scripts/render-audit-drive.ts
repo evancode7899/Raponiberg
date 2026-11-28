@@ -141,10 +141,22 @@ function quietProbe() {
   });
 }
 
-/** True once nothing the audit reads has changed for `quiet` ms, no fetch is open, and no figure or list is still loading. Runs in the browser. */
+/**
+ * True once React has hydrated what the audit reads, nothing it reads has changed for `quiet`
+ * ms, no fetch is open, and no figure or list is still loading. Runs in the browser.
+ *
+ * Hydrated first: a client page's server HTML can be its tab strip and pickers with no
+ * skeleton yet (its loading state is set on the client), so before its script runs it is
+ * as quiet as a page with nothing to show. On a busy runner that lasted past the one retry,
+ * and the tab was audited as drawing nothing (CI, 2026-11-26/27). React DOM marks each
+ * element it has hydrated with a __reactFiber$ key; an element without one is still the
+ * server's HTML, or inside a Suspense boundary that hasn't hydrated.
+ */
 function quietFor(quiet: number) {
   const s = (window as unknown as { __pfAudit?: { fetching: number; changed: number } }).__pfAudit;
   if (!s || s.fetching > 0) return false;
+  const hydrated = (el: Element) => Object.keys(el).some((k) => k.startsWith("__reactFiber$"));
+  if (![...document.querySelectorAll('#main, [role="tablist"], [data-audit-view]')].every(hydrated)) return false;
   if (document.querySelector('[data-clearance="verifying"], [data-skeleton]')) return false;
   return performance.now() - s.changed >= quiet;
 }
