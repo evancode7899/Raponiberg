@@ -59,7 +59,7 @@ export function CashFlowClient({ requiresApiSecret, first = null }: { requiresAp
   const [tab, setTab] = useTabParam(TABS, "overview");
   const [view, setView] = usePersistentState<View>("pf-cash-flow-view", defaultView);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  // Every tab but Merchants and a merchant's drill reads the report without its merchant lists (most of its bytes): those come apart, when asked for.
+  // Every tab but Merchants and Year over year, and no drill-down, reads the report without its merchant lists (most of its bytes): those come apart, when asked for.
   const [data, setData] = useState(() => seedResponse<Report>(first) ?? cachedResponse<Report>("/api/dashboard/cash-flow?parts=lean"));
   const [merch, setMerch] = useState<CashFlowMerchants | null>(() => cachedResponse<CashFlowMerchants>("/api/dashboard/cash-flow?parts=merchants"));
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +90,8 @@ export function CashFlowClient({ requiresApiSecret, first = null }: { requiresAp
   }, [api, excluded, version]);
 
   // The merchant lists, for the tabs that draw them, read for the same accounts as the report.
-  const needMerchants = tab === "merchants" || drill?.kind === "merchant";
+  // Merchants and Year over year list merchants, and every drill-down does (a category's merchants, a month's biggest, a merchant's months).
+  const needMerchants = tab === "merchants" || tab === "yoy" || drill != null;
   const [merchFor, setMerchFor] = useState<string | null>(null);
   const merchKey = `${[...excluded].sort().join(",")}|${version}`;
   useEffect(() => {
@@ -230,7 +231,7 @@ export function CashFlowClient({ requiresApiSecret, first = null }: { requiresAp
         ) : tab === "patterns" ? (
           <PatternsTab ctx={ctx} />
         ) : tab === "yoy" ? (
-          <YoyTab ctx={ctx} />
+          merchReady ? <YoyTab ctx={ctx} /> : <Loading label="Reading each month's merchants…" />
         ) : tab === "merchants" ? (
           merchReady ? <MerchantsTab ctx={ctx} /> : <Loading label="Reading each month's merchants…" />
         ) : tab === "recurring" ? (
@@ -252,14 +253,14 @@ export function CashFlowClient({ requiresApiSecret, first = null }: { requiresAp
       >
         {drill &&
           ctx &&
-          (drill.kind === "category" ? (
+          (!merchReady ? (
+            <Loading label="Reading each month's merchants…" />
+          ) : drill.kind === "category" ? (
             <CategoryDrill ctx={ctx} category={drill.category} external={drill.external} />
           ) : drill.kind === "month" ? (
             drillMonth && <MonthDrill ctx={ctx} month={drillMonth} />
-          ) : merchReady ? (
-            <MerchantDrill ctx={ctx} drill={drill} />
           ) : (
-            <Loading label="Reading each month's merchants…" />
+            <MerchantDrill ctx={ctx} drill={drill} />
           ))}
       </Drawer>
     </>

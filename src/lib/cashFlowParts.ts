@@ -2,7 +2,7 @@ import type { MerchantMonth, SpendingMonth, SpendingReport } from "./book/report
 
 /**
  * Cash flow's payload in two parts (GET /api/dashboard/cash-flow?parts=…): the report without
- * each month's merchant list ("lean": every tab but Merchants and a merchant's drill reads
+ * each month's merchant list ("lean": all but the Merchants and Year over year tabs and the drill-downs read
  * nothing else, and it's most of the bytes), and the merchant lists alone ("merchants"), asked
  * for when a tab needs them. Joined again they are the report, value for value.
  */
