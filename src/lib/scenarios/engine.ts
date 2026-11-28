@@ -226,7 +226,7 @@ export function firstChangeOf(s: Scenario, startKey: string): string | null {
     s.housing.buy?.at,
     s.housing.rentGrowth != null ? "" : undefined,
     ...s.spending.oneOffs.map((o) => o.at),
-    s.spending.living != null || s.spending.growth != null || s.assumptions.returnRate != null || s.assumptions.inflation != null || s.children.ageOut ? "" : undefined,
+    s.spending.living != null || s.spending.livingChange != null || s.spending.growth != null || s.assumptions.returnRate != null || s.assumptions.inflation != null || s.children.ageOut ? "" : undefined,
   ].filter((d): d is string => d != null);
   if (!dates.length) return null;
   const first = dates.map((d) => (d === "" || d <= startKey ? nextKey(startKey) : d)).sort()[0]!;
@@ -250,7 +250,7 @@ export function runScenario(ctx: ScenarioContext, s: Scenario): ScenarioRun {
   const inflation = s.assumptions.inflation ?? base.inflation;
   const tied = Math.abs(base.livingGrowth - base.inflation) < 1e-12;
   const livingGrowth = s.spending.growth ?? (s.assumptions.inflation != null && tied ? inflation : base.livingGrowth);
-  const livingCost = s.spending.living ?? base.livingCost;
+  const livingCost = Math.max(0, (s.spending.living ?? base.livingCost) + (s.spending.livingChange ?? 0));
   const returnRate = s.assumptions.returnRate ?? base.returnRate;
 
   // Pay: each adult's change, and the shares of the household's retirement saving and deductions that ride on their pay.

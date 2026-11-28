@@ -7,7 +7,8 @@ import { Card, NotFigure, table, WhatIf } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { fiLevers, firstYearIncome, fiTornado, fiYear, LEVER_YEARLY, savingsRateCurve, sensitivityGrid, spendingCuts, type TornadoBar } from "@/lib/fire/fire";
 import { useEffect, useMemo, useState } from "react";
-import { applyScenario, scenarioOutcome, type FireScenario } from "@/lib/fire/scenarios";
+import { applyScenario, notOnFire, scenarioOutcome } from "@/lib/fire/scenarios";
+import type { Scenario } from "@/lib/scenarios/types";
 import { useApi } from "@/components/ledger/useApi";
 import { notify } from "@/components/ui/Feedback";
 import { btn, inputCls, MoneyInput } from "@/components/ui/kit";
@@ -262,24 +263,24 @@ function Tornado({ plan, base }: { plan: FireProps["f"]["plan"]; base: number | 
  */
 function Scenarios({ plan }: { plan: FireProps["f"]["plan"] }) {
   const api = useApi(false);
-  const [list, setList] = useState<FireScenario[]>([]);
+  const [list, setList] = useState<Scenario[]>([]);
   const [draft, setDraft] = useState({ name: "", workYears: 0, livingMonthly: 0, oneOffAmount: 0, oneOffYear: plan.start.year + 1 });
   useEffect(() => {
     if (!api.ready) return;
     api
-      .call<{ scenarios: FireScenario[] }>("/api/fire/scenarios")
+      .call<{ scenarios: Scenario[] }>("/api/fire/scenarios")
       .then((x) => setList(x.scenarios))
       .catch(() => {});
   }, [api]);
   const post = (json: Record<string, unknown>, said: string) =>
     api
-      .call<{ scenarios: FireScenario[] }>("/api/fire/scenarios", { method: "POST", json })
+      .call<{ scenarios: Scenario[] }>("/api/fire/scenarios", { method: "POST", json })
       .then((x) => {
         setList(x.scenarios);
         notify(said, { tone: "info" });
       })
       .catch((e: Error) => notify(e.message, { tone: "bad" }));
-  const cols = useMemo(() => [{ id: "plan", name: "As planned", o: scenarioOutcome(plan) }, ...list.map((s) => ({ id: s.id, name: s.name, o: scenarioOutcome(applyScenario(plan, s)) }))], [plan, list]);
+  const cols = useMemo(() => [{ id: "plan", name: "As planned", skipped: "", o: scenarioOutcome(plan) }, ...list.map((s) => ({ id: s.id, name: s.name, skipped: notOnFire(s).join(", "), o: scenarioOutcome(applyScenario(plan, s)) }))], [plan, list]);
   const row = (label: string, v: (o: (typeof cols)[number]["o"]) => string) => (
     <tr className={table.tr}>
       <td className={table.td}>{label}</td>
@@ -296,7 +297,7 @@ function Scenarios({ plan }: { plan: FireProps["f"]["plan"] }) {
       `Kept: ${draft.name}`,
     ).then(() => setDraft((d) => ({ ...d, name: "" })));
   return (
-    <Card title="Scenarios side by side" subtitle="The plan as set, then each scenario you keep: more or fewer years of work, a change in living cost, a one-off cost like a down payment. Kept by name in the data folder.">
+    <Card title="Scenarios side by side" subtitle="The plan as set, then each scenario: more or fewer years of work, a change in living cost, a one-off cost like a down payment. The same scenarios as the Scenarios page, which runs their pay, children and housing changes too.">
       <WhatIf why="the plan rerun with each scenario's changes" className={table.wrap}>
         <table className={`${table.table} min-w-[32rem]`}>
           <thead className={table.head}>
@@ -305,6 +306,7 @@ function Scenarios({ plan }: { plan: FireProps["f"]["plan"] }) {
               {cols.map((c) => (
                 <th key={c.id} className={table.thR}>
                   {c.name}
+                  {c.skipped ? <span className="block text-[10px] font-normal text-faint" title="Run on the Scenarios page, month by month">not here: {c.skipped}</span> : null}
                   {c.id !== "plan" && (
                     <button type="button" className={`${btn.ghost} ml-1 !px-1 !py-0 text-[11px]`} aria-label={`Remove ${c.name}`} onClick={() => void post({ op: "remove", id: c.id }, `Removed: ${c.name}`)}>
                       ✕

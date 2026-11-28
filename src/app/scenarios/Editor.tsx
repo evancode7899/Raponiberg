@@ -133,6 +133,20 @@ export function Editor({ s, onChange, people, plan, run, buy, firstKey }: Props)
           <span className="ml-1 text-[11px] text-muted">grows</span>
           <Pct label="Living cost growth a year" value={s.spending.growth} placeholder={plan.livingGrowth} onChange={(growth) => set({ spending: { ...s.spending, growth } })} />
         </Line>
+        <Line label="Living change / yr" hint="More (or, negative, less) living cost a year in today's dollars, on top of the line above: what FIRE's scenarios keep">
+          <Dollars label="Change in living cost a year" value={s.spending.livingChange} placeholder={0} onChange={(livingChange) => set({ spending: { ...s.spending, livingChange } })} />
+        </Line>
+        <Line label="Years of work" hint="Years more of work before walking away (negative: sooner). FIRE moves its walk-away year by this; the month-by-month run here doesn't reach that far">
+          <input
+            type="number"
+            min={-20}
+            max={20}
+            aria-label="Years more of work"
+            className="w-16 rounded border border-line bg-surface px-1 py-0.5 text-right text-xs text-fg"
+            value={s.retire.workYears}
+            onChange={(e) => set({ retire: { workYears: Math.max(-20, Math.min(20, Math.round(Number(e.target.value) || 0))) } })}
+          />
+        </Line>
         {s.spending.oneOffs.map((o) => {
           const upd = (patch: Partial<typeof o>) => set({ spending: { ...s.spending, oneOffs: s.spending.oneOffs.map((x) => (x.id === o.id ? { ...x, ...patch } : x)) } });
           return (

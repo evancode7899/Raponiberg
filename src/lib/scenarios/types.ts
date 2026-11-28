@@ -70,12 +70,16 @@ export type Scenario = {
   spending: {
     /** Annual living cost (today's dollars); null = the forecast's. */
     living: number | null;
+    /** A change to it a year (today's dollars, negative: less), on top of either; null = none. */
+    livingChange: number | null;
     /** Its yearly growth; null = the forecast's (or a changed inflation when the forecast ties them). */
     growth: number | null;
     oneOffs: OneOff[];
   };
   /** Shared assumptions; null = the forecast's. */
   assumptions: { returnRate: number | null; inflation: number | null };
+  /** Years more of work before walking away (negative: sooner): FIRE's plan moves its walk-away year by this much. */
+  retire: { workYears: number };
 };
 
 /** A band of children's ages and the share of full-time childcare a child that age needs. */
@@ -131,8 +135,9 @@ export const emptyScenario = (id: string, name: string): Scenario => ({
   people: [],
   children: { added: [], ageOut: false },
   housing: { rentGrowth: null, buy: null },
-  spending: { living: null, growth: null, oneOffs: [] },
+  spending: { living: null, livingChange: null, growth: null, oneOffs: [] },
   assumptions: { returnRate: null, inflation: null },
+  retire: { workYears: 0 },
 });
 
 export const personChange = (personId: string): PersonChange => ({ personId, raise: null, bonusLevel: 1, jobChange: null, partTime: null, stop: null });
@@ -222,6 +227,7 @@ export function normalizeScenario(v: unknown): Scenario | null {
     housing: { rentGrowth: ratio(h.rentGrowth, null, -0.2, 0.3), buy: readBuy(h.buy) },
     spending: {
       living: cents(sp.living),
+      livingChange: cents(sp.livingChange, null, -1e12, 1e12),
       growth: ratio(sp.growth, null, -0.2, 0.3),
       oneOffs: list(sp.oneOffs, (o) => {
         const y = obj(o);
@@ -229,6 +235,7 @@ export function normalizeScenario(v: unknown): Scenario | null {
       }),
     },
     assumptions: { returnRate: ratio(as.returnRate, null, -0.5, 1), inflation: ratio(as.inflation, null, -0.05, 0.2) },
+    retire: { workYears: Math.round(ratio(obj(x.retire)?.workYears, 0, -20, 20)!) },
   };
 }
 
