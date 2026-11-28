@@ -6,8 +6,10 @@ import { buildCoverReport, type CoverReport } from "./cover.ts";
 import { INSURANCE_NOTES_KEY, normalizeInsuranceNotes, type InsuranceNotes } from "./notes.ts";
 import { buildInsuranceReport, type InsuranceReport, type PremiumRow } from "./report.ts";
 import { refreshInsuranceDocs } from "./scan.ts";
+import { docsByKind } from "./docs.ts";
+import { coverNeed, type CoverNeed } from "./need.ts";
+import { loadProfileSettings } from "../profile/settings.ts";
 import { readInsuranceDocs } from "./store.ts";
-import type { AutoPolicy, AutoRenewal, BillingNotice, PaymentReceipt, PolicyForm, PolicyStatus, PropertyPolicy, TermPolicy } from "./types.ts";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -18,6 +20,8 @@ export type InsurancePage = InsuranceReport &
     notes: InsuranceNotes;
     /** Account names by id, to say which card or bank paid a premium. */
     accounts: Record<string, string>;
+    /** What the household would need, against what it has (the Overview's coverage gap). */
+    need: CoverNeed;
     /** The statements folder was found and scanned. */
     scanned: boolean;
     /** Insurance documents that couldn't be read, by file. */
@@ -29,9 +33,10 @@ export type InsurancePage = InsuranceReport &
  * (read fresh: they aren't in the Book) joined to the statement rows that could be
  * premiums, taken from the cached Book.
  */
-type Ledger = { today: string; through: string; rows: PremiumRow[]; accounts: Record<string, string> };
-/** The statement rows that could be premiums, and account names. */
-const ledgerOf = (book: Book): Ledger => ({
+type Ledger = { today: string; through: string; rows: PremiumRow[]; accounts: Record<string, string>; need: CoverNeed };
+/** The statement rows that could be premiums, account names, and what the coverage gap reads from the Book (need.ts). */
+const ledgerOf = async (db: Db, book: Book): Promise<Ledger> => ({
+  need: coverNeed(book, await loadProfileSettings(db), (await loadJsonSetting(db, INSURANCE_NOTES_KEY, normalizeInsuranceNotes)).needYears),
   today: book.today,
   through: book.horizon.cashFlow,
   // Every charge: which of them are premiums is the report's call (lib/insurance/report.ts, cover.ts).
@@ -45,28 +50,10 @@ export async function loadInsurancePage(db: Db, book?: Book, opts: { /** False: 
     opts.scan === false ? readInsuranceDocs() : refreshInsuranceDocs(db).then((d) => d ?? readInsuranceDocs()),
     loadJsonSetting(db, INSURANCE_NOTES_KEY, normalizeInsuranceNotes),
     // The sweep passes its own Book; the route reads the cached one (through JSON either way).
-    (book ? Promise.resolve(JSON.stringify(ledgerOf(book))) : cachedReport(db, "insurance-rows", ledgerOf)).then((t) => JSON.parse(t) as Ledger),
+    (book ? ledgerOf(db, book).then((l) => JSON.stringify(l)) : cachedReport(db, "insurance-rows", (b) => ledgerOf(db, b))).then((t) => JSON.parse(t) as Ledger),
   ]);
   const entries = Object.entries(docs?.files ?? {}).sort(([a], [b]) => a.localeCompare(b));
-  const policies: { file: string; policy: TermPolicy }[] = [];
-  const bills: { file: string; bill: BillingNotice }[] = [];
-  const receipts: { file: string; receipt: PaymentReceipt }[] = [];
-  const statuses: { file: string; status: PolicyStatus }[] = [];
-  const homes: { file: string; policy: PropertyPolicy }[] = [];
-  const autos: { file: string; policy: AutoPolicy }[] = [];
-  const renewals: { file: string; renewal: AutoRenewal }[] = [];
-  const forms: { file: string; form: PolicyForm }[] = [];
-  for (const [file, e] of entries) {
-    const d = e.doc;
-    if (d?.kind === "TERM_LIFE") policies.push({ file, policy: d });
-    else if (d?.kind === "BILL") bills.push({ file, bill: d });
-    else if (d?.kind === "RECEIPT") receipts.push({ file, receipt: d });
-    else if (d?.kind === "STATUS") statuses.push({ file, status: d });
-    else if (d?.kind === "PROPERTY") homes.push({ file, policy: d });
-    else if (d?.kind === "AUTO") autos.push({ file, policy: d });
-    else if (d?.kind === "AUTO_RENEWAL") renewals.push({ file, renewal: d });
-    else if (d?.kind === "FORM") forms.push({ file, form: d });
-  }
+  const { policies, bills, receipts, statuses, homes, autos, renewals, forms } = docsByKind(docs);
   // The same packet saved twice is one policy: the first file wins.
   const unique = policies.filter((p, i) => policies.findIndex((q) => q.policy.policyNumber === p.policy.policyNumber) === i);
   // Life matching runs first; home and auto read only rows to their own insurers, which life insurers' payees never match.
@@ -74,9 +61,11 @@ export async function loadInsurancePage(db: Db, book?: Book, opts: { /** False: 
     ...buildInsuranceReport({ policies: unique, bills, receipts, statuses, rows: ledger.rows, today: ledger.today }),
     ...buildCoverReport({ homes, autos, renewals, forms, rows: ledger.rows, today: ledger.today }),
     through: ledger.through,
+    need: ledger.need,
     notes,
     accounts: ledger.accounts,
     scanned: docs != null,
     errors: entries.flatMap(([file, e]) => (e.error ? [{ file, error: e.error }] : [])),
   };
 }
+

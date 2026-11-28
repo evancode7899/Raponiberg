@@ -161,6 +161,16 @@ function quietFor(quiet: number) {
   return performance.now() - s.changed >= quiet;
 }
 
+/** When the page last changed anything the audit reads (quietProbe), in the page's clock. Runs in the browser. */
+function changedAt(): number {
+  return (window as unknown as { __pfAudit?: { changed: number } }).__pfAudit?.changed ?? 0;
+}
+
+/** True once the page has changed since `t` (a click took effect). Runs in the browser. */
+function changedSince(t: number): boolean {
+  return ((window as unknown as { __pfAudit?: { changed: number } }).__pfAudit?.changed ?? 0) > t;
+}
+
 /** The headers a server's answer can turn on (Next's router headers, content negotiation); never a secret, which a replay adds from its own environment. */
 const KEPT_HEADERS = new Set(["accept", "content-type", "rsc", "next-router-state-tree", "next-router-prefetch", "next-router-segment-prefetch", "next-url", "next-hmr-refresh", "range"]);
 
@@ -304,7 +314,14 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
     const t0 = Date.now();
     const unsettled = await settle(w, cfg);
     const t1 = Date.now();
-    const s = await page.evaluate(collect, scope);
+    // A view that changed while it was read (a list still filling in on a slow machine) is settled and read again.
+    let s: ReturnType<typeof collect>;
+    for (let k = 0; ; k++) {
+      const before = await page.evaluate(changedAt);
+      s = await page.evaluate(collect, scope);
+      if (k === 2 || (await page.evaluate(changedAt)) === before) break;
+      await settle(w, cfg);
+    }
     stats.settleMs += t1 - t0;
     stats.collectMs += Date.now() - t1;
     const v: RawView = { view: name, figures: s.figures, strays: s.strays, chart: s.chart, ...(s.whatIf.length ? { whatIf: s.whatIf } : {}), errors: [...w.errors.splice(0), ...(unsettled ? [unsettled] : [])] };
@@ -372,7 +389,10 @@ export async function auditUnit(w: Worker, cfg: DriveConfig, unit: Unit, all: re
       const o = openers.nth(i);
       if (!(await o.isVisible().catch(() => false))) continue;
       const label = ((await o.getAttribute("data-audit-drill")) || (await o.innerText()).slice(0, 30)).replace(/\s+/g, " ").trim();
+      // The drill must take effect before the view is read: a slow page can look quiet before it reacts.
+      const t = await page.evaluate(() => performance.now());
       await o.click();
+      await page.waitForFunction(changedSince, t, { polling: 20, timeout: 3000 }).catch(() => {});
       const back = page.locator("[data-audit-back]").first();
       // A drawer, a view in place with a way back, or a row that opens where it is: whichever came, once it settles.
       await draw(`${name} ▸ ${label}`);

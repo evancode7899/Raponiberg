@@ -1,4 +1,5 @@
 import { asObject, asString, isNum } from "../settingsStore.ts";
+import { DEFAULT_NEED_YEARS, MAX_NEED_YEARS } from "./needMath.ts";
 
 /**
  * What the owner adds to a policy that its text doesn't carry: the beneficiaries (they're
@@ -10,7 +11,8 @@ export type Beneficiary = { name: string; relationship: string; sharePct: number
 
 export type PolicyNotes = { beneficiaries: Beneficiary[]; note: string };
 
-export type InsuranceNotes = { version: 1; policies: Record<string, PolicyNotes> };
+/** `needYears`: how many years of living cost the Overview's coverage gap counts (need.ts). */
+export type InsuranceNotes = { version: 1; policies: Record<string, PolicyNotes>; needYears: number };
 
 export const INSURANCE_NOTES_KEY = "insurance.notes.v1";
 
@@ -31,8 +33,10 @@ export function normalizePolicyNotes(raw: unknown): PolicyNotes {
 
 export function normalizeInsuranceNotes(raw: unknown): InsuranceNotes {
   const policies = asObject(asObject(raw).policies);
+  const years = asObject(raw).needYears;
   return {
     version: 1,
+    needYears: isNum(years) ? Math.min(MAX_NEED_YEARS, Math.max(1, Math.round(years))) : DEFAULT_NEED_YEARS,
     policies: Object.fromEntries(
       Object.entries(policies)
         .slice(0, 50)

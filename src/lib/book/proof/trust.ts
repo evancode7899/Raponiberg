@@ -42,3 +42,17 @@ export function trustOf(r: SweepReport): Trust {
     today: r.today,
   };
 }
+
+/** The Dashboard's Trust panel (GET /api/proof/trust): the sweep's counts with the data edge, restatements, audit chain and restore drill. */
+export type TrustPanelBody = {
+  trust: Trust;
+  /** The data edge: every figure stops here. */
+  provenThrough: string;
+  /** Cleared figures whose value moved since the last month-end's record, and how many were compared. */
+  restated: { month: string; moved: number; compared: number } | null;
+  /** The audit log's hash chain: whether it holds, and how many events it links. */
+  chain: { ok: boolean; chained: number; problems: number; head: { seq: number; at: string } | null };
+  /** The latest restore drill of the newest backup snapshot. */
+  drill: { at: string; ok: boolean; matches: boolean } | null;
+};
+

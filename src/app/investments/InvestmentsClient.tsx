@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LpPanel, PrivateFunds } from "./LpView";
 import { ReturnsTab } from "./ReturnsTab";
+import { DividendsTab } from "./DividendsTab";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { costOver, FEE_YEARS, growthKey, idleCash, investmentsDerived, positionKey } from "@/lib/book/derived/investments";
 import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
@@ -26,13 +27,11 @@ import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/t
 const TYPED_TARGET = "your target allocation, as you typed it";
 const SECURITY_NAME = "the security's name, as the statement prints it";
 
-const TABS = ["returns", "overview", "holdings", "fees", "gains", "growth", "funds"] as const;
+const TABS = ["returns", "overview", "holdings", "dividends", "fees", "gains", "growth", "funds"] as const;
 type Data = {
   report: InvestmentsReport;
   settings: InvestmentSettings;
   /** The forecast's return. */ returnRate: number;
-  /** The broad US index funds held, most statement months first (Net worth › Investment returns' benchmark). */
-  benchmarkFunds?: { key: string; name: string; months: number }[];
 };
 
 /** Each asset class keeps one chart slot everywhere; unclassified is the neutral gray. */
@@ -99,6 +98,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
           { id: "returns", label: "Returns" },
           { id: "overview", label: "Allocation" },
           { id: "holdings", label: "Holdings", count: r?.unclassified.length || null },
+          { id: "dividends", label: "Dividends" },
           { id: "fees", label: "Fees" },
           { id: "gains", label: "Unrealized gains" },
           { id: "growth", label: "Money in vs growth" },
@@ -125,6 +125,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
           <>
             <BlockedNote what="every account's latest balance" blockers={r!.blockers} />
             {tab === "returns" && <ReturnsTab r={r!} d={investmentsDerived(r!, data.returnRate)} />}
+            {tab === "dividends" && <DividendsTab r={r!} d={investmentsDerived(r!, data.returnRate)} />}
             {tab === "overview" && <Overview data={data} save={save} saving={saving} />}
             {tab === "holdings" && <Holdings data={data} save={save} saving={saving} />}
             {tab === "fees" && <Fees r={r!} returnRate={data!.returnRate} />}
@@ -198,7 +199,6 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
       </Card>
       <IdleCash r={r} d={d} />
       <TargetCard data={data} save={save} saving={saving} cls={cls} />
-      <BenchmarkFundCard data={data} save={save} saving={saving} />
       <Card
         title="Largest positions"
         subtitle={
@@ -247,38 +247,6 @@ function Overview({ data, save, saving }: { data: Data; save: (s: InvestmentSett
         </div>
       </Card>
     </>
-  );
-}
-
-/**
- * Which fund Net worth › Investment returns compares the portfolio with: a broad US index fund
- * the household holds, its return read off its own statements (prices and dividends). Blank
- * picks the one the statements price most often.
- */
-function BenchmarkFundCard({ data, save, saving }: { data: Data; save: (s: InvestmentSettings) => void; saving: boolean }) {
-  const funds = data.benchmarkFunds ?? [];
-  const pick = data.settings.benchmarkFund && funds.some((f) => f.key === data.settings.benchmarkFund) ? data.settings.benchmarkFund : "";
-  return (
-    <Card
-      title="Benchmark fund"
-      subtitle="Investment returns sets your portfolio against a broad US index fund you already hold, its return read off your own statements: its price at each statement and the dividends they print. Nothing is downloaded."
-    >
-      {funds.length ? (
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-muted">Compare with</span>
-          <select className={selectCls} value={pick} disabled={saving} onChange={(e) => save({ ...data.settings, benchmarkFund: e.target.value || null })} aria-label="Benchmark fund">
-            <option value="">The one on the most statements ({funds[0]!.name})</option>
-            {funds.map((f) => (
-              <option key={f.key} value={f.key}>
-                {f.name} · {f.months} statement month{f.months === 1 ? "" : "s"}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <p className="text-xs text-muted">No broad US index fund (total market or S&amp;P 500) on your statements yet, so Investment returns has no benchmark.</p>
-      )}
-    </Card>
   );
 }
 
@@ -602,7 +570,21 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
           </ul>
         </Card>
       )}
-      <Card title="Fees by account" subtitle="What each account's statements deducted over the 12 months to the proven-through date.">
+      <Card
+        title="Fees by account"
+        subtitle={
+          <>
+            What each account&apos;s statements deducted over the 12 months to the proven-through date, and since its first statement on file
+            {r.accounts.some((a) => a.feesLifetimeCents) ? (
+              <>
+                {": "}
+                <ProofValue proof={dt("account-fees-lifetime")}>{usd0(-r.fees.accountFeesLifetimeCents)}</ProofValue> in all
+              </>
+            ) : null}
+            .
+          </>
+        }
+      >
         <div className={table.wrap}>
           <table className={table.table}>
             <tbody>
@@ -613,6 +595,8 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
                     {a.feesWindow.from} → {a.feesWindow.to}
                   </td>
                   <td className={table.tdR}>{a.feesLast12Cents ? <ProofValue proof={derivedTarget("investments", d, "account-fee", a.accountId)}>{usd0(-a.feesLast12Cents)}</ProofValue> : "—"}</td>
+                  <td className={`${table.td} text-xs text-muted`}>since {a.feesSince}</td>
+                  <td className={table.tdR}>{a.feesLifetimeCents ? <ProofValue proof={derivedTarget("investments", d, "account-fee-lifetime", a.accountId)}>{usd0(-a.feesLifetimeCents)}</ProofValue> : "—"}</td>
                 </tr>
               ))}
             </tbody>

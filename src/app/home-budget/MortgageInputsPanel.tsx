@@ -10,7 +10,7 @@ import type { ProofRef } from "@/components/ui/proof/context";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { formatUsd } from "@/lib/formatMoney";
 import type { ReactNode } from "react";
-import { defaultInputs, fromHomeBudget, MONTHS, SPECS, type LumpRow, type MortgageInputs } from "./mortgageInputs";
+import { defaultInputs, MONTHS, SPECS, type LumpRow, type MortgageInputs } from "./mortgageInputs";
 
 const DEF = defaultInputs();
 
@@ -95,11 +95,6 @@ export function MortgageInputsPanel({
     const year = ins.startYear + 1;
     set({ lumps: [...ins.lumps, { id: newId(), label: "", month: ins.startMonth, year, amount: 50_000, repeat: false, untilYear: year + 4 }] });
   };
-  const homeBudget = () => {
-    void fromHomeBudget().then((h) => {
-      if (h) set(h);
-    });
-  };
   const taxable = ins.account === "taxable";
 
   return (
@@ -112,9 +107,10 @@ export function MortgageInputsPanel({
           </WhatIf>
         }
         actions={
-          <button type="button" className={btn.ghost} onClick={homeBudget} title="Loan amount, rate, term, return and property tax from the Home budget page's Test a price scenario">
-            Use home budget
-          </button>
+          <label className="flex items-center gap-1.5 text-xs text-fg-2" title="On: the loan amount, rate, term and property tax are Test a price's, the one scenario every Home & mortgage tab reads. Off: a loan of its own, such as one you already have.">
+            <input type="checkbox" checked={ins.followHome} onChange={(e) => set({ followHome: e.target.checked })} />
+            Test a price&apos;s loan
+          </label>
         }
       >
         {S("principal", "Loan amount", "The balance the payment is sized for.")}

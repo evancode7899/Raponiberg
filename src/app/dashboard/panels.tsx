@@ -10,6 +10,7 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { unswept } from "@/lib/book/proof/clearance";
 import type { ProofDescriptor } from "@/lib/book/proof";
 import type { Briefing, BriefingDue } from "@/lib/dashboard/briefing";
+import type { TrustPanelBody } from "@/lib/book/proof/trust";
 import type { HomeSummary } from "@/lib/dashboard/homeSummary";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
 import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
@@ -646,6 +647,43 @@ export function FeedPanel({ feed, marks, today, decide }: { feed: Briefing["feed
             ))}
         </ol>
       )}
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------------ trust
+
+/**
+ * How far to trust what the desk shows (GET /api/proof/trust): figures cleared and worked out
+ * a second way, the date everything is proven through, figures restated since the last
+ * month-end, the audit chain and the last restore drill. Counts and dates only; each cell
+ * opens the page that lists it.
+ */
+export function TrustPanel({ t }: { t: TrustPanelBody | null }) {
+  const n = (x: number) => (x ? x.toLocaleString("en-US") : "—");
+  const cells: [string, string, string, string, boolean][] = t
+    ? [
+        ["Cleared", `${n(t.trust.cleared)} of ${n(t.trust.figures)}`, "/statements?tab=checks", "figures held to their proofs", t.trust.problems === 0],
+        ["Re-derived", n(t.trust.rederived), "/statements?tab=checks", "worked out again a second way", true],
+        ["Proven through", day(t.provenThrough), "/statements?tab=coverage", "every figure stops here", true],
+        ["Restated", t.restated ? n(t.restated.moved) : "—", "/statements?tab=checks", t.restated ? `moved since the ${t.restated.month} month-end` : "no month-end on record yet", !t.restated || t.restated.moved === 0],
+        ["Audit chain", t.chain.ok ? "intact" : `${n(t.chain.problems)} broken`, "/audit", `${n(t.chain.chained)} events linked`, t.chain.ok],
+        ["Restore drill", t.drill ? (t.drill.ok ? "passed" : "failed") : "not run", "/settings", t.drill ? `last ${day(t.drill.at.slice(0, 10))}` : "checks the newest backup", !t.drill || t.drill.ok],
+      ]
+    : [];
+  return (
+    <Panel code="TRU" title="Trust" href="/statements?tab=checks" note={t ? `sweep of ${day(t.trust.today)}` : "waiting for the proof sweep"} className="md:col-span-2 xl:col-span-12">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 px-2 py-1.5 text-[12px] sm:grid-cols-3 xl:grid-cols-6">
+        {cells.map(([label, value, href, sub, good]) => (
+          <div key={label} data-desk-row="" tabIndex={-1} className={`${grid.row} flex min-w-0 flex-col`}>
+            <Open href={href}>
+              <span className="text-[11px] text-muted">{label}</span>
+            </Open>
+            <span className={`num font-semibold ${good ? "text-fg" : "text-neg"}`}>{value}</span>
+            <span className="truncate text-[11px] text-faint">{sub}</span>
+          </div>
+        ))}
+      </div>
     </Panel>
   );
 }

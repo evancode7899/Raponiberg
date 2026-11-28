@@ -32,6 +32,37 @@ export function onDataStamp(f: (stamp: string) => void): () => void {
   return () => void stampListeners.delete(f);
 }
 
+/**
+ * An answer the server sent with the page itself (FirstData): kept as if this tab had asked
+ * for it, so the page draws at once and its next ask finds the same text and stamp. Returns
+ * the data. Never replaces a fresher answer this tab already has.
+ */
+export function seedResponse<T>(first: { path: string; body: string; stamp: string } | null | undefined): T | null {
+  if (!first) return null;
+  // On the server: the data for this one render, never kept (the map would be shared by every request).
+  if (typeof window === "undefined") {
+    try {
+      return JSON.parse(first.body) as T;
+    } catch {
+      return null;
+    }
+  }
+  const had = responses.get(first.path);
+  if (had) return had.data as T;
+  let data: T;
+  try {
+    data = JSON.parse(first.body) as T;
+  } catch {
+    return null;
+  }
+  responses.set(first.path, { text: first.body, data, stamp: first.stamp });
+  if (first.stamp !== dataStampSeen) {
+    dataStampSeen = first.stamp;
+    for (const f of stampListeners) f(first.stamp);
+  }
+  return data;
+}
+
 export function clearCachedResponses() {
   responses.clear();
 }

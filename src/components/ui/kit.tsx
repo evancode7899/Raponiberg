@@ -26,10 +26,6 @@ export const btn = {
   link: "text-xs font-medium text-accent underline-offset-2 hover:underline outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-sm",
 };
 
-/** Kept for the pages that import the old names. */
-export const buttonPrimary = btn.primary;
-export const buttonSecondary = btn.secondary;
-export const buttonDanger = btn.danger;
 
 /**
  * A row that opens something, with figures in it. The row's own button is stretched under its

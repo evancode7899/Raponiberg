@@ -6,6 +6,10 @@
 export type PanelAbout = { what: string; from: string; use?: string };
 
 export const PANEL_ABOUT: Record<string, PanelAbout> = {
+  TRU: {
+    what: "How far to trust everything on the desk: how many figures the proof sweep cleared and worked out a second way, the date the data is proven through, what moved since the last month-end, whether the audit log's chain holds, and the last restore drill.",
+    from: "the proof sweep's own report, the restatement log, the audit chain and the restore drill: Statements › Checks and the Audit page list each.",
+  },
   NW: {
     what: "Net worth at each proven month-end: everything owned less everything owed.",
     from: "Net worth's month-end balances, the same figures as Net worth › Overview. Flags on the line are the month's events.",

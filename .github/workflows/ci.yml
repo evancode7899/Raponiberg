@@ -77,20 +77,22 @@ jobs:
         run: npx tsc --noEmit
       - name: Test
         run: npm test
-      - name: Build
-        run: npm run build
+      # The production build is the build job's (below), made the same way on a fresh clone.
       - name: Demo data builds and every figure ties to its proof
         run: npm run demo -- --sweep
 
   # Every page draws what its proof cleared (SSOT F6, scripts/render-audit.ts), in shards run
-  # side by side with fresh-clone. The demo is seeded once and shared, since each seed mints its
-  # own record ids and proof keys carry them. Each shard builds the app, renders its share of
-  # the pages' tabs (dealt from scripts/render-audit-costs.json) against its own budget, and
-  # hands what it drew to render-audit, which holds the whole run (a pending page gone clean, a
-  # cleared figure no page draws) exactly as one unsharded run would.
-  demo-data:
+  # side by side with fresh-clone. The app is built once, here, on a fresh clone (setup, then
+  # npm run build), and stamped with the digest of what it was built from
+  # (scripts/build-freshness.ts), so the shards audit that very build instead of each building
+  # it again. The demo is seeded once here too and shared, since each seed mints its own record
+  # ids and proof keys carry them. Each shard renders its share of the pages' tabs (dealt from
+  # scripts/render-audit-costs.json) against its own budget, and hands what it drew to
+  # render-audit, which holds the whole run (a pending page gone clean, a cleared figure no
+  # page draws) exactly as one unsharded run would.
+  build:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -99,16 +101,30 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci --no-audit --no-fund
+      - name: Set up (empty database, no shortcut)
+        run: npm run setup -- --no-shortcuts
+      - name: Build
+        run: npm run build
+      - name: Stamp the build with what it was built from
+        run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-freshness.ts --stamp .next
       - name: Seed the demo
         run: npm run demo -- --build-only
+      - name: Pack the build
+        # One archive uploads far faster than thousands of files; Next's own cache isn't needed to serve it.
+        run: tar -czf next-build.tgz --exclude=.next/cache .next
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: demo-data
           path: data/demo/
           retention-days: 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: next-build
+          path: next-build.tgz
+          retention-days: 1
 
   render-audit-shard:
-    needs: demo-data
+    needs: build
     runs-on: windows-latest
     timeout-minutes: 20
     strategy:
@@ -129,8 +145,12 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Set up (empty database, no shortcut)
         run: npm run setup -- --no-shortcuts
-      - name: Build
-        run: npm run build
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: next-build
+      - name: Unpack the build job's build
+        # Its stamp must match this checkout's inputs, or the audit refuses it (scripts/build-freshness.ts).
+        run: tar -xzf next-build.tgz
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: demo-data

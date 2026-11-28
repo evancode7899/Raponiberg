@@ -6,7 +6,7 @@ import { vsActualDerived } from "../book/derived/forecast";
 import type { NetWorthChange } from "../book/reports/netWorthChanges";
 import type { Forecast } from "./forecast";
 import { keepForecast, readForecastSnapshots } from "./snapshots";
-import { forecastVsActual, leaning, snapshotOf, type ForecastSnapshot } from "./vsActual";
+import { calibration, forecastVsActual, leaning, snapshotOf, type ForecastSnapshot } from "./vsActual";
 
 // Invented months and a made-up forecast.
 const month = (key: string, cents: number, through: string | null = null): NetWorthChange =>
@@ -24,6 +24,17 @@ describe("forecast vs actual", () => {
     expect(leaning(income)).toBe("high overall; above in 2 of 3 months");
     expect(leaning({ high: 0, months: [1] as never, missCents: -500 })).toBe("low overall; above in 0 of 1 month");
     expect(leaning({ high: 1, months: [1, 2] as never, missCents: 40 })).toBe("on the mark overall; above in 1 of 2 months");
+  });
+
+  it("calibrates each line on the forecast as it stood going into each month, each month once", () => {
+    const early = snap(["2026-01", "2026-02"], 1_200);
+    const later = { ...snap(["2026-02"], 900), id: "s2", savedAt: "2026-01-20T00:00:00.000Z" };
+    const vs = forecastVsActual([early, later], [month("2026-01", 1_000), month("2026-02", 1_000)]);
+    const income = calibration(vs)!.find((r) => r.line === "income")!;
+    // January held to the first forecast (1,200), February to the one kept in January (900).
+    expect(income.months.map((m) => [m.key, m.snapshot, m.forecast])).toEqual([["2026-01", "s1", 1_200], ["2026-02", "s2", 900]]);
+    expect([income.missCents, income.share]).toEqual([100, 0.05]);
+    expect(calibration([])).toBeNull();
   });
 
   it("compares nothing before a proven month, and stops at a gap or a month cut short", () => {

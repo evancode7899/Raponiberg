@@ -4,22 +4,24 @@ import { askDanger, notify } from "@/components/ui/Feedback";
 import { BlockedNote, BlockedValue } from "@/components/ledger/Blocked";
 import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cachedResponse, useApi } from "@/components/ledger/useApi";
-import { Badge, btn, Callout, Card, Drawer, EmptyState, ErrorNote, Field, inputCls, Loading, MoneyInput, NotFigure, PageBody, type Tone } from "@/components/ui/kit";
+import { Badge, btn, Callout, Card, Drawer, EmptyState, ErrorNote, Field, inputCls, Loading, MoneyInput, NotFigure, PageBody, table, WhatIf, type Tone } from "@/components/ui/kit";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { compositeOf, type ProofTarget } from "@/components/ui/proof/context";
 import type { GoalFigure } from "@/lib/book/proof/planningProof";
 import type { GoalProgress, GoalsReport } from "@/lib/book/reports/goals";
 import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/formatMoney";
 import type { Goal, GoalSettings } from "@/lib/goals/settings";
+import type { GoalForecast } from "@/lib/goals/fill";
+import { landsWith, savingToLand } from "@/lib/goals/tradeoff";
 import type { AccountGroup } from "@/lib/ledger/loadLedger";
 import Link from "next/link";
 import { RechartsResponsive } from "@/components/charts/RechartsResponsive";
 import { useChartPalette } from "@/components/shell/chartPalette";
 import { Line, LineChart, ReferenceLine, YAxis } from "recharts";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { monthLabel } from "@/lib/dates/display";
 
-type Data = { report: GoalsReport; settings: GoalSettings };
+type Data = { report: GoalsReport; settings: GoalSettings; forecast?: GoalForecast | null };
 
 const STATUS: Record<GoalProgress["status"], { tone: Tone; label: string; ink: string; bg: string }> = {
   REACHED: { tone: "pos", label: "done", ink: "text-pos", bg: "bg-pos" },
@@ -172,6 +174,7 @@ export function GoalsClient({ requiresApiSecret }: { requiresApiSecret: boolean 
           </div>
           <Starved r={r} onTrack={(g) => upsert({ ...g, funding: "TRACK" })} />
           <Roadmap r={r} />
+          {data.forecast && <TradeOff r={r} f={data.forecast} />}
           <div className="grid gap-3 lg:grid-cols-2">
             {r.goals.map((g, i) => (
               <GoalCard key={g.goal.id} g={g} r={r} rank={i + 1} last={i === r.goals.length - 1} onEdit={() => setEditing(g.goal)} onMove={(by) => move(g.goal.id, by)} />
@@ -644,5 +647,71 @@ function BurnUp({ g }: { g: GoalProgress }) {
         </LineChart>
       </RechartsResponsive>
     </div>
+  );
+}
+
+const TRADE_STEP = 100_00;
+const TRADE_MAX = 5_000_00;
+
+/**
+ * The trade-off between spending and the goals (lib/goals/tradeoff.ts): slide saving a month
+ * up or down from the forecast's, and see when each goal lands then, and what each needs a
+ * month more to land by its date. A what-if on the shared forecast: nothing here is proven.
+ */
+function TradeOff({ r, f }: { r: GoalsReport; f: GoalForecast }) {
+  const [delta, setDelta] = useState(0);
+  const open = useMemo(() => r.goals.filter((g) => g.status !== "REACHED" && g.filled?.sides.includes("liquid")), [r.goals]);
+  const rows = useMemo(
+    () =>
+      open.map((g) => {
+        const t = { id: g.goal.id, filled: g.filled, targetDate: g.goal.targetDate };
+        const key = landsWith(f, g.filled!, delta);
+        const base = landsWith(f, g.filled!, 0);
+        return { g, key, base, need: savingToLand(f, t, TRADE_STEP / 2, TRADE_MAX * 4) };
+      }),
+    [open, f, delta],
+  );
+  if (!open.length) return null;
+  const word = (d: number) => (d === 0 ? "as the forecast saves" : `${d > 0 ? "save" : "spend"} ${usd0(Math.abs(d))} more a month`);
+  const late = (key: string | null, target: string | null) => !!target && (!key || key > target.slice(0, 7));
+  return (
+    <Card title="Spend or save: when the goals land" subtitle="Slide how much more you save (or spend) each month than the forecast does. It goes into the cash and savings accounts, with no growth on it, and the goals fill in the same order. Goals funded only by retirement accounts aren't moved by it.">
+      <WhatIf why="the forecast's path with a month's saving changed">
+        <label className="flex flex-wrap items-center gap-3 text-xs">
+          <span className="text-muted">Each month</span>
+          <input type="range" min={-TRADE_MAX} max={TRADE_MAX} step={TRADE_STEP} value={delta} onChange={(e) => setDelta(Number(e.target.value))} aria-label="Saving a month more (or less) than the forecast" className="w-64 accent-[var(--color-accent)]" />
+          <span className="num font-medium text-fg">{word(delta)}</span>
+          {delta !== 0 && (
+            <button type="button" className={btn.link} onClick={() => setDelta(0)}>
+              Back to the forecast
+            </button>
+          )}
+        </label>
+        <div className={`${table.wrap} mt-3`}>
+          <table className={table.table}>
+            <thead>
+              <tr className={table.head}>
+                <th className={table.th}>Goal</th>
+                <th className={table.th}>Target date</th>
+                <th className={table.th}>Forecast</th>
+                <th className={table.th}>With this</th>
+                <th className={table.thR}>To land on its date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ g, key, base, need }) => (
+                <tr key={g.goal.id} className={table.tr}>
+                  <td className={table.td}>{g.goal.name}</td>
+                  <td className={table.td}>{g.goal.targetDate ? monthLabel(g.goal.targetDate) : "—"}</td>
+                  <td className={table.td}>{base ? monthLabel(`${base}-01`) : "not in the forecast"}</td>
+                  <td className={`${table.td} ${late(key, g.goal.targetDate) ? "text-neg" : key && base && key < base ? "text-pos" : ""}`}>{key ? monthLabel(`${key}-01`) : "never"}</td>
+                  <td className={table.tdR}>{!g.goal.targetDate ? "no date set" : need == null ? "out of reach" : need === 0 ? "already does" : `${usd0(need)} more a month`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </WhatIf>
+    </Card>
   );
 }

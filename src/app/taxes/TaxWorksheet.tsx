@@ -1,6 +1,6 @@
 "use client";
 
-import { buttonSecondary, Card, Segmented } from "@/components/ledger/LedgerBits";
+import { btn, Card, Segmented } from "@/components/ledger/LedgerBits";
 import { NA } from "@/lib/formatMoney";
 import { NotFigure } from "@/components/ui/kit";
 import { compositeOf } from "@/components/ui/proof/context";
@@ -258,11 +258,11 @@ function WhatIfPanel({ r, whatIf, onChange, basis }: { r: TaxResponse; whatIf: W
   return (
     <div className="mt-3 border-t border-line pt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={buttonSecondary} onClick={() => setOpen((o) => !o)}>
+        <button type="button" className={btn.secondary} onClick={() => setOpen((o) => !o)}>
           {open ? "Hide what-if" : "What if…"}
         </button>
         {hasWhatIf(whatIf) && (
-          <button type="button" className={buttonSecondary} onClick={() => onChange(NO_WHAT_IF)}>
+          <button type="button" className={btn.secondary} onClick={() => onChange(NO_WHAT_IF)}>
             Reset what-if
           </button>
         )}

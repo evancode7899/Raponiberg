@@ -62,7 +62,12 @@ export function ProofProvider({ children }: { children: ReactNode }) {
 
   // The data the page's figures were built from: the stamp of the latest answer useApi got.
   const [pageStamp, setPageStamp] = useState<string | null>(() => lastDataStamp());
-  useEffect(() => onDataStamp(setPageStamp), []);
+  useEffect(() => {
+    // A page can learn its data's stamp while it first draws (an answer sent with the page, useApi seedResponse), before this listens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads a stamp set outside React (useApi), once, after mount
+    setPageStamp(lastDataStamp());
+    return onDataStamp(setPageStamp);
+  }, []);
 
   // The proof sweep's verdicts: read now, again while the sweep of the data runs, and
   // whenever the data changes. No answer withholds every figure; it never clears them.

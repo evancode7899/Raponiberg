@@ -3,7 +3,7 @@
 import { NotFigure } from "@/components/ui/kit";
 import { Said } from "@/components/ui/proof/Said";
 import { NA } from "@/lib/formatMoney";
-import { buttonPrimary, buttonSecondary, Card } from "@/components/ledger/LedgerBits";
+import { btn, Card } from "@/components/ledger/LedgerBits";
 import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { ACCOUNT_KIND_LABEL, ACCOUNT_TAX_KINDS, CHILD_KINDS, type AccountTaxKind } from "@/lib/tax/facts/investments";
 import {
@@ -70,10 +70,10 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-[46px] z-10 shadow-sm flex flex-wrap items-center gap-2 rounded-md border border-line bg-surface px-3 py-2">
-        <button type="button" className={buttonPrimary} disabled={!dirty || saving} onClick={() => void save()}>
+        <button type="button" className={btn.primary} disabled={!dirty || saving} onClick={() => void save()}>
           {saving ? "Saving…" : "Save & recalculate"}
         </button>
-        <button type="button" className={buttonSecondary} disabled={!dirty || saving} onClick={() => setDraft(withYear(r.profile, r.year, r.inputs))}>
+        <button type="button" className={btn.secondary} disabled={!dirty || saving} onClick={() => setDraft(withYear(r.profile, r.year, r.inputs))}>
           Discard changes
         </button>
         {msg && <span className={`text-xs ${msg.tone === "good" ? "text-pos" : "text-neg"}`}>{msg.text}</span>}
@@ -83,7 +83,7 @@ export function TaxInputs({ r, onSave }: { r: TaxResponse; onSave: (p: TaxProfil
         title="Household"
         subtitle="Names (matched against pay stubs and brokerage owner lines), dependents and who claims them when filing separately are household settings."
         actions={
-          <Link href="/settings?tab=household" className={buttonSecondary}>
+          <Link href="/settings?tab=household" className={btn.secondary}>
             Edit in Settings
           </Link>
         }
@@ -412,7 +412,7 @@ function PriorYearCard({
       title={`Last year's return (${r.year - 1})`}
       subtitle={<NotFigure why="the safe-harbor rule, set by tax law">Used for the safe harbor: paying 100% of last year&apos;s tax (110% when last year&apos;s AGI was over $150,000) through withholding avoids any underpayment penalty.</NotFigure>}
       actions={
-        <button type="button" className={buttonSecondary} onClick={() => setEditing((e) => !e)}>
+        <button type="button" className={btn.secondary} onClick={() => setEditing((e) => !e)}>
           {editing ? "Hide overrides" : "Override"}
         </button>
       }

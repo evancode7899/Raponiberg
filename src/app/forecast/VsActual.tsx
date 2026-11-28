@@ -7,8 +7,8 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { vsActualDerived, vsKey } from "@/lib/book/derived/forecast";
 import { derivedTarget } from "@/lib/book/derived/types";
 import { formatDisplayDateFromYmd } from "@/lib/displayTime";
-import { usd0, usdDelta } from "@/lib/formatMoney";
-import { leaning, VS_LABEL, type VsSnapshot } from "@/lib/forecast/vsActual";
+import { formatPercentRatio, usd0, usdDelta } from "@/lib/formatMoney";
+import { calibration, leaning, VS_LABEL, type VsSnapshot } from "@/lib/forecast/vsActual";
 import { useEffect, useMemo, useState } from "react";
 
 type VsReport = { kept: number; latest: string | null; vs: VsSnapshot[] };
@@ -28,6 +28,7 @@ export function VsActual({ api, dirty }: { api: Api; dirty: boolean }) {
     api.call<VsReport>(VS).then(setR).catch(() => setR(null));
   }, [api, version]);
   const derived = useMemo(() => vsActualDerived(r?.vs ?? []), [r]);
+  const cal = useMemo(() => calibration(r?.vs ?? []), [r]);
   if (!r) return null;
   const s = r.vs.find((x) => x.id === pick) ?? r.vs.at(-1);
   const keep = async () => {
@@ -101,6 +102,30 @@ export function VsActual({ api, dirty }: { api: Api; dirty: boolean }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {cal && (
+        <div className="border-t border-line px-3 py-2">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted" title="Each proven month any kept forecast projected, held to the newest forecast kept before the month began: what to expect of today's">
+            Calibration · {cal[0]!.months.length} proven month{cal[0]!.months.length === 1 ? "" : "s"}, the forecast as it stood going in
+          </p>
+          <ul className="grid gap-x-6 gap-y-0.5 text-xs sm:grid-cols-2">
+            {cal.map((row) => (
+              <li key={row.line} className="flex justify-between gap-3">
+                <span className="text-muted">{VS_LABEL[row.line]}</span>
+                <span>
+                  <ProofValue proof={derivedTarget("forecast", derived, "vs-cal-miss", row.line)}>{usdDelta(row.missCents)}</ProofValue>
+                  {row.share != null && (
+                    <>
+                      {" · "}
+                      {row.share >= 0 ? "runs high by " : "runs low by "}
+                      <ProofValue proof={derivedTarget("forecast", derived, "vs-cal-share", row.line)}>{formatPercentRatio(Math.abs(row.share), 1)}</ProofValue>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>

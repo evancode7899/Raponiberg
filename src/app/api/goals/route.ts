@@ -18,7 +18,9 @@ export async function GET(request: NextRequest) {
   return jsonBody(
     await cachedBuilt(prisma, "goals", async (book) => {
       const [settings, { forecast: f, data }] = await Promise.all([loadJsonSetting(prisma, GOALS_KEY, normalizeGoals), loadForecast(prisma, book)]);
-      return { report: buildGoals(book, settings, f ? goalForecastOf(f) : null, data.profile.settings), settings };
+      const forecast = f ? goalForecastOf(f) : null;
+      // The forecast's path goes along for the trade-off slider (lib/goals/tradeoff.ts): a what-if over it, no figure of its own.
+      return { report: buildGoals(book, settings, forecast, data.profile.settings), settings, forecast };
     }),
   );
 }

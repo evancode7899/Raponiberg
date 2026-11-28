@@ -55,9 +55,29 @@ export const derivedDescriptor = (page: DerivedPage, f: Pick<DerivedFigure, "fig
 /** What a page hands a figure component: the recipe and the value it shows, held to the cleared one. */
 export type DerivedTarget = { descriptor: DerivedDescriptor; shownCents: number | null; shown?: ProofValue };
 
+/**
+ * Each list's figures by key, built once per list: a page draws thousands of figures from one
+ * list (a real Cash flow's runs to tens of thousands), and a scan per figure made drawing it
+ * quadratic. The first of two figures with one key wins, as a scan would find it.
+ */
+const INDEX = new WeakMap<readonly DerivedFigure[], { size: number; m: Map<string, DerivedFigure> }>();
+function lookup(list: readonly DerivedFigure[], figure: string, key?: string | null): DerivedFigure | undefined {
+  let m = INDEX.get(list)?.size === list.length ? INDEX.get(list)!.m : undefined;
+  // A list still being added to is indexed again.
+  if (!m) {
+    m = new Map();
+    for (const f of list) {
+      const k = derivedKey(f);
+      if (!m.has(k)) m.set(k, f);
+    }
+    INDEX.set(list, { size: list.length, m });
+  }
+  return m.get(key != null ? `${figure}|${key}` : figure);
+}
+
 /** A derived figure's target, looked up in the page's list: the value shown is the list's own. */
 export function derivedTarget(page: DerivedPage, list: readonly DerivedFigure[], figure: string, key?: string): DerivedTarget | Unswept {
-  const f = list.find((x) => x.figure === figure && (x.key ?? null) === (key ?? null));
+  const f = lookup(list, figure, key);
   if (!f) return { unswept: `${page} lists no "${figure}"${key ? ` for ${key}` : ""}` };
   if (!f.value) return noFigure(f.describes);
   return { descriptor: derivedDescriptor(page, f), shownCents: "cents" in f.value ? f.value.cents : null, ...("cents" in f.value ? {} : { shown: f.value }) };
@@ -65,13 +85,13 @@ export function derivedTarget(page: DerivedPage, list: readonly DerivedFigure[],
 
 /** A derived figure's value as a number (cents or ratio), for display; null for words. */
 export const derivedNumber = (list: readonly DerivedFigure[], figure: string, key?: string): number | null => {
-  const v = list.find((x) => x.figure === figure && (x.key ?? null) === (key ?? null))?.value;
+  const v = lookup(list, figure, key)?.value;
   return v == null ? null : "cents" in v ? v.cents : "ratio" in v ? v.ratio : null;
 };
 
 /** A derived figure's words (a pattern, a count) as the list states them, or n.a. */
 export const derivedText = (list: readonly DerivedFigure[], figure: string, key?: string): string => {
-  const v = list.find((x) => x.figure === figure && (x.key ?? null) === (key ?? null))?.value;
+  const v = lookup(list, figure, key)?.value;
   return v && "text" in v ? v.text : "n.a.";
 };
 

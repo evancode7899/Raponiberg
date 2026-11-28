@@ -1,6 +1,6 @@
 import type { BlockerRef } from "../book/reports/blockerRef.ts";
 import { addDays, daysBetween, endOfMonth, periodLabel, startOfMonth, ymd } from "../dates/isoDate.ts";
-import { reconcile, type HintMatch, type MatchRow, type StatementCharge } from "./detect.ts";
+import { reconcile, type HintMatch, type MatchRow, type StatementCharge, type ReconcileOptions } from "./detect.ts";
 import { carName, KIND_INFO, ownedOn, SHARED, type Car, type CarEntry, type CarKind, type CostGroup, type GarageSettings } from "./settings.ts";
 
 /**
@@ -387,7 +387,7 @@ const spread = (date: string, months: number) => ({ start: date, end: months > 1
  * The garage's figures: the statement charges and which car each is for, what became of
  * every log entry, the log, and a report for every car.
  */
-export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: string, opts: { statementsThrough?: string } = {}): GarageReport {
+export function buildGarage(settings: GarageSettings, rows: MatchRow[], today: string, opts: ReconcileOptions = {}): GarageReport {
   const { charges, hints } = reconcile(rows, settings, opts);
   const statementsThrough = opts.statementsThrough ?? rows.reduce((m, r) => (r.date > m ? r.date : m), "");
   const entryById = new Map(settings.entries.map((e) => [e.id, e]));

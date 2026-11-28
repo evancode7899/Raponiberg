@@ -1,5 +1,6 @@
 import type { InvestmentsReport, PositionRow } from "../reports/investments.ts";
 import { returnsDerived } from "./returns.ts";
+import { dividendsDerived } from "./dividends.ts";
 import { c, cellKey, ln, r, type DerivedFigure } from "./types.ts";
 
 /** A growth series' key: its account, or the household's ("all"). */
@@ -23,7 +24,7 @@ export function idleCash(rep: Pick<InvestmentsReport, "positions">): { accountId
 }
 
 export function investmentsDerived(rep: InvestmentsReport, returnRate: number | null = null): DerivedFigure[] {
-  const out: DerivedFigure[] = [...detailFigures(rep, returnRate), ...returnsDerived(rep.returns)];
+  const out: DerivedFigure[] = [...detailFigures(rep, returnRate), ...returnsDerived(rep.returns), ...(rep.dividends ? dividendsDerived(rep.dividends) : [])];
   const share = (cls: string) => rep.allocation.find((x) => x.cls === cls)?.share ?? 0;
   const us = share("US_STOCK");
   const intl = share("INTL_STOCK");
@@ -64,6 +65,14 @@ export function investmentsDerived(rep: InvestmentsReport, returnRate: number | 
       ln("Account fees, last 12 months", c(f.accountFeesLast12Cents), "="),
     ],
   });
+  const lifetime = f.accountFeesLifetimeCents;
+  if (lifetime)
+    out.push({
+      figure: "account-fees-lifetime",
+      describes: "Every fee the investment statements deducted, each account since its first statement on file",
+      value: c(lifetime),
+      lines: [...rep.accounts.filter((a) => a.feesLifetimeCents).map((a, i) => ln(`${a.name}, since ${a.feesSince}`, c(a.feesLifetimeCents), i ? "+" : undefined, { source: "proven" })), ln("Every account", c(lifetime), "=")],
+    });
   out.push({
     figure: "ratio-unknown",
     describes: "Held where no expense ratio is known",
@@ -172,6 +181,7 @@ function detailFigures(rep: InvestmentsReport, returnRate: number | null): Deriv
   }
   if (returnRate != null) out.push({ figure: "fee-return", describes: "The return the Fees tab prices a fee at: the forecast's", value: r(returnRate), lines: [ln("The forecast's return (Forecast page)", r(returnRate), undefined, { source: "assumption" })] });
   for (const a of rep.accounts) {
+    if (a.feesLifetimeCents) out.push({ figure: "account-fee-lifetime", key: a.accountId, describes: `${a.name}: every fee the statements deducted since its first statement, ${a.feesSince} – ${a.feesWindow.to}`, value: c(a.feesLifetimeCents), lines: [ln("The fees each statement takes, since the first on file", c(a.feesLifetimeCents), undefined, { source: "proven" })] });
     if (a.feesLast12Cents) out.push({ figure: "account-fee", key: a.accountId, describes: `${a.name}: fees the statements deducted, ${a.feesWindow.from} – ${a.feesWindow.to}`, value: c(a.feesLast12Cents), lines: [ln("The fees each statement takes, over the window", c(a.feesLast12Cents), undefined, { source: "proven" })] });
     if (a.differenceCents) out.push({ figure: "difference", key: a.accountId, describes: `${a.name}: holdings on file less the balance`, value: c(a.differenceCents), lines: [ln("The positions on file, less the statement balance that day", c(a.differenceCents), undefined, { source: "proven" })] });
   }

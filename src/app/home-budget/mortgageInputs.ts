@@ -1,6 +1,4 @@
 import type { SliderSpec } from "./RangeSlider";
-import { fetchSavedInputs } from "@/components/ui/kit";
-import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import type { LumpRow, MortgageInputs } from "@/lib/mortgage/inputs";
 
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -33,28 +31,6 @@ export function lumpLabel(r: LumpRow): string {
   const when = `${MONTHS[r.month - 1]} ${r.year}`;
   const name = r.label.trim() || (r.repeat ? "Yearly lump" : "Lump sum");
   return r.repeat ? `${name} · ${when}–${r.untilYear}` : `${name} · ${when}`;
-}
-
-/** The loan and its property tax from the Home budget page's "Test a price" scenario (its saved inputs, else this browser's copy). */
-export async function fromHomeBudget(): Promise<Partial<MortgageInputs> | null> {
-  try {
-    let saved = await fetchSavedInputs<HomeBudgetInputs>("pf-home-budget-inputs").catch(() => null);
-    if (!saved) {
-      const raw = localStorage.getItem("pf-home-budget-inputs");
-      if (!raw) return null;
-      saved = JSON.parse(raw) as Partial<HomeBudgetInputs>;
-    }
-    const h: HomeBudgetInputs = { ...defaultHomeBudgetInputs(), ...saved };
-    return {
-      principal: Math.round(h.budgetHomePrice * (1 - h.budgetDownPaymentPct)),
-      rate: h.annualMortgageRate,
-      termYears: h.mortgageTermYears,
-      investReturn: h.investmentReturnRate,
-      propertyTax: Math.round(h.budgetHomePrice * h.annualPropertyTaxRate),
-    };
-  } catch {
-    return null;
-  }
 }
 
 type LegacyInputs = {

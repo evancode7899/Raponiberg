@@ -9,8 +9,6 @@ import { getHouseholdView, type HouseholdViewMode } from "../ledger/householdSet
 import { groupFor, loadLedger, openAccountsEdge, type AccountGroup, type Ledger } from "../ledger/loadLedger.ts";
 import { readTaxProfile, type TaxPerson, type TaxProfile } from "../tax/profile.ts";
 import { readProfileSettings } from "../profile/settings.ts";
-import { INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings } from "../investments/settings.ts";
-import { loadJsonSetting } from "../settingsStore.ts";
 import { readAwards, type AwardsFile } from "../bonuses/awardStore.ts";
 import { readK1Details, type K1DetailsFile } from "../tax/k1DetailStore.ts";
 import { readHealthPlans, type HealthPlan } from "../medical/plans.ts";
@@ -184,8 +182,6 @@ export type Book = {
   ledger: Ledger;
   /** How the figures count a partner's money before the merge (Settings › Household); absent (tests): STRICT. */
   viewMode?: HouseholdViewMode;
-  /** The broad index fund the owner picked as Investment returns' benchmark (Investments settings), or null/absent: the one priced most often. */
-  benchmarkFund?: string | null;
   accounts: BookAccount[];
   statements: BookStatement[];
   rows: BookRow[];
@@ -312,7 +308,7 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     const error = e instanceof Error ? e.message : String(e);
     unreadable.push({ source: "reimbursements", what: "Your reimbursement links", error, fix: "Restore data/reimbursement-links.json from the journal beside it, then refresh.", affects: ["CASH_FLOW"] });
   }
-  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfileRead, documents, classifiedWith, classifiedWithHousehold, profileSettingsRead, viewMode, investmentSettings] = await Promise.all([
+  const [ledger, accounts, imports, rows, stubs, brokerage, holdings, matches, taxProfileRead, documents, classifiedWith, classifiedWithHousehold, profileSettingsRead, viewMode] = await Promise.all([
     loadLedger(db, { today }),
     // Archived accounts included: archiving hides an account from pickers, never its history from figures.
     db.account.findMany({ include: { aliases: { select: { identifier: true } } } }),
@@ -371,7 +367,6 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     db.appSetting.findUnique({ where: { key: CLASSIFIER_HOUSEHOLD_SETTING } }).then((s) => s?.value ?? null),
     readProfileSettings(db),
     getHouseholdView(db),
-    loadJsonSetting(db, INVESTMENT_SETTINGS_KEY, normalizeInvestmentSettings),
   ]);
 
   const taxProfile = taxProfileRead.profile;
@@ -470,7 +465,6 @@ export async function loadBook(db: Db, opts: { today?: string; exceptionsFile?: 
     horizon: { cashFlow: edge, netWorth: edge },
     ledger,
     viewMode,
-    benchmarkFund: investmentSettings.benchmarkFund,
     accounts: accounts.map((a) => ({
       id: a.id,
       name: a.name,

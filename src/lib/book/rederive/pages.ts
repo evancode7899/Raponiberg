@@ -195,6 +195,7 @@ export function rederiveInsurance(book: Book, page: InsuranceInput, figures: rea
   const PRINTED = "As the policy, its declarations, its schedule or the insurer's letter prints it.";
   return rederiveList(figures, (f) => {
     if (f.figure === "paid-year") return [centsRoute("the Book's rows, re-added", f.value, rowsCents(paidInYear(overviewPolicies(page.policies, page), page.through).map((x) => x.rowId)), ROWS)];
+    if (f.figure === "need-living" || f.figure === "need-needed" || f.figure === "need-gap") return { none: "Your years of living cost over figures other pages prove (Cash flow's typical month, Net worth's balances, each policy's death benefit), each linked in the chain." };
     if (f.figure === "annual-total" || f.figure === "life-cover") return { none: "A sum of each policy's own figure (its premium for a year, its death benefit), each as its documents print it." };
     if (f.figure === "annual" || f.figure === "renewal-change") return { none: `${PRINTED} Scaled to a year, or set against the prior premium, in the chain.` };
     if (f.figure === "paid-term") {
@@ -278,6 +279,7 @@ export function rederiveVsActual(figures: readonly DerivedFigure[]): Record<stri
   return rederiveList(figures, (f) => {
     if (f.figure === "vs-forecast") return { none: "The forecast as it was kept on that day: a projection held as it was, never worked out again with what is known since." };
     if (f.figure === "vs-actual") return { none: "The proven months added up: each is What changed's own figure for that month (income and spending from Cash flow, saving and markets from net worth), re-derived by its own proof, which its line opens." };
+    if (f.figure === "vs-cal-miss" || f.figure === "vs-cal-share") return { none: "Each proven month's projected less actual, as the snapshot tables beside it show them (each month's actual is What changed's own proven figure), added up over the months: a sum of figures proven on their own." };
     if (f.figure !== "vs-miss") return null;
     const fc = byKey.get(`vs-forecast|${f.key}`);
     const ac = byKey.get(`vs-actual|${f.key}`);

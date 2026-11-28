@@ -122,3 +122,30 @@ export function leaning(r: Pick<VsRow, "high" | "months" | "missCents">): string
   const overall = Math.abs(r.missCents) < 100 ? "on the mark overall" : r.missCents > 0 ? "high overall" : "low overall";
   return `${overall}; above in ${r.high} of ${r.months.length} month${r.months.length === 1 ? "" : "s"}`;
 }
+
+/** One line's calibration: every proven month, each held to the forecast as it stood going into it. */
+export type CalRow = { line: VsLine; months: { key: string; snapshot: string; forecast: number; actual: number }[]; forecastCents: number; actualCents: number; missCents: number; /** The miss as a share of what actually happened (above zero: runs high); null when that's zero. */ share: number | null };
+
+/**
+ * How far to trust the forecast, line by line: each proven month any kept forecast projected,
+ * against the newest forecast kept before that month began (the forecast as it stood going
+ * in), so a month counts once however many forecasts projected it. Null with no such month.
+ */
+export function calibration(vs: readonly VsSnapshot[]): CalRow[] | null {
+  const going = new Map<string, VsSnapshot>();
+  for (const s of [...vs].sort((a, b) => a.savedAt.localeCompare(b.savedAt)))
+    for (const m of s.rows[0]?.months ?? []) if (s.savedAt.slice(0, 7) < m.key) going.set(m.key, s);
+  if (!going.size) return null;
+  const keys = [...going.keys()].sort();
+  return VS_LINES.map((line) => {
+    const months = keys.map((key) => {
+      const s = going.get(key)!;
+      const m = s.rows.find((r) => r.line === line)!.months.find((x) => x.key === key)!;
+      return { key, snapshot: s.id, forecast: m.forecast, actual: m.actual };
+    });
+    const forecastCents = months.reduce((t, m) => t + m.forecast, 0);
+    const actualCents = months.reduce((t, m) => t + m.actual, 0);
+    const missCents = forecastCents - actualCents;
+    return { line, months, forecastCents, actualCents, missCents, share: actualCents ? missCents / Math.abs(actualCents) : null };
+  });
+}

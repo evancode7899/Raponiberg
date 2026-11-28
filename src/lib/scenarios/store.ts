@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "../dataDir.ts";
-import { EMPTY_FILE, normalizeScenarioFile, type ScenarioFile } from "./types.ts";
+import { EMPTY_FILE, MAX_SCENARIOS, normalizeScenarioFile, type Scenario, type ScenarioFile } from "./types.ts";
 
 /**
  * The saved scenarios: data/scenarios.json (SCENARIOS_FILE). In the data folder so backup
@@ -39,4 +39,26 @@ export function writeScenarios(raw: unknown, file = scenariosFilePath()): Scenar
     rmSync(tmp, { force: true });
   }
   return data;
+}
+
+/**
+ * FIRE's own saved scenarios from before the two were one (data/fire-scenarios.json): moved
+ * into this file once, each as a scenario (a name already here is kept as it is), then the old
+ * file renamed to fire-scenarios.migrated.json so it's never read again (backup still carries it).
+ */
+export function migrateFireScenarios(convert: (m: { id: string; says: string }) => Scenario | null, file = scenariosFilePath(), old = process.env.FIRE_SCENARIOS_FILE || path.join(dataDir(), "fire-scenarios.json")): void {
+  if (!existsSync(old)) return;
+  let marks: { id: string; says: string }[] = [];
+  try {
+    const parsed = JSON.parse(readFileSync(old, "utf8")) as { marks?: { id: string; says: string }[] };
+    marks = Array.isArray(parsed.marks) ? parsed.marks : [];
+  } catch {
+    // A damaged file stays where it is, for the owner to look at: nothing is moved from it.
+    return;
+  }
+  const cur = readScenarios(file);
+  const have = new Set(cur.scenarios.map((s) => s.id));
+  const add = marks.flatMap((m) => convert(m) ?? []).filter((s) => !have.has(s.id));
+  if (add.length) writeScenarios({ ...cur, scenarios: [...cur.scenarios, ...add].slice(0, MAX_SCENARIOS) }, file);
+  renameSync(old, old.replace(/\.json$/, ".migrated.json"));
 }

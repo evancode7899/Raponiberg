@@ -17,7 +17,8 @@ import { ProofValue } from "@/components/ui/proof/ProofValue";
 import { BUCKETS, bucketColor, bucketOf, byBucket, carProof, fmtDate, logProof, miles, NumInput, perMile, relative, Swatch, throughText, usd2 } from "./parts";
 import { serviceDue } from "./ServiceTab";
 import { noFigure } from "@/lib/book/proof/clearance";
-import { outlookKey } from "@/lib/book/derived/car";
+import { krKey, outlookKey } from "@/lib/book/derived/car";
+import { keepOrReplace } from "@/lib/car/keepReplace";
 
 type Span = "toDate" | "last12" | "next12";
 
@@ -202,6 +203,8 @@ export function OverviewTab({ ctx }: { ctx: CarCtx }) {
           </RechartsResponsive>
         </div>
       </Card>
+
+      <KeepOrReplace ctx={ctx} />
 
       <Card title="All-in cost per mile, so far" subtitle="Everything spent and lost to depreciation so far, divided by miles so far. Fixed costs make early miles expensive; it settles as miles add up.">
         <div className="h-56">
@@ -442,6 +445,60 @@ function RecentLog({ ctx }: { ctx: CarCtx }) {
           })}
         </ul>
       )}
+    </Card>
+  );
+}
+
+/**
+ * Keep or replace (car/keepReplace.ts): what the statements show the car costs to run, year
+ * of ownership by year, and the latest twelve months against its first year. No outside
+ * prices: the car's own first year stands for what a newer one like it costs to run.
+ */
+function KeepOrReplace({ ctx }: { ctx: CarCtx }) {
+  const kr = useMemo(() => keepOrReplace(ctx.report), [ctx.report]);
+  const id = ctx.report.carId;
+  if (!kr.years.length) return null;
+  const k = kr.compare;
+  const cell = (year: number | "latest", col: string, text: string) => <ProofValue proof={ctx.dp("kr", krKey(id, year, col))}>{text}</ProofValue>;
+  const per = (c: number | null) => (c == null ? NA : `$${(c / 100).toFixed(2)}`);
+  return (
+    <Card
+      title="Keep or replace"
+      subtitle="What the statements show it costs to run, each year you've owned it: every line but depreciation and loan interest. Its first year stands for what a newer car like it costs to run."
+    >
+      {k ? (
+        <StatGrid cols={3}>
+          <StatCell proof={ctx.dp("kr-extra")} label={k.extraCents >= 0 ? "More a year to run now" : "Less a year to run now"} value={usd0(Math.abs(k.extraCents))} tone={k.extraCents > 0 ? "neg" : "pos"} sub="the latest twelve months against its first year" />
+          <StatCell proof={ctx.dp("kr-upkeep-extra")} label="Repairs and maintenance" value={`${k.upkeepExtraCents >= 0 ? "+" : "−"}${usd0(Math.abs(k.upkeepExtraCents))}`} sub="the same twelve months against the first year" />
+          {k.change != null ? <StatCell proof={ctx.dp("kr-change")} label="Running costs since year 1" value={`${k.change >= 0 ? "+" : ""}${formatPercentRatio(k.change, 0)}`} tone={k.change > 0 ? "neg" : "pos"} sub="a car past its cheap years runs up here" /> : null}
+        </StatGrid>
+      ) : (
+        <p className="text-xs text-muted">Two years of ownership on the statements set the latest twelve months against the first.</p>
+      )}
+      <div className={table.wrap}>
+        <table className={table.table}>
+          <thead>
+            <tr className={table.head}>
+              <th className={table.th}>Year owned</th>
+              <th className={table.thR}>Running costs</th>
+              <th className={table.thR}>Repairs &amp; maintenance</th>
+              <th className={table.thR}>Miles</th>
+              <th className={table.thR}>Per mile</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...kr.years.map((y) => [y.n, y] as const), ...(k ? ([["latest", k.latest]] as const) : [])].map(([n, y]) => (
+              <tr key={String(n)} className={`${table.tr} ${n === "latest" ? "border-t-2 border-line-strong" : ""}`}>
+                <td className={table.td}>{n === "latest" ? "Latest twelve months" : `Year ${n}`} <span className="text-faint">{y.from} – {y.to}{y.months < 12 ? ` (${y.months} months)` : ""}</span></td>
+                <td className={table.tdR}>{cell(n, "running", usd0(y.runningCents))}</td>
+                <td className={table.tdR}>{cell(n, "upkeep", usd0(y.upkeepCents))}</td>
+                <td className={table.tdR}><NotFigure why="miles between odometer readings, not money">{y.miles.toLocaleString("en-US")}</NotFigure></td>
+                <td className={table.tdR}>{y.perMile == null ? NA : cell(n, "per-mile", per(Math.round(y.perMile)))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }

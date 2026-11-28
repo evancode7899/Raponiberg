@@ -1,6 +1,6 @@
 "use client";
 
-import { buttonPrimary, Card, Segmented } from "@/components/ledger/LedgerBits";
+import { btn, Card, Segmented } from "@/components/ledger/LedgerBits";
 import { inputCls, MoneyInput, selectCls } from "@/components/ui/kit";
 import { formatUsdCents } from "@/lib/formatMoney";
 import { CT_W4_CODES, DEFAULT_PAY_FORECAST, EMPTY_EXTRAS, type CtW4Code, type TaxProfile, type W4OnFile } from "@/lib/tax/profile";
@@ -331,7 +331,7 @@ function OnFileEditor({ p, r, onSave }: { p: W4PersonPlan; r: TaxResponse; onSav
         {money("CT-W4 line 3 Reduced", draft.ct.reduced, (c) => set((w) => void (w.ct.reduced = c)))}
       </div>
       <div className="mt-3 flex items-center gap-3">
-        <button type="button" className={buttonPrimary} disabled={saving} onClick={save}>
+        <button type="button" className={btn.primary} disabled={saving} onClick={save}>
           {saving ? "Saving…" : "Save"}
         </button>
         <span className="text-xs text-muted">The withholding per paycheck comes from the latest stub either way; these only say which lines already hold amounts.</span>

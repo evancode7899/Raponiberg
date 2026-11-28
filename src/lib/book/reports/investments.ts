@@ -11,6 +11,7 @@ import { household } from "../householdView.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import { buildNetWorth } from "./netWorth.ts";
 import { buildPortfolioReturns, type PortfolioReturns } from "./portfolioReturns.ts";
+import { buildDividendCalendar, type DividendCalendar } from "./dividends.ts";
 
 /**
  * Holdings, allocation, fees, unrealized gains and money-in-versus-growth for every
@@ -97,6 +98,9 @@ export type AccountHoldings = {
   /** Fees the statements deducted over the last 12 months (≤ 0), and the window. */
   feesLast12Cents: number;
   feesWindow: { from: string; to: string };
+  /** Every fee the statements deducted since the account's first statement on file (≤ 0), from when. */
+  feesLifetimeCents: number;
+  feesSince: string;
   blockers: BlockerRef[];
 };
 
@@ -118,6 +122,8 @@ export type InvestmentsReport = {
     unknownCents: number;
     /** Fees taken out by the accounts themselves (advisory, plan admin) over 12 months. */
     accountFeesLast12Cents: number;
+    /** Every account's fees since its first statement on file. */
+    accountFeesLifetimeCents: number;
   };
   gains: {
     taxable: { unrealizedCents: number; gainCents: number; lossCents: number; costKnownCents: number; costUnknownCents: number };
@@ -130,6 +136,8 @@ export type InvestmentsReport = {
   growth: GrowthSeries[];
   /** Returns: the whole portfolio quarter by quarter against the S&P 500 (portfolioReturns.ts). */
   returns: PortfolioReturns;
+  /** Every dividend the brokerage statements print, as a twelve-month calendar (dividends.ts). */
+  dividends: DividendCalendar;
   /** Securities without a classification, for the owner to classify. */
   unclassified: { key: string; name: string; symbol: string | null; cents: number }[];
   blockers: BlockerRef[];
@@ -171,6 +179,7 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
     const treatment = treatmentFor(a.subtype, a.group);
     const feesFrom = [addDays(lastDay, -364), a.timeline.firstDay!].sort().at(-1)!;
     const fees = a.isInvestment ? decompose(a.timeline, feesFrom, lastDay).feesCents : 0;
+    const feesLifetime = a.isInvestment ? decompose(a.timeline, a.timeline.firstDay!, lastDay).feesCents : 0;
 
     // The latest snapshot that ties to the balance on its own date.
     const snaps = (byAccount.get(a.id) ?? []).filter((s) => s.asOf <= lastDay).sort((x, y) => x.asOf.localeCompare(y.asOf));
@@ -238,6 +247,8 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
       differenceCents: !usable && latest ? latest.totalCents - valueAt(a.timeline, latest.asOf).cents : null,
       feesLast12Cents: fees,
       feesWindow: { from: feesFrom, to: lastDay },
+      feesLifetimeCents: feesLifetime,
+      feesSince: a.timeline.firstDay!,
       blockers: refs(netWorthAtBlockers(book, lastDay, [a.id])),
     });
   }
@@ -301,6 +312,7 @@ export function buildInvestments(book: Book, settings: InvestmentSettings): Inve
       knownCents,
       unknownCents: Math.max(0, totalCents - knownCents),
       accountFeesLast12Cents: accounts.reduce((s, a) => s + a.feesLast12Cents, 0),
+      accountFeesLifetimeCents: accounts.reduce((s, a) => s + a.feesLifetimeCents, 0),
     },
     gains: {
       taxable: {
@@ -321,6 +333,7 @@ export function buildInvestments(book: Book, settings: InvestmentSettings): Inve
       .slice(0, 12)
       .map((s) => ({ key: s.key, symbol: s.symbol, name: s.name, cents: s.cents, share: share(s.cents, totalCents), accounts: [...s.accounts] })),
     returns: buildPortfolioReturns(book),
+    dividends: buildDividendCalendar(book),
     growth: buildGrowth(book, included.filter((a) => a.isInvestment && (!a.closed || accounts.some((x) => x.accountId === a.id))).map((a) => a.id)),
     unclassified: [...unclassified.values()].sort((x, y) => y.cents - x.cents),
     blockers: [...new Map(accounts.flatMap((a) => a.blockers).map((b) => [b.id, b])).values()],
