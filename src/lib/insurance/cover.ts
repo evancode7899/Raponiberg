@@ -13,6 +13,8 @@ import type { AutoPolicy, AutoRenewal, PolicyForm, PropertyPolicy } from "./type
 const COVER_PAYEES: { insurer: RegExp; payee: RegExp }[] = [
   { insurer: /State ?Farm/i, payee: /STATE ?FARM/i },
   { insurer: /GEICO|Government Employees/i, payee: /\bGEICO\b/i },
+  // Progressive writes its home policies through its ASI group (American Strategic Insurance).
+  { insurer: /Progressive|American Strategic/i, payee: /\bPROGRESSIVE\b|AMERICAN STRATEGIC/i },
 ];
 const payeeOf = (insurer: string) => COVER_PAYEES.find((x) => x.insurer.test(insurer))?.payee ?? null;
 /** Same insurer group ("GEICO" on a notice, "GEICO Secure Insurance Company" on the declarations). */
@@ -20,6 +22,8 @@ const sameInsurer = (a: string, b: string) => COVER_PAYEES.some((x) => x.insurer
 
 /** A monthly installment can be drawn this many days before the term it pays for starts. */
 const PAID_AHEAD_DAYS = 15;
+/** A term paid in full can be charged when it's bought, this many days before it starts: only a charge of exactly its premium counts. */
+const PAID_IN_FULL_AHEAD_DAYS = 60;
 
 export type CoverStatus = "NOT_STARTED" | "IN_FORCE" | "ENDED";
 
@@ -40,6 +44,10 @@ type CoverBase = {
   forms: { file: string; code: string | null; title: string }[];
   /** The premium for a year of cover at this term's rate (a six-month term counts twice). */
   annualCents: number;
+  /** A later policy (another insurer's, or a new one) covers the same car or home from this date: this one ends then. */
+  replacedBy: { insurer: string; policyNumber: string; date: string } | null;
+  /** The day cover ends: the term's end, or the day the policy replacing it starts. */
+  ends: string;
 };
 
 export type HomeView = CoverBase & { policy: PropertyPolicy };
@@ -106,7 +114,10 @@ export function buildCoverReport(input: {
   for (const r of charges) {
     const mine = drafts.filter((d) => payeeOf(d.insurer)?.test(r.payee));
     if (!mine.length) continue;
-    const termOf = (d: Draft) => d.terms.find((t) => r.date >= addDays(t.start, -PAID_AHEAD_DAYS) && r.date < t.end) ?? null;
+    const termOf = (d: Draft) =>
+      d.terms.find((t) => r.date >= addDays(t.start, -PAID_AHEAD_DAYS) && r.date < t.end) ??
+      d.terms.find((t) => -r.amountCents === t.premiumCents && r.date >= addDays(t.start, -PAID_IN_FULL_AHEAD_DAYS) && r.date < t.end) ??
+      null;
     const inTerm = mine.filter((d) => termOf(d));
     const owner = inTerm.length === 1 ? inTerm[0]! : inTerm.length === 0 && mine.length === 1 ? mine[0]! : null;
     if (!owner) continue;
@@ -115,7 +126,8 @@ export function buildCoverReport(input: {
 
   const formsOf = (d: Draft, codes: string[]) => {
     const norm = (s: string) => s.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-    const listed = new Set(codes.flatMap((c) => c.split(/\s+/)).map(norm));
+    // A code as printed whole ("9611D CT (06/14)"), and each word of a list of them ("A30CT M-308").
+    const listed = new Set([...codes, ...codes.flatMap((c) => c.split(/\s+/))].map(norm).filter(Boolean));
     const same = drafts.filter((x) => x.line === d.line && sameInsurer(x.insurer, d.insurer));
     return input.forms
       .filter(({ form: f }) => f.line === d.line && sameInsurer(f.insurer, d.insurer) && (f.policyNumber === d.policyNumber || (f.policyNumber == null && ((f.code != null && listed.has(norm(f.code))) || same.length === 1))))
@@ -123,27 +135,51 @@ export function buildCoverReport(input: {
       .sort((a, b) => a.title.localeCompare(b.title));
   };
 
-  const base = (d: Draft, file: string, start: string, end: string, annualCents: number, codes: string[]): CoverBase => {
+  const base = (d: Draft, file: string, start: string, end: string, annualCents: number, codes: string[], replacedBy: CoverBase["replacedBy"]): CoverBase => {
     const payments = paid.get(d)!;
     const terms = [...d.terms].sort((a, b) => b.start.localeCompare(a.start));
+    const ends = replacedBy?.date ?? end;
     return {
       file,
-      status: statusOf(start, end, today),
+      status: statusOf(start, ends, today),
       terms,
       payments,
       paidTermCents: payments.filter((x) => x.term === start).reduce((s, x) => s + x.cents, 0),
       forms: formsOf(d, codes),
       annualCents,
+      replacedBy,
+      ends,
     };
   };
 
+  // A policy is replaced when a later one starts during its term on the same car (a VIN in common) or the same home (first premises line).
+  const homeKey = (p: PropertyPolicy) => (p.premises[0] ?? "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  const sameHome = (a: PropertyPolicy, b: PropertyPolicy) => homeKey(a) !== "" && homeKey(a) === homeKey(b);
+  const sameCar = (a: AutoPolicy, b: AutoPolicy) => a.vehicles.some((v) => v.vin != null && b.vehicles.some((w) => w.vin === v.vin));
+  function replacement<P extends { policyNumber: string; periodStart: string; periodEnd: string; insurer: string }>(p: P, all: P[], same: (a: P, b: P) => boolean): CoverBase["replacedBy"] {
+    const later = all.filter((q) => q.policyNumber !== p.policyNumber && q.periodStart > p.periodStart && q.periodStart < p.periodEnd && same(p, q)).sort((a, b) => a.periodStart.localeCompare(b.periodStart))[0];
+    return later ? { insurer: later.insurer, policyNumber: later.policyNumber, date: later.periodStart } : null;
+  }
+  const homeHeads = homeDrafts.map((h) => h.head.policy);
+  const autoHeads = autoDrafts.map((a) => a.head.policy);
+  // The policies in force or about to be come first (newest first), so each tab opens on the current one.
+  const current = <V extends CoverBase & { policy: { periodStart: string } }>(list: V[]) =>
+    list.sort((a, b) => Number(a.status === "ENDED") - Number(b.status === "ENDED") || Number(!!a.replacedBy) - Number(!!b.replacedBy) || b.policy.periodStart.localeCompare(a.policy.periodStart));
+
   return {
-    homes: homeDrafts.map(({ head, draft }) => ({ ...base(draft, head.file, head.policy.periodStart, head.policy.periodEnd, perYear(head.policy.totalPremiumCents, head.policy.termMonths), head.policy.forms.map((f) => f.code)), policy: head.policy })),
-    autos: autoDrafts.map(({ head, draft, renewal }) => ({
-      ...base(draft, head.file, head.policy.periodStart, head.policy.periodEnd, perYear(head.policy.termPremiumCents, head.policy.termMonths), [head.policy.contractType ?? "", head.policy.amendments ?? ""]),
-      policy: head.policy,
-      renewal,
-    })),
+    homes: current(
+      homeDrafts.map(({ head, draft }) => ({
+        ...base(draft, head.file, head.policy.periodStart, head.policy.periodEnd, perYear(head.policy.totalPremiumCents, head.policy.termMonths), head.policy.forms.map((f) => f.code), replacement(head.policy, homeHeads, sameHome)),
+        policy: head.policy,
+      })),
+    ),
+    autos: current(
+      autoDrafts.map(({ head, draft, renewal }) => ({
+        ...base(draft, head.file, head.policy.periodStart, head.policy.periodEnd, perYear(head.policy.termPremiumCents, head.policy.termMonths), [head.policy.contractType ?? "", head.policy.amendments ?? ""], replacement(head.policy, autoHeads, sameCar)),
+        policy: head.policy,
+        renewal,
+      })),
+    ),
   };
 }
 
@@ -183,6 +219,14 @@ function lifeAnnual(v: PolicyView): number | null {
   return year && !year.level ? year.maxPremiumCents : v.policy.annualPremiumCents;
 }
 
+/** A home or auto policy's next date: its start, the day another policy replaces it, or its term's end. */
+function nextDate(v: CoverBase & { policy: { periodStart: string; periodEnd: string } }, endLabel: string): OverviewPolicy["next"] {
+  if (v.status === "ENDED") return null;
+  if (v.status === "NOT_STARTED") return { date: v.policy.periodStart, label: "Term starts" };
+  if (v.replacedBy) return { date: v.ends, label: `Replaced by ${v.replacedBy.insurer}` };
+  return { date: v.policy.periodEnd, label: endLabel };
+}
+
 export function overviewPolicies(life: PolicyView[], cover: CoverReport): OverviewPolicy[] {
   return [
     ...life.map((v): OverviewPolicy => ({
@@ -204,7 +248,7 @@ export function overviewPolicies(life: PolicyView[], cover: CoverReport): Overvi
       covers: [v.policy.form, v.policy.premises[0]].filter(Boolean).join(", "),
       status: v.status,
       annualCents: v.status === "ENDED" ? null : v.annualCents,
-      next: v.status === "ENDED" ? null : { date: v.status === "NOT_STARTED" ? v.policy.periodStart : v.policy.periodEnd, label: v.status === "NOT_STARTED" ? "Term starts" : v.policy.autoRenews ? "Renews" : "Term ends" },
+      next: nextDate(v, v.policy.autoRenews ? "Renews" : "Term ends"),
       payments: v.payments.map((x) => ({ rowId: x.rowId, date: x.date, cents: x.cents })),
     })),
     ...cover.autos.map((v): OverviewPolicy => ({
@@ -215,7 +259,7 @@ export function overviewPolicies(life: PolicyView[], cover: CoverReport): Overvi
       covers: v.policy.vehicles.map((x) => [x.year, x.make].filter(Boolean).join(" ")).join(", ") || "Auto",
       status: v.status,
       annualCents: v.status === "ENDED" ? null : v.annualCents,
-      next: v.status === "ENDED" ? null : { date: v.status === "NOT_STARTED" ? v.policy.periodStart : v.policy.periodEnd, label: v.status === "NOT_STARTED" ? "Term starts" : "Term ends" },
+      next: nextDate(v, "Term ends"),
       payments: v.payments.map((x) => ({ rowId: x.rowId, date: x.date, cents: x.cents })),
     })),
   ];

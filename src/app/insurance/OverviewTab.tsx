@@ -159,7 +159,7 @@ function PolicyStatus({ p, data }: { p: OverviewPolicy; data: InsurancePage }) {
     const v = data.policies.find((x) => x.policy.policyNumber === p.key);
     if (v?.status === "IN_FORCE") return <Badge tone="pos">In force · year {v.currentYear}</Badge>;
   }
-  const end = [...data.homes, ...data.autos].find((x) => x.policy.policyNumber === p.key)?.policy.periodEnd ?? data.today;
+  const end = [...data.homes, ...data.autos].find((x) => x.policy.policyNumber === p.key)?.ends ?? data.today;
   return <CoverStatusBadge status={p.status} end={end} />;
 }
 

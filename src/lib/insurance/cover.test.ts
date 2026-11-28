@@ -96,7 +96,7 @@ BPersonalProperty $	008,14
 describe("State Farm home declarations", () => {
   it("is recognized from its run-together text and read from the layout", () => {
     expect(insuranceKind(STATE_FARM)).toBe("PROPERTY");
-    expect(needsLayout("PROPERTY")).toBe(true);
+    expect(needsLayout("PROPERTY", "")).toBe(true);
     const p = parseInsuranceDoc(STATE_FARM) as PropertyPolicy;
     expect(p).toMatchObject({
       kind: "PROPERTY",

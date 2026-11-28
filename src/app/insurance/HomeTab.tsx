@@ -37,10 +37,11 @@ export function HomeTab({ data, figs }: { data: InsurancePage; figs: readonly De
   return (
     <>
       <PolicyPicker options={data.homes.map((h) => ({ value: h.policy.policyNumber, label: `${LINE_LABEL[h.policy.line]} ••${h.policy.policyNumber.slice(-4)}` }))} value={pn} onChange={setPicked} />
-      <Card tone="overview" title={`${p.form} · ${p.insurer}`} subtitle={[`Policy ${pn}`, p.premises.join(", ")].filter(Boolean).join(" · ")} actions={<CoverStatusBadge status={v.status} end={p.periodEnd} />}>
+      <Card tone="overview" title={`${p.form} · ${p.insurer}`} subtitle={[`Policy ${pn}`, p.premises.join(", ")].filter(Boolean).join(" · ")} actions={<CoverStatusBadge status={v.status} end={v.ends} />}>
         <p className="text-sm text-fg-2">
           {LINE_LABEL[p.line]} insurance for {p.namedInsured.join(" and ") || "the named insured"}, {termText(p.periodStart, p.periodEnd)}.
-          {v.status === "IN_FORCE" && ` ${p.autoRenews ? "Renews automatically" : "Ends"} ${longDate(p.periodEnd)}, ${until(data.today, p.periodEnd)}.`}
+          {v.replacedBy && ` Replaced by ${v.replacedBy.insurer} policy ${v.replacedBy.policyNumber} from ${longDate(v.ends)}${v.status === "IN_FORCE" ? `, ${until(data.today, v.ends)}` : ""}.`}
+          {v.status === "IN_FORCE" && !v.replacedBy && ` ${p.autoRenews ? "Renews automatically" : "Ends"} ${longDate(p.periodEnd)}, ${until(data.today, p.periodEnd)}.`}
           {p.billing && ` ${p.billing}.`}
         </p>
       </Card>
