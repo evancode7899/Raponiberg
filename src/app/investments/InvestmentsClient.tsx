@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LpPanel, PrivateFunds } from "./LpView";
 import { ReturnsTab } from "./ReturnsTab";
+import { DividendsTab } from "./DividendsTab";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { costOver, FEE_YEARS, growthKey, idleCash, investmentsDerived, positionKey } from "@/lib/book/derived/investments";
 import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
@@ -26,7 +27,7 @@ import { cellKey, derivedTarget, type DerivedFigure } from "@/lib/book/derived/t
 const TYPED_TARGET = "your target allocation, as you typed it";
 const SECURITY_NAME = "the security's name, as the statement prints it";
 
-const TABS = ["returns", "overview", "holdings", "fees", "gains", "growth", "funds"] as const;
+const TABS = ["returns", "overview", "holdings", "dividends", "fees", "gains", "growth", "funds"] as const;
 type Data = {
   report: InvestmentsReport;
   settings: InvestmentSettings;
@@ -99,6 +100,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
           { id: "returns", label: "Returns" },
           { id: "overview", label: "Allocation" },
           { id: "holdings", label: "Holdings", count: r?.unclassified.length || null },
+          { id: "dividends", label: "Dividends" },
           { id: "fees", label: "Fees" },
           { id: "gains", label: "Unrealized gains" },
           { id: "growth", label: "Money in vs growth" },
@@ -125,6 +127,7 @@ export function InvestmentsClient({ requiresApiSecret }: { requiresApiSecret: bo
           <>
             <BlockedNote what="every account's latest balance" blockers={r!.blockers} />
             {tab === "returns" && <ReturnsTab r={r!} d={investmentsDerived(r!, data.returnRate)} />}
+            {tab === "dividends" && <DividendsTab r={r!} d={investmentsDerived(r!, data.returnRate)} />}
             {tab === "overview" && <Overview data={data} save={save} saving={saving} />}
             {tab === "holdings" && <Holdings data={data} save={save} saving={saving} />}
             {tab === "fees" && <Fees r={r!} returnRate={data!.returnRate} />}

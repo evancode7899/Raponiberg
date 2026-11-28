@@ -1,5 +1,6 @@
 import type { InvestmentsReport, PositionRow } from "../reports/investments.ts";
 import { returnsDerived } from "./returns.ts";
+import { dividendsDerived } from "./dividends.ts";
 import { c, cellKey, ln, r, type DerivedFigure } from "./types.ts";
 
 /** A growth series' key: its account, or the household's ("all"). */
@@ -23,7 +24,7 @@ export function idleCash(rep: Pick<InvestmentsReport, "positions">): { accountId
 }
 
 export function investmentsDerived(rep: InvestmentsReport, returnRate: number | null = null): DerivedFigure[] {
-  const out: DerivedFigure[] = [...detailFigures(rep, returnRate), ...returnsDerived(rep.returns)];
+  const out: DerivedFigure[] = [...detailFigures(rep, returnRate), ...returnsDerived(rep.returns), ...(rep.dividends ? dividendsDerived(rep.dividends) : [])];
   const share = (cls: string) => rep.allocation.find((x) => x.cls === cls)?.share ?? 0;
   const us = share("US_STOCK");
   const intl = share("INTL_STOCK");

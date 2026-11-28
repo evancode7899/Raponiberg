@@ -36,7 +36,7 @@ export type CommandContext = {
 /** Each page's tabs, by the address the tab opens. The page's own list (its TABS) decides what exists; commandSearch.test.ts holds the two together. */
 export const PAGE_TABS: Record<string, [id: string, label: string][]> = {
   "/net-worth": [["changes", "What changed"], ["built", "How it was built"], ["returns", "Investment returns"], ["accounts", "Account roll-forwards"]],
-  "/investments": [["overview", "Allocation"], ["holdings", "Holdings"], ["fees", "Fees"], ["gains", "Unrealized gains"], ["growth", "Money in vs growth"], ["funds", "Private funds"]],
+  "/investments": [["overview", "Allocation"], ["holdings", "Holdings"], ["dividends", "Dividends"], ["fees", "Fees"], ["gains", "Unrealized gains"], ["growth", "Money in vs growth"], ["funds", "Private funds"]],
   "/fire": [["plan", "Plan"], ["walk-away", "Walk-away income"], ["levers", "Levers"], ["stress", "Stress test"], ["playbook", "Playbook"]],
   "/home-budget": [["price", "Test a price"], ["rent", "Rent vs buy"], ["sensitivity", "Sensitivity"], ["mortgage", "Prepay vs invest"]],
   "/tax-accounts": [["inputs", "Inputs"]],

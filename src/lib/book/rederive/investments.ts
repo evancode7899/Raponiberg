@@ -257,3 +257,39 @@ export function rederiveReturns(book: Book, rep: Pick<InvestmentsReport, "return
     }
   });
 }
+
+/**
+ * Investments › Dividends worked out a second way: straight from every brokerage statement's
+ * income rows in the Book, summed by account, security and month, never the calendar's own
+ * cells (a payment two statements print counts once, as on the page).
+ */
+export function rederiveDividends(book: Book, rep: Pick<InvestmentsReport, "dividends">, figures: readonly DerivedFigure[]): Record<string, Rederivation> {
+  const d = rep.dividends;
+  const acct = new Map(book.statements.map((s) => [s.documentId, s.accountId]));
+  const sums = new Map<string, number>();
+  const seen = new Set<string>();
+  const add = (k: string, cents: number) => sums.set(k, (sums.get(k) ?? 0) + cents);
+  const shown = new Set(d.securities.map((s) => s.accountId));
+  for (const b of book.brokerage) {
+    const a = acct.get(b.documentId);
+    if (b.isYearEnd || !a || !shown.has(a) || b.periodEnd > book.horizon.netWorth) continue;
+    for (const x of b.incomeRows) {
+      if (x.kind !== "DIVIDEND" || x.date < d.from || x.date > d.through) continue;
+      const dup = `${b.accountNumber}|${x.date}|${x.security}|${x.amount}`;
+      if (seen.has(dup)) continue;
+      seen.add(dup);
+      const row = `${a}|${x.security}`;
+      const m = x.date.slice(0, 7);
+      add(`${row}|${m}`, x.amount);
+      add(`${row}|total`, x.amount);
+      add(`all|${m}`, x.amount);
+      add("all|total", x.amount);
+    }
+  }
+  const ROUTE = "every brokerage statement's dividend rows in the Book, re-added";
+  return rederiveList(figures, (f) => {
+    if (f.figure !== "div") return null;
+    const k = (f.key ?? "").replace(/^div|/, "");
+    return [centsRoute(ROUTE, f.value, sums.get(k) ?? 0, "by account, security and month")];
+  });
+}

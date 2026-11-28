@@ -11,6 +11,7 @@ import { household } from "../householdView.ts";
 import { refs, type BlockerRef } from "./blockerRef.ts";
 import { buildNetWorth } from "./netWorth.ts";
 import { buildPortfolioReturns, type PortfolioReturns } from "./portfolioReturns.ts";
+import { buildDividendCalendar, type DividendCalendar } from "./dividends.ts";
 
 /**
  * Holdings, allocation, fees, unrealized gains and money-in-versus-growth for every
@@ -130,6 +131,8 @@ export type InvestmentsReport = {
   growth: GrowthSeries[];
   /** Returns: the whole portfolio quarter by quarter against the S&P 500 (portfolioReturns.ts). */
   returns: PortfolioReturns;
+  /** Every dividend the brokerage statements print, as a twelve-month calendar (dividends.ts). */
+  dividends: DividendCalendar;
   /** Securities without a classification, for the owner to classify. */
   unclassified: { key: string; name: string; symbol: string | null; cents: number }[];
   blockers: BlockerRef[];
@@ -321,6 +324,7 @@ export function buildInvestments(book: Book, settings: InvestmentSettings): Inve
       .slice(0, 12)
       .map((s) => ({ key: s.key, symbol: s.symbol, name: s.name, cents: s.cents, share: share(s.cents, totalCents), accounts: [...s.accounts] })),
     returns: buildPortfolioReturns(book),
+    dividends: buildDividendCalendar(book),
     growth: buildGrowth(book, included.filter((a) => a.isInvestment && (!a.closed || accounts.some((x) => x.accountId === a.id))).map((a) => a.id)),
     unclassified: [...unclassified.values()].sort((x, y) => y.cents - x.cents),
     blockers: [...new Map(accounts.flatMap((a) => a.blockers).map((b) => [b.id, b])).values()],
