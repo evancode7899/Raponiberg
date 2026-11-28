@@ -15,7 +15,8 @@ import { yearEstimate } from "../../profile/yearEstimate.ts";
 import { loadJsonSetting } from "../../settingsStore.ts";
 import { readPageInputs } from "../../pageInputs.ts";
 import { perBook } from "./common.ts";
-import { normalizeMortgageInputs } from "../../mortgage/inputs.ts";
+import { normalizeMortgageInputs, sharedWithHome } from "../../mortgage/inputs.ts";
+import { defaultHomeBudgetInputs, type HomeBudgetInputs } from "../../home-budget/homeBudgetModel.ts";
 import { buildMortgageLinks } from "../../mortgage/links.ts";
 import { buildTaxReport } from "../../tax/buildTaxReport.ts";
 import { startedTaxYears } from "../../tax/params.ts";
@@ -189,7 +190,7 @@ export async function pageFigures(ctx: ProofContext): Promise<{ figures: PageFig
     await page("Home budget", () => homeBudgetFigures({ inputs: readPageInputs("pf-home-budget-inputs"), funds: readPageInputs("pf-home-budget-funds") }, buildHomeSpending(book, data.profile.settings) != null));
   }
   else skipped.push(noForecastSkip());
-  await page("Mortgage", async () => mortgagePageFigures(normalizeMortgageInputs(readPageInputs("pf-mortgage-v2")), (await perBook(ctx, "mortgage-links", () => buildMortgageLinks(db, book))).links));
+  await page("Mortgage", async () => mortgagePageFigures(sharedWithHome(normalizeMortgageInputs(readPageInputs("pf-mortgage-v2")), { ...defaultHomeBudgetInputs(), ...(readPageInputs("pf-home-budget-inputs") as Partial<HomeBudgetInputs> | null) }), (await perBook(ctx, "mortgage-links", () => buildMortgageLinks(db, book))).links));
   const retirement = await loadJsonSetting(db, RETIREMENT_SETTINGS_KEY, normalizeRetirementSettings);
   // The calendar reads the same two reports for its years: kept from here rather than built again.
   const supported = startedTaxYears(book.today);

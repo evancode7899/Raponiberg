@@ -17,6 +17,8 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { BalancesChart, GapChart, INVEST, NetWorthChart, OpportunityChart, PREPAY, SensitivityChart, type YearPoint } from "./MortgageCharts";
 import { MortgageInputsPanel } from "./MortgageInputsPanel";
 import { defaultInputs, lumpLabel, migrateLegacy, MONTHS, RETIRED_KEYS, STORAGE_KEY, toPlan, type MortgageInputs } from "./mortgageInputs";
+import { homePatchFor, SHARED_KEYS, sharedWithHome } from "@/lib/mortgage/inputs";
+import type { HomeBudgetInputs } from "@/lib/home-budget/homeBudgetModel";
 import { noFigure, unswept } from "@/lib/book/proof/clearance";
 
 /** The linked figures (api/mortgage/links): each with where it comes from. */
@@ -36,7 +38,7 @@ const span = (months: number) => {
 };
 
 /** Home & mortgage › Prepay vs invest (was its own page, /mortgage). */
-export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean }) {
+export function MortgageTab({ requiresApiSecret, home, setHome }: { requiresApiSecret: boolean; home: HomeBudgetInputs; setHome: (f: (h: HomeBudgetInputs) => HomeBudgetInputs) => void }) {
   const api = useApi(requiresApiSecret);
   const chart = useChartPalette();
   const [ins, setIns, notSaved] = useSavedState<MortgageInputs>(STORAGE_KEY, defaultInputs);
@@ -48,7 +50,14 @@ export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean 
     if (!RETIRED_KEYS.some((k) => k in ins)) return;
     setIns((x) => Object.fromEntries(Object.entries(x).filter(([k]) => !(RETIRED_KEYS as readonly string[]).includes(k))) as MortgageInputs);
   }, [ins, setIns]);
-  const set = (p: Partial<MortgageInputs>) => setIns((x) => ({ ...x, ...p }));
+  // Following the home scenario, the loan's amount, rate, term and property tax are the scenario's: a change to one goes there, so every tab reads it.
+  const set = (p: Partial<MortgageInputs>) => {
+    const follows = p.followHome ?? ins.followHome;
+    const shared = follows ? Object.fromEntries(SHARED_KEYS.filter((k) => p[k] != null).map((k) => [k, p[k]])) : {};
+    const own = follows ? Object.fromEntries(Object.entries(p).filter(([k]) => !(SHARED_KEYS as readonly string[]).includes(k))) : p;
+    if (Object.keys(shared).length) setHome((h) => ({ ...h, ...homePatchFor(shared, h) }));
+    if (Object.keys(own).length) setIns((x) => ({ ...x, ...own }));
+  };
   // The forecast's and the tax engine's figures, used wherever nothing is typed over them.
   const [links, setLinks] = useState<MortgageLinks>({});
   // The tax year the links read (their proofs name it).
@@ -67,7 +76,7 @@ export function MortgageTab({ requiresApiSecret }: { requiresApiSecret: boolean 
       .catch(() => {})
       .finally(() => setLinksIn(true));
   }, [api]);
-  const saved = ins;
+  const saved = useMemo(() => sharedWithHome(ins, home), [ins, home]);
   // What the model and every figure run on: the saved inputs with the links put in.
   const eff = useMemo(() => withLinks(saved, links), [saved, links]);
   /** The return was typed here rather than linked to the Forecast's. */

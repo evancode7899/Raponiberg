@@ -94,14 +94,14 @@ export function HomeBudgetClient({ requiresApiSecret }: { requiresApiSecret: boo
           { id: "price", label: "Test a price" },
           { id: "rent", label: "Rent vs buy" },
           { id: "sensitivity", label: "Sensitivity" },
-          // An owned home: once its own page (/mortgage), with its own saved inputs.
+          // The same scenario's loan (or, switched off there, a loan of its own): once its own page (/mortgage).
           { id: "mortgage", label: "Prepay vs invest", sep: true },
         ]}
         value={tab}
         onChange={setTab}
       />
       {tab === "mortgage" ? (
-        <MortgageTab requiresApiSecret={requiresApiSecret} />
+        <MortgageTab requiresApiSecret={requiresApiSecret} home={stored} setHome={setStored} />
       ) : (
         <PageBody>
           <ApiSecretField api={api} />

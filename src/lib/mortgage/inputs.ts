@@ -47,6 +47,12 @@ export type MortgageInputs = {
   inflation: number;
   realDollars: boolean;
   /**
+   * The loan is Home & mortgage's one scenario (Test a price, sharedWithHome): its amount, rate,
+   * term and property tax read the same inputs as What can I afford, Test a price and Rent vs
+   * buy. Off: a loan of its own (one already owned).
+   */
+  followHome: boolean;
+  /**
    * Inputs the owner typed over a linked figure (LINKED_KEYS: the forecast's return and
    * inflation, the tax engine's rates). Absent: the page uses the linked figure, when there is one.
    */
@@ -110,7 +116,36 @@ export const defaultInputs = (): MortgageInputs => ({
   debtCap: 750_000,
   inflation: 0.025,
   realDollars: false,
+  followHome: true,
 });
+
+/** What the loan reads from Home & mortgage's scenario (Test a price: HomeBudgetInputs). */
+export type HomeLoan = { budgetHomePrice: number; budgetDownPaymentPct: number; annualMortgageRate: number; mortgageTermYears: number; annualPropertyTaxRate: number };
+/** The loan's inputs Home & mortgage's scenario holds, when the loan follows it. */
+export const SHARED_KEYS = ["principal", "rate", "termYears", "propertyTax"] as const;
+
+/** The inputs every figure runs on: the loan's own, with the scenario's loan put in while it follows the scenario (the page and the proof sweep both). */
+export function sharedWithHome(m: MortgageInputs, home: HomeLoan | null): MortgageInputs {
+  if (!m.followHome || !home) return m;
+  return {
+    ...m,
+    principal: Math.round(home.budgetHomePrice * (1 - home.budgetDownPaymentPct)),
+    rate: home.annualMortgageRate,
+    termYears: home.mortgageTermYears,
+    propertyTax: Math.round(home.budgetHomePrice * home.annualPropertyTaxRate),
+  };
+}
+
+/** A change to a shared input, as the scenario stores it (the loan amount moves the down payment at the same price). */
+export function homePatchFor(p: Partial<Pick<MortgageInputs, (typeof SHARED_KEYS)[number]>>, home: HomeLoan): Partial<HomeLoan> {
+  const price = home.budgetHomePrice;
+  return {
+    ...(p.principal != null && price > 0 ? { budgetDownPaymentPct: Math.min(1, Math.max(0, 1 - p.principal / price)) } : {}),
+    ...(p.rate != null ? { annualMortgageRate: p.rate } : {}),
+    ...(p.termYears != null ? { mortgageTermYears: p.termYears } : {}),
+    ...(p.propertyTax != null && price > 0 ? { annualPropertyTaxRate: p.propertyTax / price } : {}),
+  };
+}
 
 /** Rows → dated lumps in loan months; rows before the first payment are dropped. */
 export function expandLumps(rows: LumpRow[], startYear: number, startMonth: number): Lump[] {
