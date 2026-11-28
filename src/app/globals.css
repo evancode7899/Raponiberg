@@ -494,13 +494,6 @@ input[type="range"].range-over::-moz-range-track {
 .app-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
-  /*
-   * Always reserve the scrollbar's width. Without this, a chart tooltip that pokes past the
-   * bottom of the page makes the scrollbar appear, which narrows the page, which resizes every
-   * chart (ResizeObserver), which moves the tooltip, which can hide the scrollbar again: a
-   * resize loop that makes charts jump while hovering.
-   */
-  scrollbar-gutter: stable;
 }
 
 /* Recharts: tooltips pick up the UI font; no focus outline box on click. */
