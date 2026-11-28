@@ -9,8 +9,8 @@ import { writeJsonAtomic } from "../jsonStore.ts";
  * folder as last read (the parsed facts, never the PDFs), plus a note of every other PDF
  * seen there so a scan doesn't open it again. Gitignored and backed up with the rest of
  * data/. Kept apart from the scanner so the statement import can read it without
- * loading the PDF libraries. No Book figure reads it, so it isn't part of the Book's
- * data stamp (book/cache.ts).
+ * loading the PDF libraries. Part of the Book's data stamp (book/cache.ts): the Car page
+ * reads which premiums the declarations say are a home's or a car's.
  */
 
 export function insuranceDocsFile(): string {

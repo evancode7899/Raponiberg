@@ -277,7 +277,14 @@ export type Reconciled = { charges: StatementCharge[]; hints: HintMatch[] };
  * A row the owner said an entry isn't is never offered to it again, and a row with an
  * entry is never counted a second time.
  */
-export function reconcile(rows: MatchRow[], settings: GarageSettings, opts: { statementsThrough?: string } = {}): Reconciled {
+/**
+ * `premiums`: what the insurance declarations on file say a charge pays for (lib/insurance/page.ts
+ * premiumLines): a home's premium is never the car's, a car policy's always is, whatever the
+ * insurer's name or when it was first paid.
+ */
+export type ReconcileOptions = { statementsThrough?: string; premiums?: ReadonlyMap<string, "HOME" | "AUTO"> };
+
+export function reconcile(rows: MatchRow[], settings: GarageSettings, opts: ReconcileOptions = {}): Reconciled {
   const cars = settings.cars.filter((c) => c.vehicle.purchaseDate);
   const through = opts.statementsThrough ?? rows.reduce((m, r) => (r.date > m ? r.date : m), "");
   const resolve = resolver(rows);
@@ -316,8 +323,17 @@ export function reconcile(rows: MatchRow[], settings: GarageSettings, opts: { st
     const k = seriesKey(r);
     if (!seriesFirst.has(k)) seriesFirst.set(k, r.date);
   }
+  // The declarations say which premiums are a home's and which a car's.
+  const premiums = opts.premiums ?? new Map<string, "HOME" | "AUTO">();
+  for (const r of expense) {
+    const line = premiums.get(r.id);
+    if (!line || decided.has(r.id)) continue;
+    if (line === "HOME") det.delete(r.id);
+    else det.set(r.id, { kind: "INSURANCE", counted: true, how: "rule", carId: null });
+  }
   if (firstOwned) {
     for (const r of expense) {
+      if (premiums.has(r.id)) continue;
       const d = det.get(r.id);
       const first = seriesFirst.get(seriesKey(r))!;
       if (d?.how === "rule" && d.kind === "INSURANCE" && first < addDaysIso(firstOwned, -31)) {
@@ -681,7 +697,7 @@ export function reconcile(rows: MatchRow[], settings: GarageSettings, opts: { st
 }
 
 /** The car charges alone (see reconcile). */
-export function statementCharges(rows: MatchRow[], settings: GarageSettings, opts: { statementsThrough?: string } = {}): StatementCharge[] {
+export function statementCharges(rows: MatchRow[], settings: GarageSettings, opts: ReconcileOptions = {}): StatementCharge[] {
   return reconcile(rows, settings, opts).charges;
 }
 

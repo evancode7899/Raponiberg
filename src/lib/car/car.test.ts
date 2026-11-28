@@ -110,6 +110,12 @@ describe("which statement rows are car costs", () => {
     ]);
   });
 
+  it("reads what each premium pays for off the declarations: a renters premium is never the car's, a car policy's always is", () => {
+    const rows = [row("2024-03-18", "STATE FARM INSURANCE", 12), row("2025-02-19", "STATE FARM INSURANCE", 17.75), row("2025-02-20", "STATE FARM INSURANCE", 96)];
+    const premiums = new Map<string, "HOME" | "AUTO">([[rows[0]!.id, "HOME"], [rows[1]!.id, "HOME"], [rows[2]!.id, "AUTO"]]);
+    expect(statementCharges(rows, garage(), { premiums }).map((c) => [c.cents, c.status, c.kind])).toEqual([[9600, "COUNTED", "INSURANCE"]]);
+  });
+
   it("follows the owner's decisions and keywords, including never-the-car keywords", () => {
     const rows = [row("2025-02-03", "SHELL OIL", 30), row("2025-02-04", "AUTOZONE", 20), row("2025-02-05", "STATE FARM INSURANCE", 18)];
     const g = garage({ rowDecisions: { [rows[0]!.id]: { kind: "IGNORE" }, [rows[1]!.id]: { kind: "EQUIPMENT" } }, matchRules: [{ id: "k", pattern: "STATE FARM", kind: "IGNORE" }] });
