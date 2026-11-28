@@ -279,6 +279,7 @@ export function rederiveVsActual(figures: readonly DerivedFigure[]): Record<stri
   return rederiveList(figures, (f) => {
     if (f.figure === "vs-forecast") return { none: "The forecast as it was kept on that day: a projection held as it was, never worked out again with what is known since." };
     if (f.figure === "vs-actual") return { none: "The proven months added up: each is What changed's own figure for that month (income and spending from Cash flow, saving and markets from net worth), re-derived by its own proof, which its line opens." };
+    if (f.figure === "vs-cal-miss" || f.figure === "vs-cal-share") return { none: "Each proven month's projected less actual, as the snapshot tables beside it show them (each month's actual is What changed's own proven figure), added up over the months: a sum of figures proven on their own." };
     if (f.figure !== "vs-miss") return null;
     const fc = byKey.get(`vs-forecast|${f.key}`);
     const ac = byKey.get(`vs-actual|${f.key}`);

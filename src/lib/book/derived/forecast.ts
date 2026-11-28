@@ -2,7 +2,7 @@ import type { ScheduledBonus } from "../../forecast/bonusSchedule.ts";
 import { balancesAt, forecastFeeds, type Forecast } from "../../forecast/forecast.ts";
 import type { OutlookSeeds } from "../../profile/basePay.ts";
 import { c, ln, r, type DerivedFigure } from "./types.ts";
-import { VS_LABEL, type VsSnapshot } from "../../forecast/vsActual.ts";
+import { calibration, VS_LABEL, type VsSnapshot } from "../../forecast/vsActual.ts";
 
 /** A forecast-vs-actual figure's key: the snapshot and the line. */
 export const vsKey = (snapshot: string, line: string) => `${snapshot}|${line}`;
@@ -14,6 +14,26 @@ export const vsKey = (snapshot: string, line: string) => `${snapshot}|${line}`;
  * is one less the other.
  */
 export function vsActualDerived(vs: readonly VsSnapshot[]): DerivedFigure[] {
+  return [...snapshotFigures(vs), ...calibrationDerived(vs)];
+}
+
+/** Forecast › vs actual › calibration: each line over every proven month, held to the forecast as it stood going in. Keys: the line. */
+export function calibrationDerived(vs: readonly VsSnapshot[]): DerivedFigure[] {
+  return (calibration(vs) ?? []).flatMap((row): DerivedFigure[] => [
+    {
+      figure: "vs-cal-miss",
+      key: row.line,
+      describes: `${VS_LABEL[row.line]}, ${row.months.length} proven months: the forecast as it stood going into each, less what happened`,
+      value: c(row.missCents),
+      lines: [...row.months.map((m, i) => ln(`${m.key} (kept ${m.snapshot.slice(0, 10)})`, c(m.forecast - m.actual), i ? "+" : undefined, { note: i ? undefined : "Each month is the projected less the actual: the forecast kept last before it began." })), ln("Miss", c(row.missCents), "=")],
+    },
+    ...(row.share == null
+      ? []
+      : [{ figure: "vs-cal-share", key: row.line, describes: `${VS_LABEL[row.line]}: how far the forecast runs high (or, below zero, low), as a share of what happened`, value: r(row.share), lines: [ln("Miss", c(row.missCents)), ln("÷ what happened", c(row.actualCents), "÷", { source: "proven" }), ln("Runs high by", r(row.share), "=")] }]),
+  ]);
+}
+
+function snapshotFigures(vs: readonly VsSnapshot[]): DerivedFigure[] {
   return vs.flatMap((s) =>
     s.rows.flatMap((row): DerivedFigure[] => {
       const k = vsKey(s.id, row.line);
