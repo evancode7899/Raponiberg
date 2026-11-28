@@ -43,6 +43,16 @@ export function InsuranceClient({ requiresApiSecret }: { requiresApiSecret: bool
     [api],
   );
 
+  // The coverage gap's years: saved with the notes, then the page read again (the gap is built on the server).
+  const saveYears = useCallback(
+    async (needYears: number) => {
+      if (!data) return;
+      await api.call<InsuranceNotes>(URL, { method: "PUT", json: { ...data.notes, needYears } });
+      setData(await api.call<InsurancePage>(URL));
+    },
+    [api, data],
+  );
+
   // One list of the page's figures: every tab draws from it, and the proof sweep holds the same list.
   const figs = useMemo(() => (data ? insuranceDerived(data) : []), [data]);
   const open = useCallback(
@@ -84,7 +94,7 @@ export function InsuranceClient({ requiresApiSecret }: { requiresApiSecret: bool
                 </ul>
               </Callout>
             )}
-            {tab === "overview" && <OverviewTab data={data} figs={figs} open={open} />}
+            {tab === "overview" && <OverviewTab data={data} figs={figs} open={open} saveYears={saveYears} />}
             {tab === "life" && <LifeTab data={data} figs={figs} save={saveNotes} />}
             {tab === "home" && <HomeTab data={data} figs={figs} />}
             {tab === "auto" && <AutoTab data={data} figs={figs} />}

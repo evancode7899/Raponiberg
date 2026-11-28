@@ -3,6 +3,8 @@ import type { InsurancePage } from "../../insurance/page.ts";
 import type { PolicyView } from "../../insurance/report.ts";
 import type { Coverage } from "../../insurance/types.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
+import { coverGap } from "../../insurance/needMath.ts";
+import type { ChainLine } from "../proof/types.ts";
 
 /**
  * Insurance: each policy's figures, read off the insurer's own documents and the premiums
@@ -11,10 +13,10 @@ import { c, ln, r, t, type DerivedFigure } from "./types.ts";
  * deductibles and premiums, and the premiums paid this term. Overview: a year of cover
  * across every policy, and the premiums paid in the year to the statements' proven date.
  */
-export type InsuranceInput = Pick<InsurancePage, "policies" | "homes" | "autos" | "through">;
+export type InsuranceInput = Pick<InsurancePage, "policies" | "homes" | "autos" | "through"> & Partial<Pick<InsurancePage, "need">>;
 
 export function insuranceDerived(page: InsuranceInput): DerivedFigure[] {
-  return [...lifeDerived(page.policies), ...page.homes.flatMap(homeDerived), ...page.autos.flatMap(autoDerived), ...overviewDerived(page)];
+  return [...lifeDerived(page.policies), ...page.homes.flatMap(homeDerived), ...page.autos.flatMap(autoDerived), ...overviewDerived(page), ...needDerived(page)];
 }
 
 /** The figures of one coverage's limit on a declarations page, as printed. */
@@ -217,5 +219,32 @@ function lifeTables(v: PolicyView): DerivedFigure[] {
     ]),
     ...v.bills.map((b) => row("bill", b.file, `premium notice due ${b.dueDate}`, c(b.premiumCents), printed(`Due ${b.dueDate}, as the notice prints it`, b.premiumCents))),
     ...v.receipts.map((x) => row("receipt", x.file, `payment confirmed ${x.date}`, c(x.cents), printed(`Paid ${x.date}, as the confirmation prints it`, x.cents))),
+  ];
+}
+
+/**
+ * Overview › coverage gap (insurance/need.ts): years of today's living cost plus the debts,
+ * less what the accounts hold, against the life cover in force. Each part links the page that
+ * proves it (Net worth's balances); the years are the owner's.
+ */
+function needDerived(page: InsuranceInput): DerivedFigure[] {
+  const need = page.need;
+  if (!need || !page.policies.length) return [];
+  const cover = page.policies.filter((v) => v.status === "IN_FORCE").reduce((s, v) => s + (v.faceNowCents ?? v.policy.faceCents), 0);
+  const g = coverGap(need, cover);
+  const b = need.balances;
+  const living = need.living;
+  const side = (what: "assets" | "debts"): Partial<ChainLine> => (b ? { source: "proven", link: { label: `Net worth's ${what} on ${b.asOf}`, descriptor: { report: "net-worth", metric: "balance", date: b.asOf, side: what } } } : {});
+  const livingLines = living ? [ln(`A typical month's living cost, ${living.from} to ${living.to} (${living.months} months, as Cash flow counts it)`, c(living.monthlyCents)), ln(`× 12 months × ${need.years} years (yours to set)`, t(String(12 * need.years)), "×"), ln("Years of living cost", c(g?.livingCents ?? living.monthlyCents * 12 * need.years), "=")] : [];
+  const neededLines = g && b ? [ln("Years of living cost", c(g.livingCents)), ln("Debts on the proven date", c(b.debtsCents), "+", side("debts")), ln("What the accounts hold", c(b.assetsCents), "−", side("assets")), ln("Cover needed (never below zero)", c(g.neededCents), "=")] : [];
+  return [
+    { figure: "need-living", describes: `${need.years} years of today's living cost`, value: living ? c(living.monthlyCents * 12 * need.years) : null, lines: livingLines },
+    { figure: "need-needed", describes: "Cover needed: years of living cost and the debts, less what the accounts already hold", value: g ? c(g.neededCents) : null, lines: neededLines },
+    {
+      figure: "need-gap",
+      describes: g && g.gapCents > 0 ? "Short: cover needed beyond the life cover in force" : "Covered: life cover in force beyond what's needed",
+      value: g ? c(Math.abs(g.gapCents)) : null,
+      lines: g ? [ln("Cover needed", c(g.neededCents)), ln("Life cover in force", c(cover), "−", { source: "proven" }), ln(g.gapCents > 0 ? "Short by" : "Covered beyond the need by", c(Math.abs(g.gapCents)), "=")] : [],
+    },
   ];
 }

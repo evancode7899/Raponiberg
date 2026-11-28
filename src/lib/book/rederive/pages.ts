@@ -195,6 +195,7 @@ export function rederiveInsurance(book: Book, page: InsuranceInput, figures: rea
   const PRINTED = "As the policy, its declarations, its schedule or the insurer's letter prints it.";
   return rederiveList(figures, (f) => {
     if (f.figure === "paid-year") return [centsRoute("the Book's rows, re-added", f.value, rowsCents(paidInYear(overviewPolicies(page.policies, page), page.through).map((x) => x.rowId)), ROWS)];
+    if (f.figure === "need-living" || f.figure === "need-needed" || f.figure === "need-gap") return { none: "Your years of living cost over figures other pages prove (Cash flow's typical month, Net worth's balances, each policy's death benefit), each linked in the chain." };
     if (f.figure === "annual-total" || f.figure === "life-cover") return { none: "A sum of each policy's own figure (its premium for a year, its death benefit), each as its documents print it." };
     if (f.figure === "annual" || f.figure === "renewal-change") return { none: `${PRINTED} Scaled to a year, or set against the prior premium, in the chain.` };
     if (f.figure === "paid-term") {

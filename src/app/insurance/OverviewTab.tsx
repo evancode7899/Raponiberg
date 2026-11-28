@@ -1,19 +1,20 @@
 "use client";
 
 import { derivedNumber, derivedTarget, type DerivedFigure } from "@/lib/book/derived/types";
-import { Badge, Card, EmptyState, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
+import { Badge, Card, EmptyState, NotFigure, StatCell, StatGrid, table, WordsCell } from "@/components/ui/kit";
+import { MAX_NEED_YEARS } from "@/lib/insurance/needMath";
 import { limitKey } from "@/lib/book/derived/insurance";
 import { NA, usd0 } from "@/lib/formatMoney";
 import { overviewPolicies, upcomingDates, type CoverLine, type OverviewPolicy } from "@/lib/insurance/cover";
 import type { InsurancePage } from "@/lib/insurance/page";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CoverStatusBadge, Fig, shortDate, until } from "./parts";
 
 /** Insurance › Overview: every policy across life, home and auto, what each costs a year and what's coming up. */
 
 const LINE: Record<CoverLine, { label: string; tab: "life" | "home" | "auto" }> = { LIFE: { label: "Life", tab: "life" }, HOME: { label: "Home", tab: "home" }, AUTO: { label: "Auto", tab: "auto" } };
 
-export function OverviewTab({ data, figs, open }: { data: InsurancePage; figs: readonly DerivedFigure[]; open: (tab: "life" | "home" | "auto") => void }) {
+export function OverviewTab({ data, figs, open, saveYears }: { data: InsurancePage; figs: readonly DerivedFigure[]; open: (tab: "life" | "home" | "auto") => void; saveYears?: (years: number) => Promise<void> }) {
   const all = useMemo(() => overviewPolicies(data.policies, data), [data]);
   if (!all.length) {
     return (
@@ -34,6 +35,8 @@ export function OverviewTab({ data, figs, open }: { data: InsurancePage; figs: r
         <StatCell proof={derivedTarget("insurance", figs, "life-cover")} label="Life cover" value={usd0(derivedNumber(figs, "life-cover") ?? 0)} sub="Death benefit in force today" />
         <WordsCell label="Policies in force" value={`${inForce.length} of ${all.length}`} sub={(["LIFE", "HOME", "AUTO"] as const).map((l) => `${all.filter((p) => p.line === l).length} ${LINE[l].label.toLowerCase()}`).join(" · ")} />
       </StatGrid>
+
+      {data.policies.length > 0 && <CoverageGap data={data} figs={figs} saveYears={saveYears} />}
 
       <Card title="Your policies" subtitle="Each policy found in the statements folder. Open a line's tab to dive into its coverage, documents and payments.">
         <div className={table.wrap}>
@@ -182,3 +185,50 @@ function CoverItem({ line, title, rows, onOpen }: { line: string; title: string;
   );
 }
 
+
+/**
+ * Life cover against what the household would need (insurance/need.ts): years of today's
+ * living cost plus the debts, less what the accounts hold. Descriptive, not advice.
+ */
+function CoverageGap({ data, figs, saveYears }: { data: InsurancePage; figs: readonly DerivedFigure[]; saveYears?: (years: number) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const years = data.need.years;
+  const gap = derivedNumber(figs, "need-gap");
+  const short = figs.find((f) => f.figure === "need-gap")?.describes.startsWith("Short") ?? false;
+  const commit = () => {
+    const n = Number(draft);
+    setDraft(null);
+    if (saveYears && Number.isFinite(n) && n >= 1 && n <= MAX_NEED_YEARS && Math.round(n) !== years) void saveYears(Math.round(n));
+  };
+  return (
+    <Card
+      title="Life cover against what the household would need"
+      subtitle={`Today's typical month of living cost for the years you set, plus the debts, less what the accounts already hold, set against the life cover in force. ${data.need.balances ? `Balances as of ${shortDate(data.need.balances.asOf)}.` : "Waiting on net worth's proven balances."}`}
+      actions={
+        <label className="flex items-center gap-1.5 text-xs text-muted">
+          Years of living cost
+          <NotFigure why="the number of years you choose to cover">
+            <input
+              type="number"
+              min={1}
+              max={MAX_NEED_YEARS}
+              aria-label="Years of living cost to cover"
+              className="w-14 rounded border border-line bg-surface px-1 py-0.5 text-right text-fg"
+              value={draft ?? String(years)}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => e.key === "Enter" && commit()}
+            />
+          </NotFigure>
+        </label>
+      }
+    >
+      <StatGrid cols={4}>
+        <StatCell proof={derivedTarget("insurance", figs, "need-living")} label={`${years} years of living`} value={derivedNumber(figs, "need-living") == null ? NA : usd0(derivedNumber(figs, "need-living")!)} sub="at today's typical month" />
+        <StatCell proof={derivedTarget("insurance", figs, "need-needed")} label="Cover needed" value={derivedNumber(figs, "need-needed") == null ? NA : usd0(derivedNumber(figs, "need-needed")!)} sub="plus debts, less what you hold" />
+        <StatCell proof={derivedTarget("insurance", figs, "life-cover")} label="Life cover" value={usd0(derivedNumber(figs, "life-cover") ?? 0)} sub="in force today" />
+        <StatCell proof={derivedTarget("insurance", figs, "need-gap")} label={gap == null ? "Gap" : short ? "Short by" : "Covered beyond the need"} value={gap == null ? NA : usd0(gap)} tone={gap == null ? "neutral" : short ? "neg" : "pos"} sub={gap == null ? undefined : short ? "cover needed beyond what's in force" : "cover in force beyond the need"} />
+      </StatGrid>
+    </Card>
+  );
+}
