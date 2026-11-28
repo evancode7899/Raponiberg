@@ -1,4 +1,5 @@
-import { buildGarage, COST_LINES, interestSpan, LINE_INFO, lineOf, overlap, type CarReport, type CostItem, type CostLine, type GarageReport } from "../../car/report.ts";
+import { garagePage } from "../../car/page.ts";
+import { COST_LINES, interestSpan, LINE_INFO, lineOf, overlap, type CarReport, type CostItem, type CostLine, type GarageReport } from "../../car/report.ts";
 import { CAR_KEY, CAR_KINDS, carName, KIND_INFO, normalizeGarage, ownedOn, SHARED, type Car, type CarEntry, type CarKind, type GarageSettings } from "../../car/settings.ts";
 import { addDays, endOfMonth } from "../../dates/isoDate.ts";
 import { formatUsdFromCents } from "../../formatMoney.ts";
@@ -157,8 +158,8 @@ function hintText(e: CarEntry): string {
 type Ctx = { book: Book; settings: GarageSettings; garage: GarageReport };
 
 function garageFor(book: Book, settings: GarageSettings): GarageReport {
-  // As /api/car builds it: a log entry after the last day the statements are in for is awaiting its statement.
-  return buildGarage(settings, book.rows, book.today, { statementsThrough: book.horizon.cashFlow });
+  // As /api/car builds it (car/page.ts): a log entry after the last day the statements are in for is awaiting its statement, and the insurance declarations say which premiums are a home's.
+  return garagePage(book, settings);
 }
 
 /** The proof behind a Car page figure, from the Book and the garage as stored. */

@@ -298,7 +298,7 @@ export function rederiveDividends(book: Book, rep: Pick<InvestmentsReport, "divi
   const ROUTE = "every brokerage statement's dividend rows in the Book, re-added";
   return rederiveList(figures, (f) => {
     if (f.figure !== "div") return null;
-    const k = (f.key ?? "").replace(/^div|/, "");
+    const k = (f.key ?? "").slice("div|".length);
     return [centsRoute(ROUTE, f.value, sums.get(k) ?? 0, "by account, security and month")];
   });
 }
