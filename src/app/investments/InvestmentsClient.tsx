@@ -570,7 +570,21 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
           </ul>
         </Card>
       )}
-      <Card title="Fees by account" subtitle="What each account's statements deducted over the 12 months to the proven-through date.">
+      <Card
+        title="Fees by account"
+        subtitle={
+          <>
+            What each account&apos;s statements deducted over the 12 months to the proven-through date, and since its first statement on file
+            {r.accounts.some((a) => a.feesLifetimeCents) ? (
+              <>
+                {": "}
+                <ProofValue proof={dt("account-fees-lifetime")}>{usd0(-r.fees.accountFeesLifetimeCents)}</ProofValue> in all
+              </>
+            ) : null}
+            .
+          </>
+        }
+      >
         <div className={table.wrap}>
           <table className={table.table}>
             <tbody>
@@ -581,6 +595,8 @@ function Fees({ r, returnRate }: { r: InvestmentsReport; returnRate: number }) {
                     {a.feesWindow.from} → {a.feesWindow.to}
                   </td>
                   <td className={table.tdR}>{a.feesLast12Cents ? <ProofValue proof={derivedTarget("investments", d, "account-fee", a.accountId)}>{usd0(-a.feesLast12Cents)}</ProofValue> : "—"}</td>
+                  <td className={`${table.td} text-xs text-muted`}>since {a.feesSince}</td>
+                  <td className={table.tdR}>{a.feesLifetimeCents ? <ProofValue proof={derivedTarget("investments", d, "account-fee-lifetime", a.accountId)}>{usd0(-a.feesLifetimeCents)}</ProofValue> : "—"}</td>
                 </tr>
               ))}
             </tbody>

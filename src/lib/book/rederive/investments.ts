@@ -103,6 +103,15 @@ export function rederiveInvestments(book: Book, rep: Pick<InvestmentsReport, "as
         return [centsRoute(POS, v, known, "positions with a known expense ratio")];
       case "cost-known":
         return [centsRoute(POS, v, sum(withCost, (p) => p.valueCents), "taxable positions with a printed cost")];
+      case "account-fee-lifetime": {
+        const a = rep.accounts.find((x) => x.accountId === f.key);
+        if (!a) return null;
+        const t = timeline.get(a.accountId)!;
+        const months = periodsBetween(t.firstDay!, rep.asOf, "month");
+        return [centsRoute("the account's timeline fees, month by month since its first statement, re-added", v, months.reduce((s, m) => s + decompose(t, m.start < t.firstDay! ? t.firstDay! : m.start, m.end > rep.asOf ? rep.asOf : m.end).feesCents, 0), "each month's fees", 1)];
+      }
+      case "account-fees-lifetime":
+        return [centsRoute("each account's timeline fees since its first statement", v, rep.accounts.reduce((s, a) => (investment.has(a.accountId) ? s + decompose(timeline.get(a.accountId)!, timeline.get(a.accountId)!.firstDay!, rep.asOf).feesCents : s), 0), "account by account", rep.accounts.length)];
       case "account-fee": {
         const a = rep.accounts.find((x) => x.accountId === f.key);
         if (!a) return null;

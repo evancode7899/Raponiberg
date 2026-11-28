@@ -98,6 +98,9 @@ export type AccountHoldings = {
   /** Fees the statements deducted over the last 12 months (≤ 0), and the window. */
   feesLast12Cents: number;
   feesWindow: { from: string; to: string };
+  /** Every fee the statements deducted since the account's first statement on file (≤ 0), from when. */
+  feesLifetimeCents: number;
+  feesSince: string;
   blockers: BlockerRef[];
 };
 
@@ -119,6 +122,8 @@ export type InvestmentsReport = {
     unknownCents: number;
     /** Fees taken out by the accounts themselves (advisory, plan admin) over 12 months. */
     accountFeesLast12Cents: number;
+    /** Every account's fees since its first statement on file. */
+    accountFeesLifetimeCents: number;
   };
   gains: {
     taxable: { unrealizedCents: number; gainCents: number; lossCents: number; costKnownCents: number; costUnknownCents: number };
@@ -174,6 +179,7 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
     const treatment = treatmentFor(a.subtype, a.group);
     const feesFrom = [addDays(lastDay, -364), a.timeline.firstDay!].sort().at(-1)!;
     const fees = a.isInvestment ? decompose(a.timeline, feesFrom, lastDay).feesCents : 0;
+    const feesLifetime = a.isInvestment ? decompose(a.timeline, a.timeline.firstDay!, lastDay).feesCents : 0;
 
     // The latest snapshot that ties to the balance on its own date.
     const snaps = (byAccount.get(a.id) ?? []).filter((s) => s.asOf <= lastDay).sort((x, y) => x.asOf.localeCompare(y.asOf));
@@ -241,6 +247,8 @@ export function holdingsByAccount(book: Book, settings: InvestmentSettings) {
       differenceCents: !usable && latest ? latest.totalCents - valueAt(a.timeline, latest.asOf).cents : null,
       feesLast12Cents: fees,
       feesWindow: { from: feesFrom, to: lastDay },
+      feesLifetimeCents: feesLifetime,
+      feesSince: a.timeline.firstDay!,
       blockers: refs(netWorthAtBlockers(book, lastDay, [a.id])),
     });
   }
@@ -304,6 +312,7 @@ export function buildInvestments(book: Book, settings: InvestmentSettings): Inve
       knownCents,
       unknownCents: Math.max(0, totalCents - knownCents),
       accountFeesLast12Cents: accounts.reduce((s, a) => s + a.feesLast12Cents, 0),
+      accountFeesLifetimeCents: accounts.reduce((s, a) => s + a.feesLifetimeCents, 0),
     },
     gains: {
       taxable: {
