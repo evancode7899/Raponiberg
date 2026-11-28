@@ -39,6 +39,14 @@ export function onDataStamp(f: (stamp: string) => void): () => void {
  */
 export function seedResponse<T>(first: { path: string; body: string; stamp: string } | null | undefined): T | null {
   if (!first) return null;
+  // On the server: the data for this one render, never kept (the map would be shared by every request).
+  if (typeof window === "undefined") {
+    try {
+      return JSON.parse(first.body) as T;
+    } catch {
+      return null;
+    }
+  }
   const had = responses.get(first.path);
   if (had) return had.data as T;
   let data: T;
