@@ -3,7 +3,7 @@
 import { inputCls } from "@/components/ui/kit";
 import type { Api } from "./useApi";
 
-export { buttonDanger, buttonPrimary, buttonSecondary, Card, Segmented, Stat } from "@/components/ui/kit";
+export { btn, Card, Segmented, Stat } from "@/components/ui/kit";
 
 /** Shown only when the server requires API_SECRET; remembered for the browser session. */
 export function ApiSecretField({ api }: { api: Api }) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { buttonSecondary, Card } from "@/components/ledger/LedgerBits";
+import { btn, Card } from "@/components/ledger/LedgerBits";
 import { Said } from "@/components/ui/proof/Said";
 import { NA } from "@/lib/formatMoney";
 import { ShareBar, ShareLegend, type ShareSegment } from "@/components/charts/ShareBar";
@@ -83,7 +83,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
               </li>
             ))}
           </ul>
-          <button type="button" className={`${buttonSecondary} mt-2`} onClick={() => onGo("inputs")}>
+          <button type="button" className={`${btn.secondary} mt-2`} onClick={() => onGo("inputs")}>
             Open inputs
           </button>
         </Callout>
@@ -131,7 +131,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
         <Card
           title="Joint vs separate"
           actions={
-            <button type="button" className={buttonSecondary} onClick={() => onGo("compare")}>
+            <button type="button" className={btn.secondary} onClick={() => onGo("compare")}>
               Details
             </button>
           }
@@ -194,7 +194,7 @@ export function TaxOverview({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => v
         title={r.isCurrentYear ? `Projected ${r.year} W-2s` : `${r.year} W-2s`}
         subtitle={r.isCurrentYear ? "What each employer's W-2 should show in January: the latest stub's year-to-date totals plus the paychecks still to come." : "The W-2s on file, else each employer's last stub of the year."}
         actions={
-          <button type="button" className={buttonSecondary} onClick={() => onGo("income")}>
+          <button type="button" className={btn.secondary} onClick={() => onGo("income")}>
             Details
           </button>
         }
@@ -506,7 +506,7 @@ function AmendNote({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void }) {
         {a.ny ? <> and New York tax by {cell("overview", "amendment", "ny", signed(a.ny))}</> : ""}.
       </p>
       {a.partial && <p className="mt-1">Part of {many ? "a" : "the"} K-1 is on an attached statement the app hasn&apos;t read, so the change is not complete yet.</p>}
-      <button type="button" className={`${buttonSecondary} mt-2`} onClick={() => onGo("filed")}>
+      <button type="button" className={`${btn.secondary} mt-2`} onClick={() => onGo("filed")}>
         Open filed return
       </button>
     </Callout>
@@ -533,7 +533,7 @@ function FiledVerdict({ r, onGo }: { r: TaxResponse; onGo: (tab: Tab) => void })
       title={`The app vs your filed ${r.year} returns`}
       subtitle="Every line of each return, recomputed from the W-2s, 1099s and K-1s."
       actions={
-        <button type="button" className={buttonSecondary} onClick={() => onGo("filed")}>
+        <button type="button" className={btn.secondary} onClick={() => onGo("filed")}>
           Line by line
         </button>
       }
@@ -749,7 +749,7 @@ function ForecastBasis({ r, onGo }: { r: TaxResponse; onGo: (tab: "inputs") => v
       title={`${r.year} forecast to December 31`}
       subtitle="Everything after each source's latest document is projected. Change the assumptions on the Inputs tab."
       actions={
-        <button type="button" className={buttonSecondary} onClick={() => onGo("inputs")}>
+        <button type="button" className={btn.secondary} onClick={() => onGo("inputs")}>
           Adjust assumptions
         </button>
       }
