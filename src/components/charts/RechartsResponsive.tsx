@@ -117,8 +117,25 @@ export function RechartsResponsive({
   const [open, setOpen] = useState<false | { whatIf: string | null }>(false);
   const box = useRef<HTMLDivElement>(null);
   const readable = readChart(children as ReactNode) != null;
+  // While the pointer is over the chart, hold its size. A tooltip that pokes past the page can
+  // make a scrollbar appear, which narrows the page, which resized the chart, which moved the
+  // tooltip, which could hide the scrollbar again: a loop that made charts jump on hover.
+  // Holding the box's size for the hover breaks it; the chart re-measures once the pointer leaves.
+  const hold = () => {
+    const el = box.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    el.style.width = `${r.width}px`;
+    el.style.height = `${r.height}px`;
+  };
+  const release = () => {
+    const el = box.current;
+    if (!el) return;
+    el.style.width = "";
+    el.style.height = "";
+  };
   return (
-    <div ref={box} className="group/chart relative h-full w-full">
+    <div ref={box} onPointerEnter={hold} onPointerLeave={release} className="group/chart relative h-full w-full">
       <ResponsiveContainer width="100%" height="100%" debounce={debounce} initialDimension={INITIAL_DIMENSION} {...rest}>
         {children}
       </ResponsiveContainer>
