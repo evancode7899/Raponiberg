@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { DataStampContext, ProofContext, SweepContext, type ProofTarget } from "./context";
 import { ProofPanel } from "./ProofPanel";
 import { SweepNotice } from "./SweepNotice";
+import { publishSweep } from "./SweepStatus";
 
 /** One proof in the drawer: what was asked for (none for a figure with no proof), why the page shows or withholds it, and the answer once it arrives. */
 export type ProofEntry = { target: ProofTarget | null; clearance: Clearance | null; quality?: Quality; proof: (Proof & { stamp: string; monthEnd?: MonthEndNote | null }) | null; error: string | null; id?: number };
@@ -116,6 +117,8 @@ export function ProofProvider({ children }: { children: ReactNode }) {
       clearTimeout(timer);
     };
   }, []);
+  // The top bar's wheel / "All clear" (SweepStatus.tsx) follows the same answers.
+  useEffect(() => publishSweep(sweep), [sweep]);
   // New data on the page: its figures wait for the sweep of that data.
   useEffect(() => {
     if (pageStamp && pageStamp !== sweep.stamp) readRef.current();

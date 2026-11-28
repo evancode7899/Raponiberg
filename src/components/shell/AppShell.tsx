@@ -11,6 +11,7 @@ import { Tour } from "@/components/shell/Tour";
 import { DropAnywhere } from "@/components/shell/DropAnywhere";
 import { ask, FeedbackHost, notify } from "@/components/ui/Feedback";
 import { ProofProvider } from "@/components/ui/proof/ProofProvider";
+import { SweepStatus } from "@/components/ui/proof/SweepStatus";
 import { amountsHidden, applyTheme, idleLockMinutes, isAppTheme, PREFERENCE_CHANGED_EVENT, setAmountsHidden, THEME_CHANGED_EVENT, THEMES, type AppTheme } from "@/lib/preferences";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -331,6 +332,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto w-full min-w-0 max-w-xl flex-1">
           <TerminalCommandBar onShutdown={handleShutdown} />
         </div>
+        <SweepStatus />
         <button
           type="button"
           aria-pressed={hidden}
