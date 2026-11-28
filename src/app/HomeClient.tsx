@@ -15,7 +15,8 @@ import { formatPercentRatio, NA, usd0, usdCompact, usdDelta } from "@/lib/format
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Range } from "./dashboard/charts";
-import { BalancePanel, BridgePanel, CashPanel, day, DuePanel, FeedPanel, type FeedDecide, MoversPanel, NetWorthPanel, PlanPanel, PortfolioPanel, proofOf, tone, type Summary } from "./dashboard/panels";
+import { BalancePanel, BridgePanel, CashPanel, day, DuePanel, FeedPanel, type FeedDecide, MoversPanel, NetWorthPanel, PlanPanel, PortfolioPanel, proofOf, tone, TrustPanel, type Summary } from "./dashboard/panels";
+import type { TrustPanelBody } from "@/lib/book/proof/trust";
 
 const SUMMARY = "/api/dashboard/home-summary";
 const BRIEFING = "/api/dashboard/briefing";
@@ -39,6 +40,27 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
   const [marks, setMarks] = useState<Mark[] | null>(() => cachedResponse<{ marks: Mark[] }>(FEED)?.marks ?? null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<Mark[]>([]);
+  // The Trust panel: asked again while the proof sweep of this data is still running.
+  const [trust, setTrust] = useState<TrustPanelBody | null>(null);
+  useEffect(() => {
+    if (!api.ready) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = (tries: number) =>
+      api
+        .call<TrustPanelBody | { status: string }>("/api/proof/trust")
+        .then((r) => {
+          if (!live) return;
+          if ("trust" in r) setTrust(r);
+          else if (tries < 40) timer = setTimeout(() => read(tries + 1), 5000);
+        })
+        .catch(() => {});
+    read(0);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [api]);
 
   useEffect(() => {
     if (!api.ready) return;
@@ -72,7 +94,7 @@ export function HomeClient({ requiresApiSecret }: { requiresApiSecret: boolean }
             <ErrorNote>{error}</ErrorNote>
           </div>
         )}
-        <Terminal d={data} b={brief} upcoming={upcoming?.due ?? NONE} marks={marks} decide={decide} done={done} hsa={upcoming?.hsaReimbursableCents ?? null} />
+        <Terminal d={data} b={brief} upcoming={upcoming?.due ?? NONE} marks={marks} decide={decide} done={done} hsa={upcoming?.hsaReimbursableCents ?? null} trust={trust} />
       </>
     );
   return (
@@ -99,7 +121,7 @@ const NONE: BriefingDue[] = [];
 /** The calendar's dates and the rest, by date: what's done last. */
 const byDate = (a: BriefingDue, b: BriefingDue) => Number(a.done) - Number(b.done) || a.date.localeCompare(b.date);
 
-function Terminal({ d, b, upcoming, marks, decide, done, hsa }: { d: Summary; b: Briefing | null; upcoming: BriefingDue[]; marks: Mark[] | null; decide: FeedDecide | null; done: Mark[]; hsa: number | null }) {
+function Terminal({ d, b, upcoming, marks, decide, done, hsa, trust }: { d: Summary; b: Briefing | null; upcoming: BriefingDue[]; marks: Mark[] | null; decide: FeedDecide | null; done: Mark[]; hsa: number | null; trust: TrustPanelBody | null }) {
   const [view, setView] = usePersistentState<{ range: Range; average: boolean }>("pf-desk-view", () => ({ range: "all", average: false }));
   const [keys, setKeys] = useState(false);
   const due = useMemo(() => {
@@ -148,6 +170,7 @@ function Terminal({ d, b, upcoming, marks, decide, done, hsa }: { d: Summary; b:
         ) : (
           <Waiting span="xl:col-span-9" />
         )}
+        <TrustPanel t={trust} />
       </Desk>
       <Status d={d} onKeys={() => setKeys(true)} />
       <Drawer open={keys} onClose={() => setKeys(false)} title="Keys on the Dashboard" subtitle="Every page's keys are on Help." width="24rem">
