@@ -110,6 +110,11 @@ export function rederiveCar(g: GarageReport, figures: readonly DerivedFigure[]):
       case "premium":
       case "insurance-expected":
         return { none: "A premium as the statement charged it or the log gives it: the row is its own proof." };
+      case "kr":
+      case "kr-extra":
+      case "kr-upkeep-extra":
+      case "kr-change":
+        return { none: "The car's own months re-added over a year of ownership (each month accrues its share of every statement cost, as Costs shows it), or one year set against another." };
       default:
         return null;
     }

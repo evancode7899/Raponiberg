@@ -1,5 +1,6 @@
 import { LINE_INFO, type CarReport, type CostLine, type GarageReport } from "../../car/report.ts";
 import { c, ln, r, t, type DerivedFigure } from "./types.ts";
+import { keepOrReplace, RUNNING_LINES, type OwnershipYear } from "../../car/keepReplace.ts";
 
 /** Car › Costs lists this many of the latest insurance premiums. */
 export const PREMIUMS_LISTED = 12;
@@ -28,7 +29,7 @@ const money = (v: number | null | undefined) => (v == null ? null : c(v));
  * garage-wide reconciliation of statements against the log (no key).
  */
 export function carDerived(g: GarageReport): DerivedFigure[] {
-  const out: DerivedFigure[] = [];
+  const out: DerivedFigure[] = keepReplaceDerived(g);
   for (const car of g.cars) {
     if (!car.configured) continue;
     const key = car.carId;
@@ -133,5 +134,37 @@ export function carDerived(g: GarageReport): DerivedFigure[] {
   gx("log-matched", "log entries matched to a statement charge", t(`${a.matched + a.installments} of ${a.entries - a.noCost}`), [ln("Matched", t(String(a.matched))), ln("Paid in installments", t(String(a.installments))), ln("Log entries with a cost", t(String(a.entries - a.noCost)))]);
   gx("not-found", "log entries on no statement", t(String(a.notFound)), [ln("Entries before the statements end with no charge", t(String(a.notFound)))]);
   gx("awaiting", "log entries awaiting statements", t(String(a.awaiting)), [ln(`Entries after ${g.statementsThrough}`, t(String(a.awaiting)))]);
+  return out;
+}
+
+/** A car's ownership year in Keep or replace: its id, the year (1 = first twelve months; "latest" = the latest twelve), the column. */
+export const krKey = (carId: string, year: number | "latest", col: string) => `${carId}|${year}|${col}`;
+
+/** Car › Overview › keep or replace (car/keepReplace.ts): each ownership year's running costs from the statements, and the latest twelve months against the first. */
+export function keepReplaceDerived(g: GarageReport): DerivedFigure[] {
+  const out: DerivedFigure[] = [];
+  for (const car of g.cars) {
+    if (!car.configured) continue;
+    const kr = keepOrReplace(car);
+    const yearFigures = (y: OwnershipYear, year: number | "latest") => {
+      const what = year === "latest" ? "the latest twelve months" : `ownership year ${year}`;
+      const span = `${y.from} to ${y.to}`;
+      const months = car.months.filter((m) => m.month >= y.from && m.month <= y.to);
+      out.push(
+        { figure: "kr", key: krKey(car.carId, year, "running"), describes: `${car.name}: running costs, ${what} (${span})`, value: c(y.runningCents), lines: [...months.map((m, i) => ln(m.label, c(RUNNING_LINES.reduce((s, l) => s + (m.lines[l] ?? 0), 0)), i ? "+" : undefined)), ln("Running costs", c(y.runningCents), "=", { note: "Every line the statements pay: all but depreciation and financing interest." })] },
+        { figure: "kr", key: krKey(car.carId, year, "upkeep"), describes: `${car.name}: repairs and maintenance, ${what}`, value: c(y.upkeepCents), lines: [...months.map((m, i) => ln(m.label, c((m.lines.REPAIR ?? 0) + (m.lines.MAINTENANCE ?? 0)), i ? "+" : undefined)), ln("Repairs and maintenance", c(y.upkeepCents), "=")] },
+        { figure: "kr", key: krKey(car.carId, year, "per-mile"), describes: `${car.name}: running cost per mile, ${what}`, value: y.perMile == null ? null : c(Math.round(y.perMile)), lines: y.perMile == null ? [] : [ln("Running costs", c(y.runningCents)), ln("Miles driven", t(y.miles.toLocaleString("en-US")), "÷"), ln("Per mile", c(Math.round(y.perMile)), "=")] },
+      );
+    };
+    kr.years.forEach((y) => yearFigures(y, y.n));
+    const k = kr.compare;
+    if (!k) continue;
+    yearFigures(k.latest, "latest");
+    out.push(
+      { figure: "kr-extra", key: car.carId, describes: `${car.name}: running costs, the latest twelve months against the first year`, value: c(k.extraCents), lines: [ln("The latest twelve months", c(k.latest.runningCents)), ln("The first year owned", c(k.first.runningCents), "−"), ln("More a year to keep it running", c(k.extraCents), "=")] },
+      { figure: "kr-upkeep-extra", key: car.carId, describes: `${car.name}: repairs and maintenance, the latest twelve months against the first year`, value: c(k.upkeepExtraCents), lines: [ln("The latest twelve months", c(k.latest.upkeepCents)), ln("The first year owned", c(k.first.upkeepCents), "−"), ln("Difference", c(k.upkeepExtraCents), "=")] },
+      ...(k.change == null ? [] : [{ figure: "kr-change", key: car.carId, describes: `${car.name}: change in running costs since the first year`, value: r(k.change), lines: [ln("The latest twelve months ÷ the first year, less one", r(k.change))] }]),
+    );
+  }
   return out;
 }
