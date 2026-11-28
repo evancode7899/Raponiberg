@@ -35,10 +35,11 @@ export function AutoTab({ data, figs }: { data: InsurancePage; figs: readonly De
   return (
     <>
       <PolicyPicker options={data.autos.map((a) => ({ value: a.policy.policyNumber, label: `${a.policy.vehicles.map(vehicleName).join(", ") || "Auto"} ••${a.policy.policyNumber.slice(-4)}` }))} value={pn} onChange={setPicked} />
-      <Card tone="overview" title={`Auto · ${p.insurer}`} subtitle={[`Policy ${pn}`, p.vehicles.map(vehicleName).join(", ")].filter(Boolean).join(" · ")} actions={<CoverStatusBadge status={v.status} end={p.periodEnd} />}>
+      <Card tone="overview" title={`Auto · ${p.insurer}`} subtitle={[`Policy ${pn}`, p.vehicles.map(vehicleName).join(", ")].filter(Boolean).join(" · ")} actions={<CoverStatusBadge status={v.status} end={v.ends} />}>
         <p className="text-sm text-fg-2">
           {p.renewal ? "Renewal" : "New policy"} for {p.namedInsured.join(" and ") || "the named insured"}, {termText(p.periodStart, p.periodEnd)} ({p.termMonths} months).
-          {v.status === "IN_FORCE" && ` The term ends ${longDate(p.periodEnd)}, ${until(data.today, p.periodEnd)}.`}
+          {v.replacedBy && ` Replaced by ${v.replacedBy.insurer} policy ${v.replacedBy.policyNumber} from ${longDate(v.ends)}${v.status === "IN_FORCE" ? `, ${until(data.today, v.ends)}` : ""}.`}
+          {v.status === "IN_FORCE" && !v.replacedBy && ` The term ends ${longDate(p.periodEnd)}, ${until(data.today, p.periodEnd)}.`}
           {v.status === "NOT_STARTED" && ` It starts ${longDate(p.periodStart)}, ${until(data.today, p.periodStart)}.`}
         </p>
       </Card>

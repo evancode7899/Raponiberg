@@ -62,7 +62,7 @@ async function scan(db: Db, folder: string): Promise<InsuranceDocsFile> {
         const kind = insuranceKind(text);
         if (kind) {
           try {
-            if (needsLayout(kind)) text = `${text}\n\n${renderLayout(rowsFromItems(await positionedItems(f.bytes, { unmirror: true })))}\n`;
+            if (needsLayout(kind, text)) text = `${text}\n\n${renderLayout(rowsFromItems(await positionedItems(f.bytes, { unmirror: true })))}\n`;
             entry.doc = parseInsuranceDoc(text);
           } catch (e) {
             entry.error = e instanceof Error ? e.message : String(e);

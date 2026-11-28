@@ -1,6 +1,7 @@
 import { parseMoney, parseMonthNameDate, parseSlashDate } from "../ingest/text.ts";
 import { addYears } from "./report.ts";
 import { geicoKind, parseGeicoDeclarations, parseGeicoForm, parseGeicoRenewal } from "./geico.ts";
+import { parseProgressiveAuto, parseProgressiveForm, parseProgressiveHome, progressiveKind, progressiveNeedsLayout } from "./progressive.ts";
 import { isStateFarmHomeDeclarations, parseStateFarmHome } from "./stateFarm.ts";
 import type { BillingNotice, InsuranceDoc, PaymentReceipt, PolicyStatus, PremiumYear, TermPolicy } from "./types.ts";
 import { titleCase } from "./words.ts";
@@ -12,18 +13,19 @@ import { titleCase } from "./words.ts";
  * and face amounts, the riders and the application. Protective Life's policy, policy
  * summary and emailed payment receipt have their own readers at the end. Home and auto
  * policies have readers of their own: State Farm's home declarations (stateFarm.ts) and
- * GEICO's auto declarations, renewal letter and packet pages (geico.ts). Other insurers
+ * GEICO's auto declarations, renewal letter and packet pages (geico.ts), and Progressive's auto
+ * and (ASI) home declarations and packet pages (progressive.ts). Other insurers
  * print the same facts under other words; they come back as null (or the document as not insurance) rather
  * than guessed.
  */
 
 /** Bump when the reader changes what it reads: every insurance PDF is then read again. */
-export const INSURANCE_READER_VERSION = 3;
+export const INSURANCE_READER_VERSION = 4;
 
 export type InsuranceKind = "POLICY" | "BILL" | "RECEIPT" | "STATUS" | "PROPERTY" | "AUTO" | "AUTO_RENEWAL" | "FORM";
 
 /** Kinds read from the positioned layout (the scan appends it to the text): their plain text loses which value is on which row. */
-export const needsLayout = (kind: InsuranceKind | null) => kind === "PROPERTY";
+export const needsLayout = (kind: InsuranceKind | null, text: string) => kind === "PROPERTY" || (kind === "AUTO" && progressiveNeedsLayout(text));
 
 /**
  * Text with every space removed. Protective's PDFs break words at random ("Grace P eriod",
@@ -41,7 +43,7 @@ export function insuranceKind(text: string): InsuranceKind | null {
   if (isProtective(sq) && /PolicySummary/.test(sq) && /PaidtoDateofPolicy:/i.test(sq)) return "STATUS";
   if (/@protective\.com/i.test(text) && /Thankyouforyourrecentpayment/i.test(sq) && /PolicyNumber:/.test(sq) && /PaymentAmount:/.test(sq)) return "RECEIPT";
   if (isStateFarmHomeDeclarations(text)) return "PROPERTY";
-  return geicoKind(text);
+  return geicoKind(text) ?? progressiveKind(text);
 }
 
 const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, thirty: 30, sixty: 60 };
@@ -61,10 +63,11 @@ export function parseInsuranceDoc(text: string): InsuranceDoc {
   if (kind === "BILL") return parseBill(text);
   if (kind === "RECEIPT") return parseProtectiveReceipt(text);
   if (kind === "STATUS") return parseProtectiveSummary(text);
-  if (kind === "PROPERTY") return parseStateFarmHome(text);
-  if (kind === "AUTO") return parseGeicoDeclarations(text);
+  const progressive = geicoKind(text) == null && progressiveKind(text) != null;
+  if (kind === "PROPERTY") return progressive ? parseProgressiveHome(text) : parseStateFarmHome(text);
+  if (kind === "AUTO") return progressive ? parseProgressiveAuto(text) : parseGeicoDeclarations(text);
   if (kind === "AUTO_RENEWAL") return parseGeicoRenewal(text);
-  if (kind === "FORM") return parseGeicoForm(text);
+  if (kind === "FORM") return progressive ? parseProgressiveForm(text) : parseGeicoForm(text);
   throw new Error("Not an insurance policy, declarations page or billing notice.");
 }
 
