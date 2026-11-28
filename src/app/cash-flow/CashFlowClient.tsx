@@ -4,7 +4,8 @@ import { ApiSecretField } from "@/components/ledger/LedgerBits";
 import { cashFlowDerived } from "@/lib/book/derived/cashFlow";
 import { derivedTarget, derivedText } from "@/lib/book/derived/types";
 import { unswept } from "@/lib/book/proof/clearance";
-import { cachedResponse, useApi, type Api } from "@/components/ledger/useApi";
+import { cachedResponse, seedResponse, useApi, type Api } from "@/components/ledger/useApi";
+import type { FirstData } from "@/lib/cashFlowPayload";
 import { useChartPalette, type ChartPalette } from "@/components/shell/chartPalette";
 import { btn, Drawer, EmptyState, ErrorNote, Loading, PageBody, scrollToTop, Segmented, selectCls, Tabs, usePersistentState, useTabParam } from "@/components/ui/kit";
 import Link from "next/link";
@@ -17,6 +18,7 @@ import type { SpendingMonth } from "@/lib/book/reports/spending";
 import { OverviewTab } from "./OverviewTab";
 import { BudgetTab, IncomeTab, MerchantsTab, PatternsTab, RecurringTab, SpendingTab, TrendsTab, UnusualTab, YoyTab } from "./lazyTabs";
 import { WithheldStrip } from "./parts";
+import { withMerchants, type CashFlowMerchants } from "@/lib/cashFlowParts";
 
 const TABS = ["overview", "spending", "trends", "patterns", "yoy", "merchants", "recurring", "unusual", "budget", "income"] as const;
 export type CashTab = (typeof TABS)[number];
@@ -51,13 +53,15 @@ export type Ctx = {
 type View = { range: RangeId; from: string; to: string };
 const defaultView = (): View => ({ range: "12m", from: "", to: "" });
 
-export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boolean }) {
+export function CashFlowClient({ requiresApiSecret, first = null }: { requiresApiSecret: boolean; first?: FirstData | null }) {
   const api = useApi(requiresApiSecret);
   const chart = useChartPalette();
   const [tab, setTab] = useTabParam(TABS, "overview");
   const [view, setView] = usePersistentState<View>("pf-cash-flow-view", defaultView);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  const [data, setData] = useState(() => cachedResponse<Report>("/api/dashboard/cash-flow?"));
+  // Every tab but Merchants and a merchant's drill reads the report without its merchant lists (most of its bytes): those come apart, when asked for.
+  const [data, setData] = useState(() => seedResponse<Report>(first) ?? cachedResponse<Report>("/api/dashboard/cash-flow?parts=lean"));
+  const [merch, setMerch] = useState<CashFlowMerchants | null>(() => cachedResponse<CashFlowMerchants>("/api/dashboard/cash-flow?parts=merchants"));
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<Drill | null>(null);
   const [version, setVersion] = useState(0);
@@ -71,6 +75,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
     if (!api.ready) return;
     const sp = new URLSearchParams();
     if (excluded.size && accountsRef.current.length) sp.set("accountIds", accountsRef.current.filter((a) => !excluded.has(a.id)).map((a) => a.id).join(","));
+    sp.set("parts", "lean");
     api
       .call<Report>(`/api/dashboard/cash-flow?${sp}`)
       .then((r) => {
@@ -84,7 +89,31 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
       .catch((e: Error) => setError(e.message));
   }, [api, excluded, version]);
 
-  const slice = useMemo(() => (data ? sliceRange(data, view.range, { from: view.from, to: view.to }) : null), [data, view]);
+  // The merchant lists, for the tabs that draw them, read for the same accounts as the report.
+  const needMerchants = tab === "merchants" || drill?.kind === "merchant";
+  const [merchFor, setMerchFor] = useState<string | null>(null);
+  const merchKey = `${[...excluded].sort().join(",")}|${version}`;
+  useEffect(() => {
+    if (!api.ready || !needMerchants || merchFor === merchKey) return;
+    const sp = new URLSearchParams();
+    if (excluded.size && accountsRef.current.length) sp.set("accountIds", accountsRef.current.filter((a) => !excluded.has(a.id)).map((a) => a.id).join(","));
+    sp.set("parts", "merchants");
+    let live = true;
+    api
+      .call<CashFlowMerchants>(`/api/dashboard/cash-flow?${sp}`)
+      .then((m) => {
+        if (!live) return;
+        setMerch(m);
+        setMerchFor(merchKey);
+      })
+      .catch((e: Error) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [api, needMerchants, merchFor, merchKey, excluded]);
+  const merchReady = merch != null && (merchFor === merchKey || (merchFor == null && !excluded.size && version === 0));
+  const full = useMemo(() => (data && merch && merchReady ? withMerchants(data, merch) : data), [data, merch, merchReady]);
+  const slice = useMemo(() => (full ? sliceRange(full, view.range, { from: view.from, to: view.to }) : null), [full, view]);
   const goTo = (t: CashTab, category?: string) => {
     if (category) setFocus(category);
     setTab(t);
@@ -95,10 +124,10 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
   const accountIds = excluded.size && allAccounts.length ? allAccounts.filter((a) => !excluded.has(a.id)).map((a) => a.id) : undefined;
   const monthOptions = data?.months.map((m) => ({ value: monthKey(m.start), label: m.label })) ?? [];
   const drillMonth = drill?.kind === "month" ? [...(data?.months ?? []), ...(data?.current ? [data.current] : [])].find((m) => m.start === drill.start) : undefined;
-  const derived = useMemo(() => (data ? cashFlowDerived(data) : []), [data]);
+  const derived = useMemo(() => (full ? cashFlowDerived(full) : []), [full]);
   const ctx: Ctx | null =
-    data && slice && slice.months.length
-      ? { api, report: data, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o), dp: (figure, key) => (accountIds ? unswept("an account filter: derived figures are swept on every account") : derivedTarget("cash-flow", derived, figure, key)), words: (figure, key) => derivedText(derived, figure, key) }
+    full && slice && slice.months.length
+      ? { api, report: full, slice, chart, open: setDrill, goTo, reload: () => setVersion((v) => v + 1), focus, setFocus, proof: (metric, months, o) => proofTarget(metric, months, accountIds, o), dp: (figure, key) => (accountIds ? unswept("an account filter: derived figures are swept on every account") : derivedTarget("cash-flow", derived, figure, key)), words: (figure, key) => derivedText(derived, figure, key) }
       : null;
 
   return (
@@ -203,7 +232,7 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
         ) : tab === "yoy" ? (
           <YoyTab ctx={ctx} />
         ) : tab === "merchants" ? (
-          <MerchantsTab ctx={ctx} />
+          merchReady ? <MerchantsTab ctx={ctx} /> : <Loading label="Reading each month's merchants…" />
         ) : tab === "recurring" ? (
           <RecurringTab ctx={ctx} />
         ) : tab === "unusual" ? (
@@ -227,8 +256,10 @@ export function CashFlowClient({ requiresApiSecret }: { requiresApiSecret: boole
             <CategoryDrill ctx={ctx} category={drill.category} external={drill.external} />
           ) : drill.kind === "month" ? (
             drillMonth && <MonthDrill ctx={ctx} month={drillMonth} />
-          ) : (
+          ) : merchReady ? (
             <MerchantDrill ctx={ctx} drill={drill} />
+          ) : (
+            <Loading label="Reading each month's merchants…" />
           ))}
       </Drawer>
     </>
