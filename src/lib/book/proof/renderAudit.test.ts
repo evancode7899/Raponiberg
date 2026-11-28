@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { descriptorKey } from "./key";
-import { auditRender as audit, drawerStrays, figureFamily, isLedgerKey, readDrawn, textMatches, type DrawnFigure, type DrawnView, type WhatIfRegion } from "./renderAudit";
+import { auditRender as audit, drawerStrays, figureFamily, heldDrawn, isLedgerKey, readDrawn, textMatches, type DrawnFigure, type DrawnView, type WhatIfRegion } from "./renderAudit";
 
 const fig = (over: Partial<DrawnFigure> = {}): DrawnFigure => ({ key: "k1", shown: "4125.50", shownKind: "cents", perMonths: null, clearance: "cleared", text: "$4,126", ...over });
 const view = (over: Partial<DrawnView> = {}): DrawnView => ({ view: "/example", figures: [fig()], strays: [], errors: [], ...over });
@@ -89,6 +89,18 @@ describe("auditRender: what the pages drew, held to the sweep", () => {
     expect(auditRender([view({ figures: [] })], s, {}, { undrawnPending: { "derived › example › cell": "F6x" } }).problems).toEqual([]);
     const drawnAll = view({ figures: [fig({ key: d, shown: "1.00", text: "$1" })] });
     expect(auditRender([drawnAll], s, {}, { undrawnPending: { "derived › example › cell": "F6x" } }).problems).toMatchObject([{ kind: "RENDER_UNDRAWN", detail: expect.stringContaining("take it off UNDRAWN_PENDING") }]);
+  });
+
+  it("a second look counts what the first look drew right as drawn, and nothing it drew wrong", () => {
+    const s = { cleared: { k1: { cents: 4125_50 }, k2: { cents: 100 } }, problems: {} };
+    const first = [view({ figures: [fig(), fig({ key: "k2", shown: "1.00", text: "$9" })] })];
+    // k1 drawn at its value; k2 drawn as another number than it proves: only k1 carries over.
+    expect([...heldDrawn(first, s)]).toEqual(["k1"]);
+    const second = [view({ figures: [] })];
+    expect(audit(second, s, {}, { undrawnPending: {} }).missing).toEqual(["k1", "k2"]);
+    const again = audit(second, s, {}, { undrawnPending: {}, drawnElsewhere: heldDrawn(first, s) });
+    expect(again.missing).toEqual(["k2"]);
+    expect(again.problems).toMatchObject([{ kind: "RENDER_UNDRAWN", key: "k2" }]);
   });
 });
 

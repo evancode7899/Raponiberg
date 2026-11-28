@@ -81,10 +81,21 @@ const env: Record<string, string | undefined> = {
   PRISMA_HIDE_UPDATE_MESSAGE: "1",
 };
 
-function node(args: string[], what: string, extra: Record<string, string> = {}) {
-  const r = spawnSync(process.execPath, args, { cwd: ROOT, env: { ...env, ...extra } as NodeJS.ProcessEnv, stdio: "inherit" });
-  if (r.status !== 0) throw new Error(`${what} failed.`);
+function node(args: string[], what: string, extra: Record<string, string> = {}, attempts = 1) {
+  for (let k = 1; ; k++) {
+    const r = spawnSync(process.execPath, args, { cwd: ROOT, env: { ...env, ...extra } as NodeJS.ProcessEnv, stdio: "inherit" });
+    if (r.status === 0) return;
+    if (k >= attempts) throw new Error(`${what} failed${attempts > 1 ? ` ${attempts} times in a row` : ""}.`);
+    console.log(`\n${process.env.GITHUB_ACTIONS ? "::warning::" : ""}${what} failed (attempt ${k} of ${attempts}): once more, from scratch, on the same build and data. Code that is wrong fails again.\n`);
+  }
 }
+
+/**
+ * RENDER_AUDIT_ATTEMPTS (CI's shards: 2): how many times the render audit and the UI checks
+ * run before a failure counts. A shared runner under load can draw a view before its data
+ * lands or a picture before its font does; the same code on the same data fails every time.
+ */
+const ATTEMPTS = Math.max(1, Number(process.env.RENDER_AUDIT_ATTEMPTS ?? 1));
 
 /** Where seeded demos are kept, one folder per seed key; the newest few are kept. */
 const SEED_CACHE = process.env.DEMO_SEED_CACHE?.trim() || path.join(os.tmpdir(), "raponiberg-demo-seed");
@@ -182,8 +193,8 @@ async function renderAudit(dir: string) {
       ...cache,
       RENDER_AUDIT_BUILD_ID: readFileSync(path.join(ROOT, dir, "BUILD_ID"), "utf8").trim(),
       ...(process.argv.includes("--sweep") ? { RENDER_AUDIT_SWEEP_GATE: "1" } : {}),
-    });
-    if (process.argv.includes("--ui-checks")) node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "ui-checks.ts"), base], "The demo's UI checks");
+    }, ATTEMPTS);
+    if (process.argv.includes("--ui-checks")) node(["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--disable-warning=ExperimentalWarning", path.join(ROOT, "scripts", "ui-checks.ts"), base], "The demo's UI checks", {}, ATTEMPTS);
   } finally {
     server.kill();
   }

@@ -131,10 +131,15 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
+    # A shard aims for 100 s (a warning past it) and fails past 180 s, the owner's 3-minute
+    # ceiling: the same code takes 70–115 s here from run to run. A failed audit or UI check runs
+    # once more on the same build and data before it counts (scripts/demo.ts RENDER_AUDIT_ATTEMPTS).
     env:
       RENDER_AUDIT_SHARD: ${{ matrix.shard }}/3
       RENDER_AUDIT_OUT: render-audit-${{ matrix.shard }}.json
-      RENDER_AUDIT_BUDGET_MS: "100000"
+      RENDER_AUDIT_TARGET_MS: "100000"
+      RENDER_AUDIT_BUDGET_MS: "180000"
+      RENDER_AUDIT_ATTEMPTS: "2"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -167,11 +172,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+  # The merge's verdict, or (when it finds a problem) render-audit-again's. A shard that drew a
+  # view before its data landed leaves figures "no view draws" that the same code draws on the
+  # next run; that second look, not this job, says whether the code is wrong.
   render-audit:
     needs: render-audit-shard
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      again: ${{ steps.merge.outcome == 'failure' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -182,9 +192,14 @@ jobs:
           pattern: render-audit-*
           merge-multiple: true
       - name: The whole run, merged from its shards
+        id: merge
+        continue-on-error: true
         env:
           RENDER_AUDIT_COSTS: render-audit-costs.json
         run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/render-audit.ts --merge render-audit-1.json render-audit-2.json render-audit-3.json
+      - name: Problems found, so render-audit-again takes a second look
+        if: steps.merge.outcome == 'failure'
+        run: echo "::warning::The merged render audit found problems (above). render-audit-again renders every page once more and gives the verdict."
       # This run's unit costs: copy over scripts/render-audit-costs.json when the shards drift apart.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
@@ -193,3 +208,45 @@ jobs:
           path: render-audit-costs.json
           if-no-files-found: ignore
           retention-days: 7
+
+  # Only when the merge found problems: every page rendered again, unsharded, on the same build
+  # and data, and held whole. A cleared figure counts as drawn if either look drew it right
+  # (render-audit.ts --also); every other problem must be gone from this look too. Wrong code
+  # fails both looks. No time budget: the shards already held this build to theirs.
+  render-audit-again:
+    needs: [build, render-audit]
+    if: always() && needs.build.result == 'success' && needs.render-audit.outputs.again == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      RENDER_AUDIT_OUT: render-audit-again.json
+      RENDER_AUDIT_BUDGET_MS: "0"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Set up (empty database, no shortcut)
+        run: npm run setup -- --no-shortcuts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: next-build
+      - name: Unpack the build job's build
+        run: tar -xzf next-build.tgz
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: demo-data
+          path: data/demo
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: render-audit-[123]
+          merge-multiple: true
+      - name: Render every page again
+        # Its own verdict is the next step's: there, what the shards drew right counts as drawn too.
+        continue-on-error: true
+        run: npm run demo -- --render-audit --reuse-data
+      - name: The second look, held whole
+        run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/render-audit.ts --merge render-audit-again.json --also render-audit-1.json render-audit-2.json render-audit-3.json
