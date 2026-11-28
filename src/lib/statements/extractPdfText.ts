@@ -6,7 +6,11 @@ import { renderLayout, rowsFromItems, type PositionedItem } from "./pdfLayout.ts
  * positioned layout is appended (see pdfLayout.ts); every other document's text, and so
  * its content fingerprint, is unchanged.
  */
-const NEEDS_LAYOUT: RegExp[][] = [[/Earnings Statement/, /ADP, Inc\./]];
+const NEEDS_LAYOUT: RegExp[][] = [
+  [/Earnings Statement/, /ADP, Inc\./],
+  // Elan card statements: a credit's "CR" prints apart from its amount (parsers/elanCard.ts).
+  [/Elan Financial Services/, /Account ending in: \d{4}/],
+];
 
 /** Plain text of every page, concatenated, for feeding to the extraction model. */
 export async function extractPdfText(buffer: Buffer): Promise<string> {
