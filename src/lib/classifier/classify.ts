@@ -332,9 +332,14 @@ const SYSTEM_RULES: SystemRule[] = [
         accountHint: /\bENDING IN (\d{4})\b/.exec(i.description.toUpperCase())?.[1],
       }, "bank-chase-card-payment") },
 
-  // Untracked credit cards: counted as spending, by the owner's rule. Elan issues the
-  // Fidelity Visa; \bELAN\b keeps "IRELAND" out.
-  { id: "bank-untracked-card", re: /CAPITAL ONE|DISCOVER|CITI CARD|BARCLAYCARD|SYNCHRONY|\bELAN\b.*(PYMT|PMT|PAYMENT)/, sign: "-",
+  // Elan cards (Elan issues the Fidelity Rewards Visa) are tracked too: "Elan Web Pymt".
+  // \bELAN\b keeps "IRELAND" out. A payment before the card's first statement goes
+  // unmatched and runMatching relabels it an untracked card payment.
+  { id: "bank-elan-card-payment", re: /\bELAN\b.*(PYMT|PMT|PAYMENT)/, sign: "-",
+    decide: () => own("TRANSFER", "Own-account transfers", { kind: "OWN_ACCOUNT", institution: "Elan", subtypes: ["CREDIT_CARD"] }, "bank-elan-card-payment") },
+
+  // Untracked credit cards: counted as spending, by the owner's rule.
+  { id: "bank-untracked-card", re: /CAPITAL ONE|DISCOVER|CITI CARD|BARCLAYCARD|SYNCHRONY/, sign: "-",
     decide: () => ({ ...expense("Untracked card payments", "bank-untracked-card", "high"), counterparty: { kind: "UNTRACKED_CARD" } }) },
   { id: "bank-bilt-rent", re: /BILT CARD HOUSING|BILT RENT/, sign: "-",
     decide: () => expense("Housing", "bank-bilt-rent", "high") },

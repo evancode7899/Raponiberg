@@ -7,6 +7,7 @@ import { detectCapitalOne, parseCapitalOne, VERSION as CAPITAL_ONE } from "./cap
 import { detectChase, parseChase, VERSION as CHASE } from "./chase.ts";
 import { detectChaseCard, parseChaseCard, VERSION as CHASE_CARD } from "./chaseCard.ts";
 import { detectLpCapitalStatement, parseLpCapitalStatement, VERSION as LP_CAPITAL } from "./lpCapitalStatement.ts";
+import { detectElanCard, parseElanCard, VERSION as ELAN_CARD } from "./elanCard.ts";
 import { detectEmpower, parseEmpower, VERSION as EMPOWER } from "./empower.ts";
 import { detectFidelity, parseFidelity, VERSION as FIDELITY } from "./fidelity.ts";
 import { detectHealthEquity, parseHealthEquity, VERSION as HEALTHEQUITY } from "./healthequity.ts";
@@ -42,6 +43,7 @@ export const PARSERS: Parser[] = [
   { id: "bilt-card", version: BILT, detect: detectBilt, parse: parseBilt },
   { id: "capital-one-card", version: CAPITAL_ONE, detect: detectCapitalOne, parse: parseCapitalOne },
   { id: "amex-card", version: AMEX, detect: detectAmex, parse: parseAmex },
+  { id: "elan-card", version: ELAN_CARD, detect: detectElanCard, parse: parseElanCard },
   { id: "fidelity-investment-report", version: FIDELITY, detect: detectFidelity, parse: parseFidelity },
   { id: "empower-401k", version: EMPOWER, detect: detectEmpower, parse: parseEmpower },
   { id: "slavic-401k", version: SLAVIC, detect: detectSlavic, parse: parseSlavic },

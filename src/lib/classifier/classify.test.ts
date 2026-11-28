@@ -51,15 +51,21 @@ describe("untracked card payments", () => {
     date: "2026-07-20",
   });
 
-  it("files an Elan (Fidelity Visa) payment as an untracked card payment, not for review", () => {
-    const c = classifyTransaction(bank("Elan Web Pymt ***********9876 Web ID: 1234567890", -512.34), ctx);
+  it("files a Discover payment as an untracked card payment, not for review", () => {
+    const c = classifyTransaction(bank("DISCOVER E-PAYMENT 1234 WEB ID: 1234567890", -512.34), ctx);
     expect(c).toMatchObject({ lane: "EXPENSE", ruleId: "bank-untracked-card", category: "Untracked card payments" });
     expect(c.counterparty.kind).toBe("UNTRACKED_CARD");
     expect(c.needsReview).toBe(false);
   });
 
+  it("pairs an Elan (Fidelity Visa) payment with the Elan card as an own-account transfer", () => {
+    const c = classifyTransaction(bank("Elan Web Pymt ***********9876 Web ID: 1234567890", -512.34), ctx);
+    expect(c).toMatchObject({ lane: "TRANSFER", ruleId: "bank-elan-card-payment" });
+    expect(c.counterparty).toMatchObject({ kind: "OWN_ACCOUNT", institution: "Elan", subtypes: ["CREDIT_CARD"] });
+  });
+
   it("leaves merchants that merely contain ELAN alone", () => {
-    expect(classifyTransaction(bank("ZAZZLE IRELANDCORKCO", -20), ctx).ruleId).not.toBe("bank-untracked-card");
+    expect(classifyTransaction(bank("ZAZZLE IRELANDCORKCO", -20), ctx).ruleId).not.toBe("bank-elan-card-payment");
   });
 });
 
